@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Environment Variables (CRITICAL: Never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Build Outputs
+dist/
+frontend/dist/
+backend/dist/
+
+# Sencho User Data & Mocks
+data/
+mock_data/
+docker/
+sencho.json
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+#PRD
+Product Requirements Document

@@ -1,0 +1,19 @@
+services:
+  sencho:
+    build: .
+    container_name: sencho
+    ports:
+      - "3000:3000"
+    volumes:
+      # Docker socket for managing containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Compose files directory
+      - ${COMPOSE_DIR:-./mock_data/docker/compose}:/app/compose
+      # Persistent data directory for auth config
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+      - COMPOSE_DIR=/app/compose
+      - DATA_DIR=/app/data
+    restart: unless-stopped
