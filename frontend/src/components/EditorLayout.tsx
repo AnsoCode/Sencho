@@ -247,7 +247,7 @@ export default function EditorLayout() {
     if (!selectedFile) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${stackName}/down`, {
+      await apiFetch(`/stacks/${stackName}/stop`, {
         method: 'POST',
       });
       // Refresh containers after stop
@@ -265,10 +265,7 @@ export default function EditorLayout() {
     if (!selectedFile) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${stackName}/down`, {
-        method: 'POST',
-      });
-      await apiFetch(`/stacks/${stackName}/up`, {
+      await apiFetch(`/stacks/${stackName}/restart`, {
         method: 'POST',
       });
       // Refresh containers after restart
@@ -490,7 +487,7 @@ export default function EditorLayout() {
                 <span className="flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-full ${stackStatuses[file] === 'running' ? 'bg-green-500' :
-                        stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                      stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
                       }`}
                   />
                   {getDisplayName(file)}
