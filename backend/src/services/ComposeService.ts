@@ -6,7 +6,7 @@ export class ComposeService {
   private baseDir: string;
 
   constructor() {
-    this.baseDir = process.env.COMPOSE_DIR || path.join(process.cwd(), '..', 'docker', 'compose');
+    this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
   }
 
   /**
@@ -45,6 +45,7 @@ export class ComposeService {
       });
 
       child.on('error', (error: Error) => {
+        console.error(`Docker Compose Error for ${stackName}:`, error.message);
         ws.send(`Error: ${error.message}\n`);
       });
     }
@@ -93,6 +94,7 @@ export class ComposeService {
       });
 
       pullProcess.on('error', (error: Error) => {
+        console.error(`Docker Compose Pull Error for ${stackName}:`, error.message);
         sendOutput(`Pull error: ${error.message}\n`);
         reject(error);
       });
@@ -128,6 +130,7 @@ export class ComposeService {
       });
 
       upProcess.on('error', (error: Error) => {
+        console.error(`Docker Compose Up Error for ${stackName}:`, error.message);
         sendOutput(`Update error: ${error.message}\n`);
         reject(error);
       });

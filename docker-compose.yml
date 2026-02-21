@@ -9,12 +9,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       
-      # DATA DIRECTORY
-      # Left Side: Where Sencho saves your admin login (Change this if you want it elsewhere)
-      # Right Side: Internal container path (DO NOT CHANGE)
+      # Persistent data for your admin login
       - ./data:/app/data
       
-      # STACKS DIRECTORY
-      # Left Side: The absolute path to your Docker compose stacks on your server
-      # Right Side: Internal container path (DO NOT CHANGE)
-      - /path/to/your/server/stacks:/app/compose
+      # ⚠️ THE 1:1 PATH RULE (MUST MATCH EXACTLY)
+      # Left Side (Host) === Right Side (Container)
+      # Change both sides to where you actually store your compose files!
+      - /opt/stacks:/opt/stacks
+      
+    environment:
+      # This MUST match the path you set in the volumes above!
+      - COMPOSE_DIR=/opt/stacks

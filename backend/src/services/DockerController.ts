@@ -38,7 +38,7 @@ class DockerController {
   public async getContainersByStack(stackName: string) {
     try {
       const stackDir = path.join(COMPOSE_DIR, stackName);
-      const { stdout } = await execAsync('docker compose ps --format json -a', { 
+      const { stdout, stderr } = await execAsync('docker compose ps --format json -a', { 
         cwd: stackDir,
         env: { 
           ...process.env, 
@@ -65,10 +65,16 @@ class DockerController {
         // Try parsing as a standard JSON array
         const parsed = JSON.parse(stdout);
         containers = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
+      } catch (parseError) {
         // Fallback: parse newline-separated JSON objects, filtering out empty lines
-        const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
-        containers = lines.map(line => JSON.parse(line) as ComposeContainer);
+        try {
+          const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
+          containers = lines.map(line => JSON.parse(line) as ComposeContainer);
+        } catch (innerError) {
+          // Log parsing failure with stderr for debugging
+          console.error(`Docker Compose JSON Parse Error for ${stackName}:`, stderr || (parseError as Error).message);
+          return [];
+        }
       }
       
       // Map to frontend's expected interface
@@ -81,8 +87,9 @@ class DockerController {
         Status: c.Status || ''
       }));
     } catch (error) {
-      // If command fails (e.g., stack not deployed), return empty array
-      console.error('Failed to get containers for stack:', stackName, error);
+      // If command fails (e.g., stack not deployed, invalid YAML, missing env_file)
+      const execError = error as { stderr?: string; message?: string };
+      console.error(`Docker Compose Error for ${stackName}:`, execError.stderr || execError.message);
       return [];
     }
   }
