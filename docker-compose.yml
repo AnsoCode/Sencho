@@ -1,23 +1,19 @@
 services:
   sencho:
     image: saelix/sencho:latest
-    build: .
     container_name: sencho
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      
+      # DATA DIRECTORY
+      # Left Side: Where Sencho saves your admin login (Change this if you want it elsewhere)
+      # Right Side: Internal container path (DO NOT CHANGE)
       - ./data:/app/data
       
-      # Stacks Directory
-      # Left Side = Path on your host server (Change this to your actual folder)
-      # Right Side = Path inside Sencho (Do NOT change)
-      - /path/to/your/docker/compose:/app/compose
-    
-    environment:
-      # Tell Sencho's backend where to look inside the container
-      - COMPOSE_DIR=/app/compose
-      - DATA_DIR=/app/data
-      # Generate a secure random string for this in production
-      - JWT_SECRET=change-me-in-production
+      # STACKS DIRECTORY
+      # Left Side: The absolute path to your Docker compose stacks on your server
+      # Right Side: Internal container path (DO NOT CHANGE)
+      - SENCHO_STACKS_DIR:/app/compose

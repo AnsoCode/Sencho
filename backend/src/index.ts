@@ -14,9 +14,6 @@ import http from 'http';
 const app = express();
 const PORT = 3000;
 
-// Environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
 // ConfigService for persistent auth storage
 const configService = new ConfigService();
 
@@ -25,12 +22,19 @@ const fileSystemService = new FileSystemService();
 
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
-const COOKIE_OPTIONS = {
+
+// Helper to determine if request is secure (HTTPS or behind a proxy that terminates SSL)
+const isSecureRequest = (req: Request): boolean => {
+  return req.secure || req.headers['x-forwarded-proto'] === 'https';
+};
+
+// Helper to get cookie options dynamically per-request
+const getCookieOptions = (req: Request) => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: isSecureRequest(req),
   sameSite: 'strict' as const,
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
-};
+});
 
 // Middleware
 app.use(cors({
@@ -48,7 +52,7 @@ declare module 'express' {
 }
 
 // Authentication Middleware
-const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.cookies[COOKIE_NAME];
   
   if (!token) {
@@ -57,7 +61,8 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction): void =
   }
   
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { username: string };
+    const jwtSecret = await configService.getJwtSecret();
+    const decoded = jwt.verify(token, jwtSecret) as { username: string };
     req.user = { username: decoded.username };
     next();
   } catch {
@@ -112,12 +117,13 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Save credentials
+    // Save credentials (this also generates the JWT secret)
     await configService.saveConfig(username, password);
     
     // Issue JWT and log user in
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-    res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
+    const jwtSecret = await configService.getJwtSecret();
+    const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
+    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
     res.json({ success: true, message: 'Setup completed successfully' });
   } catch (error) {
     console.error('Setup error:', error);
@@ -138,8 +144,9 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
     const isValid = await configService.validateCredentials(username, password);
     
     if (isValid) {
-      const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
-      res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
+      const jwtSecret = await configService.getJwtSecret();
+      const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
+      res.cookie(COOKIE_NAME, token, getCookieOptions(req));
       res.json({ success: true, message: 'Login successful' });
       return;
     }
@@ -154,7 +161,7 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
 app.post('/api/auth/logout', (req: Request, res: Response): void => {
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureRequest(req),
     sameSite: 'strict',
   });
   res.json({ success: true, message: 'Logged out successfully' });
@@ -183,7 +190,7 @@ const wss = new WebSocket.Server({ noServer: true });
 let terminalWs: WebSocket | null = null;
 
 // Handle WebSocket upgrade with JWT authentication
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', async (req, socket, head) => {
   // Parse cookies from the upgrade request
   const cookieHeader = req.headers.cookie || '';
   const cookies = Object.fromEntries(
@@ -199,7 +206,8 @@ server.on('upgrade', (req, socket, head) => {
   }
   
   try {
-    jwt.verify(token, JWT_SECRET);
+    const jwtSecret = await configService.getJwtSecret();
+    jwt.verify(token, jwtSecret);
     // Authentication successful, proceed with WebSocket connection
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);

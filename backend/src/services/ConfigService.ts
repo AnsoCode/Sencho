@@ -1,10 +1,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 interface AuthConfig {
   username: string;
   passwordHash: string;
+  jwtSecret: string;
 }
 
 export class ConfigService {
@@ -12,7 +14,7 @@ export class ConfigService {
   private configPath: string;
 
   constructor() {
-    this.dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+    this.dataDir = process.env.DATA_DIR || '/app/data';
     this.configPath = path.join(this.dataDir, 'sencho.json');
   }
 
@@ -46,7 +48,8 @@ export class ConfigService {
     await this.ensureDataDir();
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
-    const config: AuthConfig = { username, passwordHash };
+    const jwtSecret = crypto.randomBytes(64).toString('hex');
+    const config: AuthConfig = { username, passwordHash, jwtSecret };
     await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
@@ -57,5 +60,13 @@ export class ConfigService {
     if (username !== config.username) return false;
     
     return await bcrypt.compare(password, config.passwordHash);
+  }
+
+  async getJwtSecret(): Promise<string> {
+    const config = await this.readConfig();
+    if (!config || !config.jwtSecret) {
+      throw new Error('JWT secret not found - setup may not be complete');
+    }
+    return config.jwtSecret;
   }
 }

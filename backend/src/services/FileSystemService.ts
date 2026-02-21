@@ -5,7 +5,7 @@ export class FileSystemService {
   private baseDir: string;
 
   constructor() {
-    this.baseDir = process.env.COMPOSE_DIR || path.join(process.cwd(), '..', 'mock_data', 'docker', 'compose');
+    this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
   }
 
   /**
