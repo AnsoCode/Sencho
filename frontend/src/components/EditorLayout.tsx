@@ -388,6 +388,10 @@ export default function EditorLayout() {
   // Safe content strings with fallback
   const safeContent = content || '';
   const safeEnvContent = envContent || '';
+  
+  // Stack state booleans for dynamic button rendering
+  const isDeployed = safeContainers && safeContainers.length > 0;
+  const isRunning = safeContainers?.some(c => c.State === 'running');
 
   // Stack name is now the same as selectedFile (no extension to strip)
   const stackName = selectedFile || '';
@@ -547,9 +551,9 @@ export default function EditorLayout() {
         <div className="flex-1 overflow-y-auto p-6">
           {!isLoading && selectedFile ? (
             <ErrorBoundary>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                 {/* Left Column (Command Center & Terminal) */}
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col h-full gap-6">
                   {/* Command Center Card */}
                   <Card className="rounded-xl border-muted bg-card">
                     <CardHeader className="p-4 pb-2">
@@ -558,22 +562,28 @@ export default function EditorLayout() {
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Button size="sm" className="rounded-lg" onClick={deployStack}>
-                            <Play className="w-4 h-4 mr-2" />
-                            Deploy
-                          </Button>
-                          <Button size="sm" variant="outline" className="rounded-lg" onClick={restartStack}>
-                            <RotateCw className="w-4 h-4 mr-2" />
-                            Restart
-                          </Button>
-                          <Button size="sm" variant="outline" className="rounded-lg" onClick={updateStack}>
-                            <CloudDownload className="w-4 h-4 mr-2" />
-                            Update
-                          </Button>
-                          <Button size="sm" variant="outline" className="rounded-lg" onClick={stopStack}>
-                            <Square className="w-4 h-4 mr-2" />
-                            Stop
-                          </Button>
+                          {!isDeployed && (
+                            <Button size="sm" className="rounded-lg" onClick={deployStack}>
+                              <Play className="w-4 h-4 mr-2" />
+                              Deploy
+                            </Button>
+                          )}
+                          {isDeployed && (
+                            <>
+                              <Button size="sm" variant="outline" className="rounded-lg" onClick={restartStack}>
+                                <RotateCw className="w-4 h-4 mr-2" />
+                                Restart
+                              </Button>
+                              <Button size="sm" variant="outline" className="rounded-lg" onClick={updateStack}>
+                                <CloudDownload className="w-4 h-4 mr-2" />
+                                Update
+                              </Button>
+                              <Button size="sm" variant="outline" className="rounded-lg" onClick={stopStack}>
+                                <Square className="w-4 h-4 mr-2" />
+                                {isRunning ? 'Stop' : 'Down'}
+                              </Button>
+                            </>
+                          )}
                           <Button
                             size="sm"
                             variant="destructive"
@@ -660,7 +670,7 @@ export default function EditorLayout() {
 
                   {/* Terminal Section */}
                   {showConsole && (
-                    <div className="rounded-xl overflow-hidden border border-muted bg-black p-3 h-[400px]">
+                    <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
                       <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
                       <div className="h-[calc(100%-24px)]">
                         <ErrorBoundary>
@@ -672,7 +682,7 @@ export default function EditorLayout() {
                 </div>
 
                 {/* Right Column (The Editor) */}
-                <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-[700px] bg-card">
+                <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-[600px] bg-card">
                   <div className="p-4 border-b border-muted flex items-center justify-between">
                     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                       <TabsList className="bg-muted">

@@ -6,7 +6,7 @@ export class ComposeService {
   private baseDir: string;
 
   constructor() {
-    this.baseDir = process.env.COMPOSE_DIR || path.join(process.cwd(), '..', 'mock_data', 'docker', 'compose');
+    this.baseDir = process.env.COMPOSE_DIR || path.join(process.cwd(), '..', 'docker', 'compose');
   }
 
   /**
@@ -25,7 +25,10 @@ export class ComposeService {
 
     const child = spawn('docker', args, { 
       cwd: stackDir,  // CRITICAL: Set working directory to stack folder
-      shell: true 
+      env: { 
+        ...process.env, 
+        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
+      }
     });
 
     if (ws) {
@@ -65,7 +68,10 @@ export class ComposeService {
     await new Promise<void>((resolve, reject) => {
       const pullProcess = spawn('docker', ['compose', 'pull'], { 
         cwd: stackDir,
-        shell: true 
+        env: { 
+          ...process.env, 
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
+        }
       });
 
       pullProcess.stdout.on('data', (data: Buffer) => {
@@ -97,7 +103,10 @@ export class ComposeService {
     await new Promise<void>((resolve, reject) => {
       const upProcess = spawn('docker', ['compose', 'up', '-d'], { 
         cwd: stackDir,
-        shell: true 
+        env: { 
+          ...process.env, 
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
+        }
       });
 
       upProcess.stdout.on('data', (data: Buffer) => {

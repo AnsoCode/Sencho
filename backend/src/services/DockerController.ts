@@ -1,6 +1,12 @@
 import Docker from 'dockerode';
 import WebSocket from 'ws';
 import { Duplex } from 'stream';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import path from 'path';
+
+const execAsync = promisify(exec);
+const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
 class DockerController {
   private static instance: DockerController;
@@ -30,19 +36,50 @@ class DockerController {
   }
 
   public async getContainersByStack(stackName: string) {
-    const containers = await this.docker.listContainers({ all: true });
-    // Normalize the stack name: remove all non-alphanumeric characters and lowercase
-    // Docker Compose strips hyphens and underscores from project names
-    const normalizedStackName = stackName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    
-    return containers.filter(container => {
-      if (!container.Labels || !container.Labels['com.docker.compose.project']) {
-        return false;
+    try {
+      const stackDir = path.join(COMPOSE_DIR, stackName);
+      const { stdout } = await execAsync('docker compose ps --format json -a', { 
+        cwd: stackDir,
+        env: { 
+          ...process.env, 
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
+        }
+      });
+      
+      // Robust JSON parsing - handle both JSON array and newline-separated JSON objects
+      // Docker Compose v2 may return either format depending on version
+      interface ComposeContainer {
+        ID?: string;
+        Name?: string;
+        State?: string;
+        Status?: string;
       }
-      // Normalize the Docker label for comparison
-      const projectLabel = container.Labels['com.docker.compose.project'].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      return projectLabel === normalizedStackName;
-    });
+      
+      let containers: ComposeContainer[];
+      try {
+        // Try parsing as a standard JSON array
+        const parsed = JSON.parse(stdout);
+        containers = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        // Fallback: parse newline-separated JSON objects
+        const lines = stdout.trim().split('\n');
+        containers = lines.map(line => JSON.parse(line) as ComposeContainer);
+      }
+      
+      // Map to frontend's expected interface
+      // Note: docker compose ps returns Name (singular), but frontend expects Names (array)
+      // Dockerode returns Names with leading slash, so we add it for compatibility
+      return containers.map((c) => ({
+        Id: c.ID || '',
+        Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
+        State: c.State || 'unknown',
+        Status: c.Status || ''
+      }));
+    } catch (error) {
+      // If command fails (e.g., stack not deployed), return empty array
+      console.error('Failed to get containers for stack:', stackName, error);
+      return [];
+    }
   }
 
   public async startContainer(containerId: string) {

@@ -7,6 +7,7 @@ import DockerController from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import { ConfigService } from './services/ConfigService';
+// @ts-ignore - composerize lacks proper type definitions
 import composerize from 'composerize';
 import si from 'systeminformation';
 import http from 'http';
