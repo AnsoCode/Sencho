@@ -500,7 +500,8 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static('public'));
   
   // Handle SPA routing - serve index.html for non-API routes
-  app.get('*', (req: Request, res: Response) => {
+  // Using app.use middleware instead of app.get('*') for path-to-regexp compatibility
+  app.use((req: Request, res: Response) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile('index.html', { root: 'public' });
     }
