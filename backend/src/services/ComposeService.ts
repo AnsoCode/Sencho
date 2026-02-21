@@ -9,11 +9,24 @@ export class ComposeService {
     this.baseDir = process.env.COMPOSE_DIR || path.join(process.cwd(), '..', 'mock_data', 'docker', 'compose');
   }
 
-  runCommand(filename: string, action: 'up' | 'down', ws?: WebSocket) {
-    const filePath = path.join(this.baseDir, filename);
-    const args = action === 'up' ? ['compose', '-f', filePath, 'up', '-d'] : ['compose', '-f', filePath, 'down'];
+  /**
+   * Run docker compose up or down command
+   * CRITICAL: cwd is set to the stack directory so relative paths in compose files
+   * resolve correctly inside the isolated stack folder
+   */
+  runCommand(stackName: string, action: 'up' | 'down', ws?: WebSocket) {
+    const stackDir = path.join(this.baseDir, stackName);
+    
+    // Run docker compose from within the stack directory
+    // This ensures relative paths (e.g., ./data:/config) resolve correctly
+    const args = action === 'up' 
+      ? ['compose', 'up', '-d'] 
+      : ['compose', 'down'];
 
-    const child = spawn('docker', args, { shell: true });
+    const child = spawn('docker', args, { 
+      cwd: stackDir,  // CRITICAL: Set working directory to stack folder
+      shell: true 
+    });
 
     if (ws) {
       child.stdout.on('data', (data: Buffer) => {
@@ -34,9 +47,12 @@ export class ComposeService {
     }
   }
 
-  // Update command: pull images first, then recreate containers
-  async updateStack(filename: string, ws?: WebSocket): Promise<void> {
-    const filePath = path.join(this.baseDir, filename);
+  /**
+   * Update stack: pull images first, then recreate containers
+   * CRITICAL: cwd is set to the stack directory so relative paths resolve correctly
+   */
+  async updateStack(stackName: string, ws?: WebSocket): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
 
     const sendOutput = (data: string) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -47,7 +63,10 @@ export class ComposeService {
     // Step 1: Pull images
     sendOutput('=== Pulling latest images ===\n');
     await new Promise<void>((resolve, reject) => {
-      const pullProcess = spawn('docker', ['compose', '-f', filePath, 'pull'], { shell: true });
+      const pullProcess = spawn('docker', ['compose', 'pull'], { 
+        cwd: stackDir,
+        shell: true 
+      });
 
       pullProcess.stdout.on('data', (data: Buffer) => {
         sendOutput(data.toString());
@@ -76,7 +95,10 @@ export class ComposeService {
     // Step 2: Recreate containers with new images
     sendOutput('=== Recreating containers ===\n');
     await new Promise<void>((resolve, reject) => {
-      const upProcess = spawn('docker', ['compose', '-f', filePath, 'up', '-d'], { shell: true });
+      const upProcess = spawn('docker', ['compose', 'up', '-d'], { 
+        cwd: stackDir,
+        shell: true 
+      });
 
       upProcess.stdout.on('data', (data: Buffer) => {
         sendOutput(data.toString());

@@ -104,17 +104,18 @@ export default function HomeDashboard() {
 
   const handleCreateStack = async () => {
     if (!newStackName.trim() || !convertedYaml) return;
-    const filename = newStackName.endsWith('.yml') ? newStackName : newStackName + '.yml';
+    // Send stackName directly (no .yml extension - backend creates directory)
+    const stackName = newStackName.trim();
     try {
       // Create the stack
       const createResponse = await apiFetch('/stacks', {
         method: 'POST',
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({ stackName }),
       });
       if (!createResponse.ok) throw new Error('Failed to create stack');
 
       // Save the converted YAML content
-      const saveResponse = await apiFetch(`/stacks/${filename}`, {
+      const saveResponse = await apiFetch(`/stacks/${stackName}`, {
         method: 'PUT',
         body: JSON.stringify({ content: convertedYaml }),
       });

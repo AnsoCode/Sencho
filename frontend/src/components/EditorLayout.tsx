@@ -356,11 +356,12 @@ export default function EditorLayout() {
 
   const handleCreateStack = async () => {
     if (!newStackName.trim()) return;
-    const filename = newStackName.endsWith('.yml') ? newStackName : newStackName + '.yml';
+    // Send stackName directly (no .yml extension - backend creates directory)
+    const stackName = newStackName.trim();
     try {
       const response = await apiFetch('/stacks', {
         method: 'POST',
-        body: JSON.stringify({ filename }),
+        body: JSON.stringify({ stackName }),
       });
       if (!response.ok) throw new Error('Failed to create stack');
       setCreateDialogOpen(false);
@@ -388,18 +389,17 @@ export default function EditorLayout() {
   const safeContent = content || '';
   const safeEnvContent = envContent || '';
 
-  // Get stack name without extension
-  const stackName = selectedFile ? selectedFile.replace('.yml', '').replace('.yaml', '') : '';
+  // Stack name is now the same as selectedFile (no extension to strip)
+  const stackName = selectedFile || '';
 
   // Filter files based on search query
   const filteredFiles = files.filter(file => {
-    const nameWithoutExt = file.replace('.yml', '').replace('.yaml', '').toLowerCase();
-    return nameWithoutExt.includes(searchQuery.toLowerCase());
+    return file.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  // Get display name for stack (without extension)
-  const getDisplayName = (filename: string) => {
-    return filename.replace('.yml', '').replace('.yaml', '');
+  // Get display name for stack (now just returns the name as-is since no extension)
+  const getDisplayName = (stackName: string) => {
+    return stackName;
   };
 
   return (

@@ -20,6 +20,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 // ConfigService for persistent auth storage
 const configService = new ConfigService();
 
+// FileSystemService for stack management
+const fileSystemService = new FileSystemService();
+
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
 const COOKIE_OPTIONS = {
@@ -249,67 +252,67 @@ app.get('/api/containers', async (req: Request, res: Response) => {
   }
 });
 
-const fileSystemService = new FileSystemService();
+// Stack Routes - Updated to use stackName (directory name) instead of filename
 
 app.get('/api/stacks', async (req: Request, res: Response) => {
   try {
-    const files = await fileSystemService.getStackFiles();
-    res.json(files);
+    const stacks = await fileSystemService.getStacks();
+    res.json(stacks);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch stack files' });
+    res.status(500).json({ error: 'Failed to fetch stacks' });
   }
 });
 
-app.get('/api/stacks/:filename', async (req: Request, res: Response) => {
+app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    const content = await fileSystemService.getStackContent(filename);
+    const stackName = req.params.stackName as string;
+    const content = await fileSystemService.getStackContent(stackName);
     res.send(content);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to read file' });
+    res.status(500).json({ error: 'Failed to read stack' });
   }
 });
 
-app.put('/api/stacks/:filename', async (req: Request, res: Response) => {
+app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
+    const stackName = req.params.stackName as string;
     const { content } = req.body;
-    console.log('PUT /api/stacks/:filename', { filename, contentType: typeof content, contentLength: content?.length });
+    console.log('PUT /api/stacks/:stackName', { stackName, contentType: typeof content, contentLength: content?.length });
     if (typeof content !== 'string') {
       console.error('Content is not a string:', content);
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    await fileSystemService.saveStackContent(filename, content);
-    console.log('File saved successfully:', filename);
-    res.json({ message: 'File saved successfully' });
+    await fileSystemService.saveStackContent(stackName, content);
+    console.log('Stack saved successfully:', stackName);
+    res.json({ message: 'Stack saved successfully' });
   } catch (error) {
-    console.error('Failed to save file:', error);
-    res.status(500).json({ error: 'Failed to save file' });
+    console.error('Failed to save stack:', error);
+    res.status(500).json({ error: 'Failed to save stack' });
   }
 });
 
-app.get('/api/stacks/:filename/env', async (req: Request, res: Response) => {
+app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    const exists = await fileSystemService.envExists(filename);
+    const stackName = req.params.stackName as string;
+    const exists = await fileSystemService.envExists(stackName);
     if (!exists) {
       return res.status(404).json({ error: 'Env file not found' });
     }
-    const content = await fileSystemService.getEnvContent(filename);
+    const content = await fileSystemService.getEnvContent(stackName);
     res.send(content);
   } catch (error) {
     res.status(500).json({ error: 'Failed to read env file' });
   }
 });
 
-app.put('/api/stacks/:filename/env', async (req: Request, res: Response) => {
+app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
+    const stackName = req.params.stackName as string;
     const { content } = req.body;
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    await fileSystemService.saveEnvContent(filename, content);
+    await fileSystemService.saveEnvContent(stackName, content);
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
     console.error('Failed to save env file:', error);
@@ -319,11 +322,11 @@ app.put('/api/stacks/:filename/env', async (req: Request, res: Response) => {
 
 app.post('/api/stacks', async (req: Request, res: Response) => {
   try {
-    const { filename } = req.body;
-    if (!filename || typeof filename !== 'string') {
-      return res.status(400).json({ error: 'Filename is required and must be a string' });
+    const { stackName } = req.body;
+    if (!stackName || typeof stackName !== 'string') {
+      return res.status(400).json({ error: 'Stack name is required and must be a string' });
     }
-    await fileSystemService.createStack(filename);
+    await fileSystemService.createStack(stackName);
     res.json({ message: 'Stack created successfully' });
   } catch (error) {
     console.error('Failed to create stack:', error);
@@ -331,10 +334,10 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/stacks/:filename', async (req: Request, res: Response) => {
+app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    await fileSystemService.deleteStack(filename);
+    const stackName = req.params.stackName as string;
+    await fileSystemService.deleteStack(stackName);
     res.json({ message: 'Stack deleted successfully' });
   } catch (error) {
     console.error('Failed to delete stack:', error);
@@ -342,10 +345,9 @@ app.delete('/api/stacks/:filename', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/stacks/:filename/containers', async (req: Request, res: Response) => {
+app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    const stackName = filename.replace(/\.yml$/, '');
+    const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance();
     const containers = await dockerController.getContainersByStack(stackName);
     res.json(containers);
@@ -389,20 +391,20 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 
 const composeService = new ComposeService();
 
-app.post('/api/stacks/:filename/up', async (req: Request, res: Response) => {
+app.post('/api/stacks/:stackName/up', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    composeService.runCommand(filename, 'up', terminalWs || undefined);
+    const stackName = req.params.stackName as string;
+    composeService.runCommand(stackName, 'up', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
   }
 });
 
-app.post('/api/stacks/:filename/down', async (req: Request, res: Response) => {
+app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
-    composeService.runCommand(filename, 'down', terminalWs || undefined);
+    const stackName = req.params.stackName as string;
+    composeService.runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
@@ -410,11 +412,11 @@ app.post('/api/stacks/:filename/down', async (req: Request, res: Response) => {
 });
 
 // Update stack: pull images and recreate containers
-app.post('/api/stacks/:filename/update', async (req: Request, res: Response) => {
+app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
   try {
-    const filename = req.params.filename as string;
+    const stackName = req.params.stackName as string;
     // Run update asynchronously, don't wait for completion
-    composeService.updateStack(filename, terminalWs || undefined).catch(error => {
+    composeService.updateStack(stackName, terminalWs || undefined).catch(error => {
       console.error('Update stack error:', error);
     });
     res.json({ status: 'Update started' });
@@ -505,6 +507,21 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Start server with migration
+async function startServer() {
+  try {
+    // Run migration before starting server
+    console.log('Running stack migration check...');
+    await fileSystemService.migrateFlatToDirectory();
+    console.log('Migration check completed');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    // Continue starting server even if migration fails
+  }
+  
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer();
