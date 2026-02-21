@@ -1,6 +1,7 @@
 services:
   sencho:
     image: saelix/sencho:latest
+    build: .
     container_name: sencho
     restart: unless-stopped
     ports:
@@ -16,4 +17,4 @@ services:
       # STACKS DIRECTORY
       # Left Side: The absolute path to your Docker compose stacks on your server
       # Right Side: Internal container path (DO NOT CHANGE)
-      - SENCHO_STACKS_DIR:/app/compose
+      - /path/to/your/server/stacks:/app/compose
