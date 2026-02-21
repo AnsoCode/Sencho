@@ -34,7 +34,7 @@ export default function EditorLayout() {
   const [originalEnvContent, setOriginalEnvContent] = useState<string>('');
   const [envExists, setEnvExists] = useState<boolean>(false);
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [containerStats, setContainerStats] = useState<Record<string, {cpu: string, ram: string}>>({});
+  const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -47,7 +47,7 @@ export default function EditorLayout() {
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
-  
+
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
@@ -68,7 +68,7 @@ export default function EditorLayout() {
       const res = await apiFetch('/stacks');
       const stacks = await res.json();
       setFiles(Array.isArray(stacks) ? stacks : []);
-      
+
       // Fetch status for each stack
       const statuses: StackStatus = {};
       for (const file of stacks) {
@@ -99,19 +99,21 @@ export default function EditorLayout() {
     (containers || []).forEach(container => {
       if (!container?.Id) return;
       try {
-        const ws = new WebSocket('ws://localhost:3000');
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
         wsMap[container.Id] = ws;
         ws.onopen = () => ws.send(JSON.stringify({ action: 'streamStats', containerId: container.Id }));
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.cpu_stats && data.precpu_stats && data.memory_stats) {
-              const cpuDelta = data.cpu_stats.cpu_usage.total_usage - data.precpu_stats.cpu_usage.total_usage;
-              const systemDelta = data.cpu_stats.system_cpu_usage - data.precpu_stats.system_cpu_usage;
-              const cpuPercent = systemDelta > 0 ? ((cpuDelta / systemDelta) * data.cpu_stats.online_cpus * 100).toFixed(2) : '0.00';
-              const ramUsage = (data.memory_stats.usage / (1024 * 1024)).toFixed(2) + ' MB';
-              setContainerStats(prev => ({ ...prev, [container.Id]: { cpu: cpuPercent + '%', ram: ramUsage } }));
-            }
+            // Skip initial empty chunks where stats fields are missing
+            if (!data.cpu_stats?.cpu_usage || !data.precpu_stats?.cpu_usage || !data.memory_stats?.usage) return;
+            const cpuDelta = data.cpu_stats.cpu_usage.total_usage - data.precpu_stats.cpu_usage.total_usage;
+            const systemDelta = (data.cpu_stats.system_cpu_usage || 0) - (data.precpu_stats.system_cpu_usage || 0);
+            const onlineCpus = data.cpu_stats.online_cpus || 1;
+            const cpuPercent = systemDelta > 0 ? ((cpuDelta / systemDelta) * onlineCpus * 100).toFixed(2) : '0.00';
+            const ramUsage = (data.memory_stats.usage / (1024 * 1024)).toFixed(2) + ' MB';
+            setContainerStats(prev => ({ ...prev, [container.Id]: { cpu: cpuPercent + '%', ram: ramUsage } }));
           } catch {
             // Ignore parse errors
           }
@@ -222,14 +224,16 @@ export default function EditorLayout() {
     setIsEditing(true);
   };
 
-  const deployStack = async () => {
+  const deployStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
     if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${selectedFile}/up`, {
+      await apiFetch(`/stacks/${stackName}/up`, {
         method: 'POST',
       });
       // Refresh containers after deploy
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
+      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       refreshStacks();
@@ -238,14 +242,16 @@ export default function EditorLayout() {
     }
   };
 
-  const stopStack = async () => {
+  const stopStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
     if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${selectedFile}/down`, {
+      await apiFetch(`/stacks/${stackName}/down`, {
         method: 'POST',
       });
       // Refresh containers after stop
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
+      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       refreshStacks();
@@ -254,17 +260,19 @@ export default function EditorLayout() {
     }
   };
 
-  const restartStack = async () => {
+  const restartStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
     if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${selectedFile}/down`, {
+      await apiFetch(`/stacks/${stackName}/down`, {
         method: 'POST',
       });
-      await apiFetch(`/stacks/${selectedFile}/up`, {
+      await apiFetch(`/stacks/${stackName}/up`, {
         method: 'POST',
       });
       // Refresh containers after restart
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
+      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       refreshStacks();
@@ -273,14 +281,16 @@ export default function EditorLayout() {
     }
   };
 
-  const updateStack = async () => {
+  const updateStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
     if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     try {
-      await apiFetch(`/stacks/${selectedFile}/update`, {
+      await apiFetch(`/stacks/${stackName}/update`, {
         method: 'POST',
       });
       // Refresh containers after update
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
+      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       refreshStacks();
@@ -388,7 +398,7 @@ export default function EditorLayout() {
   // Safe content strings with fallback
   const safeContent = content || '';
   const safeEnvContent = envContent || '';
-  
+
   // Stack state booleans for dynamic button rendering
   const isDeployed = safeContainers && safeContainers.length > 0;
   const isRunning = safeContainers?.some(c => c.State === 'running');
@@ -478,11 +488,10 @@ export default function EditorLayout() {
                 onClick={() => loadFile(file)}
               >
                 <span className="flex items-center gap-2">
-                  <span 
-                    className={`w-2 h-2 rounded-full ${
-                      stackStatuses[file] === 'running' ? 'bg-green-500' : 
-                      stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
-                    }`} 
+                  <span
+                    className={`w-2 h-2 rounded-full ${stackStatuses[file] === 'running' ? 'bg-green-500' :
+                        stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                      }`}
                   />
                   {getDisplayName(file)}
                 </span>
@@ -514,7 +523,7 @@ export default function EditorLayout() {
             title="Go to Home Dashboard"
           >
             <Home className="w-4 h-4 mr-2" />
-             Home
+            Home
           </Button>
           {/* Console Toggle */}
           <Button
@@ -563,28 +572,29 @@ export default function EditorLayout() {
                         {/* Action Bar */}
                         <div className="flex items-center gap-2 flex-wrap">
                           {!isDeployed && (
-                            <Button size="sm" className="rounded-lg" onClick={deployStack}>
+                            <Button type="button" size="sm" className="rounded-lg" onClick={deployStack}>
                               <Play className="w-4 h-4 mr-2" />
                               Deploy
                             </Button>
                           )}
                           {isDeployed && (
                             <>
-                              <Button size="sm" variant="outline" className="rounded-lg" onClick={restartStack}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack}>
                                 <RotateCw className="w-4 h-4 mr-2" />
                                 Restart
                               </Button>
-                              <Button size="sm" variant="outline" className="rounded-lg" onClick={updateStack}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack}>
                                 <CloudDownload className="w-4 h-4 mr-2" />
                                 Update
                               </Button>
-                              <Button size="sm" variant="outline" className="rounded-lg" onClick={stopStack}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack}>
                                 <Square className="w-4 h-4 mr-2" />
                                 {isRunning ? 'Stop' : 'Down'}
                               </Button>
                             </>
                           )}
                           <Button
+                            type="button"
                             size="sm"
                             variant="destructive"
                             className="rounded-lg"
@@ -610,7 +620,6 @@ export default function EditorLayout() {
                             {safeContainers.map(container => (
                               <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                                 <div className="flex flex-col gap-1">
-                                  <span className="font-medium text-sm">{container?.Names?.[0]?.replace('/', '') || 'Unknown'}</span>
                                   <div className="flex items-center gap-2">
                                     <Badge variant={container?.State === 'running' ? 'default' : 'destructive'} className="text-xs">
                                       {container?.State || 'unknown'}
@@ -621,37 +630,37 @@ export default function EditorLayout() {
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="rounded-lg h-8 w-8 p-0" 
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="rounded-lg h-8 w-8 p-0"
                                     onClick={() => startContainer(container?.Id)}
                                     title="Start"
                                   >
                                     <Play className="w-3 h-3" />
                                   </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="rounded-lg h-8 w-8 p-0" 
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="rounded-lg h-8 w-8 p-0"
                                     onClick={() => stopContainer(container?.Id)}
                                     title="Stop"
                                   >
                                     <Square className="w-3 h-3" />
                                   </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="rounded-lg h-8 w-8 p-0" 
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="rounded-lg h-8 w-8 p-0"
                                     onClick={() => restartContainer(container?.Id)}
                                     title="Restart"
                                   >
                                     <RefreshCw className="w-3 h-3" />
                                   </Button>
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    className="rounded-lg h-8 px-2" 
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-lg h-8 px-2"
                                     onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
                                     disabled={container?.State !== 'running'}
                                     title="Open Bash"
@@ -674,7 +683,7 @@ export default function EditorLayout() {
                       <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
                       <div className="h-[calc(100%-24px)]">
                         <ErrorBoundary>
-                          <TerminalComponent />
+                          <TerminalComponent stackName={stackName} />
                         </ErrorBoundary>
                       </div>
                     </div>

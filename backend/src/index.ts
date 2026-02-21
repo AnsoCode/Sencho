@@ -55,12 +55,12 @@ declare module 'express' {
 // Authentication Middleware
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.cookies[COOKIE_NAME];
-  
+
   if (!token) {
     res.status(401).json({ error: 'Authentication required' });
     return;
   }
-  
+
   try {
     const jwtSecret = await configService.getJwtSecret();
     const decoded = jwt.verify(token, jwtSecret) as { username: string };
@@ -96,23 +96,23 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
     }
 
     const { username, password, confirmPassword } = req.body;
-    
+
     // Validation
     if (!username || !password || !confirmPassword) {
       res.status(400).json({ error: 'All fields are required' });
       return;
     }
-    
+
     if (username.length < 3) {
       res.status(400).json({ error: 'Username must be at least 3 characters' });
       return;
     }
-    
+
     if (password.length < 6) {
       res.status(400).json({ error: 'Password must be at least 6 characters' });
       return;
     }
-    
+
     if (password !== confirmPassword) {
       res.status(400).json({ error: 'Passwords do not match' });
       return;
@@ -120,7 +120,7 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
 
     // Save credentials (this also generates the JWT secret)
     await configService.saveConfig(username, password);
-    
+
     // Issue JWT and log user in
     const jwtSecret = await configService.getJwtSecret();
     const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
@@ -135,15 +135,15 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
 // Login endpoint
 app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
-  
+
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
     return;
   }
-  
+
   try {
     const isValid = await configService.validateCredentials(username, password);
-    
+
     if (isValid) {
       const jwtSecret = await configService.getJwtSecret();
       const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
@@ -151,7 +151,7 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
       res.json({ success: true, message: 'Login successful' });
       return;
     }
-    
+
     res.status(401).json({ error: 'Invalid credentials' });
   } catch (error) {
     console.error('Login error:', error);
@@ -197,22 +197,36 @@ server.on('upgrade', async (req, socket, head) => {
   const cookies = Object.fromEntries(
     cookieHeader.split(';').map(c => c.trim().split('=')).filter(([k, v]) => k && v)
   );
-  
+
   const token = cookies[COOKIE_NAME];
-  
+
   if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }
-  
+
   try {
     const jwtSecret = await configService.getJwtSecret();
     jwt.verify(token, jwtSecret);
-    // Authentication successful, proceed with WebSocket connection
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req);
-    });
+
+    // Check if this is a stack logs WebSocket request
+    const url = req.url || '';
+    const logsMatch = url.match(/^\/api\/stacks\/([^/]+)\/logs$/);
+
+    if (logsMatch) {
+      // Dedicated stack logs WebSocket
+      const logsWss = new WebSocket.Server({ noServer: true });
+      logsWss.handleUpgrade(req, socket, head, (ws) => {
+        const stackName = decodeURIComponent(logsMatch[1]);
+        composeService.streamLogs(stackName, ws);
+      });
+    } else {
+      // Generic terminal WebSocket
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    }
   } catch (error) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
@@ -455,11 +469,11 @@ app.get('/api/stats', async (req: Request, res: Response) => {
     const dockerController = DockerController.getInstance();
     const containers = await dockerController.getRunningContainers();
     const allContainers = await dockerController.getAllContainers();
-    
+
     const active = containers.length;
     const exited = allContainers.filter((c: { State: string }) => c.State === 'exited').length;
     const total = allContainers.length;
-    
+
     res.json({ active, exited, total, inactive: total - active - exited });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stats' });
@@ -474,10 +488,10 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
       si.mem(),
       si.fsSize(),
     ]);
-    
+
     // Find the main mount (usually the largest or root mount)
     const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
-    
+
     res.json({
       cpu: {
         usage: currentLoad.currentLoad.toFixed(1),
@@ -507,7 +521,7 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
 // Serve static files in production (for Docker deployment)
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static('public'));
-  
+
   // Handle SPA routing - serve index.html for non-API routes
   // Using app.use middleware instead of app.get('*') for path-to-regexp compatibility
   app.use((req: Request, res: Response) => {
@@ -528,7 +542,7 @@ async function startServer() {
     console.error('Migration failed:', error);
     // Continue starting server even if migration fails
   }
-  
+
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });

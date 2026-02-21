@@ -3,7 +3,11 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
 
-export default function TerminalComponent() {
+interface TerminalComponentProps {
+  stackName?: string;
+}
+
+export default function TerminalComponent({ stackName }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -66,12 +70,25 @@ export default function TerminalComponent() {
           }
         });
 
-        const ws = new WebSocket('ws://localhost:3000');
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const cleanStackName = stackName?.replace(/\.(yml|yaml)$/, '');
+
+        // If a stackName is provided, connect to the dedicated logs WebSocket
+        // Otherwise, fall back to the generic terminal WebSocket
+        const wsUrl = cleanStackName
+          ? `${wsProtocol}//${window.location.host}/api/stacks/${cleanStackName}/logs`
+          : `${wsProtocol}//${window.location.host}`;
+
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (mounted) {
-            ws.send(JSON.stringify({ action: 'connectTerminal' }));
+            if (!cleanStackName) {
+              // Generic terminal mode - send connect action
+              ws.send(JSON.stringify({ action: 'connectTerminal' }));
+            }
+            // For stack logs mode, the server starts streaming automatically on connection
           }
         };
 
@@ -130,7 +147,7 @@ export default function TerminalComponent() {
       }
       fitAddonRef.current = null;
     };
-  }, []);
+  }, [stackName]);
 
   return <div ref={terminalRef} className="h-full w-full" />;
 }
