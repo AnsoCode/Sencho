@@ -46,6 +46,11 @@ class DockerController {
         }
       });
       
+      // Guard clause for empty output (stack has no containers)
+      if (!stdout || stdout.trim() === '') {
+        return [];
+      }
+      
       // Robust JSON parsing - handle both JSON array and newline-separated JSON objects
       // Docker Compose v2 may return either format depending on version
       interface ComposeContainer {
@@ -61,8 +66,8 @@ class DockerController {
         const parsed = JSON.parse(stdout);
         containers = Array.isArray(parsed) ? parsed : [parsed];
       } catch {
-        // Fallback: parse newline-separated JSON objects
-        const lines = stdout.trim().split('\n');
+        // Fallback: parse newline-separated JSON objects, filtering out empty lines
+        const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
         containers = lines.map(line => JSON.parse(line) as ComposeContainer);
       }
       
