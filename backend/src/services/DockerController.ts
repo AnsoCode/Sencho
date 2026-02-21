@@ -4,6 +4,8 @@ import { Duplex } from 'stream';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs/promises';
+import * as yaml from 'yaml';
 
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
@@ -36,8 +38,9 @@ class DockerController {
   }
 
   public async getContainersByStack(stackName: string) {
+    const stackDir = path.join(COMPOSE_DIR, stackName);
+    
     try {
-      const stackDir = path.join(COMPOSE_DIR, stackName);
       const { stdout, stderr } = await execAsync('docker compose ps --format json -a', { 
         cwd: stackDir,
         env: { 
@@ -45,11 +48,6 @@ class DockerController {
           PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
         }
       });
-      
-      // Guard clause for empty output (stack has no containers)
-      if (!stdout || stdout.trim() === '') {
-        return [];
-      }
       
       // Robust JSON parsing - handle both JSON array and newline-separated JSON objects
       // Docker Compose v2 may return either format depending on version
@@ -60,36 +58,122 @@ class DockerController {
         Status?: string;
       }
       
-      let containers: ComposeContainer[];
-      try {
-        // Try parsing as a standard JSON array
-        const parsed = JSON.parse(stdout);
-        containers = Array.isArray(parsed) ? parsed : [parsed];
-      } catch (parseError) {
-        // Fallback: parse newline-separated JSON objects, filtering out empty lines
+      let containers: ComposeContainer[] = [];
+      
+      // Only parse if stdout has content
+      if (stdout && stdout.trim() !== '') {
         try {
-          const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
-          containers = lines.map(line => JSON.parse(line) as ComposeContainer);
-        } catch (innerError) {
-          // Log parsing failure with stderr for debugging
-          console.error(`Docker Compose JSON Parse Error for ${stackName}:`, stderr || (parseError as Error).message);
-          return [];
+          // Try parsing as a standard JSON array
+          const parsed = JSON.parse(stdout);
+          containers = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (parseError) {
+          // Fallback: parse newline-separated JSON objects, filtering out empty lines
+          try {
+            const lines = stdout.trim().split('\n').filter(line => line.trim() !== '');
+            containers = lines.map(line => JSON.parse(line) as ComposeContainer);
+          } catch (innerError) {
+            // Log parsing failure with stderr for debugging
+            console.error(`Docker Compose JSON Parse Error for ${stackName}:`, stderr || (parseError as Error).message);
+            // Don't return empty - trigger smart fallback below
+          }
         }
       }
       
-      // Map to frontend's expected interface
-      // Note: docker compose ps returns Name (singular), but frontend expects Names (array)
-      // Dockerode returns Names with leading slash, so we add it for compatibility
-      return containers.map((c) => ({
-        Id: c.ID || '',
-        Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
-        State: c.State || 'unknown',
-        Status: c.Status || ''
-      }));
+      // If containers found via docker compose ps, return them
+      if (containers.length > 0) {
+        // Map to frontend's expected interface
+        // Note: docker compose ps returns Name (singular), but frontend expects Names (array)
+        // Dockerode returns Names with leading slash, so we add it for compatibility
+        return containers.map((c) => ({
+          Id: c.ID || '',
+          Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
+          State: c.State || 'unknown',
+          Status: c.Status || ''
+        }));
+      }
+      
+      // SMART FALLBACK: Trigger when docker compose ps returns empty
+      // This handles legacy containers with incorrect project labels
+      return await this.smartFallback(stackName, stackDir);
+      
     } catch (error) {
       // If command fails (e.g., stack not deployed, invalid YAML, missing env_file)
       const execError = error as { stderr?: string; message?: string };
       console.error(`Docker Compose Error for ${stackName}:`, execError.stderr || execError.message);
+      
+      // Try smart fallback even on error
+      return await this.smartFallback(stackName, stackDir);
+    }
+  }
+
+  /**
+   * Smart Fallback: Find legacy containers by parsing compose YAML definitions.
+   * This handles containers that were deployed with incorrect project labels
+   * that cause `docker compose ps` to ignore them.
+   */
+  private async smartFallback(stackName: string, stackDir: string): Promise<any[]> {
+    try {
+      // 1. Flexible Compose File Discovery
+      // Try multiple valid compose file names
+      const composeFileNames = ['compose.yaml', 'docker-compose.yml', 'compose.yml', 'docker-compose.yaml'];
+      let yamlContent: string | null = null;
+      
+      for (const fileName of composeFileNames) {
+        try {
+          yamlContent = await fs.readFile(path.join(stackDir, fileName), 'utf-8');
+          break; // Successfully read a file, stop trying
+        } catch {
+          // File doesn't exist, try next
+          continue;
+        }
+      }
+      
+      if (!yamlContent) {
+        // No compose file found
+        return [];
+      }
+      
+      const parsedYaml = yaml.parse(yamlContent);
+      
+      if (!parsedYaml || !parsedYaml.services) return [];
+
+      // 2. Extract expected container names with legacy prefix support
+      const expectedNames: string[] = [];
+      for (const [serviceName, serviceConfig] of Object.entries(parsedYaml.services)) {
+        const config = serviceConfig as any;
+        if (config.container_name) {
+          expectedNames.push(config.container_name);
+        } else {
+          // Standard v2 naming
+          expectedNames.push(serviceName);
+          expectedNames.push(`${stackName}-${serviceName}-1`);
+          // Legacy project prefix catch - accounts for orphan containers
+          expectedNames.push(`compose-${serviceName}-1`);
+          expectedNames.push(`compose_${serviceName}_1`);
+        }
+      }
+
+      // 3. Query the raw Docker daemon
+      const allContainers = await this.docker.listContainers({ all: true });
+      
+      // 4. Match containers by name
+      const fallbackContainers = allContainers.filter(container => {
+        // container.Names usually looks like ['/plex']
+        return container.Names.some(name => {
+          const strippedName = name.replace(/^\//, '');
+          return expectedNames.includes(strippedName);
+        });
+      });
+
+      // 5. Map to the frontend interface
+      return fallbackContainers.map(c => ({
+        Id: c.Id,
+        Names: c.Names,
+        State: c.State,
+        Status: c.Status
+      }));
+    } catch (fallbackError) {
+      console.error(`Smart Fallback failed for ${stackName}:`, fallbackError);
       return [];
     }
   }
