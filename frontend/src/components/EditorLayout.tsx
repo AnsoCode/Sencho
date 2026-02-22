@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, RefreshCw, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 
@@ -41,6 +41,7 @@ export default function EditorLayout() {
   const [newStackName, setNewStackName] = useState('');
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [showConsole, setShowConsole] = useState(true);
@@ -62,8 +63,8 @@ export default function EditorLayout() {
     }
   }, [isDarkMode]);
 
-  const refreshStacks = async () => {
-    setIsLoading(true);
+  const refreshStacks = async (background = false) => {
+    if (!background) setIsLoading(true);
     try {
       const res = await apiFetch('/stacks');
       const stacks = await res.json();
@@ -226,8 +227,10 @@ export default function EditorLayout() {
 
   const deployStack = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    e.stopPropagation();
+    if (!selectedFile || isActionLoading) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setIsActionLoading(true);
     try {
       await apiFetch(`/stacks/${stackName}/up`, {
         method: 'POST',
@@ -236,16 +239,20 @@ export default function EditorLayout() {
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
+      await refreshStacks(true);
     } catch (error) {
       console.error('Failed to deploy:', error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const stopStack = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    e.stopPropagation();
+    if (!selectedFile || isActionLoading) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setIsActionLoading(true);
     try {
       await apiFetch(`/stacks/${stackName}/stop`, {
         method: 'POST',
@@ -254,16 +261,42 @@ export default function EditorLayout() {
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
+      await refreshStacks(true);
     } catch (error) {
       console.error('Failed to stop:', error);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const startStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedFile || isActionLoading) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setIsActionLoading(true);
+    try {
+      await apiFetch(`/stacks/${stackName}/start`, {
+        method: 'POST',
+      });
+      // Refresh containers after start
+      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+      const conts = await containersRes.json();
+      setContainers(Array.isArray(conts) ? conts : []);
+      await refreshStacks(true);
+    } catch (error) {
+      console.error('Failed to start:', error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const restartStack = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    e.stopPropagation();
+    if (!selectedFile || isActionLoading) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setIsActionLoading(true);
     try {
       await apiFetch(`/stacks/${stackName}/restart`, {
         method: 'POST',
@@ -272,16 +305,20 @@ export default function EditorLayout() {
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
+      await refreshStacks(true);
     } catch (error) {
       console.error('Failed to restart:', error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
   const updateStack = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    e.stopPropagation();
+    if (!selectedFile || isActionLoading) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setIsActionLoading(true);
     try {
       await apiFetch(`/stacks/${stackName}/update`, {
         method: 'POST',
@@ -290,9 +327,11 @@ export default function EditorLayout() {
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
+      await refreshStacks(true);
     } catch (error) {
       console.error('Failed to update:', error);
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -319,45 +358,6 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to delete stack:', error);
       alert('Failed to delete stack');
-    }
-  };
-
-  const startContainer = async (id: string) => {
-    if (!id || !selectedFile) return;
-    try {
-      await apiFetch(`/containers/${id}/start`, { method: 'POST' });
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
-    } catch (error) {
-      console.error('Failed to start container:', error);
-    }
-  };
-
-  const stopContainer = async (id: string) => {
-    if (!id || !selectedFile) return;
-    try {
-      await apiFetch(`/containers/${id}/stop`, { method: 'POST' });
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
-    } catch (error) {
-      console.error('Failed to stop container:', error);
-    }
-  };
-
-  const restartContainer = async (id: string) => {
-    if (!id || !selectedFile) return;
-    try {
-      await apiFetch(`/containers/${id}/restart`, { method: 'POST' });
-      const containersRes = await apiFetch(`/stacks/${selectedFile}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      refreshStacks();
-    } catch (error) {
-      console.error('Failed to restart container:', error);
     }
   };
 
@@ -569,24 +569,31 @@ export default function EditorLayout() {
                         {/* Action Bar */}
                         <div className="flex items-center gap-2 flex-wrap">
                           {!isDeployed && (
-                            <Button type="button" size="sm" className="rounded-lg" onClick={deployStack}>
+                            <Button type="button" size="sm" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
                               <Play className="w-4 h-4 mr-2" />
-                              Deploy
+                              {isActionLoading ? 'Working...' : 'Deploy'}
                             </Button>
                           )}
                           {isDeployed && (
                             <>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack}>
+                              {isRunning ? (
+                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={isActionLoading}>
+                                  <Square className="w-4 h-4 mr-2" />
+                                  {isActionLoading ? 'Working...' : 'Stop'}
+                                </Button>
+                              ) : (
+                                <Button type="button" size="sm" className="rounded-lg" onClick={startStack} disabled={isActionLoading}>
+                                  <Play className="w-4 h-4 mr-2" />
+                                  {isActionLoading ? 'Working...' : 'Start'}
+                                </Button>
+                              )}
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={isActionLoading}>
                                 <RotateCw className="w-4 h-4 mr-2" />
                                 Restart
                               </Button>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={isActionLoading}>
                                 <CloudDownload className="w-4 h-4 mr-2" />
                                 Update
-                              </Button>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack}>
-                                <Square className="w-4 h-4 mr-2" />
-                                {isRunning ? 'Stop' : 'Down'}
                               </Button>
                             </>
                           )}
@@ -595,6 +602,7 @@ export default function EditorLayout() {
                             size="sm"
                             variant="destructive"
                             className="rounded-lg"
+                            disabled={isActionLoading}
                             onClick={() => {
                               setStackToDelete(selectedFile);
                               setDeleteDialogOpen(true);
@@ -627,33 +635,6 @@ export default function EditorLayout() {
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="rounded-lg h-8 w-8 p-0"
-                                    onClick={() => startContainer(container?.Id)}
-                                    title="Start"
-                                  >
-                                    <Play className="w-3 h-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="rounded-lg h-8 w-8 p-0"
-                                    onClick={() => stopContainer(container?.Id)}
-                                    title="Stop"
-                                  >
-                                    <Square className="w-3 h-3" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="rounded-lg h-8 w-8 p-0"
-                                    onClick={() => restartContainer(container?.Id)}
-                                    title="Restart"
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"

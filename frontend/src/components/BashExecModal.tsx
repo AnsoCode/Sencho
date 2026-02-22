@@ -39,7 +39,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current);
-      
+
       setTimeout(() => {
         fitAddon.fit();
       }, 100);
@@ -48,7 +48,8 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       fitAddonRef.current = fitAddon;
 
       // Connect to WebSocket for bash exec
-      const ws = new WebSocket('ws://localhost:3000');
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -60,20 +61,8 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       };
 
       ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'output') {
-            term.write(data.data);
-          } else if (data.type === 'error') {
-            term.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
-          } else if (data.type === 'exit') {
-            term.write('\r\n\x1b[33mSession ended\x1b[0m\r\n');
-            setIsConnected(false);
-          }
-        } catch {
-          // Raw output
-          term.write(event.data);
-        }
+        // Write raw text directly to terminal
+        term.write(event.data);
       };
 
       ws.onerror = () => {
@@ -82,6 +71,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       };
 
       ws.onclose = () => {
+        term.write('\r\n\x1b[33mSession ended\x1b[0m\r\n');
         setIsConnected(false);
       };
 
@@ -110,7 +100,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       };
 
       window.addEventListener('resize', handleResize);
-      
+
       return () => {
         window.removeEventListener('resize', handleResize);
       };
@@ -165,8 +155,8 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
             <X className="w-4 h-4" />
           </Button>
         </DialogHeader>
-        <div 
-          ref={terminalRef} 
+        <div
+          ref={terminalRef}
           className="flex-1 rounded-lg overflow-hidden bg-[#1e1e1e] p-2"
           style={{ minHeight: '500px' }}
         />

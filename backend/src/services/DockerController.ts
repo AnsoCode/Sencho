@@ -39,16 +39,16 @@ class DockerController {
 
   public async getContainersByStack(stackName: string) {
     const stackDir = path.join(COMPOSE_DIR, stackName);
-    
+
     try {
-      const { stdout, stderr } = await execAsync('docker compose ps --format json -a', { 
+      const { stdout, stderr } = await execAsync('docker compose ps --format json -a', {
         cwd: stackDir,
-        env: { 
-          ...process.env, 
-          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' 
+        env: {
+          ...process.env,
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
         }
       });
-      
+
       // Robust JSON parsing - handle both JSON array and newline-separated JSON objects
       // Docker Compose v2 may return either format depending on version
       interface ComposeContainer {
@@ -57,9 +57,9 @@ class DockerController {
         State?: string;
         Status?: string;
       }
-      
+
       let containers: ComposeContainer[] = [];
-      
+
       // Only parse if stdout has content
       if (stdout && stdout.trim() !== '') {
         try {
@@ -78,7 +78,7 @@ class DockerController {
           }
         }
       }
-      
+
       // If containers found via docker compose ps, return them
       if (containers.length > 0) {
         // Map to frontend's expected interface
@@ -91,16 +91,16 @@ class DockerController {
           Status: c.Status || ''
         }));
       }
-      
+
       // SMART FALLBACK: Trigger when docker compose ps returns empty
       // This handles legacy containers with incorrect project labels
       return await this.smartFallback(stackName, stackDir);
-      
+
     } catch (error) {
       // If command fails (e.g., stack not deployed, invalid YAML, missing env_file)
       const execError = error as { stderr?: string; message?: string };
       console.error(`Docker Compose Error for ${stackName}:`, execError.stderr || execError.message);
-      
+
       // Try smart fallback even on error
       return await this.smartFallback(stackName, stackDir);
     }
@@ -117,7 +117,7 @@ class DockerController {
       // Try multiple valid compose file names
       const composeFileNames = ['compose.yaml', 'docker-compose.yml', 'compose.yml', 'docker-compose.yaml'];
       let yamlContent: string | null = null;
-      
+
       for (const fileName of composeFileNames) {
         try {
           yamlContent = await fs.readFile(path.join(stackDir, fileName), 'utf-8');
@@ -127,14 +127,14 @@ class DockerController {
           continue;
         }
       }
-      
+
       if (!yamlContent) {
         // No compose file found
         return [];
       }
-      
+
       const parsedYaml = yaml.parse(yamlContent);
-      
+
       if (!parsedYaml || !parsedYaml.services) return [];
 
       // 2. Extract expected container names with legacy prefix support
@@ -155,7 +155,7 @@ class DockerController {
 
       // 3. Query the raw Docker daemon
       const allContainers = await this.docker.listContainers({ all: true });
-      
+
       // 4. Match containers by name
       const fallbackContainers = allContainers.filter(container => {
         // container.Names usually looks like ['/plex']
@@ -213,7 +213,7 @@ class DockerController {
   public async execContainer(containerId: string, ws: WebSocket) {
     try {
       const container = this.docker.getContainer(containerId);
-      
+
       // Try bash first, fall back to sh
       let exec: Docker.Exec;
       try {
@@ -240,25 +240,24 @@ class DockerController {
 
       this.execStream = stream;
 
-      // Handle output from container
+      // Handle output from container - send raw text directly
       stream.on('data', (chunk: Buffer) => {
-        ws.send(JSON.stringify({ type: 'output', data: chunk.toString() }));
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(chunk.toString());
+        }
       });
 
       stream.on('error', (err: Error) => {
-        ws.send(JSON.stringify({ type: 'error', message: err.message }));
+        console.error('Exec stream error:', err.message);
       });
 
       stream.on('end', () => {
-        ws.send(JSON.stringify({ type: 'exit' }));
         this.execStream = null;
         this.currentExec = null;
       });
-
-      ws.send(JSON.stringify({ type: 'connected' }));
     } catch (error) {
       const err = error as Error;
-      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+      console.error('Failed to exec container:', err.message);
     }
   }
 

@@ -94,7 +94,8 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
 
         ws.onmessage = (event) => {
           if (mounted && terminalInstance.current) {
-            terminalInstance.current.write(event.data);
+            const text = typeof event.data === 'string' ? event.data : event.data.toString();
+            terminalInstance.current.write(text.replace(/\r?\n/g, '\r\n'));
           }
         };
 

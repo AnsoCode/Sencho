@@ -497,6 +497,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 });
 
 // Direct container stop - bypasses docker compose for legacy container support
+// Only stops containers that are currently running to avoid 304 errors
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
@@ -504,13 +505,36 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
     const containers = await dockerController.getContainersByStack(stackName);
     if (containers && containers.length > 0) {
       for (const c of containers) {
-        await dockerController.stopContainer(c.Id);
+        if (c.State === 'running') {
+          await dockerController.stopContainer(c.Id);
+        }
       }
     }
     res.json({ status: 'Containers stopped' });
   } catch (error) {
     console.error('Failed to stop containers:', error);
     res.status(500).json({ error: 'Failed to stop containers' });
+  }
+});
+
+// Direct container start - bypasses docker compose for legacy container support
+// Only starts containers that are not currently running
+app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
+  try {
+    const stackName = req.params.stackName as string;
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getContainersByStack(stackName);
+    if (containers && containers.length > 0) {
+      for (const c of containers) {
+        if (c.State !== 'running') {
+          await dockerController.startContainer(c.Id);
+        }
+      }
+    }
+    res.json({ status: 'Containers started' });
+  } catch (error) {
+    console.error('Failed to start containers:', error);
+    res.status(500).json({ error: 'Failed to start containers' });
   }
 });
 

@@ -162,12 +162,16 @@ export class ComposeService {
         }
       });
 
+      let errorLog = '';
+
       upProcess.stdout.on('data', (data: Buffer) => {
         sendOutput(data.toString());
       });
 
       upProcess.stderr.on('data', (data: Buffer) => {
-        sendOutput(data.toString());
+        const text = data.toString();
+        errorLog += text;
+        sendOutput(text);
       });
 
       upProcess.on('close', (code: number | null) => {
@@ -176,7 +180,7 @@ export class ComposeService {
           resolve();
         } else {
           sendOutput(`=== Update failed with code ${code} ===\n`);
-          reject(new Error(`Up failed with code ${code}`));
+          reject(new Error(errorLog.trim() || `Up failed with code ${code}`));
         }
       });
 
