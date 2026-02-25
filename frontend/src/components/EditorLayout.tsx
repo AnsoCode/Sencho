@@ -7,13 +7,16 @@ import BashExecModal from './BashExecModal';
 import MaintenanceModal from './MaintenanceModal';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut, Brush } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
+import { toast } from 'sonner';
+import { Label } from './ui/label';
 
 interface ContainerInfo {
   Id: string;
@@ -209,10 +212,10 @@ export default function EditorLayout() {
         setOriginalEnvContent(envContent);
       }
       setIsEditing(false);
-      alert('File saved successfully!');
+      toast.success('File saved successfully!');
     } catch (error) {
       console.error('Failed to save file:', error);
-      alert(`Failed to save file: ${(error as Error).message}`);
+      toast.error(`Failed to save file: ${(error as Error).message}`);
     }
   };
 
@@ -362,7 +365,7 @@ export default function EditorLayout() {
       await refreshStacks();
     } catch (error) {
       console.error('Failed to delete stack:', error);
-      alert('Failed to delete stack');
+      toast.error('Failed to delete stack');
     } finally {
       setIsActionLoading(false);
     }
@@ -392,7 +395,7 @@ export default function EditorLayout() {
       await loadFile(stackName);
     } catch (error: any) {
       console.error('Failed to create stack:', error);
-      alert(error.message || 'Failed to create stack');
+      toast.error(error.message || 'Failed to create stack');
     }
   };
 
@@ -460,8 +463,10 @@ export default function EditorLayout() {
               <DialogHeader>
                 <DialogTitle>Create New Stack</DialogTitle>
               </DialogHeader>
-              <div className="py-4">
+              <div className="py-4 space-y-2">
+                <Label htmlFor="create-stack-name">Stack Name</Label>
                 <Input
+                  id="create-stack-name"
                   placeholder="Stack name (e.g., myapp)"
                   value={newStackName}
                   onChange={(e) => setNewStackName(e.target.value)}
@@ -764,20 +769,20 @@ export default function EditorLayout() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Stack</DialogTitle>
-            <DialogDescription>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Stack</AlertDialogTitle>
+            <AlertDialogDescription>
               Are you sure you want to delete {stackToDelete}? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={deleteStack}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteStack}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bash Exec Modal */}
       {selectedContainer && (

@@ -5,6 +5,8 @@ import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Activity, Square, PauseCircle, ArrowRight, Plus, Cpu, HardDrive, MemoryStick } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { toast } from 'sonner';
+import { Label } from './ui/label';
 
 interface Stats {
   active: number;
@@ -96,7 +98,7 @@ export default function HomeDashboard() {
       setConvertedYaml(data.yaml);
     } catch (error) {
       console.error('Conversion error:', error);
-      alert('Failed to convert docker run command');
+      toast.error('Failed to convert docker run command');
     } finally {
       setIsConverting(false);
     }
@@ -128,7 +130,7 @@ export default function HomeDashboard() {
       window.location.reload(); // Refresh to show new stack
     } catch (error) {
       console.error('Failed to create stack:', error);
-      alert('Failed to create stack');
+      toast.error('Failed to create stack');
     }
   };
 
@@ -201,7 +203,7 @@ export default function HomeDashboard() {
               {systemStats ? `${systemStats.memory.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {systemStats 
+              {systemStats
                 ? `${formatBytes(systemStats.memory.used)} / ${formatBytes(systemStats.memory.total)}`
                 : 'Loading...'}
             </p>
@@ -218,7 +220,7 @@ export default function HomeDashboard() {
               {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {systemStats?.disk 
+              {systemStats?.disk
                 ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}`
                 : 'Loading...'}
             </p>
@@ -241,7 +243,7 @@ export default function HomeDashboard() {
             value={dockerRunInput}
             onChange={(e) => setDockerRunInput(e.target.value)}
           />
-          
+
           <div className="flex gap-2">
             <Button onClick={handleConvert} disabled={isConverting || !dockerRunInput.trim()}>
               {isConverting ? 'Converting...' : 'Convert'}
@@ -270,14 +272,23 @@ export default function HomeDashboard() {
             <DialogTitle>Create New Stack</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <Input
-              placeholder="Stack name (e.g., myapp)"
-              value={newStackName}
-              onChange={(e) => setNewStackName(e.target.value)}
-            />
-            <div className="p-3 rounded-lg bg-muted/50 font-mono text-sm whitespace-pre-wrap overflow-auto max-h-48">
-              {convertedYaml}
+            <div className="space-y-2">
+              <Label htmlFor="stack-name">Stack Name</Label>
+              <Input
+                id="stack-name"
+                placeholder="e.g., myapp"
+                value={newStackName}
+                onChange={(e) => setNewStackName(e.target.value)}
+              />
             </div>
+            {convertedYaml && (
+              <div className="space-y-2">
+                <Label>Converted Compose File (Preview)</Label>
+                <div className="p-3 rounded-lg bg-muted/50 font-mono text-sm whitespace-pre-wrap overflow-auto max-h-48">
+                  {convertedYaml}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>

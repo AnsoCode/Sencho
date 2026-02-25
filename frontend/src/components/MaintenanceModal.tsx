@@ -6,10 +6,21 @@ import {
     DialogTitle,
     DialogDescription,
 } from './ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "./ui/alert-dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { apiFetch } from '@/lib/api';
+import { toast } from 'sonner';
 import { Trash2, AlertTriangle, MonitorX, PackageMinus, Network } from 'lucide-react';
 
 interface MaintenanceModalProps {
@@ -37,6 +48,11 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
     // System Cleanup state
     const [isPruning, setIsPruning] = useState(false);
     const [pruneResult, setPruneResult] = useState<{ message: string; stdout: string; stderr: string } | null>(null);
+
+    // Confirm Modals state
+    const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+    const [pruneConfirmOpen, setPruneConfirmOpen] = useState(false);
+    const [pruneTarget, setPruneTarget] = useState<'containers' | 'images' | 'networks' | null>(null);
 
     useEffect(() => {
         if (isOpen && activeTab === 'ghosts') {
@@ -77,13 +93,13 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
         }
     };
 
-    const purgeSelectedOrphans = async () => {
+    const requestPurgeOrphans = () => {
         if (selectedOrphans.length === 0) return;
+        setPurgeConfirmOpen(true);
+    };
 
-        if (!confirm(`Are you sure you want to forcefully remove ${selectedOrphans.length} ghost container(s) ? `)) {
-            return;
-        }
-
+    const confirmPurgeOrphans = async () => {
+        setPurgeConfirmOpen(false);
         setIsPurging(true);
         try {
             const res = await apiFetch('/system/prune/orphans', {
@@ -93,33 +109,39 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
             if (!res.ok) throw new Error('Purge failed');
 
             await fetchOrphans(); // Refresh the list
+            toast.success(`Purged ${selectedOrphans.length} ghost container(s)`);
         } catch (error) {
             console.error('Failed to purge orphans:', error);
-            alert('Failed to purge selected containers.');
+            toast.error('Failed to purge selected containers.');
         } finally {
             setIsPurging(false);
         }
     };
 
-    const pruneSystem = async (target: 'containers' | 'images' | 'networks') => {
-        if (!confirm(`Are you sure you want to prune all unused ${target}? This cannot be undone.`)) {
-            return;
-        }
+    const requestPruneSystem = (target: 'containers' | 'images' | 'networks') => {
+        setPruneTarget(target);
+        setPruneConfirmOpen(true);
+    };
 
+    const confirmPruneSystem = async () => {
+        if (!pruneTarget) return;
+        setPruneConfirmOpen(false);
         setIsPruning(true);
         setPruneResult(null);
         try {
             const res = await apiFetch('/system/prune/system', {
                 method: 'POST',
-                body: JSON.stringify({ target })
+                body: JSON.stringify({ target: pruneTarget })
             });
             const data = await res.json();
             setPruneResult(data);
+            toast.success(`Successfully pruned ${pruneTarget}`);
         } catch (error) {
-            console.error(`Failed to prune ${target}: `, error);
-            alert(`Failed to prune ${target}.`);
+            console.error(`Failed to prune ${pruneTarget}: `, error);
+            toast.error(`Failed to prune ${pruneTarget}.`);
         } finally {
             setIsPruning(false);
+            setPruneTarget(null);
         }
     };
 
@@ -165,7 +187,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={purgeSelectedOrphans}
+                                    onClick={requestPurgeOrphans}
                                     disabled={selectedOrphans.length === 0 || isPurging}
                                 >
                                     <Trash2 className="w-4 h-4 mr-2" />
@@ -240,7 +262,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                             <Button
                                 variant="outline"
                                 className="h-24 flex flex-col items-center justify-center gap-2"
-                                onClick={() => pruneSystem('containers')}
+                                onClick={() => requestPruneSystem('containers')}
                                 disabled={isPruning}
                             >
                                 <MonitorX className="w-6 h-6 text-orange-500" />
@@ -253,7 +275,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                             <Button
                                 variant="outline"
                                 className="h-24 flex flex-col items-center justify-center gap-2"
-                                onClick={() => pruneSystem('images')}
+                                onClick={() => requestPruneSystem('images')}
                                 disabled={isPruning}
                             >
                                 <PackageMinus className="w-6 h-6 text-blue-500" />
@@ -266,7 +288,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                             <Button
                                 variant="outline"
                                 className="h-24 flex flex-col items-center justify-center gap-2"
-                                onClick={() => pruneSystem('networks')}
+                                onClick={() => requestPruneSystem('networks')}
                                 disabled={isPruning}
                             >
                                 <Network className="w-6 h-6 text-green-500" />
@@ -288,6 +310,38 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                     </TabsContent>
                 </Tabs>
             </DialogContent>
+
+            {/* Purge Ghost Containers Confirmation */}
+            <AlertDialog open={purgeConfirmOpen} onOpenChange={setPurgeConfirmOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Forcefully Remove Containers</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to forcefully remove {selectedOrphans.length} ghost container(s)?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setPurgeConfirmOpen(false)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmPurgeOrphans}>Remove</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Prune System Confirmation */}
+            <AlertDialog open={pruneConfirmOpen} onOpenChange={setPruneConfirmOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Prune {pruneTarget}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to prune all unused {pruneTarget}? This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setPruneConfirmOpen(false)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmPruneSystem}>Prune</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </Dialog>
     );
 }

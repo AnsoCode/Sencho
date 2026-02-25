@@ -33,10 +33,13 @@ function AppContent() {
   return <EditorLayout />;
 }
 
+import { Toaster } from 'sonner';
+
 function App() {
   return (
     <AuthProvider>
       <AppContent />
+      <Toaster position="top-right" richColors />
     </AuthProvider>
   );
 }
