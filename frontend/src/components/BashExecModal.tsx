@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
-import { Button } from './ui/button';
-import { Terminal as TerminalIcon, X } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
+import { Terminal as TerminalIcon } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -18,11 +17,72 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  const cleanup = useCallback(() => {
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (xtermRef.current) {
+      xtermRef.current.dispose();
+      xtermRef.current = null;
+    }
+    fitAddonRef.current = null;
+    setIsConnected(false);
+  }, []);
+
   useEffect(() => {
-    if (isOpen && terminalRef.current && !xtermRef.current) {
-      // Initialize xterm.js
+    if (!isOpen) {
+      cleanup();
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 15; // up to 1.5 seconds
+
+    const checkAndInit = () => {
+      // If already initialized, stop.
+      if (xtermRef.current) return;
+
+      const container = terminalRef.current;
+
+      // If Radix Dialog Portal hasn't rendered the DOM node yet, poll.
+      if (!container) {
+        if (attempts++ < maxAttempts) {
+          initTimeoutRef.current = setTimeout(checkAndInit, 100);
+        } else {
+          console.error('BashExecModal: terminalRef never populated.');
+        }
+        return;
+      }
+
+      // DOM exists. Now verify it has actual layout size from CSS.
+      // During initial Radix zoom-in animation, it might be 0x0.
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        if (attempts++ < maxAttempts) {
+          initTimeoutRef.current = setTimeout(checkAndInit, 100);
+        } else {
+          console.warn('BashExecModal: terminal container has zero dimensions after 1.5s, forcing init anyway.');
+          initTerminal(container);
+        }
+        return;
+      }
+
+      // Node exists and has layout — safe to initialize xterm!
+      initTerminal(container);
+    };
+
+    // Start polling
+    initTimeoutRef.current = setTimeout(checkAndInit, 50);
+
+    function initTerminal(containerEl: HTMLDivElement) {
       const term = new Terminal({
         theme: {
           background: '#1e1e1e',
@@ -38,14 +98,19 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
-      term.open(terminalRef.current);
-
-      setTimeout(() => {
-        fitAddon.fit();
-      }, 100);
+      term.open(containerEl);
 
       xtermRef.current = term;
       fitAddonRef.current = fitAddon;
+
+      // Fit after xterm has rendered its canvas
+      requestAnimationFrame(() => {
+        try {
+          fitAddon.fit();
+        } catch {
+          // Ignore fit errors during initial render
+        }
+      });
 
       // Connect to WebSocket for bash exec
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -53,15 +118,35 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // Kick off the exec session
         ws.send(JSON.stringify({
           action: 'execContainer',
           containerId: containerId,
         }));
         setIsConnected(true);
+
+        // Focus so user can type immediately
+        term.focus();
+
+        // Fit again now that everything is settled, then send dimensions
+        setTimeout(() => {
+          try {
+            fitAddon.fit();
+          } catch {
+            // Ignore
+          }
+          if (ws.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+            ws.send(JSON.stringify({
+              type: 'resize',
+              rows: term.rows,
+              cols: term.cols,
+            }));
+          }
+        }, 100);
       };
 
       ws.onmessage = (event) => {
-        // Write raw text directly to terminal
+        // Raw text from container → write directly to xterm
         term.write(event.data);
       };
 
@@ -75,73 +160,57 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
         setIsConnected(false);
       };
 
-      // Handle user input
+      // Handle user input — JSON up
       term.onData((data) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
-            action: 'input',
+            type: 'input',
             data: data,
           }));
         }
       });
 
-      // Handle resize
-      const handleResize = () => {
-        if (fitAddonRef.current) {
+      // ResizeObserver for modal/window resize events
+      const resizeObserver = new ResizeObserver(() => {
+        if (!fitAddonRef.current || !wsRef.current) return;
+        try {
           fitAddonRef.current.fit();
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              action: 'resize',
-              cols: term.cols,
-              rows: term.rows,
-            }));
-          }
+        } catch {
+          return;
         }
-      };
+        if (wsRef.current.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+          wsRef.current.send(JSON.stringify({
+            type: 'resize',
+            rows: term.rows,
+            cols: term.cols,
+          }));
+        }
+      });
 
-      window.addEventListener('resize', handleResize);
+      resizeObserver.observe(containerEl);
 
-      return () => {
-        window.removeEventListener('resize', handleResize);
-      };
+      // Store observer cleanup on the container element for later
+      (containerEl as any).__resizeObserver = resizeObserver;
     }
 
     return () => {
-      // Cleanup on close
-      if (!isOpen) {
-        if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
-        }
-        if (xtermRef.current) {
-          xtermRef.current.dispose();
-          xtermRef.current = null;
-        }
-        if (fitAddonRef.current) {
-          fitAddonRef.current = null;
-        }
-        setIsConnected(false);
+      // Clean up ResizeObserver
+      if (terminalRef.current && (terminalRef.current as any).__resizeObserver) {
+        (terminalRef.current as any).__resizeObserver.disconnect();
+        delete (terminalRef.current as any).__resizeObserver;
       }
     };
-  }, [isOpen, containerId]);
+  }, [isOpen, containerId, cleanup]);
 
   const handleClose = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (xtermRef.current) {
-      xtermRef.current.dispose();
-      xtermRef.current = null;
-    }
-    setIsConnected(false);
+    cleanup();
     onClose();
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl h-[600px] flex flex-col">
-        <DialogHeader className="flex flex-row items-center justify-between">
+        <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TerminalIcon className="w-5 h-5" />
             Bash: {containerName}
@@ -151,15 +220,18 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
               </span>
             )}
           </DialogTitle>
-          <Button variant="ghost" size="sm" onClick={handleClose}>
-            <X className="w-4 h-4" />
-          </Button>
+          <DialogDescription className="hidden">
+            Interactive bash terminal session for {containerName}
+          </DialogDescription>
         </DialogHeader>
-        <div
-          ref={terminalRef}
-          className="flex-1 rounded-lg overflow-hidden bg-[#1e1e1e] p-2"
-          style={{ minHeight: '500px' }}
-        />
+        {/* Styling wrapper — padding and rounded corners go here */}
+        <div className="flex-1 rounded-lg bg-[#1e1e1e] p-1 min-h-0" style={{ overflow: 'hidden' }}>
+          {/* Clean xterm container — NO padding, NO overflow-hidden, explicit dimensions */}
+          <div
+            ref={terminalRef}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

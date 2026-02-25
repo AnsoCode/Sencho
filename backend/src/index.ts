@@ -11,7 +11,10 @@ import { ConfigService } from './services/ConfigService';
 import composerize from 'composerize';
 import si from 'systeminformation';
 import http from 'http';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const app = express();
 const PORT = 3000;
@@ -284,6 +287,12 @@ wss.on('connection', (ws) => {
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
+
+      // Only handle 'action'-based messages at the global level.
+      // 'type'-based messages (input, resize, ping) are handled by the
+      // per-session listener registered inside execContainer's closure.
+      if (!data.action) return;
+
       if (data.action === 'connectTerminal') {
         terminalWs = ws;
       } else if (data.action === 'streamStats') {
@@ -291,18 +300,12 @@ wss.on('connection', (ws) => {
         dockerController.streamStats(data.containerId, ws);
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
+        // Input, resize, and cleanup are handled inside execContainer's closure
         const dockerController = DockerController.getInstance();
         dockerController.execContainer(data.containerId, ws);
-      } else if (data.action === 'input') {
-        // Forward input to exec stream
-        const dockerController = DockerController.getInstance();
-        dockerController.sendExecInput(data.data);
-      } else if (data.action === 'resize') {
-        const dockerController = DockerController.getInstance();
-        dockerController.resizeExec(data.cols, data.rows);
       }
     } catch (error) {
-      ws.send(JSON.stringify({ error: 'Invalid message' }));
+      // Malformed JSON — ignore silently
     }
   });
 });
@@ -343,6 +346,9 @@ app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
 app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const { content } = req.body;
     console.log('PUT /api/stacks/:stackName', { stackName, contentType: typeof content, contentLength: content?.length });
     if (typeof content !== 'string') {
@@ -375,6 +381,9 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const { content } = req.body;
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
@@ -393,9 +402,15 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
     if (!stackName || typeof stackName !== 'string') {
       return res.status(400).json({ error: 'Stack name is required and must be a string' });
     }
+    if (!/^[a-zA-Z0-9-]+$/.test(stackName)) {
+      return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters and hyphens' });
+    }
     await fileSystemService.createStack(stackName);
-    res.json({ message: 'Stack created successfully' });
-  } catch (error) {
+    res.json({ message: 'Stack created successfully', name: stackName });
+  } catch (error: any) {
+    if (error.message && error.message.includes('already exists')) {
+      return res.status(409).json({ error: 'Stack already exists' });
+    }
     console.error('Failed to create stack:', error);
     res.status(500).json({ error: 'Failed to create stack' });
   }
@@ -404,6 +419,16 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
 app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+
+    // Tear down the stack first to avoid ghost containers
+    try {
+      console.log(`Tearing down stack: ${stackName}`);
+      // Send the down command synchronously before deleting the files
+      await composeService.runCommand(stackName, 'down', terminalWs || undefined);
+    } catch (downError) {
+      console.warn(`Failed to tear down stack ${stackName}, proceeding with file deletion.`, downError);
+    }
+
     await fileSystemService.deleteStack(stackName);
     res.json({ message: 'Stack deleted successfully' });
   } catch (error) {
@@ -619,6 +644,64 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Failed to fetch system stats:', error);
     res.status(500).json({ error: 'Failed to fetch system stats' });
+  }
+});
+
+// --- System Maintenance Routes (The System Janitor) ---
+
+app.get('/api/system/orphans', async (req: Request, res: Response) => {
+  try {
+    const knownStacks = await fileSystemService.getStacks();
+    const dockerController = DockerController.getInstance();
+    const orphans = await dockerController.getOrphanContainers(knownStacks);
+    res.json(orphans);
+  } catch (error) {
+    console.error('Failed to fetch orphan containers:', error);
+    res.status(500).json({ error: 'Failed to fetch orphan containers' });
+  }
+});
+
+app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
+  try {
+    const { containerIds } = req.body;
+    if (!Array.isArray(containerIds)) {
+      return res.status(400).json({ error: 'containerIds must be an array' });
+    }
+    const dockerController = DockerController.getInstance();
+    const results = await dockerController.removeContainers(containerIds);
+    res.json({ results });
+  } catch (error) {
+    console.error('Failed to prune orphan containers:', error);
+    res.status(500).json({ error: 'Failed to prune orphan containers' });
+  }
+});
+
+app.post('/api/system/prune/system', async (req: Request, res: Response) => {
+  try {
+    const { target } = req.body; // 'containers', 'images', 'networks'
+    let command = '';
+
+    if (target === 'containers') {
+      command = 'docker container prune -f';
+    } else if (target === 'images') {
+      command = 'docker image prune -a -f';
+    } else if (target === 'networks') {
+      command = 'docker network prune -f';
+    } else {
+      return res.status(400).json({ error: 'Invalid prune target' });
+    }
+
+    const { stdout, stderr } = await execAsync(command, {
+      env: {
+        ...process.env,
+        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+      }
+    });
+
+    res.json({ message: 'Prune completed', stdout, stderr });
+  } catch (error: any) {
+    console.error('System prune error:', error);
+    res.status(500).json({ error: 'System prune failed', details: error.message });
   }
 });
 

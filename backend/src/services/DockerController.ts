@@ -1,6 +1,5 @@
 import Docker from 'dockerode';
 import WebSocket from 'ws';
-import { Duplex } from 'stream';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -13,8 +12,6 @@ const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 class DockerController {
   private static instance: DockerController;
   private docker: Docker;
-  private execStream: Duplex | null = null;
-  private currentExec: Docker.Exec | null = null;
 
   private constructor() {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -178,19 +175,81 @@ class DockerController {
     }
   }
 
+  // State-safe: silently ignores 304 "already started" errors
   public async startContainer(containerId: string) {
-    const container = this.docker.getContainer(containerId);
-    await container.start();
+    try {
+      const container = this.docker.getContainer(containerId);
+      await container.start();
+    } catch (error: any) {
+      if (error?.statusCode === 304) {
+        // Container already running — not an error
+        return;
+      }
+      throw error;
+    }
   }
 
+  // State-safe: silently ignores 304 "already stopped" errors
   public async stopContainer(containerId: string) {
-    const container = this.docker.getContainer(containerId);
-    await container.stop();
+    try {
+      const container = this.docker.getContainer(containerId);
+      await container.stop();
+    } catch (error: any) {
+      if (error?.statusCode === 304) {
+        // Container already stopped — not an error
+        return;
+      }
+      throw error;
+    }
   }
 
   public async restartContainer(containerId: string) {
     const container = this.docker.getContainer(containerId);
     await container.restart();
+  }
+
+  public async getOrphanContainers(knownStackNames: string[]) {
+    // 1. Fetch all containers (running and stopped)
+    const allContainers = await this.docker.listContainers({ all: true });
+
+    // 2. Filter and categorize orphans
+    const orphans: Record<string, any[]> = {};
+
+    allContainers.forEach((container) => {
+      // Look for the docker compose project label
+      const projectName = container.Labels?.['com.docker.compose.project'];
+
+      // If it has a project label, but the project is NOT in our known list...
+      if (projectName && !knownStackNames.includes(projectName)) {
+        if (!orphans[projectName]) {
+          orphans[projectName] = [];
+        }
+        orphans[projectName].push({
+          Id: container.Id,
+          Names: container.Names,
+          State: container.State,
+          Status: container.Status,
+          Image: container.Image
+        });
+      }
+    });
+
+    return orphans;
+  }
+
+  public async removeContainers(containerIds: string[]) {
+    const results = [];
+    for (const id of containerIds) {
+      try {
+        const container = this.docker.getContainer(id);
+        await container.remove({ force: true });
+        results.push({ id, success: true });
+      } catch (error: any) {
+        console.error(`Failed to remove container ${id}:`, error.message);
+        results.push({ id, success: false, error: error.message });
+      }
+    }
+    return results;
   }
 
   public async streamStats(containerId: string, ws: WebSocket) {
@@ -210,6 +269,11 @@ class DockerController {
     });
   }
 
+  /**
+   * Exec into a container with full session isolation.
+   * All state (exec instance, stream) lives in this closure — no singleton traps.
+   * The WebSocket message handler is registered here to handle input, resize, and cleanup.
+   */
   public async execContainer(containerId: string, ws: WebSocket) {
     try {
       const container = this.docker.getContainer(containerId);
@@ -234,13 +298,9 @@ class DockerController {
         });
       }
 
-      this.currentExec = exec;
-
       const stream = await exec.start({ hijack: true, stdin: true });
 
-      this.execStream = stream;
-
-      // Handle output from container - send raw text directly
+      // --- Downstream: container output → client ---
       stream.on('data', (chunk: Buffer) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(chunk.toString());
@@ -252,27 +312,54 @@ class DockerController {
       });
 
       stream.on('end', () => {
-        this.execStream = null;
-        this.currentExec = null;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
       });
+
+      // --- Upstream: client messages → container ---
+      ws.on('message', (raw: WebSocket.Data) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+
+          switch (msg.type) {
+            case 'input':
+              if (msg.data) {
+                stream.write(msg.data);
+              }
+              break;
+
+            case 'resize':
+              if (msg.rows && msg.cols) {
+                exec.resize({ h: msg.rows, w: msg.cols }).catch(() => {
+                  // Ignore resize errors (exec may have ended)
+                });
+              }
+              break;
+
+            case 'ping':
+              // Keep-alive, no-op
+              break;
+          }
+        } catch {
+          // Non-JSON or malformed message — ignore
+        }
+      });
+
+      // --- Cleanup: prevent zombie processes ---
+      ws.on('close', () => {
+        try {
+          stream.destroy();
+        } catch {
+          // Ignore destroy errors
+        }
+      });
+
     } catch (error) {
       const err = error as Error;
       console.error('Failed to exec container:', err.message);
-    }
-  }
-
-  public sendExecInput(data: string) {
-    if (this.execStream) {
-      this.execStream.write(data);
-    }
-  }
-
-  public async resizeExec(cols: number, rows: number) {
-    if (this.currentExec) {
-      try {
-        await this.currentExec.resize({ w: cols, h: rows });
-      } catch {
-        // Ignore resize errors
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(`\r\n\x1b[31mFailed to start shell: ${err.message}\x1b[0m\r\n`);
       }
     }
   }

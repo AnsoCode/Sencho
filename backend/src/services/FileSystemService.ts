@@ -13,7 +13,7 @@ export class FileSystemService {
    */
   private async hasComposeFile(dir: string): Promise<boolean> {
     const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
-    
+
     for (const file of composeFiles) {
       try {
         await fs.access(path.join(dir, file));
@@ -22,7 +22,7 @@ export class FileSystemService {
         // Continue checking other options
       }
     }
-    
+
     return false;
   }
 
@@ -33,7 +33,7 @@ export class FileSystemService {
   private async getComposeFilePath(stackName: string): Promise<string> {
     const stackDir = path.join(this.baseDir, stackName);
     const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
-    
+
     for (const file of composeFiles) {
       const filePath = path.join(stackDir, file);
       try {
@@ -43,7 +43,7 @@ export class FileSystemService {
         // Continue checking other options
       }
     }
-    
+
     throw new Error(`No compose file found for stack: ${stackName}`);
   }
 
@@ -55,18 +55,18 @@ export class FileSystemService {
     try {
       const items = await fs.readdir(this.baseDir, { withFileTypes: true });
       const stackNames: string[] = [];
-      
+
       for (const item of items) {
         if (!item.isDirectory()) continue;
-        
+
         const stackDir = path.join(this.baseDir, item.name);
         const hasCompose = await this.hasComposeFile(stackDir);
-        
+
         if (hasCompose) {
           stackNames.push(item.name);
         }
       }
-      
+
       return stackNames;
     } catch (error) {
       console.error('Error reading stacks:', error);
@@ -94,9 +94,9 @@ export class FileSystemService {
   async saveStackContent(stackName: string, content: string): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
     const filePath = path.join(stackDir, 'compose.yaml');
-    
+
     console.log('Saving to path:', filePath);
-    
+
     try {
       await fs.writeFile(filePath, content, 'utf-8');
       console.log('File written successfully');
@@ -138,7 +138,7 @@ export class FileSystemService {
   async saveEnvContent(stackName: string, content: string): Promise<void> {
     const envPath = path.join(this.baseDir, stackName, '.env');
     console.log('Saving env to path:', envPath);
-    
+
     try {
       await fs.writeFile(envPath, content, 'utf-8');
       console.log('Env file written successfully');
@@ -156,9 +156,9 @@ export class FileSystemService {
     if (!stackName || !/^[a-zA-Z0-9_-]+$/.test(stackName)) {
       throw new Error('Stack name must contain only alphanumeric characters, underscores, or hyphens');
     }
-    
+
     const stackDir = path.join(this.baseDir, stackName);
-    
+
     // Check if directory already exists
     try {
       await fs.access(stackDir);
@@ -169,14 +169,18 @@ export class FileSystemService {
       }
       // Directory doesn't exist, proceed
     }
-    
+
     // Create the directory
     await fs.mkdir(stackDir, { recursive: true });
-    
+
     // Write boilerplate compose.yaml
     const composePath = path.join(stackDir, 'compose.yaml');
     const boilerplate = `services:
-  # Add your services here
+  app:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    restart: always
 `;
     try {
       await fs.writeFile(composePath, boilerplate, 'utf-8');
@@ -192,7 +196,7 @@ export class FileSystemService {
    */
   async deleteStack(stackName: string): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
-    
+
     try {
       await fs.rm(stackDir, { recursive: true, force: true });
       console.log('Stack deleted successfully:', stackName);
@@ -225,15 +229,15 @@ export class FileSystemService {
       }
 
       const items = await fs.readdir(this.baseDir, { withFileTypes: true });
-      
+
       for (const item of items) {
         // Only process .yml/.yaml files (skip directories and other files)
         if (!item.isFile()) continue;
         if (!item.name.endsWith('.yml') && !item.name.endsWith('.yaml')) continue;
-        
+
         const stackName = item.name.replace(/\.(yml|yaml)$/, '');
         const stackDir = path.join(this.baseDir, stackName);
-        
+
         // Check if target directory already exists
         try {
           await fs.access(stackDir);
@@ -242,17 +246,17 @@ export class FileSystemService {
         } catch {
           // Directory doesn't exist, proceed with migration
         }
-        
+
         console.log(`Migrating stack: ${stackName}`);
-        
+
         // Create the stack directory
         await fs.mkdir(stackDir, { recursive: true });
-        
+
         // Move compose file to new location (standardize on compose.yaml)
         const oldComposePath = path.join(this.baseDir, item.name);
         const newComposePath = path.join(stackDir, 'compose.yaml');
         await fs.rename(oldComposePath, newComposePath);
-        
+
         // Move env file if it exists (old pattern: stackname.env)
         const oldEnvPath = path.join(this.baseDir, `${stackName}.env`);
         const newEnvPath = path.join(stackDir, '.env');
@@ -263,7 +267,7 @@ export class FileSystemService {
         } catch {
           // No env file to migrate, that's fine
         }
-        
+
         console.log(`Successfully migrated stack: ${stackName}`);
       }
     } catch (error) {

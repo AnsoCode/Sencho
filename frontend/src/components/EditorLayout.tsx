@@ -4,13 +4,14 @@ import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import BashExecModal from './BashExecModal';
+import MaintenanceModal from './MaintenanceModal';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut, Brush } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 
@@ -52,6 +53,9 @@ export default function EditorLayout() {
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
+
+  // Maintenance modal state
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
 
   // Theme toggle effect
   useEffect(() => {
@@ -337,6 +341,7 @@ export default function EditorLayout() {
 
   const deleteStack = async () => {
     if (!stackToDelete) return;
+    setIsActionLoading(true);
     try {
       const response = await apiFetch(`/stacks/${stackToDelete}`, {
         method: 'DELETE',
@@ -358,6 +363,8 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to delete stack:', error);
       alert('Failed to delete stack');
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -370,13 +377,22 @@ export default function EditorLayout() {
         method: 'POST',
         body: JSON.stringify({ stackName }),
       });
-      if (!response.ok) throw new Error('Failed to create stack');
+      if (!response.ok) {
+        if (response.status === 409) {
+          throw new Error('Stack already exists');
+        } else if (response.status === 400) {
+          throw new Error('Invalid stack name (use alphanumeric characters and hyphens only)');
+        }
+        throw new Error('Failed to create stack');
+      }
       setCreateDialogOpen(false);
       setNewStackName('');
       await refreshStacks();
-    } catch (error) {
+      // Auto-load the new stack in the editor pane
+      await loadFile(stackName);
+    } catch (error: any) {
       console.error('Failed to create stack:', error);
-      alert('Failed to create stack');
+      alert(error.message || 'Failed to create stack');
     }
   };
 
@@ -531,6 +547,17 @@ export default function EditorLayout() {
           >
             <Terminal className="w-4 h-4 mr-2" />
             Console
+          </Button>
+          {/* System Janitor (Maintenance) Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setMaintenanceModalOpen(true)}
+            title="System Maintenance"
+          >
+            <Brush className="w-4 h-4 mr-2" />
+            Janitor
           </Button>
           {/* Theme Toggle */}
           <Button
@@ -761,6 +788,12 @@ export default function EditorLayout() {
           containerName={selectedContainer.name}
         />
       )}
+
+      {/* Maintenance Modal */}
+      <MaintenanceModal
+        isOpen={maintenanceModalOpen}
+        onClose={() => setMaintenanceModalOpen(false)}
+      />
     </div>
   );
 }
