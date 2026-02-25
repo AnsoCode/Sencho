@@ -39,7 +39,7 @@ function App() {
   return (
     <AuthProvider>
       <AppContent />
-      <Toaster position="top-right" richColors />
+      <Toaster position="bottom-right" richColors />
     </AuthProvider>
   );
 }

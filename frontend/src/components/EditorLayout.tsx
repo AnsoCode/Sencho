@@ -47,7 +47,13 @@ export default function EditorLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('sencho-theme');
+    if (saved !== null) {
+      return saved === 'dark';
+    }
+    return true; // Default to dark mode
+  });
   const [showConsole, setShowConsole] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,8 +71,10 @@ export default function EditorLayout() {
     const html = document.documentElement;
     if (isDarkMode) {
       html.classList.add('dark');
+      localStorage.setItem('sencho-theme', 'dark');
     } else {
       html.classList.remove('dark');
+      localStorage.setItem('sencho-theme', 'light');
     }
   }, [isDarkMode]);
 
