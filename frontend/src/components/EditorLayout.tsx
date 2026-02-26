@@ -713,9 +713,11 @@ export default function EditorLayout() {
                                       <TooltipProvider>
                                         <Tooltip>
                                           <TooltipTrigger asChild>
-                                            <Badge variant={getContainerBadge(container).variant} className="text-xs cursor-help">
-                                              {getContainerBadge(container).text || 'unknown'}
-                                            </Badge>
+                                            <div className="cursor-help inline-flex">
+                                              <Badge variant={getContainerBadge(container).variant} className="text-xs">
+                                                {getContainerBadge(container).text || 'unknown'}
+                                              </Badge>
+                                            </div>
                                           </TooltipTrigger>
                                           <TooltipContent>
                                             <p>{container?.Status || 'No status details available'}</p>
