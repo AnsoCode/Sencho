@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import WebSocket from 'ws';
 import DockerController from './DockerController';
+import { LogFormatter } from './LogFormatter';
 
 export class ComposeService {
   private baseDir: string;
@@ -137,17 +138,35 @@ export class ComposeService {
           activeProcesses++;
           childProcesses.push(child);
 
+          let lineBuffer = '';
+
           const sendOutput = (data: Buffer) => {
             if (ws.readyState === WebSocket.OPEN) {
-              const text = data.toString().replace(/\r?\n/g, '\r\n');
-              ws.send(text);
+              lineBuffer += data.toString();
+              const lines = lineBuffer.split(/\r?\n/);
+
+              // The last element is either an incomplete line or empty string
+              lineBuffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const formattedLine = LogFormatter.process(line);
+                ws.send(formattedLine + '\r\n');
+              }
             }
           };
 
           child.stdout.on('data', sendOutput);
           child.stderr.on('data', sendOutput);
           child.on('error', handleProcessEnd);
-          child.on('close', handleProcessEnd);
+          child.on('close', () => {
+            // Flush any remaining partial line before ending
+            if (lineBuffer && ws.readyState === WebSocket.OPEN) {
+              const formattedLine = LogFormatter.process(lineBuffer);
+              ws.send(formattedLine + '\r\n');
+              lineBuffer = '';
+            }
+            handleProcessEnd();
+          });
         }
 
       } catch (err) {
