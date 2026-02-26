@@ -710,9 +710,18 @@ export default function EditorLayout() {
                                 <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                                   <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                      <Badge variant={getContainerBadge(container).variant} className="text-xs">
-                                        {getContainerBadge(container).text || 'unknown'}
-                                      </Badge>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Badge variant={getContainerBadge(container).variant} className="text-xs cursor-help">
+                                              {getContainerBadge(container).text || 'unknown'}
+                                            </Badge>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>{container?.Status || 'No status details available'}</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                       <span className="text-xs text-muted-foreground">
                                         CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'}
                                       </span>
