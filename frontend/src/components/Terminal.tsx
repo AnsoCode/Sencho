@@ -51,6 +51,7 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
           },
           fontFamily: 'Consolas, Monaco, monospace',
           fontSize: 13,
+          scrollback: 10000,
         });
 
         const fitAddon = new FitAddon();
@@ -112,14 +113,18 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
     const timeoutId = setTimeout(initTerminal, 50);
 
     // Attach ResizeObserver to the terminal's parent container
+    let resizeTimeout: number | undefined;
     const resizeObserver = new ResizeObserver(() => {
-      if (fitAddonRef.current && terminalRef.current && mounted) {
-        try {
-          fitAddonRef.current.fit();
-        } catch {
-          // Ignore fit errors during resize
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (fitAddonRef.current && terminalRef.current && mounted) {
+          try {
+            fitAddonRef.current.fit();
+          } catch {
+            // Ignore fit errors during resize
+          }
         }
-      }
+      }, 50);
     });
 
     if (terminalRef.current.parentElement) {

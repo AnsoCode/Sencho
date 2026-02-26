@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import WebSocket from 'ws';
+import DockerController from './DockerController';
 
 export class ComposeService {
   private baseDir: string;
@@ -52,54 +53,115 @@ export class ComposeService {
   }
 
   /**
-   * Stream docker compose logs for a stack via WebSocket.
-   * Spawns `docker compose logs -f --tail 100` and pipes stdout/stderr to ws.send().
-   * Kills the child process when the WebSocket closes.
+   * Stream docker logs for a stack via WebSocket.
+   * Supervisors: Fetches containers via DockerController and spawns `docker logs -f` for each.
+   * Automatically re-spawns on process exit if WebSocket is still OPEN, creating a persistent stream.
+   * Kills the child processes when the WebSocket closes.
    */
   streamLogs(stackName: string, ws: WebSocket) {
-    const stackDir = path.join(this.baseDir, stackName);
+    let isClosed = false;
+    let isFirstRun = true;
+    let isWaitingForActivity = false;
 
-    const child = spawn('docker', ['compose', 'logs', '-f', '--tail', '100'], {
-      cwd: stackDir,
-      env: {
-        ...process.env,
-        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-      }
-    });
-
-    child.stdout.on('data', (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data.toString());
-      }
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data.toString());
-      }
-    });
-
-    child.on('error', (error: Error) => {
-      console.error(`Docker Compose Logs Error for ${stackName}:`, error.message);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(`Error: ${error.message}\n`);
-      }
-    });
-
-    child.on('close', (code: number | null) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(`\r\nLog stream ended (code ${code})\r\n`);
-      }
-    });
-
-    // Kill the logs process when the WebSocket is closed
     ws.on('close', () => {
-      try {
-        child.kill();
-      } catch {
-        // Ignore kill errors
-      }
+      isClosed = true;
     });
+
+    const startStream = async () => {
+      if (isClosed || ws.readyState !== WebSocket.OPEN) return;
+
+      try {
+        const dockerController = DockerController.getInstance();
+        const containers = await dockerController.getContainersByStack(stackName);
+
+        if (!containers || containers.length === 0) {
+          if (!isWaitingForActivity) {
+            ws.send(`\r\n\x1b[33m[Sencho] No containers found. Waiting for activity...\x1b[0m\r\n`);
+            isWaitingForActivity = true;
+          }
+          setTimeout(startStream, 2000);
+          return;
+        }
+
+        const runningContainers = containers.filter(c => c.State === 'running');
+
+        // If not first run and no containers are running, we poll to wait for activity
+        if (!isFirstRun && runningContainers.length === 0) {
+          if (!isWaitingForActivity) {
+            ws.send(`\r\n\x1b[33m[Sencho] Log stream ended. Waiting for container activity...\x1b[0m\r\n`);
+            isWaitingForActivity = true;
+          }
+          setTimeout(startStream, 2000);
+          return;
+        }
+
+        // On first run, we stream all containers to dump history.
+        // On subsequent runs, we only attach to running containers to avoid immediate exit loop.
+        const containersToLog = isFirstRun ? containers : runningContainers;
+        isFirstRun = false;
+        isWaitingForActivity = false; // Reset since we are tracking active elements
+
+        let activeProcesses = 0;
+        let streamEndedHandled = false;
+        const childProcesses: ReturnType<typeof spawn>[] = [];
+
+        const onWsClose = () => {
+          childProcesses.forEach(cp => {
+            try { cp.kill(); } catch { /* ignore */ }
+          });
+        };
+
+        ws.on('close', onWsClose);
+
+        const handleProcessEnd = () => {
+          activeProcesses--;
+          if (activeProcesses <= 0 && !streamEndedHandled) {
+            streamEndedHandled = true;
+            ws.removeListener('close', onWsClose);
+
+            if (!isClosed && ws.readyState === WebSocket.OPEN) {
+              setTimeout(startStream, 1000);
+            }
+          }
+        };
+
+        for (const container of containersToLog) {
+          const containerName = container.Names?.[0]?.replace(/^\//, '') || container.Id;
+          const child = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
+            env: {
+              ...process.env,
+              PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+            }
+          });
+
+          activeProcesses++;
+          childProcesses.push(child);
+
+          const sendOutput = (data: Buffer) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              const text = data.toString().replace(/\r?\n/g, '\r\n');
+              ws.send(text);
+            }
+          };
+
+          child.stdout.on('data', sendOutput);
+          child.stderr.on('data', sendOutput);
+          child.on('error', handleProcessEnd);
+          child.on('close', handleProcessEnd);
+        }
+
+      } catch (err) {
+        if (!isClosed && ws.readyState === WebSocket.OPEN) {
+          if (!isWaitingForActivity) {
+            ws.send(`\r\n\x1b[31m[Sencho] Error tracking containers. Retrying...\x1b[0m\r\n`);
+            isWaitingForActivity = true;
+          }
+          setTimeout(startStream, 2000);
+        }
+      }
+    };
+
+    startStream();
   }
 
   /**

@@ -12,11 +12,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Search, Home, LogOut, Brush } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 import { Label } from './ui/label';
+import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
+import { ScrollArea } from './ui/scroll-area';
+import { Skeleton } from './ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface ContainerInfo {
   Id: string;
@@ -447,15 +451,21 @@ export default function EditorLayout() {
         {/* Branding Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
           <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={logout}
-            title="Logout"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <LogOut className="w-5 h-5" />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={logout}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Logout</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {/* Create Stack Button */}
@@ -487,44 +497,47 @@ export default function EditorLayout() {
           </Dialog>
         </div>
 
-        {/* Search Input */}
-        <div className="px-4 pb-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
+        {/* Search Input & Stack List */}
+        <Command className="bg-transparent flex-1 flex flex-col overflow-hidden">
+          <div className="px-4 py-2 border-b border-border flex-none">
+            <CommandInput
               placeholder="Search stacks..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 rounded-lg"
+              onValueChange={setSearchQuery}
+              className="h-9"
             />
           </div>
-        </div>
-
-        {/* Stack List */}
-        <div className="flex flex-col gap-1 px-2 flex-1 overflow-y-auto">
-          <h3 className="text-sm font-semibold text-muted-foreground mb-2 px-2">STACKS</h3>
-          {isLoading ? (
-            <div className="text-muted-foreground px-2 py-4">Loading...</div>
-          ) : (
-            (filteredFiles || []).map(file => (
-              <Button
-                key={file}
-                variant="ghost"
-                className={`justify-start rounded-lg ${selectedFile === file ? 'bg-accent text-accent-foreground' : ''}`}
-                onClick={() => loadFile(file)}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${stackStatuses[file] === 'running' ? 'bg-green-500' :
-                      stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
-                      }`}
-                  />
-                  {getDisplayName(file)}
-                </span>
-              </Button>
-            ))
-          )}
-        </div>
+          <h3 className="text-sm font-semibold text-muted-foreground px-4 py-2 mt-2 flex-none">STACKS</h3>
+          <ScrollArea className="flex-1 px-2 pb-2">
+            <CommandList className="max-h-none overflow-visible">
+              {isLoading ? (
+                <div className="space-y-2 px-2 mt-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : (
+                (filteredFiles || []).map(file => (
+                  <CommandItem
+                    key={file}
+                    value={file}
+                    onSelect={() => loadFile(file)}
+                    className={`justify-start rounded-lg mb-1 cursor-pointer ${selectedFile === file ? 'bg-accent text-accent-foreground' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <div
+                        className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
+                          stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                          }`}
+                      />
+                      {getDisplayName(file)}
+                    </div>
+                  </CommandItem>
+                ))
+              )}
+            </CommandList>
+          </ScrollArea>
+        </Command>
       </div>
 
       {/* Main Content Area */}
@@ -675,17 +688,22 @@ export default function EditorLayout() {
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="rounded-lg h-8 px-2"
-                                    onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
-                                    disabled={container?.State !== 'running'}
-                                    title="Open Bash"
-                                  >
-                                    <Terminal className="w-3 h-3 mr-1" />
-                                    Bash
-                                  </Button>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="rounded-lg h-8 w-8"
+                                          onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
+                                          disabled={container?.State !== 'running'}
+                                        >
+                                          <Terminal className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Open Bash Terminal</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 </div>
                               </div>
                             ))}

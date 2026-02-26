@@ -25,6 +25,9 @@ const configService = new ConfigService();
 // FileSystemService for stack management
 const fileSystemService = new FileSystemService();
 
+// ComposeService for stack operations
+const composeService = new ComposeService();
+
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
 
@@ -219,48 +222,12 @@ server.on('upgrade', async (req, socket, head) => {
     const logsMatch = url.match(/^\/api\/stacks\/([^/]+)\/logs$/);
 
     if (logsMatch) {
-      // Dedicated stack logs WebSocket - uses raw Docker CLI to support legacy containers
+      // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
       const logsWss = new WebSocket.Server({ noServer: true });
-      logsWss.handleUpgrade(req, socket, head, async (ws) => {
+      logsWss.handleUpgrade(req, socket, head, (ws) => {
         const stackName = decodeURIComponent(logsMatch[1]);
         try {
-          const dockerController = DockerController.getInstance();
-          const containers = await dockerController.getContainersByStack(stackName);
-          if (!containers || containers.length === 0) {
-            ws.send('No containers running to log.\n');
-            return;
-          }
-          // Stream logs from all containers using raw docker logs CLI
-          const childProcesses: ReturnType<typeof spawn>[] = [];
-          for (const container of containers) {
-            const containerName = container.Names?.[0]?.replace(/^\//, '') || container.Id;
-            const logProcess = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
-              env: {
-                ...process.env,
-                PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-              }
-            });
-            childProcesses.push(logProcess);
-            logProcess.stdout.on('data', (data: Buffer) => {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(data.toString());
-              }
-            });
-            logProcess.stderr.on('data', (data: Buffer) => {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(data.toString());
-              }
-            });
-            logProcess.on('error', (error: Error) => {
-              console.error(`Docker logs error for ${containerName}:`, error.message);
-            });
-          }
-          // Kill all log processes when WebSocket closes
-          ws.on('close', () => {
-            for (const proc of childProcesses) {
-              try { proc.kill(); } catch { /* ignore */ }
-            }
-          });
+          composeService.streamLogs(stackName, ws);
         } catch (error) {
           console.error('Failed to stream logs:', error);
           if (ws.readyState === WebSocket.OPEN) {
@@ -481,8 +448,7 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
   }
 });
 
-const composeService = new ComposeService();
-
+// End of legacy container routes
 app.post('/api/stacks/:stackName/up', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
