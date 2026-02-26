@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -26,6 +26,7 @@ interface ContainerInfo {
   Id: string;
   Names: string[];
   State: string;
+  Ports?: { PrivatePort: number, PublicPort: number }[];
 }
 
 interface StackStatus {
@@ -675,38 +676,73 @@ export default function EditorLayout() {
                           <div className="text-muted-foreground text-sm">No containers running for this stack.</div>
                         ) : (
                           <div className="flex flex-col gap-3">
-                            {safeContainers.map(container => (
-                              <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant={container?.State === 'running' ? 'default' : 'destructive'} className="text-xs">
-                                      {container?.State || 'unknown'}
-                                    </Badge>
-                                    <span className="text-xs text-muted-foreground">
-                                      CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'}
-                                    </span>
+                            {safeContainers.map(container => {
+                              let mainPort: number | undefined;
+                              if (container.Ports && container.Ports.length > 0) {
+                                const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
+                                const IGNORE_PORTS = [1900, 53, 22];
+
+                                // 1. Match typical Web UI Private ports
+                                let match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PrivatePort));
+                                // 2. Match typical Web UI Public ports
+                                if (!match) match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PublicPort));
+                                // 3. Fallback to any port not in ignore list
+                                if (!match) match = container.Ports.find(p => !IGNORE_PORTS.includes(p.PrivatePort) && !IGNORE_PORTS.includes(p.PublicPort));
+
+                                mainPort = (match || container.Ports[0]).PublicPort;
+                              }
+
+                              return (
+                                <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={container?.State === 'running' ? 'default' : 'destructive'} className="text-xs">
+                                        {container?.State || 'unknown'}
+                                      </Badge>
+                                      <span className="text-xs text-muted-foreground">
+                                        CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {mainPort && (
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="rounded-lg h-8 px-2 mr-1"
+                                              onClick={() => window.open(`http://${window.location.hostname}:${mainPort}`, '_blank')}
+                                            >
+                                              <ExternalLink className="w-3 h-3 mr-1" />
+                                              {mainPort}
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Open App ({mainPort})</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="rounded-lg h-8 w-8"
+                                            onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
+                                            disabled={container?.State !== 'running'}
+                                          >
+                                            <Terminal className="w-4 h-4" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Open Bash Terminal</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
                                 </div>
-                                <div className="flex gap-1">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          className="rounded-lg h-8 w-8"
-                                          onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
-                                          disabled={container?.State !== 'running'}
-                                        >
-                                          <Terminal className="w-4 h-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Open Bash Terminal</TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>

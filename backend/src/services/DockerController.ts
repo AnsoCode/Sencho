@@ -53,6 +53,7 @@ class DockerController {
         Name?: string;
         State?: string;
         Status?: string;
+        Publishers?: { URL?: string, TargetPort?: number, PublishedPort?: number }[];
       }
 
       let containers: ComposeContainer[] = [];
@@ -81,12 +82,21 @@ class DockerController {
         // Map to frontend's expected interface
         // Note: docker compose ps returns Name (singular), but frontend expects Names (array)
         // Dockerode returns Names with leading slash, so we add it for compatibility
-        return containers.map((c) => ({
-          Id: c.ID || '',
-          Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
-          State: c.State || 'unknown',
-          Status: c.Status || ''
-        }));
+        return containers.map((c) => {
+          let Ports: { PrivatePort: number, PublicPort: number }[] = [];
+          if (c.Publishers && Array.isArray(c.Publishers)) {
+            Ports = c.Publishers
+              .filter(p => typeof p.PublishedPort === 'number' && p.PublishedPort > 0)
+              .map(p => ({ PrivatePort: (p.TargetPort || 0) as number, PublicPort: p.PublishedPort as number }));
+          }
+          return {
+            Id: c.ID || '',
+            Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
+            State: c.State || 'unknown',
+            Status: c.Status || '',
+            Ports
+          };
+        });
       }
 
       // SMART FALLBACK: Trigger when docker compose ps returns empty
@@ -163,12 +173,21 @@ class DockerController {
       });
 
       // 5. Map to the frontend interface
-      return fallbackContainers.map(c => ({
-        Id: c.Id,
-        Names: c.Names,
-        State: c.State,
-        Status: c.Status
-      }));
+      return fallbackContainers.map(c => {
+        let Ports: { PrivatePort: number, PublicPort: number }[] = [];
+        if (c.Ports && Array.isArray(c.Ports)) {
+          Ports = c.Ports
+            .filter((p: any) => typeof p.PublicPort === 'number' && p.PublicPort > 0)
+            .map((p: any) => ({ PrivatePort: (p.PrivatePort || 0) as number, PublicPort: p.PublicPort as number }));
+        }
+        return {
+          Id: c.Id,
+          Names: c.Names,
+          State: c.State,
+          Status: c.Status,
+          Ports
+        };
+      });
     } catch (fallbackError) {
       console.error(`Smart Fallback failed for ${stackName}:`, fallbackError);
       return [];
