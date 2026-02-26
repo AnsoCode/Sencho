@@ -26,6 +26,7 @@ interface ContainerInfo {
   Id: string;
   Names: string[];
   State: string;
+  Status?: string;
   Ports?: { PrivatePort: number, PublicPort: number }[];
 }
 
@@ -445,6 +446,19 @@ export default function EditorLayout() {
     return stackName;
   };
 
+  const getContainerBadge = (container: ContainerInfo) => {
+    const status = (container.Status || '').toLowerCase();
+    const state = (container.State || '').toLowerCase();
+
+    if (status.includes('(unhealthy)') || state === 'exited' || state === 'dead') {
+      return { variant: 'destructive' as const, text: container.State };
+    }
+    if (status.includes('(starting)')) {
+      return { variant: 'secondary' as const, text: container.State };
+    }
+    return { variant: 'default' as const, text: container.State };
+  };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
@@ -696,8 +710,8 @@ export default function EditorLayout() {
                                 <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                                   <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                      <Badge variant={container?.State === 'running' ? 'default' : 'destructive'} className="text-xs">
-                                        {container?.State || 'unknown'}
+                                      <Badge variant={getContainerBadge(container).variant} className="text-xs">
+                                        {getContainerBadge(container).text || 'unknown'}
                                       </Badge>
                                       <span className="text-xs text-muted-foreground">
                                         CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'}

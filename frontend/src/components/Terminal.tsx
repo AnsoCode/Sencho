@@ -1,6 +1,11 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { useEffect, useRef } from 'react';
+import { SearchAddon } from '@xterm/addon-search';
+import { SerializeAddon } from '@xterm/addon-serialize';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Download, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalComponentProps {
@@ -11,7 +16,13 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const serializeAddonRef = useRef<SerializeAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
   useEffect(() => {
     if (!terminalRef.current) {
@@ -72,11 +83,35 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
         });
 
         const fitAddon = new FitAddon();
+        const searchAddon = new SearchAddon();
+        const serializeAddon = new SerializeAddon();
+
         term.loadAddon(fitAddon);
+        term.loadAddon(searchAddon);
+        term.loadAddon(serializeAddon);
+
         fitAddonRef.current = fitAddon;
+        searchAddonRef.current = searchAddon;
+        serializeAddonRef.current = serializeAddon;
 
         term.open(terminalRef.current);
         terminalInstance.current = term;
+
+        // Custom key handler for Ctrl+F
+        term.attachCustomKeyEventHandler((event) => {
+          if (event.ctrlKey && event.key === 'f' && event.type === 'keydown') {
+            event.preventDefault();
+            setIsSearchVisible(prev => {
+              const next = !prev;
+              if (next) {
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }
+              return next;
+            });
+            return false;
+          }
+          return true;
+        });
 
         // Fit after DOM paint using requestAnimationFrame
         requestAnimationFrame(() => {
@@ -169,8 +204,87 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
         terminalInstance.current = null;
       }
       fitAddonRef.current = null;
+      searchAddonRef.current = null;
+      serializeAddonRef.current = null;
     };
   }, [stackName]);
 
-  return <div ref={terminalRef} className="h-full w-full" />;
+  const handleDownload = () => {
+    if (!serializeAddonRef.current) return;
+    const content = serializeAddonRef.current.serialize();
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `logs-${stackName || 'terminal'}-${timestamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSearchNext = () => {
+    if (!searchAddonRef.current || !searchText) return;
+    searchAddonRef.current.findNext(searchText);
+  };
+
+  const handleSearchPrev = () => {
+    if (!searchAddonRef.current || !searchText) return;
+    searchAddonRef.current.findPrevious(searchText);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (e.shiftKey) handleSearchPrev();
+      else handleSearchNext();
+    } else if (e.key === 'Escape') {
+      setIsSearchVisible(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full w-full relative group">
+      {/* Floating Action Bar / Search Bar Panel */}
+      <div className={`absolute top-2 right-6 z-10 flex gap-2 transition-opacity duration-200 ${isSearchVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+        {!isSearchVisible ? (
+          <Button variant="outline" size="sm" onClick={() => {
+            setIsSearchVisible(true);
+            setTimeout(() => searchInputRef.current?.focus(), 50);
+          }} className="h-8 bg-background/80 backdrop-blur-sm shadow-sm" title="Search (Ctrl+F)">
+            <Search className="w-4 h-4 mr-2" />
+            Search
+          </Button>
+        ) : (
+          <div className="flex flex-row items-center p-1 pr-1 bg-background/95 backdrop-blur-sm border border-border shadow-md rounded-md">
+            <Input
+              ref={searchInputRef}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Find in terminal..."
+              className="h-7 w-48 border-none focus-visible:ring-0 bg-transparent text-sm min-h-0"
+            />
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleSearchPrev} title="Previous (Shift+Enter)">
+              <ChevronUp className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleSearchNext} title="Next (Enter)">
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+            <div className="w-px h-4 bg-border mx-1" />
+            <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive" onClick={() => setIsSearchVisible(false)} title="Close (Esc)">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+
+        <Button variant="outline" size="sm" onClick={handleDownload} className="h-8 bg-background/80 backdrop-blur-sm shadow-sm" title="Download Logs">
+          <Download className="w-4 h-4 mr-2" />
+          Download
+        </Button>
+      </div>
+
+      <div ref={terminalRef} className="flex-1 w-full overflow-hidden" />
+    </div>
+  );
 }
