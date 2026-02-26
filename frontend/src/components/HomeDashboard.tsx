@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
-import { Activity, Square, PauseCircle, ArrowRight, Plus, Cpu, HardDrive, MemoryStick } from 'lucide-react';
+import { Activity, Square, ArrowRight, Plus, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 import { Label } from './ui/label';
@@ -34,15 +34,21 @@ interface SystemStats {
     free: number;
     usagePercent: string;
   } | null;
+  network?: {
+    rxBytes: number;
+    txBytes: number;
+    rxSec: number;
+    txSec: number;
+  };
 }
 
-function formatBytes(bytes: number): string {
-  const gb = bytes / (1024 * 1024 * 1024);
-  if (gb >= 1024) {
-    return (gb / 1024).toFixed(1) + ' TB';
-  }
-  return gb.toFixed(1) + ' GB';
-}
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 export default function HomeDashboard() {
   const [dockerRunInput, setDockerRunInput] = useState('');
@@ -166,12 +172,20 @@ export default function HomeDashboard() {
 
         <Card className="rounded-xl border-muted bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Inactive Stacks</CardTitle>
-            <PauseCircle className="h-4 w-4 text-yellow-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Host Network</CardTitle>
+            <Network className="h-4 w-4 text-cyan-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-yellow-500">{Math.max(0, stats.inactive)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Not deployed</p>
+            <div className="text-xl font-bold text-cyan-500 whitespace-nowrap">
+              {systemStats?.network
+                ? `${formatBytes(systemStats.network.rxSec)}/s ↓`
+                : '...'}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 whitespace-nowrap">
+              {systemStats?.network
+                ? `${formatBytes(systemStats.network.txSec)}/s ↑`
+                : 'Loading...'}
+            </p>
           </CardContent>
         </Card>
       </div>

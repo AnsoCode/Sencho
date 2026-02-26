@@ -34,6 +34,14 @@ interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
 }
 
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 export default function EditorLayout() {
   const { logout } = useAuth();
   const [files, setFiles] = useState<string[]>([]);
@@ -44,7 +52,7 @@ export default function EditorLayout() {
   const [originalEnvContent, setOriginalEnvContent] = useState<string>('');
   const [envExists, setEnvExists] = useState<boolean>(false);
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string }>>({});
+  const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string, net: string, lastRx?: number, lastTx?: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -135,7 +143,35 @@ export default function EditorLayout() {
             const onlineCpus = data.cpu_stats.online_cpus || 1;
             const cpuPercent = systemDelta > 0 ? ((cpuDelta / systemDelta) * onlineCpus * 100).toFixed(2) : '0.00';
             const ramUsage = (data.memory_stats.usage / (1024 * 1024)).toFixed(2) + ' MB';
-            setContainerStats(prev => ({ ...prev, [container.Id]: { cpu: cpuPercent + '%', ram: ramUsage } }));
+
+            let currentRx = 0;
+            let currentTx = 0;
+            if (data.networks) {
+              Object.values(data.networks).forEach((net: any) => {
+                currentRx += net.rx_bytes || 0;
+                currentTx += net.tx_bytes || 0;
+              });
+            }
+
+            setContainerStats(prev => {
+              const prevStat = prev[container.Id];
+              // Calculate rate if we have a previous value
+              const rxRate = prevStat?.lastRx !== undefined ? Math.max(0, currentRx - prevStat.lastRx) : 0;
+              const txRate = prevStat?.lastTx !== undefined ? Math.max(0, currentTx - prevStat.lastTx) : 0;
+
+              const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
+
+              return {
+                ...prev,
+                [container.Id]: {
+                  cpu: cpuPercent + '%',
+                  ram: ramUsage,
+                  net: netIO,
+                  lastRx: currentRx,
+                  lastTx: currentTx
+                }
+              };
+            });
           } catch {
             // Ignore parse errors
           }
@@ -724,8 +760,8 @@ export default function EditorLayout() {
                                           </TooltipContent>
                                         </Tooltip>
                                       </TooltipProvider>
-                                      <span className="text-xs text-muted-foreground">
-                                        CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'}
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                        CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'} | NET: {containerStats[container?.Id]?.net || '0 B ↓ / 0 B ↑'}
                                       </span>
                                     </div>
                                   </div>

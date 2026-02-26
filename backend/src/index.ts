@@ -578,11 +578,24 @@ app.get('/api/stats', async (req: Request, res: Response) => {
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
-    const [currentLoad, mem, fsSize] = await Promise.all([
+    const [currentLoad, mem, fsSize, networkStats] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize(),
+      si.networkStats(),
     ]);
+
+    let rxBytes = 0;
+    let txBytes = 0;
+    let rxSec = 0;
+    let txSec = 0;
+
+    networkStats.forEach(net => {
+      rxBytes += net.rx_bytes || 0;
+      txBytes += net.tx_bytes || 0;
+      rxSec += net.rx_sec || 0;
+      txSec += net.tx_sec || 0;
+    });
 
     // Find the main mount (usually the largest or root mount)
     const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
@@ -606,6 +619,12 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
         free: mainDisk.available,
         usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
       } : null,
+      network: {
+        rxBytes,
+        txBytes,
+        rxSec,
+        txSec
+      }
     });
   } catch (error) {
     console.error('Failed to fetch system stats:', error);
