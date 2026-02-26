@@ -21,6 +21,7 @@ import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
 import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 
 interface ContainerInfo {
   Id: string;
@@ -573,7 +574,7 @@ export default function EditorLayout() {
                     key={file}
                     value={file}
                     onSelect={() => loadFile(file)}
-                    className={`justify-start rounded-lg mb-1 cursor-pointer ${selectedFile === file ? 'bg-accent text-accent-foreground' : ''}`}
+                    className={`justify-start rounded-lg mb-1 cursor-pointer data-[selected='true']:bg-transparent hover:bg-muted data-[selected='true']:text-foreground ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
                   >
                     <div className="flex items-center gap-2 w-full">
                       <div
@@ -746,20 +747,23 @@ export default function EditorLayout() {
                                 <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                                   <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <div className="cursor-help inline-flex">
-                                              <Badge variant={getContainerBadge(container).variant} className="text-xs">
-                                                {getContainerBadge(container).text || 'unknown'}
-                                              </Badge>
-                                            </div>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            <p>{container?.Status || 'No status details available'}</p>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
+                                      <HoverCard>
+                                        <HoverCardTrigger asChild>
+                                          <div className="cursor-help inline-flex">
+                                            <Badge variant={getContainerBadge(container).variant} className="text-xs">
+                                              {getContainerBadge(container).text || 'unknown'}
+                                            </Badge>
+                                          </div>
+                                        </HoverCardTrigger>
+                                        <HoverCardContent className="flex w-50 flex-col gap-0.5">
+                                          <div className="space-y-1">
+                                            <h4 className="text-sm font-semibold">Container Status</h4>
+                                            <p className="text-sm text-muted-foreground">
+                                              {container?.Status || 'No status details available'}
+                                            </p>
+                                          </div>
+                                        </HoverCardContent>
+                                      </HoverCard>
                                       <span className="text-xs text-muted-foreground whitespace-nowrap">
                                         CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'} | NET: {containerStats[container?.Id]?.net || '0 B ↓ / 0 B ↑'}
                                       </span>
