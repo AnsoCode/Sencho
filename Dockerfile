@@ -20,6 +20,9 @@ FROM node:20-alpine AS backend-builder
 
 WORKDIR /app/backend
 
+# Install build dependencies for node-pty native modules
+RUN apk add --no-cache python3 make g++
+
 # Copy backend package files
 COPY backend/package*.json ./
 
@@ -35,8 +38,8 @@ RUN npm run build
 # Stage 3: Production
 FROM node:20-alpine
 
-# Install Docker CLI and Docker Compose CLI
-RUN apk add --no-cache docker-cli docker-cli-compose
+# Install Docker CLI, Docker Compose CLI, and Bash for Host Console
+RUN apk add --no-cache docker-cli docker-cli-compose bash
 
 WORKDIR /app
 

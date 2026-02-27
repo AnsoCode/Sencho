@@ -13,6 +13,8 @@ import si from 'systeminformation';
 import http from 'http';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
+import { HostTerminalService } from './services/HostTerminalService';
 
 const execAsync = promisify(exec);
 
@@ -220,6 +222,7 @@ server.on('upgrade', async (req, socket, head) => {
     // Check if this is a stack logs WebSocket request
     const url = req.url || '';
     const logsMatch = url.match(/^\/api\/stacks\/([^/]+)\/logs$/);
+    const hostConsoleMatch = url.match(/^\/api\/system\/host-console/);
 
     if (logsMatch) {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
@@ -232,6 +235,29 @@ server.on('upgrade', async (req, socket, head) => {
           console.error('Failed to stream logs:', error);
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(`Error streaming logs: ${(error as Error).message}\n`);
+          }
+        }
+      });
+    } else if (hostConsoleMatch) {
+      const hostConsoleWss = new WebSocket.Server({ noServer: true });
+      hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
+        let targetDirectory = fileSystemService.getBaseDir();
+        try {
+          const reqUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+          const stackParam = reqUrl.searchParams.get('stack');
+          if (stackParam) {
+            targetDirectory = path.join(targetDirectory, stackParam);
+          }
+        } catch (e) {
+          // ignore parsing error, fallback to base dir
+        }
+        try {
+          HostTerminalService.spawnTerminal(ws, targetDirectory);
+        } catch (error) {
+          console.error('Failed to spawn host terminal:', error);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(`Error spawning terminal: ${(error as Error).message}\r\n`);
+            ws.close();
           }
         }
       });

@@ -4,6 +4,7 @@ import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import BashExecModal from './BashExecModal';
+import HostConsole from './HostConsole';
 import MaintenanceModal from './MaintenanceModal';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -69,7 +70,7 @@ export default function EditorLayout() {
     }
     return true; // Default to dark mode
   });
-  const [showConsole, setShowConsole] = useState(true);
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -200,6 +201,7 @@ export default function EditorLayout() {
       const res = await apiFetch(`/stacks/${filename}`);
       const text = await res.text();
       setSelectedFile(filename);
+      setActiveView('editor');
       setContent(text || '');
       setOriginalContent(text || '');
 
@@ -610,6 +612,7 @@ export default function EditorLayout() {
               setEnvExists(false);
               setContainers([]);
               setIsEditing(false);
+              setActiveView('dashboard');
             }}
             title="Go to Home Dashboard"
           >
@@ -618,10 +621,10 @@ export default function EditorLayout() {
           </Button>
           {/* Console Toggle */}
           <Button
-            variant="outline"
+            variant={activeView === 'host-console' ? 'default' : 'outline'}
             size="sm"
             className="rounded-lg"
-            onClick={() => setShowConsole(!showConsole)}
+            onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
           >
             <Terminal className="w-4 h-4 mr-2" />
             Console
@@ -660,7 +663,9 @@ export default function EditorLayout() {
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-y-auto p-6">
-          {!isLoading && selectedFile ? (
+          {activeView === 'host-console' ? (
+            <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+          ) : !isLoading && selectedFile && activeView === 'editor' ? (
             <ErrorBoundary>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                 {/* Left Column (Command Center & Terminal) */}
@@ -815,16 +820,14 @@ export default function EditorLayout() {
                   </Card>
 
                   {/* Terminal Section */}
-                  {showConsole && (
-                    <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
-                      <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
-                      <div className="h-[calc(100%-24px)]">
-                        <ErrorBoundary>
-                          <TerminalComponent stackName={stackName} />
-                        </ErrorBoundary>
-                      </div>
+                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
+                    <div className="h-[calc(100%-24px)]">
+                      <ErrorBoundary>
+                        <TerminalComponent stackName={stackName} />
+                      </ErrorBoundary>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Right Column (The Editor) */}
