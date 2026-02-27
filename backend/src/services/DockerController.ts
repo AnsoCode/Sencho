@@ -288,6 +288,12 @@ class DockerController {
     });
   }
 
+  public async getContainerStatsStream(containerId: string): Promise<string> {
+    const container = this.docker.getContainer(containerId);
+    const stats = await container.stats({ stream: false });
+    return typeof stats === 'string' ? stats : JSON.stringify(stats);
+  }
+
   /**
    * Exec into a container with full session isolation.
    * All state (exec instance, stream) lives in this closure — no singleton traps.

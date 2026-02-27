@@ -15,6 +15,9 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
+import { DatabaseService } from './services/DatabaseService';
+import { NotificationService } from './services/NotificationService';
+import { MonitorService } from './services/MonitorService';
 
 const execAsync = promisify(exec);
 
@@ -658,6 +661,106 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
   }
 });
 
+// --- Notification & Alerting Routes ---
+
+app.get('/api/agents', async (req: Request, res: Response) => {
+  try {
+    const agents = DatabaseService.getInstance().getAgents();
+    res.json(agents);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agents' });
+  }
+});
+
+app.post('/api/agents', async (req: Request, res: Response) => {
+  try {
+    const agent = req.body;
+    DatabaseService.getInstance().upsertAgent(agent);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update agent' });
+  }
+});
+
+app.get('/api/settings', async (req: Request, res: Response) => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+app.post('/api/settings', async (req: Request, res: Response) => {
+  try {
+    const { key, value } = req.body;
+    DatabaseService.getInstance().updateGlobalSetting(key, value);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
+
+app.get('/api/alerts', async (req: Request, res: Response) => {
+  try {
+    let stackName = req.query.stackName as string | undefined;
+    if (Array.isArray(stackName)) stackName = stackName[0] as string;
+
+    const alerts = DatabaseService.getInstance().getStackAlerts(stackName);
+    res.json(alerts);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch alerts' });
+  }
+});
+
+app.post('/api/alerts', async (req: Request, res: Response) => {
+  try {
+    const alert = req.body;
+    DatabaseService.getInstance().addStackAlert(alert);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to add alert' });
+  }
+});
+
+app.delete('/api/alerts/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    DatabaseService.getInstance().deleteStackAlert(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete alert' });
+  }
+});
+
+app.get('/api/notifications', async (req: Request, res: Response) => {
+  try {
+    const history = DatabaseService.getInstance().getNotificationHistory();
+    res.json(history);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+app.post('/api/notifications/read', async (req: Request, res: Response) => {
+  try {
+    DatabaseService.getInstance().markAllNotificationsRead();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to mark notifications read' });
+  }
+});
+
+app.post('/api/notifications/test', async (req: Request, res: Response) => {
+  try {
+    const { type, url } = req.body;
+    await NotificationService.getInstance().testDispatch(type, url);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
 // --- System Maintenance Routes (The System Janitor) ---
 
 app.get('/api/system/orphans', async (req: Request, res: Response) => {
@@ -740,6 +843,9 @@ async function startServer() {
     console.error('Migration failed:', error);
     // Continue starting server even if migration fails
   }
+
+  // Start Background Watchdog
+  MonitorService.getInstance().start();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

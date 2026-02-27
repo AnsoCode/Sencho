@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -23,7 +23,10 @@ import { ScrollArea } from './ui/scroll-area';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
-
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { NotificationSettingsModal } from './NotificationSettingsModal';
+import { StackAlertSheet } from './StackAlertSheet';
 interface ContainerInfo {
   Id: string;
   Names: string[];
@@ -82,6 +85,17 @@ export default function EditorLayout() {
   // Maintenance modal state
   const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
 
+  // Notifications & Settings state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [alertSheetOpen, setAlertSheetOpen] = useState(false);
+  const [alertSheetStack, setAlertSheetStack] = useState('');
+
+  const openAlertSheet = (stackName: string) => {
+    setAlertSheetStack(stackName);
+    setAlertSheetOpen(true);
+  };
+
   // Theme toggle effect
   useEffect(() => {
     const html = document.documentElement;
@@ -124,7 +138,27 @@ export default function EditorLayout() {
 
   useEffect(() => {
     refreshStacks();
+    fetchNotifications();
+    const notificationInterval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(notificationInterval);
   }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await apiFetch('/notifications/history');
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+      }
+    } catch (e) { }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await apiFetch('/notifications/read', { method: 'POST' });
+      fetchNotifications();
+    } catch (e) { }
+  };
 
   useEffect(() => {
     const wsMap: Record<string, WebSocket> = {};
@@ -576,7 +610,7 @@ export default function EditorLayout() {
                     key={file}
                     value={file}
                     onSelect={() => loadFile(file)}
-                    className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                    className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
                   >
                     <div className="flex items-center gap-2 w-full">
                       <div
@@ -584,7 +618,23 @@ export default function EditorLayout() {
                           stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
                           }`}
                       />
-                      {getDisplayName(file)}
+                      <span className="flex-1 truncate">{getDisplayName(file)}</span>
+
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openAlertSheet(file)}>
+                              <BellRing className="h-4 w-4 mr-2" />
+                              Configure Alerts
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </CommandItem>
                 ))
@@ -640,6 +690,65 @@ export default function EditorLayout() {
             <Brush className="w-4 h-4 mr-2" />
             Janitor
           </Button>
+
+          {/* Settings Modal Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setSettingsModalOpen(true)}
+            title="Notification Settings"
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Settings
+          </Button>
+
+          {/* Notifications Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
+                <Bell className="w-4 h-4" />
+                {notifications.filter(n => !n.is_read).length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="end">
+              <div className="flex items-center justify-between p-4 border-b">
+                <h4 className="font-semibold">Notifications</h4>
+                {notifications.filter(n => !n.is_read).length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
+                    Mark all as read
+                  </Button>
+                )}
+              </div>
+              <ScrollArea className="h-80">
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
+                ) : (
+                  <div className="flex flex-col">
+                    {notifications.map((notif: any) => (
+                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
+                            {notif.level}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground ml-auto">
+                            {new Date(notif.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="font-medium">{notif.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </PopoverContent>
+          </Popover>
+
           {/* Theme Toggle */}
           <Button
             variant="outline"
@@ -924,10 +1033,22 @@ export default function EditorLayout() {
         />
       )}
 
-      {/* Maintenance Modal */}
       <MaintenanceModal
         isOpen={maintenanceModalOpen}
         onClose={() => setMaintenanceModalOpen(false)}
+      />
+
+      {/* Notification Settings Modal */}
+      <NotificationSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+      />
+
+      {/* Stack Alert Sheet */}
+      <StackAlertSheet
+        isOpen={alertSheetOpen}
+        onClose={() => setAlertSheetOpen(false)}
+        stackName={alertSheetStack}
       />
     </div>
   );
