@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -51,7 +52,7 @@ export function NotificationSettingsModal({ isOpen, onClose }: NotificationSetti
 
     const fetchAgents = async () => {
         try {
-            const res = await fetch('/api/agents');
+            const res = await apiFetch('/agents');
             if (res.ok) {
                 const data: Agent[] = await res.json();
                 const newAgents = { ...agents };
@@ -67,7 +68,7 @@ export function NotificationSettingsModal({ isOpen, onClose }: NotificationSetti
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch('/api/settings');
+            const res = await apiFetch('/settings');
             if (res.ok) {
                 const data = await res.json();
                 setSettings(prev => ({ ...prev, ...data }));
@@ -91,9 +92,8 @@ export function NotificationSettingsModal({ isOpen, onClose }: NotificationSetti
     const saveAgent = async (type: string) => {
         setIsLoading(true);
         try {
-            const res = await fetch('/api/agents', {
+            const res = await apiFetch('/agents', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(agents[type])
             });
             if (res.ok) {
@@ -115,9 +115,8 @@ export function NotificationSettingsModal({ isOpen, onClose }: NotificationSetti
         }
         setIsLoading(true);
         try {
-            const res = await fetch('/api/notifications/test', {
+            const res = await apiFetch('/notifications/test', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type, url: agents[type].url })
             });
             if (res.ok) {
@@ -137,9 +136,8 @@ export function NotificationSettingsModal({ isOpen, onClose }: NotificationSetti
         setIsLoading(true);
         try {
             for (const [key, value] of Object.entries(settings)) {
-                await fetch('/api/settings', {
+                await apiFetch('/settings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ key, value })
                 });
             }

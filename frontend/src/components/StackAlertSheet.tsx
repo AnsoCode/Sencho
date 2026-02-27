@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api';
 
 interface StackAlert {
     id?: number;
@@ -54,7 +55,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
     const fetchAlerts = async () => {
         try {
-            const res = await fetch(`/api/alerts?stackName=${stackName}`);
+            const res = await apiFetch(`/alerts?stackName=${stackName}`);
             if (res.ok) {
                 const data = await res.json();
                 setAlerts(data);
@@ -81,9 +82,8 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
         };
 
         try {
-            const res = await fetch('/api/alerts', {
+            const res = await apiFetch('/alerts', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newAlert)
             });
             if (res.ok) {
@@ -103,7 +103,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
     const deleteAlert = async (id: number) => {
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`/alerts/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 toast.success('Alert rule deleted.');
                 fetchAlerts();
