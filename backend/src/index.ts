@@ -663,6 +663,15 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
 
 // --- Notification & Alerting Routes ---
 
+app.get('/api/stacks', async (req: Request, res: Response) => {
+  try {
+    const stacks = await fileSystemService.getStacks();
+    res.json(stacks);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch stacks' });
+  }
+});
+
 app.get('/api/agents', async (req: Request, res: Response) => {
   try {
     const agents = DatabaseService.getInstance().getAgents();
