@@ -576,7 +576,7 @@ export default function EditorLayout() {
                     key={file}
                     value={file}
                     onSelect={() => loadFile(file)}
-                    className={`justify-start rounded-lg mb-1 cursor-pointer data-[selected='true']:bg-transparent hover:bg-muted data-[selected='true']:text-foreground ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                    className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
                   >
                     <div className="flex items-center gap-2 w-full">
                       <div
