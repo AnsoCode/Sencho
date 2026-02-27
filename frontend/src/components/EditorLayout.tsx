@@ -558,7 +558,10 @@ export default function EditorLayout() {
       <div className="w-64 border-r border-border bg-card flex flex-col">
         {/* Branding Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
+          <div className="flex items-center gap-2">
+            <img src="/sencho-logo.png" alt="Sencho Logo" className="w-12 h-12" />
+            <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
+          </div>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
