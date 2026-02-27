@@ -828,6 +828,15 @@ if (process.env.NODE_ENV === 'production') {
   app.use((req: Request, res: Response) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile('index.html', { root: 'public' });
+    } else {
+      res.status(404).json({ error: 'API endpoint not found' });
+    }
+  });
+} else {
+  // In development, still need to catch 404s for API to prevent hangs
+  app.use((req: Request, res: Response) => {
+    if (req.path.startsWith('/api')) {
+      res.status(404).json({ error: 'API endpoint not found' });
     }
   });
 }

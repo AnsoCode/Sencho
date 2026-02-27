@@ -145,7 +145,7 @@ export default function EditorLayout() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await apiFetch('/notifications/history');
+      const res = await apiFetch('/notifications');
       if (res.ok) {
         const data = await res.json();
         setNotifications(data);

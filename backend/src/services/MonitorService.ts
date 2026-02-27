@@ -7,6 +7,25 @@ import { NotificationService } from './NotificationService';
 
 const execAsync = promisify(exec);
 
+const getMetricDetails = (metric: string): { name: string, unit: string } => {
+    switch (metric) {
+        case 'cpu_percent': return { name: 'CPU usage', unit: '%' };
+        case 'memory_percent': return { name: 'Memory usage', unit: '%' };
+        case 'memory_mb': return { name: 'Memory allocation', unit: ' MB' };
+        case 'net_rx': return { name: 'Inbound network traffic', unit: ' MB/s' };
+        case 'net_tx': return { name: 'Outbound network traffic', unit: ' MB/s' };
+        case 'restart_count': return { name: 'Restart count', unit: ' restarts' };
+        default: return { name: metric, unit: '' };
+    }
+};
+
+const getOperatorPhrase = (operator: string): string => {
+    if (['>', '>='].includes(operator)) return 'has exceeded your threshold of';
+    if (['<', '<='].includes(operator)) return 'has dropped below your threshold of';
+    if (operator === '==') return 'has reached your threshold of';
+    return `triggered the operator ${operator}`;
+};
+
 interface AlertState {
     breachStartedAt: number; // timestamp when the rule first breached
 }
@@ -230,10 +249,18 @@ export class MonitorService {
                                     const requiredCooldownMs = rule.cooldown_mins * 60 * 1000;
 
                                     if (timeSinceLastFired >= requiredCooldownMs) {
-                                        // FIRE THE ALERT!
+                                        // Formatted Alert Message
+                                        const { name: metricName, unit } = getMetricDetails(rule.metric);
+                                        const operatorPhrase = getOperatorPhrase(rule.operator);
+
+                                        const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
+                                        const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
+
+                                        const message = `The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
+
                                         await NotificationService.getInstance().dispatchAlert(
                                             'warning',
-                                            `Alert for **${rule.stack_name}** (${container.Names[0]}):\nMetric \`${rule.metric}\` is \`${currentValue.toFixed(2)}\`, which is \`${rule.operator}\` the threshold of \`${rule.threshold}\`.`
+                                            message
                                         );
 
                                         // Update last fired
