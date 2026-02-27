@@ -197,10 +197,16 @@ export default function EditorLayout() {
 
               const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
 
+              // Check if values actually changed to prevent infinite re-renders
+              const newCpu = cpuPercent + '%';
+              if (prevStat && prevStat.cpu === newCpu && prevStat.ram === ramUsage && prevStat.lastRx === currentRx && prevStat.lastTx === currentTx) {
+                return prev;
+              }
+
               return {
                 ...prev,
                 [container.Id]: {
-                  cpu: cpuPercent + '%',
+                  cpu: newCpu,
                   ram: ramUsage,
                   net: netIO,
                   lastRx: currentRx,

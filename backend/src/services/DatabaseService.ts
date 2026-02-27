@@ -47,8 +47,7 @@ export class DatabaseService {
 
         const dbPath = path.join(dataDir, 'sencho.db');
         this.db = new Database(dbPath);
-        // Use WAL mode for better concurrency performance
-        this.db.pragma('journal_mode = WAL');
+        // Default journal mode is safer for arbitrary Docker volume mounts than WAL
 
         this.initSchema();
     }
