@@ -21,7 +21,8 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
-import { Trash2, AlertTriangle, MonitorX, PackageMinus, Network } from 'lucide-react';
+import { Trash2, AlertTriangle, MonitorX, PackageMinus, Network, HardDrive } from 'lucide-react';
+import { formatBytes } from '@/lib/utils';
 
 interface MaintenanceModalProps {
     isOpen: boolean;
@@ -36,8 +37,18 @@ interface ContainerInfo {
     Image: string;
 }
 
+interface DockerUsage {
+    reclaimableImages: number;
+    reclaimableContainers: number;
+    reclaimableVolumes: number;
+}
+
 export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalProps) {
     const [activeTab, setActiveTab] = useState<'ghosts' | 'system'>('ghosts');
+
+    // Docker Usage State
+    const [dockerUsage, setDockerUsage] = useState<DockerUsage | null>(null);
+    const [isLoadingUsage, setIsLoadingUsage] = useState(false);
 
     // Ghost Hunter state
     const [orphans, setOrphans] = useState<Record<string, ContainerInfo[]>>({});
@@ -52,15 +63,31 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
     // Confirm Modals state
     const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
     const [pruneConfirmOpen, setPruneConfirmOpen] = useState(false);
-    const [pruneTarget, setPruneTarget] = useState<'containers' | 'images' | 'networks' | null>(null);
+    const [pruneTarget, setPruneTarget] = useState<'containers' | 'images' | 'networks' | 'volumes' | null>(null);
 
     useEffect(() => {
         if (isOpen && activeTab === 'ghosts') {
             fetchOrphans();
-        } else {
+        } else if (isOpen && activeTab === 'system') {
+            fetchDockerUsage();
             setPruneResult(null); // Reset when tab changes
+        } else {
+            setPruneResult(null);
         }
     }, [isOpen, activeTab]);
+
+    const fetchDockerUsage = async () => {
+        setIsLoadingUsage(true);
+        try {
+            const res = await apiFetch('/system/docker-df');
+            const data = await res.json();
+            setDockerUsage(data);
+        } catch (error) {
+            console.error('Failed to fetch docker usage:', error);
+        } finally {
+            setIsLoadingUsage(false);
+        }
+    };
 
     const fetchOrphans = async () => {
         setIsLoadingOrphans(true);
@@ -118,7 +145,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
         }
     };
 
-    const requestPruneSystem = (target: 'containers' | 'images' | 'networks') => {
+    const requestPruneSystem = (target: 'containers' | 'images' | 'networks' | 'volumes') => {
         setPruneTarget(target);
         setPruneConfirmOpen(true);
     };
@@ -135,7 +162,14 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
             });
             const data = await res.json();
             setPruneResult(data);
-            toast.success(`Successfully pruned ${pruneTarget}`);
+
+            if (data.reclaimedBytes !== undefined) {
+                toast.success(`Prune complete! Reclaimed ${formatBytes(data.reclaimedBytes)}.`);
+            } else {
+                toast.success(`Successfully pruned ${pruneTarget}`);
+            }
+
+            await fetchDockerUsage();
         } catch (error) {
             console.error(`Failed to prune ${pruneTarget}: `, error);
             toast.error(`Failed to prune ${pruneTarget}.`);
@@ -255,10 +289,43 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                         )}
                     </TabsContent>
 
-                    <TabsContent value="system" className="flex-1 mt-4 p-4 border rounded-lg bg-card">
-                        <h3 className="text-lg font-semibold mb-6">Global Docker Pruning</h3>
+                    <TabsContent value="system" className="flex-1 mt-4 p-4 border rounded-lg bg-card overflow-y-auto">
+                        <div className="rounded-xl border bg-card text-card-foreground shadow-sm mb-6 p-6">
+                            <div className="flex items-center gap-2 mb-4">
+                                <HardDrive className="w-5 h-5 text-muted-foreground" />
+                                <h3 className="font-semibold text-lg">Reclaimable Space Summary</h3>
+                            </div>
+                            {isLoadingUsage && !dockerUsage ? (
+                                <div className="text-sm text-muted-foreground animate-pulse">Calculating reclaimable space...</div>
+                            ) : dockerUsage ? (
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center text-sm p-3 rounded-lg bg-muted/30 border">
+                                        <span className="flex items-center gap-2 font-medium">
+                                            <div className="w-3 h-3 rounded-full bg-orange-500 shadow-sm"></div> Stopped Containers
+                                        </span>
+                                        <span className="font-mono bg-background px-2 py-1 rounded shadow-sm border">{formatBytes(dockerUsage.reclaimableContainers)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm p-3 rounded-lg bg-muted/30 border">
+                                        <span className="flex items-center gap-2 font-medium">
+                                            <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm"></div> Unused & Dangling Images
+                                        </span>
+                                        <span className="font-mono bg-background px-2 py-1 rounded shadow-sm border">{formatBytes(dockerUsage.reclaimableImages)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm p-3 rounded-lg bg-muted/30 border">
+                                        <span className="flex items-center gap-2 font-medium">
+                                            <div className="w-3 h-3 rounded-full bg-purple-500 shadow-sm"></div> Unused Volumes
+                                        </span>
+                                        <span className="font-mono bg-background px-2 py-1 rounded shadow-sm border">{formatBytes(dockerUsage.reclaimableVolumes)}</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-sm text-muted-foreground">Reclaimable space data unavailable.</div>
+                            )}
+                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <h3 className="text-lg font-semibold mb-4">Global Docker Pruning</h3>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
                             <Button
                                 variant="outline"
                                 className="h-24 flex flex-col items-center justify-center gap-2"
@@ -281,7 +348,7 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                                 <PackageMinus className="w-6 h-6 text-blue-500" />
                                 <div className="text-center">
                                     <div className="font-bold">Prune Images</div>
-                                    <div className="text-xs text-muted-foreground font-normal">Removes unused & dangling images</div>
+                                    <div className="text-xs text-muted-foreground font-normal">Removes unused images</div>
                                 </div>
                             </Button>
 
@@ -294,7 +361,20 @@ export default function MaintenanceModal({ isOpen, onClose }: MaintenanceModalPr
                                 <Network className="w-6 h-6 text-green-500" />
                                 <div className="text-center">
                                     <div className="font-bold">Prune Networks</div>
-                                    <div className="text-xs text-muted-foreground font-normal">Removes all unused networks</div>
+                                    <div className="text-xs text-muted-foreground font-normal">Removes unused networks</div>
+                                </div>
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className="h-24 flex flex-col items-center justify-center gap-2"
+                                onClick={() => requestPruneSystem('volumes')}
+                                disabled={isPruning}
+                            >
+                                <HardDrive className="w-6 h-6 text-purple-500" />
+                                <div className="text-center">
+                                    <div className="font-bold">Prune Volumes</div>
+                                    <div className="text-xs text-muted-foreground font-normal">Removes unused volumes</div>
                                 </div>
                             </Button>
                         </div>

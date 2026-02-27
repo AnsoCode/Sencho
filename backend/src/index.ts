@@ -811,30 +811,29 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
 
 app.post('/api/system/prune/system', async (req: Request, res: Response) => {
   try {
-    const { target } = req.body; // 'containers', 'images', 'networks'
-    let command = '';
-
-    if (target === 'containers') {
-      command = 'docker container prune -f';
-    } else if (target === 'images') {
-      command = 'docker image prune -a -f';
-    } else if (target === 'networks') {
-      command = 'docker network prune -f';
-    } else {
+    const { target } = req.body; // 'containers', 'images', 'networks', 'volumes'
+    if (!['containers', 'images', 'networks', 'volumes'].includes(target)) {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
-    const { stdout, stderr } = await execAsync(command, {
-      env: {
-        ...process.env,
-        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-      }
-    });
+    const dockerController = DockerController.getInstance();
+    const result = await dockerController.pruneSystem(target);
 
-    res.json({ message: 'Prune completed', stdout, stderr });
+    res.json({ message: 'Prune completed', ...result });
   } catch (error: any) {
     console.error('System prune error:', error);
     res.status(500).json({ error: 'System prune failed', details: error.message });
+  }
+});
+
+app.get('/api/system/docker-df', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const df = await dockerController.getDiskUsage();
+    res.json(df);
+  } catch (error) {
+    console.error('Failed to fetch docker disk usage:', error);
+    res.status(500).json({ error: 'Failed to fetch docker disk usage' });
   }
 });
 

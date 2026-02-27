@@ -24,6 +24,65 @@ class DockerController {
     return DockerController.instance;
   }
 
+  public async getDiskUsage() {
+    const df = await this.docker.df();
+
+    const calculateReclaimableContainers = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return 0;
+      return items.filter(i => i.State !== 'running').reduce((acc, item) => {
+        let size = item.SizeRw || item.SizeRootFs || 0;
+        if (item.UsageData && typeof item.UsageData.Size === 'number') {
+          size = item.UsageData.Size;
+        }
+        return acc + size;
+      }, 0);
+    };
+
+    const calculateReclaimableImages = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return 0;
+      return items.filter(i => i.Containers === 0).reduce((acc, item) => {
+        let size = item.VirtualSize || item.Size || item.SharedSize || 0;
+        if (item.UsageData && typeof item.UsageData.Size === 'number') {
+          size = item.UsageData.Size;
+        }
+        return acc + size;
+      }, 0);
+    };
+
+    const calculateReclaimableVolumes = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return 0;
+      return items.filter(i => i.UsageData?.RefCount === 0).reduce((acc, item) => {
+        let size = item.UsageData?.Size || 0;
+        return acc + size;
+      }, 0);
+    };
+
+    return {
+      reclaimableImages: df.Images ? calculateReclaimableImages(df.Images) : 0,
+      reclaimableContainers: df.Containers ? calculateReclaimableContainers(df.Containers) : 0,
+      reclaimableVolumes: df.Volumes ? calculateReclaimableVolumes(df.Volumes) : 0,
+    };
+  }
+
+  public async pruneSystem(target: 'containers' | 'images' | 'networks' | 'volumes') {
+    let result: any = {};
+    if (target === 'containers') {
+      result = await this.docker.pruneContainers();
+    } else if (target === 'images') {
+      // Remove all unused images, not just dangling ones
+      result = await this.docker.pruneImages({ filters: { dangling: { 'false': true } } });
+    } else if (target === 'networks') {
+      result = await this.docker.pruneNetworks();
+    } else if (target === 'volumes') {
+      result = await this.docker.pruneVolumes();
+    }
+
+    return {
+      success: true,
+      reclaimedBytes: result?.SpaceReclaimed || 0
+    };
+  }
+
   public async getRunningContainers() {
     const containers = await this.docker.listContainers({ all: false });
     return containers;
