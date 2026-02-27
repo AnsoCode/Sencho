@@ -630,7 +630,7 @@ export default function EditorLayout() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => openAlertSheet(file)}>
                               <BellRing className="h-4 w-4 mr-2" />
-                              Configure Alerts
+                              Create Alert
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
