@@ -139,7 +139,7 @@ export default function EditorLayout() {
   useEffect(() => {
     refreshStacks();
     fetchNotifications();
-    const notificationInterval = setInterval(fetchNotifications, 30000);
+    const notificationInterval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(notificationInterval);
   }, []);
 
@@ -630,7 +630,7 @@ export default function EditorLayout() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => openAlertSheet(file)}>
                               <BellRing className="h-4 w-4 mr-2" />
-                              Create Alert
+                              Alerts
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
