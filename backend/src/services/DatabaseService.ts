@@ -216,4 +216,14 @@ export class DatabaseService {
         const stmt = this.db.prepare('UPDATE notification_history SET is_read = 1');
         stmt.run();
     }
+
+    public deleteNotification(id: number): void {
+        const stmt = this.db.prepare('DELETE FROM notification_history WHERE id = ?');
+        stmt.run(id);
+    }
+
+    public deleteAllNotifications(): void {
+        const stmt = this.db.prepare('DELETE FROM notification_history');
+        stmt.run();
+    }
 }

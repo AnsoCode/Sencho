@@ -751,6 +751,25 @@ app.post('/api/notifications/read', async (req: Request, res: Response) => {
   }
 });
 
+app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    DatabaseService.getInstance().deleteNotification(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
+
+app.delete('/api/notifications', async (req: Request, res: Response) => {
+  try {
+    DatabaseService.getInstance().deleteAllNotifications();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear notifications' });
+  }
+});
+
 app.post('/api/notifications/test', async (req: Request, res: Response) => {
   try {
     const { type, url } = req.body;

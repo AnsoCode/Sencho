@@ -160,6 +160,20 @@ export default function EditorLayout() {
     } catch (e) { }
   };
 
+  const deleteNotification = async (id: number) => {
+    try {
+      await apiFetch(`/notifications/${id}`, { method: 'DELETE' });
+      fetchNotifications();
+    } catch (e) { }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      await apiFetch('/notifications', { method: 'DELETE' });
+      fetchNotifications();
+    } catch (e) { }
+  };
+
   useEffect(() => {
     const wsMap: Record<string, WebSocket> = {};
     (containers || []).forEach(container => {
@@ -725,11 +739,19 @@ export default function EditorLayout() {
             <PopoverContent className="w-80 p-0" align="end">
               <div className="flex items-center justify-between p-4 border-b">
                 <h4 className="font-semibold">Notifications</h4>
-                {notifications.filter(n => !n.is_read).length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
-                    Mark all as read
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {notifications.filter(n => !n.is_read).length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
+                      Mark all as read
+                    </Button>
+                  )}
+                  {notifications.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Clear all
+                    </Button>
+                  )}
+                </div>
               </div>
               <ScrollArea className="h-80">
                 {notifications.length === 0 ? (
@@ -737,8 +759,8 @@ export default function EditorLayout() {
                 ) : (
                   <div className="flex flex-col">
                     {notifications.map((notif: any) => (
-                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'}`}>
-                        <div className="flex items-center gap-2 mb-1">
+                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
+                        <div className="flex items-center gap-2 mb-1 pr-6">
                           <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
                             {notif.level}
                           </Badge>
@@ -746,7 +768,20 @@ export default function EditorLayout() {
                             {new Date(notif.timestamp).toLocaleString()}
                           </span>
                         </div>
-                        <p className="font-medium">{notif.message}</p>
+                        <p className="font-medium pr-6">{notif.message}</p>
+
+                        {/* Delete individual notification button */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteNotification(notif.id);
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -896,12 +931,11 @@ export default function EditorLayout() {
                                           <TooltipTrigger asChild>
                                             <Button
                                               size="sm"
-                                              variant="outline"
-                                              className="rounded-lg h-8 px-2 mr-1"
+                                              variant="ghost"
+                                              className="rounded-lg h-8 w-8"
                                               onClick={() => window.open(`http://${window.location.hostname}:${mainPort}`, '_blank')}
                                             >
-                                              <ExternalLink className="w-3 h-3 mr-1" />
-                                              {mainPort}
+                                              <ExternalLink className="w-4 h-4" />
                                             </Button>
                                           </TooltipTrigger>
                                           <TooltipContent>Open App ({mainPort})</TooltipContent>
