@@ -55,6 +55,7 @@ export class ComposeService {
       } else {
         // Without WS, just wait for resolution
         let stderr = '';
+        child.stdout.on('data', () => { }); // Drain stdout to prevent pipe buffer from blocking the process
         child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
 
         child.on('close', (code: number | null) => {
