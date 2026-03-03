@@ -172,7 +172,7 @@ export default function HomeDashboard() {
 
         <Card className="rounded-xl border-muted bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Host Network</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Docker Network</CardTitle>
             <Network className="h-4 w-4 text-cyan-500" />
           </CardHeader>
           <CardContent>

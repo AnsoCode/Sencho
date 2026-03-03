@@ -449,4 +449,55 @@ class DockerController {
   }
 }
 
+export let globalDockerNetwork = { rxSec: 0, txSec: 0 };
+let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
+
+export const updateGlobalDockerNetwork = async () => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getRunningContainers();
+
+    const statsResults = await Promise.allSettled(
+      containers.map(c => dockerController.getContainerStatsStream(c.Id))
+    );
+
+    let currentRxSum = 0;
+    let currentTxSum = 0;
+
+    for (const result of statsResults) {
+      if (result.status === 'fulfilled') {
+        try {
+          const stats = typeof result.value === 'string' ? JSON.parse(result.value) : result.value;
+          if (stats.networks) {
+            for (const [_, net] of Object.entries(stats.networks) as any) {
+              currentRxSum += net.rx_bytes || 0;
+              currentTxSum += net.tx_bytes || 0;
+            }
+          }
+        } catch (e) {
+          // ignore parsing errors
+        }
+      }
+    }
+
+    const now = Date.now();
+    const timeDiffSeconds = (now - lastNetSum.timestamp) / 1000;
+
+    if (timeDiffSeconds > 0) {
+      const rxDelta = currentRxSum >= lastNetSum.rx ? currentRxSum - lastNetSum.rx : 0;
+      const txDelta = currentTxSum >= lastNetSum.tx ? currentTxSum - lastNetSum.tx : 0;
+
+      globalDockerNetwork.rxSec = rxDelta / timeDiffSeconds;
+      globalDockerNetwork.txSec = txDelta / timeDiffSeconds;
+    }
+
+    lastNetSum = { rx: currentRxSum, tx: currentTxSum, timestamp: now };
+  } catch (error) {
+    console.error('Failed to update global docker network stats:', error);
+  }
+};
+
+// Start the interval tracker
+setInterval(updateGlobalDockerNetwork, 3000);
+
 export default DockerController;
