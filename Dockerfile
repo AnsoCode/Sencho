@@ -7,7 +7,9 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5 && \
+    npm install
 
 # Copy frontend source
 COPY frontend/ ./
@@ -27,7 +29,9 @@ RUN apk add --no-cache python3 make g++
 COPY backend/package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5 && \
+    npm install
 
 # Copy backend source
 COPY backend/ ./
