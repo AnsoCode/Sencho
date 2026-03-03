@@ -1,22 +1,42 @@
 services:
   sencho:
     image: saelix/sencho:latest
-    build: .
     container_name: sencho
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
+      # Required: Docker Socket for container orchestration
       - /var/run/docker.sock:/var/run/docker.sock
-      
-      # Persistent data for your admin login
+
+      # Required: Sencho's internal database for alerts and settings
+      # Format is [Host Path]:[Container Path]
+      # You can change the left side to anywhere on your server, but leave the right side as /app/data
       - ./data:/app/data
       
-      # ⚠️ THE 1:1 PATH RULE (MUST MATCH EXACTLY)
-      # Left Side (Host) === Right Side (Container)
-      # Change both sides to where you actually store your compose files!
-      - /opt/stacks:/opt/stacks
+      # ⚠️ THE 1:1 COMPOSE PATH RULE ⚠️
+      # Mount the root folder where all your compose files live. 
+      # The path on the left (Host) MUST EXACTLY MATCH the path on the right (Container).
+      # EXAMPLE: If your compose files are in /opt/docker, use: - /opt/docker:/opt/docker
+      - /path/to/your/docker/folder:/path/to/your/docker/folder
+      
+      # (Optional but Recommended) Media/Data Drives
+      # Mount your media drives here so Docker Compose inside Sencho can validate paths during deployment.
+      - /path/to/your/media/drives:/path/to/your/media/drives
       
     environment:
-      # This MUST match the path you set in the volumes above!
-      - COMPOSE_DIR=/opt/stacks
+      # ENVIRONMENT VARIABLES FOR INSIDE THE CONTAINER
+      
+      # This points to the Container Path (right side) of your 1:1 mount above
+      - COMPOSE_DIR=/path/to/your/docker/folder/compose
+      
+      # This points to the Container Path (right side) of your database mount above. Leave this as /app/data.
+      - DATA_DIR=/app/data
+    
+    # ⚠️ GLOBAL ENVIRONMENT VARIABLES ⚠️
+    # If your compose files rely on host-level shell variables (like $PUID, $TZ)
+    # or a centralized globals.env file, you MUST pass them into Sencho here.
+    # Otherwise, Sencho will evaluate your compose files with empty variables.
+    # If you do not use a global env file, you can delete these two lines.
+    env_file:
+      - /path/to/your/docker/folder/env/globals.env
