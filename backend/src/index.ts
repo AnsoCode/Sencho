@@ -478,13 +478,14 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 });
 
 // End of legacy container routes
-app.post('/api/stacks/:stackName/up', async (req: Request, res: Response) => {
+app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    composeService.runCommand(stackName, 'up', terminalWs || undefined);
-    res.json({ status: 'Command started' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to start command' });
+    await composeService.deployStack(stackName, terminalWs || undefined);
+    res.json({ message: 'Deployed successfully' });
+  } catch (error: any) {
+    console.error('Failed to deploy stack:', error);
+    res.status(500).json({ error: error.message || 'Failed to deploy stack' });
   }
 });
 
@@ -498,60 +499,33 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   }
 });
 
-// Direct container restart - bypasses docker compose for legacy container support
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
-    const containers = await dockerController.getContainersByStack(stackName);
-    if (containers && containers.length > 0) {
-      for (const c of containers) {
-        await dockerController.restartContainer(c.Id);
-      }
-    }
-    res.json({ status: 'Containers restarted' });
+    composeService.runCommand(stackName, 'restart', terminalWs || undefined);
+    res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to restart containers:', error);
     res.status(500).json({ error: 'Failed to restart containers' });
   }
 });
 
-// Direct container stop - bypasses docker compose for legacy container support
-// Only stops containers that are currently running to avoid 304 errors
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
-    const containers = await dockerController.getContainersByStack(stackName);
-    if (containers && containers.length > 0) {
-      for (const c of containers) {
-        if (c.State === 'running') {
-          await dockerController.stopContainer(c.Id);
-        }
-      }
-    }
-    res.json({ status: 'Containers stopped' });
+    composeService.runCommand(stackName, 'stop', terminalWs || undefined);
+    res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to stop containers:', error);
     res.status(500).json({ error: 'Failed to stop containers' });
   }
 });
 
-// Direct container start - bypasses docker compose for legacy container support
-// Only starts containers that are not currently running
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
-    const containers = await dockerController.getContainersByStack(stackName);
-    if (containers && containers.length > 0) {
-      for (const c of containers) {
-        if (c.State !== 'running') {
-          await dockerController.startContainer(c.Id);
-        }
-      }
-    }
-    res.json({ status: 'Containers started' });
+    composeService.runCommand(stackName, 'start', terminalWs || undefined);
+    res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to start containers:', error);
     res.status(500).json({ error: 'Failed to start containers' });

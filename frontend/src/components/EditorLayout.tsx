@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -346,16 +346,18 @@ export default function EditorLayout() {
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     setIsActionLoading(true);
     try {
-      await apiFetch(`/stacks/${stackName}/up`, {
+      await apiFetch(`/stacks/${stackName}/deploy`, {
         method: 'POST',
       });
+      toast.success("Stack deployed successfully!");
       // Refresh containers after deploy
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to deploy:', error);
+      toast.error(error.message || "Failed to deploy stack");
     } finally {
       setIsActionLoading(false);
     }
@@ -831,12 +833,10 @@ export default function EditorLayout() {
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          {!isDeployed && (
-                            <Button type="button" size="sm" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
-                              <Play className="w-4 h-4 mr-2" />
-                              {isActionLoading ? 'Working...' : 'Deploy'}
-                            </Button>
-                          )}
+                          <Button type="button" size="sm" variant="default" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
+                            <Rocket className="w-4 h-4 mr-2" />
+                            {isActionLoading ? 'Deploying...' : 'Deploy'}
+                          </Button>
                           {isDeployed && (
                             <>
                               {isRunning ? (
@@ -845,7 +845,7 @@ export default function EditorLayout() {
                                   {isActionLoading ? 'Working...' : 'Stop'}
                                 </Button>
                               ) : (
-                                <Button type="button" size="sm" className="rounded-lg" onClick={startStack} disabled={isActionLoading}>
+                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={startStack} disabled={isActionLoading}>
                                   <Play className="w-4 h-4 mr-2" />
                                   {isActionLoading ? 'Working...' : 'Start'}
                                 </Button>

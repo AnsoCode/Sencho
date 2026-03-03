@@ -16,14 +16,12 @@ export class ComposeService {
    * CRITICAL: cwd is set to the stack directory so relative paths in compose files
    * resolve correctly inside the isolated stack folder
    */
-  runCommand(stackName: string, action: 'up' | 'down', ws?: WebSocket) {
+  runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket) {
     const stackDir = path.join(this.baseDir, stackName);
 
     // Run docker compose from within the stack directory
     // This ensures relative paths (e.g., ./data:/config) resolve correctly
-    const args = action === 'up'
-      ? ['compose', 'up', '-d']
-      : ['compose', 'down'];
+    const args = ['compose', '-p', stackName, action];
 
     const child = spawn('docker', args, {
       cwd: stackDir,  // CRITICAL: Set working directory to stack folder
@@ -51,6 +49,54 @@ export class ComposeService {
         ws.send(`Error: ${error.message}\n`);
       });
     }
+  }
+
+  /**
+   * Deploy stack: executes up -d --remove-orphans and awaits completion.
+   */
+  async deployStack(stackName: string, ws?: WebSocket): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
+
+    return new Promise((resolve, reject) => {
+      const args = ['compose', '-p', stackName, 'up', '-d', '--remove-orphans'];
+      const child = spawn('docker', args, {
+        cwd: stackDir,
+        env: {
+          ...process.env,
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+        }
+      });
+
+      let errorLog = '';
+
+      if (ws) {
+        child.stdout.on('data', (data: Buffer) => ws.send(data.toString()));
+        child.stderr.on('data', (data: Buffer) => {
+          const text = data.toString();
+          errorLog += text;
+          ws.send(text);
+        });
+        child.on('close', (code: number | null) => {
+          ws.send(`Command exited with code ${code}\n`);
+          if (code === 0) resolve();
+          else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
+        });
+      } else {
+        child.stderr.on('data', (data: Buffer) => {
+          errorLog += data.toString();
+        });
+        child.on('close', (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
+        });
+      }
+
+      child.on('error', (error: Error) => {
+        console.error(`Docker Compose Deploy Error for ${stackName}:`, error.message);
+        if (ws) ws.send(`Error: ${error.message}\n`);
+        reject(error);
+      });
+    });
   }
 
   /**
@@ -199,7 +245,7 @@ export class ComposeService {
     // Step 1: Pull images
     sendOutput('=== Pulling latest images ===\n');
     await new Promise<void>((resolve, reject) => {
-      const pullProcess = spawn('docker', ['compose', 'pull'], {
+      const pullProcess = spawn('docker', ['compose', '-p', stackName, 'pull'], {
         cwd: stackDir,
         env: {
           ...process.env,
@@ -235,7 +281,7 @@ export class ComposeService {
     // Step 2: Recreate containers with new images
     sendOutput('=== Recreating containers ===\n');
     await new Promise<void>((resolve, reject) => {
-      const upProcess = spawn('docker', ['compose', 'up', '-d'], {
+      const upProcess = spawn('docker', ['compose', '-p', stackName, 'up', '-d', '--remove-orphans'], {
         cwd: stackDir,
         env: {
           ...process.env,
