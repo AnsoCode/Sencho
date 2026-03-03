@@ -21,7 +21,7 @@ export class ComposeService {
 
     // Run docker compose from within the stack directory
     // This ensures relative paths (e.g., ./data:/config) resolve correctly
-    const args = ['compose', '-p', stackName, action];
+    const args = ['compose', action];
 
     return new Promise((resolve, reject) => {
       const child = spawn('docker', args, {
@@ -78,7 +78,7 @@ export class ComposeService {
     const stackDir = path.join(this.baseDir, stackName);
 
     return new Promise((resolve, reject) => {
-      const args = ['compose', '-p', stackName, 'up', '-d', '--remove-orphans'];
+      const args = ['compose', 'up', '-d', '--remove-orphans'];
       const child = spawn('docker', args, {
         cwd: stackDir,
         env: {
@@ -102,6 +102,7 @@ export class ComposeService {
           else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
         });
       } else {
+        child.stdout.on('data', () => { }); // Drains stdout
         child.stderr.on('data', (data: Buffer) => {
           errorLog += data.toString();
         });
@@ -265,7 +266,7 @@ export class ComposeService {
     // Step 1: Pull images
     sendOutput('=== Pulling latest images ===\n');
     await new Promise<void>((resolve, reject) => {
-      const pullProcess = spawn('docker', ['compose', '-p', stackName, 'pull'], {
+      const pullProcess = spawn('docker', ['compose', 'pull'], {
         cwd: stackDir,
         env: {
           ...process.env,
@@ -301,7 +302,7 @@ export class ComposeService {
     // Step 2: Recreate containers with new images
     sendOutput('=== Recreating containers ===\n');
     await new Promise<void>((resolve, reject) => {
-      const upProcess = spawn('docker', ['compose', '-p', stackName, 'up', '-d', '--remove-orphans'], {
+      const upProcess = spawn('docker', ['compose', 'up', '-d', '--remove-orphans'], {
         cwd: stackDir,
         env: {
           ...process.env,
