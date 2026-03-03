@@ -899,7 +899,7 @@ export default function EditorLayout() {
                                         </HoverCardContent>
                                       </HoverCard>
                                       <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                        CPU: {containerStats[container?.Id]?.cpu || 'N/A'} | RAM: {containerStats[container?.Id]?.ram || 'N/A'} | NET: {containerStats[container?.Id]?.net || '0 B ↓ / 0 B ↑'}
+                                        CPU: {container.State === 'running' ? (containerStats[container?.Id]?.cpu || 'N/A') : '0.00%'} | RAM: {container.State === 'running' ? (containerStats[container?.Id]?.ram || 'N/A') : '0.00 MB'} | NET: {container.State === 'running' ? (containerStats[container?.Id]?.net || '0 B ↓ / 0 B ↑') : '0 B/s ↓ / 0 B/s ↑'}
                                       </span>
                                     </div>
                                   </div>

@@ -16,39 +16,58 @@ export class ComposeService {
    * CRITICAL: cwd is set to the stack directory so relative paths in compose files
    * resolve correctly inside the isolated stack folder
    */
-  runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket) {
+  async runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
 
     // Run docker compose from within the stack directory
     // This ensures relative paths (e.g., ./data:/config) resolve correctly
     const args = ['compose', '-p', stackName, action];
 
-    const child = spawn('docker', args, {
-      cwd: stackDir,  // CRITICAL: Set working directory to stack folder
-      env: {
-        ...process.env,
-        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+    return new Promise((resolve, reject) => {
+      const child = spawn('docker', args, {
+        cwd: stackDir,  // CRITICAL: Set working directory to stack folder
+        env: {
+          ...process.env,
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+        }
+      });
+
+      if (ws) {
+        child.stdout.on('data', (data: Buffer) => {
+          ws.send(data.toString());
+        });
+
+        child.stderr.on('data', (data: Buffer) => {
+          ws.send(data.toString());
+        });
+
+        child.on('close', (code: number | null) => {
+          ws.send(`Command exited with code ${code}\n`);
+          if (code === 0) resolve();
+          else reject(new Error(`Command exited with code ${code}`));
+        });
+
+        child.on('error', (error: Error) => {
+          console.error(`Docker Compose Error for ${stackName}:`, error.message);
+          ws.send(`Error: ${error.message}\n`);
+          reject(error);
+        });
+      } else {
+        // Without WS, just wait for resolution
+        let stderr = '';
+        child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+        child.on('close', (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Command failed with code ${code}. Stderr: ${stderr}`));
+        });
+
+        child.on('error', (error: Error) => {
+          console.error(`Docker Compose Error for ${stackName}:`, error.message);
+          reject(error);
+        });
       }
     });
-
-    if (ws) {
-      child.stdout.on('data', (data: Buffer) => {
-        ws.send(data.toString());
-      });
-
-      child.stderr.on('data', (data: Buffer) => {
-        ws.send(data.toString());
-      });
-
-      child.on('close', (code: number | null) => {
-        ws.send(`Command exited with code ${code}\n`);
-      });
-
-      child.on('error', (error: Error) => {
-        console.error(`Docker Compose Error for ${stackName}:`, error.message);
-        ws.send(`Error: ${error.message}\n`);
-      });
-    }
   }
 
   /**

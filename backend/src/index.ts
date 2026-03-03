@@ -492,7 +492,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    composeService.runCommand(stackName, 'down', terminalWs || undefined);
+    await composeService.runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
@@ -502,7 +502,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    composeService.runCommand(stackName, 'restart', terminalWs || undefined);
+    await composeService.runCommand(stackName, 'restart', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to restart containers:', error);
@@ -513,7 +513,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    composeService.runCommand(stackName, 'stop', terminalWs || undefined);
+    await composeService.runCommand(stackName, 'stop', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to stop containers:', error);
@@ -524,7 +524,7 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    composeService.runCommand(stackName, 'start', terminalWs || undefined);
+    await composeService.runCommand(stackName, 'start', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     console.error('Failed to start containers:', error);
@@ -536,13 +536,11 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
 app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    // Run update asynchronously, don't wait for completion
-    composeService.updateStack(stackName, terminalWs || undefined).catch(error => {
-      console.error('Update stack error:', error);
-    });
-    res.json({ status: 'Update started' });
+    // Await update completion
+    await composeService.updateStack(stackName, terminalWs || undefined);
+    res.json({ status: 'Update completed' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to start update' });
+    res.status(500).json({ error: 'Failed to update' });
   }
 });
 
