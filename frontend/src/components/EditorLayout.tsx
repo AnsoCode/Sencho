@@ -64,7 +64,7 @@ export default function EditorLayout() {
   const [newStackName, setNewStackName] = useState('');
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('sencho-theme');
@@ -347,9 +347,9 @@ export default function EditorLayout() {
   const deployStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || isActionLoading) return;
+    if (!selectedFile || loadingAction !== null) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setIsActionLoading(true);
+    setLoadingAction('deploy');
     try {
       await apiFetch(`/stacks/${stackName}/deploy`, {
         method: 'POST',
@@ -364,16 +364,16 @@ export default function EditorLayout() {
       console.error('Failed to deploy:', error);
       toast.error(error.message || "Failed to deploy stack");
     } finally {
-      setIsActionLoading(false);
+      setLoadingAction(null);
     }
   };
 
   const stopStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || isActionLoading) return;
+    if (!selectedFile || loadingAction !== null) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setIsActionLoading(true);
+    setLoadingAction('stop');
     try {
       await apiFetch(`/stacks/${stackName}/stop`, {
         method: 'POST',
@@ -386,16 +386,16 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to stop:', error);
     } finally {
-      setIsActionLoading(false);
+      setLoadingAction(null);
     }
   };
 
   const restartStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || isActionLoading) return;
+    if (!selectedFile || loadingAction !== null) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setIsActionLoading(true);
+    setLoadingAction('restart');
     try {
       await apiFetch(`/stacks/${stackName}/restart`, {
         method: 'POST',
@@ -408,16 +408,16 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to restart:', error);
     } finally {
-      setIsActionLoading(false);
+      setLoadingAction(null);
     }
   };
 
   const updateStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || isActionLoading) return;
+    if (!selectedFile || loadingAction !== null) return;
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setIsActionLoading(true);
+    setLoadingAction('update');
     try {
       await apiFetch(`/stacks/${stackName}/update`, {
         method: 'POST',
@@ -430,13 +430,13 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to update:', error);
     } finally {
-      setIsActionLoading(false);
+      setLoadingAction(null);
     }
   };
 
   const deleteStack = async () => {
     if (!stackToDelete) return;
-    setIsActionLoading(true);
+    setLoadingAction('delete');
     try {
       const response = await apiFetch(`/stacks/${stackToDelete}`, {
         method: 'DELETE',
@@ -459,7 +459,7 @@ export default function EditorLayout() {
       console.error('Failed to delete stack:', error);
       toast.error('Failed to delete stack');
     } finally {
-      setIsActionLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -817,38 +817,38 @@ export default function EditorLayout() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {isRunning ? (
                             <>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={isActionLoading}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
                                 <Square className="w-4 h-4 mr-2" />
-                                {isActionLoading ? 'Working...' : 'Stop'}
+                                {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
                               </Button>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={isActionLoading}>
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
                                 <RotateCw className="w-4 h-4 mr-2" />
-                                Restart
+                                {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                               </Button>
                             </>
                           ) : (
-                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
+                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
                               <Play className="w-4 h-4 mr-2" />
-                              {isActionLoading ? 'Working...' : 'Start'}
+                              {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
                             </Button>
                           )}
-                          <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={isActionLoading}>
+                          <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
                             <CloudDownload className="w-4 h-4 mr-2" />
-                            Update
+                            {loadingAction === 'update' ? 'Updating...' : 'Update'}
                           </Button>
                           <Button
                             type="button"
                             size="sm"
                             variant="destructive"
                             className="rounded-lg"
-                            disabled={isActionLoading}
+                            disabled={loadingAction !== null}
                             onClick={() => {
                               setStackToDelete(selectedFile);
                               setDeleteDialogOpen(true);
                             }}
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
+                            {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
                           </Button>
                         </div>
                       </div>
@@ -983,7 +983,7 @@ export default function EditorLayout() {
                             <Save className="w-4 h-4 mr-2" />
                             Save Only
                           </Button>
-                          <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={isActionLoading}>
+                          <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
                             <Rocket className="w-4 h-4 mr-2" />
                             Save & Deploy
                           </Button>
