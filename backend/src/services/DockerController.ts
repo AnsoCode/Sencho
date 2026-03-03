@@ -74,7 +74,7 @@ class DockerController {
     } else if (target === 'networks') {
       result = await this.docker.pruneNetworks();
     } else if (target === 'volumes') {
-      result = await this.docker.pruneVolumes();
+      result = await this.docker.pruneVolumes({ filters: { all: ['true'] } });
     }
 
     return {
