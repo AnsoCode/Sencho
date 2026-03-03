@@ -351,9 +351,13 @@ export default function EditorLayout() {
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     setLoadingAction('deploy');
     try {
-      await apiFetch(`/stacks/${stackName}/deploy`, {
+      const response = await apiFetch(`/stacks/${stackName}/deploy`, {
         method: 'POST',
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Deploy failed');
+      }
       toast.success("Stack deployed successfully!");
       // Refresh containers after deploy
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
@@ -362,7 +366,7 @@ export default function EditorLayout() {
       await refreshStacks(true);
     } catch (error: any) {
       console.error('Failed to deploy:', error);
-      toast.error(error.message || "Failed to deploy stack");
+      toast.error(error.message || 'Failed to deploy stack');
     } finally {
       setLoadingAction(null);
     }
@@ -375,16 +379,22 @@ export default function EditorLayout() {
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     setLoadingAction('stop');
     try {
-      await apiFetch(`/stacks/${stackName}/stop`, {
+      const response = await apiFetch(`/stacks/${stackName}/stop`, {
         method: 'POST',
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Stop failed');
+      }
+      toast.success('Stack stopped successfully!');
       // Refresh containers after stop
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to stop:', error);
+      toast.error(error.message || 'Failed to stop stack');
     } finally {
       setLoadingAction(null);
     }
@@ -397,16 +407,22 @@ export default function EditorLayout() {
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     setLoadingAction('restart');
     try {
-      await apiFetch(`/stacks/${stackName}/restart`, {
+      const response = await apiFetch(`/stacks/${stackName}/restart`, {
         method: 'POST',
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Restart failed');
+      }
+      toast.success('Stack restarted successfully!');
       // Refresh containers after restart
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to restart:', error);
+      toast.error(error.message || 'Failed to restart stack');
     } finally {
       setLoadingAction(null);
     }
@@ -419,16 +435,22 @@ export default function EditorLayout() {
     const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
     setLoadingAction('update');
     try {
-      await apiFetch(`/stacks/${stackName}/update`, {
+      const response = await apiFetch(`/stacks/${stackName}/update`, {
         method: 'POST',
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Update failed');
+      }
+      toast.success('Stack updated successfully!');
       // Refresh containers after update
       const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update:', error);
+      toast.error(error.message || 'Failed to update stack');
     } finally {
       setLoadingAction(null);
     }
@@ -441,7 +463,11 @@ export default function EditorLayout() {
       const response = await apiFetch(`/stacks/${stackToDelete}`, {
         method: 'DELETE',
       });
-      if (!response.ok) throw new Error('Failed to delete stack');
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Failed to delete stack');
+      }
+      toast.success('Stack deleted successfully!');
       setDeleteDialogOpen(false);
       setStackToDelete(null);
       if (selectedFile === stackToDelete) {
@@ -455,9 +481,9 @@ export default function EditorLayout() {
         setIsEditing(false);
       }
       await refreshStacks();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete stack:', error);
-      toast.error('Failed to delete stack');
+      toast.error(error.message || 'Failed to delete stack');
     } finally {
       setLoadingAction(null);
     }

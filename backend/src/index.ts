@@ -18,6 +18,8 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import YAML from 'yaml';
+import { promises as fsPromises } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -360,16 +362,77 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   }
 });
 
+// Helper: resolve the env file path dynamically from compose.yaml's env_file field
+async function resolveEnvFilePath(stackName: string): Promise<string> {
+  const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
+  const defaultEnvPath = path.join(stackDir, '.env');
+
+  try {
+    // Try to read and parse the compose file
+    const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+    let composeContent: string | null = null;
+
+    for (const file of composeFiles) {
+      try {
+        composeContent = await fsPromises.readFile(path.join(stackDir, file), 'utf-8');
+        break;
+      } catch {
+        // Try next file
+      }
+    }
+
+    if (!composeContent) return defaultEnvPath;
+
+    const parsed = YAML.parse(composeContent);
+    if (!parsed?.services) return defaultEnvPath;
+
+    // Iterate through services, looking for the first env_file declaration
+    for (const serviceName of Object.keys(parsed.services)) {
+      const service = parsed.services[serviceName];
+      if (!service?.env_file) continue;
+
+      let envFilePath: string;
+
+      if (typeof service.env_file === 'string') {
+        envFilePath = service.env_file;
+      } else if (Array.isArray(service.env_file) && service.env_file.length > 0) {
+        // Handle array format: take the first entry
+        const first = service.env_file[0];
+        envFilePath = typeof first === 'string' ? first : (first?.path || '');
+      } else {
+        continue;
+      }
+
+      if (!envFilePath) continue;
+
+      // Resolve: absolute path stays as-is, relative path resolves against stackDir
+      if (path.isAbsolute(envFilePath)) {
+        return envFilePath;
+      }
+      return path.resolve(stackDir, envFilePath);
+    }
+  } catch (error) {
+    console.warn(`Could not parse compose.yaml for env_file resolution in stack "${stackName}":`, error);
+  }
+
+  return defaultEnvPath;
+}
+
 app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const exists = await fileSystemService.envExists(stackName);
-    if (!exists) {
+    const envPath = await resolveEnvFilePath(stackName);
+
+    try {
+      await fsPromises.access(envPath);
+    } catch {
       return res.status(404).json({ error: 'Env file not found' });
     }
-    const content = await fileSystemService.getEnvContent(stackName);
+
+    const content = await fsPromises.readFile(envPath, 'utf-8');
     res.send(content);
   } catch (error) {
+    console.error('Failed to read env file:', error);
     res.status(500).json({ error: 'Failed to read env file' });
   }
 });
@@ -384,7 +447,9 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    await fileSystemService.saveEnvContent(stackName, content);
+
+    const envPath = await resolveEnvFilePath(stackName);
+    await fsPromises.writeFile(envPath, content, 'utf-8');
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
     console.error('Failed to save env file:', error);
@@ -502,33 +567,54 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.runCommand(stackName, 'restart', terminalWs || undefined);
-    res.json({ status: 'Command started' });
-  } catch (error) {
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getContainersByStack(stackName);
+
+    if (!containers || containers.length === 0) {
+      return res.status(404).json({ error: 'No containers found for this stack.' });
+    }
+
+    await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
+    res.json({ success: true, message: 'Restart completed via Engine API.' });
+  } catch (error: any) {
     console.error('Failed to restart containers:', error);
-    res.status(500).json({ error: 'Failed to restart containers' });
+    res.status(500).json({ error: error.message || 'Failed to restart containers' });
   }
 });
 
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.runCommand(stackName, 'stop', terminalWs || undefined);
-    res.json({ status: 'Command started' });
-  } catch (error) {
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getContainersByStack(stackName);
+
+    if (!containers || containers.length === 0) {
+      return res.status(404).json({ error: 'No containers found for this stack.' });
+    }
+
+    await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
+    res.json({ success: true, message: 'Stop completed via Engine API.' });
+  } catch (error: any) {
     console.error('Failed to stop containers:', error);
-    res.status(500).json({ error: 'Failed to stop containers' });
+    res.status(500).json({ error: error.message || 'Failed to stop containers' });
   }
 });
 
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.runCommand(stackName, 'start', terminalWs || undefined);
-    res.json({ status: 'Command started' });
-  } catch (error) {
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getContainersByStack(stackName);
+
+    if (!containers || containers.length === 0) {
+      return res.status(404).json({ error: 'No containers found for this stack.' });
+    }
+
+    await Promise.all(containers.map(c => dockerController.startContainer(c.Id)));
+    res.json({ success: true, message: 'Start completed via Engine API.' });
+  } catch (error: any) {
     console.error('Failed to start containers:', error);
-    res.status(500).json({ error: 'Failed to start containers' });
+    res.status(500).json({ error: error.message || 'Failed to start containers' });
   }
 });
 

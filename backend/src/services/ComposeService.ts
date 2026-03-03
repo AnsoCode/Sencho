@@ -77,6 +77,17 @@ export class ComposeService {
   async deployStack(stackName: string, ws?: WebSocket): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
 
+    try {
+      const dockerController = DockerController.getInstance();
+      const legacyContainers = await dockerController.getContainersByStack(stackName);
+      if (legacyContainers && legacyContainers.length > 0) {
+        if (ws) ws.send(`=== Cleaning up existing containers for clean deployment ===\n`);
+        await dockerController.removeContainers(legacyContainers.map(c => c.Id));
+      }
+    } catch (e) {
+      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+    }
+
     return new Promise((resolve, reject) => {
       const args = ['compose', 'up', '-d', '--remove-orphans'];
       const child = spawn('docker', args, {
@@ -262,6 +273,17 @@ export class ComposeService {
         ws.send(data);
       }
     };
+
+    try {
+      const dockerController = DockerController.getInstance();
+      const legacyContainers = await dockerController.getContainersByStack(stackName);
+      if (legacyContainers && legacyContainers.length > 0) {
+        sendOutput(`=== Cleaning up existing containers for clean update ===\n`);
+        await dockerController.removeContainers(legacyContainers.map(c => c.Id));
+      }
+    } catch (e) {
+      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+    }
 
     // Step 1: Pull images
     sendOutput('=== Pulling latest images ===\n');
