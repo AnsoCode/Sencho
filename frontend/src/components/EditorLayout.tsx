@@ -326,6 +326,11 @@ export default function EditorLayout() {
     }
   };
 
+  const handleSaveAndDeploy = async (e: React.MouseEvent) => {
+    await saveFile();
+    await deployStack(e);
+  };
+
   const discardChanges = () => {
     if (activeTab === 'compose') {
       setContent(originalContent);
@@ -380,28 +385,6 @@ export default function EditorLayout() {
       await refreshStacks(true);
     } catch (error) {
       console.error('Failed to stop:', error);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const startStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFile || isActionLoading) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setIsActionLoading(true);
-    try {
-      await apiFetch(`/stacks/${stackName}/start`, {
-        method: 'POST',
-      });
-      // Refresh containers after start
-      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      await refreshStacks(true);
-    } catch (error) {
-      console.error('Failed to start:', error);
     } finally {
       setIsActionLoading(false);
     }
@@ -525,7 +508,6 @@ export default function EditorLayout() {
   const safeEnvContent = envContent || '';
 
   // Stack state booleans for dynamic button rendering
-  const isDeployed = safeContainers && safeContainers.length > 0;
   const isRunning = safeContainers?.some(c => c.State === 'running');
 
   // Stack name is now the same as selectedFile (no extension to strip)
@@ -833,33 +815,27 @@ export default function EditorLayout() {
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Button type="button" size="sm" variant="default" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
-                            <Rocket className="w-4 h-4 mr-2" />
-                            {isActionLoading ? 'Deploying...' : 'Deploy'}
-                          </Button>
-                          {isDeployed && (
+                          {isRunning ? (
                             <>
-                              {isRunning ? (
-                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={isActionLoading}>
-                                  <Square className="w-4 h-4 mr-2" />
-                                  {isActionLoading ? 'Working...' : 'Stop'}
-                                </Button>
-                              ) : (
-                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={startStack} disabled={isActionLoading}>
-                                  <Play className="w-4 h-4 mr-2" />
-                                  {isActionLoading ? 'Working...' : 'Start'}
-                                </Button>
-                              )}
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={isActionLoading}>
+                                <Square className="w-4 h-4 mr-2" />
+                                {isActionLoading ? 'Working...' : 'Stop'}
+                              </Button>
                               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={isActionLoading}>
                                 <RotateCw className="w-4 h-4 mr-2" />
                                 Restart
                               </Button>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={isActionLoading}>
-                                <CloudDownload className="w-4 h-4 mr-2" />
-                                Update
-                              </Button>
                             </>
+                          ) : (
+                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={isActionLoading}>
+                              <Play className="w-4 h-4 mr-2" />
+                              {isActionLoading ? 'Working...' : 'Start'}
+                            </Button>
                           )}
+                          <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={isActionLoading}>
+                            <CloudDownload className="w-4 h-4 mr-2" />
+                            Update
+                          </Button>
                           <Button
                             type="button"
                             size="sm"
@@ -1003,9 +979,13 @@ export default function EditorLayout() {
                             <X className="w-4 h-4 mr-2" />
                             Discard
                           </Button>
-                          <Button size="sm" variant="default" className="rounded-lg" onClick={saveFile}>
+                          <Button size="sm" variant="outline" className="rounded-lg" onClick={saveFile}>
                             <Save className="w-4 h-4 mr-2" />
-                            Save
+                            Save Only
+                          </Button>
+                          <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={isActionLoading}>
+                            <Rocket className="w-4 h-4 mr-2" />
+                            Save & Deploy
                           </Button>
                         </>
                       )}
