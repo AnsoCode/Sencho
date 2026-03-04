@@ -28,6 +28,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
+import { TemplatesView } from './TemplatesView';
+
 interface ContainerInfo {
   Id: string;
   Names: string[];
@@ -76,7 +78,7 @@ export default function EditorLayout() {
     }
     return true; // Default to dark mode
   });
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -765,6 +767,17 @@ export default function EditorLayout() {
             <HardDrive className="w-4 h-4 mr-2" />
             Resources
           </Button>
+          {/* Templates Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setActiveView('templates')}
+            title="App Templates"
+          >
+            <CloudDownload className="w-4 h-4 mr-2" />
+            Templates
+          </Button>
 
           {/* Settings Modal Toggle */}
           <Button
@@ -848,7 +861,9 @@ export default function EditorLayout() {
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-y-auto p-6">
-          {activeView === 'resources' ? (
+          {activeView === 'templates' ? (
+            <TemplatesView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
+          ) : activeView === 'resources' ? (
             <ResourcesView />
           ) : activeView === 'host-console' ? (
             <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />

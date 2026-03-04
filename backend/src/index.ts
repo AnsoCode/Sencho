@@ -19,6 +19,7 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import { templateService } from './services/TemplateService';
 import YAML from 'yaml';
 import { promises as fsPromises } from 'fs';
 
@@ -1047,6 +1048,51 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message || 'Failed to delete network' });
   }
 });
+
+// --- App Templates Routes ---
+
+app.get('/api/templates', async (req: Request, res: Response) => {
+  try {
+    const templates = await templateService.getTemplates();
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+app.post('/api/templates/deploy', async (req: Request, res: Response) => {
+  try {
+    const { stackName, template, envVars } = req.body;
+
+    if (!stackName || !template) {
+      return res.status(400).json({ error: 'stackName and template are required' });
+    }
+
+    // 1. Create stack directory
+    await fileSystemService.createStack(stackName);
+
+    // 2. Generate compose YAML and save
+    const composeYaml = templateService.generateComposeFromTemplate(template);
+    await fileSystemService.saveStackContent(stackName, composeYaml);
+
+    // 3. Generate env string and save to default .env
+    if (envVars) {
+      const envString = templateService.generateEnvString(envVars);
+      const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
+      const defaultEnvPath = path.join(stackDir, '.env');
+      await fsPromises.writeFile(defaultEnvPath, envString, 'utf-8');
+    }
+
+    // 4. Deploy the stack
+    await composeService.deployStack(stackName, terminalWs || undefined);
+
+    res.json({ success: true, message: 'Template deployed successfully' });
+  } catch (error: any) {
+    console.error('Failed to deploy template:', error);
+    res.status(500).json({ error: error.message || 'Failed to deploy template' });
+  }
+});
+
 
 
 // Serve static files in production (for Docker deployment)
