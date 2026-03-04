@@ -126,10 +126,19 @@ export class MonitorService {
                         // Usually, users will restart or remove the container.
                         // To prevent massive spam, we check if it exited in the last 30 secs
                         if (c.State === 'exited') {
-                            // Find when it exited, this might need an inspect, but we can do a naive check if it's recent
-                            // The status string says something like "Exited (1) 5 minutes ago"
+                            // Check if it exited recently
                             if (c.Status.includes('seconds ago')) {
-                                await notifier.dispatchAlert('error', `Container Crash Detected: ${c.Names[0]} has exited recently.`);
+                                // Extract the exit code from the status string (e.g., "Exited (143) 5 seconds ago")
+                                const match = c.Status.match(/Exited \((\d+)\)/i);
+                                const exitCode = match ? parseInt(match[1], 10) : null;
+
+                                // 0: Success, 137: SIGKILL (Force Stop), 143: SIGTERM (Graceful Stop), 255: Docker Daemon Stop
+                                const intentionalExitCodes = [0, 137, 143, 255];
+
+                                // Only alert if we found a code AND it is not an intentional stop
+                                if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
+                                    await notifier.dispatchAlert('error', `Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                                }
                             }
                         } else if (String(c.Status).includes('unhealthy')) {
                             await notifier.dispatchAlert('error', `Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
