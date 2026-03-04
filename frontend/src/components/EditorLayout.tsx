@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NotificationSettingsModal } from './NotificationSettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
 interface ContainerInfo {
@@ -56,6 +57,8 @@ export default function EditorLayout() {
   const [envContent, setEnvContent] = useState<string>('');
   const [originalEnvContent, setOriginalEnvContent] = useState<string>('');
   const [envExists, setEnvExists] = useState<boolean>(false);
+  const [envFiles, setEnvFiles] = useState<string[]>([]);
+  const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string, net: string, lastRx?: number, lastTx?: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
@@ -259,20 +262,44 @@ export default function EditorLayout() {
       setContent(text || '');
       setOriginalContent(text || '');
 
-      // Load env file
+      // Load env files
       try {
-        const envRes = await apiFetch(`/stacks/${filename}/env`);
-        if (envRes.ok) {
-          const envText = await envRes.text();
-          setEnvContent(envText || '');
-          setOriginalEnvContent(envText || '');
-          setEnvExists(true);
+        const envsRes = await apiFetch(`/stacks/${filename}/envs`);
+        if (envsRes.ok) {
+          const { envFiles } = await envsRes.json();
+          if (envFiles && envFiles.length > 0) {
+            setEnvFiles(envFiles);
+            const firstFile = envFiles[0];
+            setSelectedEnvFile(firstFile);
+            setEnvExists(true);
+
+            // Load specific env file content
+            const envContentRes = await apiFetch(`/stacks/${filename}/env?file=${encodeURIComponent(firstFile)}`);
+            if (envContentRes.ok) {
+              const envText = await envContentRes.text();
+              setEnvContent(envText || '');
+              setOriginalEnvContent(envText || '');
+            } else {
+              setEnvContent('');
+              setOriginalEnvContent('');
+            }
+          } else {
+            setEnvFiles([]);
+            setSelectedEnvFile('');
+            setEnvContent('');
+            setOriginalEnvContent('');
+            setEnvExists(false);
+          }
         } else {
+          setEnvFiles([]);
+          setSelectedEnvFile('');
           setEnvContent('');
           setOriginalEnvContent('');
           setEnvExists(false);
         }
       } catch {
+        setEnvFiles([]);
+        setSelectedEnvFile('');
         setEnvContent('');
         setOriginalEnvContent('');
         setEnvExists(false);
@@ -300,10 +327,25 @@ export default function EditorLayout() {
     }
   };
 
+  const changeEnvFile = async (file: string) => {
+    setSelectedEnvFile(file);
+    setIsFileLoading(true);
+    try {
+      const res = await apiFetch(`/stacks/${selectedFile}/env?file=${encodeURIComponent(file)}`);
+      const text = await res.text();
+      setEnvContent(text || '');
+      setOriginalEnvContent(text || '');
+    } catch (e) {
+      console.error('Failed to switch env file', e);
+    } finally {
+      setIsFileLoading(false);
+    }
+  };
+
   const saveFile = async () => {
     if (!selectedFile) return;
     const currentContent = activeTab === 'compose' ? (content || '') : (envContent || '');
-    const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env`;
+    const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env?file=${encodeURIComponent(selectedEnvFile)}`;
     try {
       const response = await apiFetch(endpoint, {
         method: 'PUT',
@@ -692,6 +734,8 @@ export default function EditorLayout() {
               setOriginalContent('');
               setEnvContent('');
               setOriginalEnvContent('');
+              setEnvFiles([]);
+              setSelectedEnvFile('');
               setEnvExists(false);
               setContainers([]);
               setIsEditing(false);
@@ -987,12 +1031,29 @@ export default function EditorLayout() {
                 {/* Right Column (The Editor) */}
                 <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-[600px] bg-card">
                   <div className="p-4 border-b border-muted flex items-center justify-between">
-                    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
-                      <TabsList className="bg-muted">
-                        <TabsTrigger value="compose" className="rounded-lg">compose.yaml</TabsTrigger>
-                        <TabsTrigger value="env" disabled={!envExists} className="rounded-lg">.env</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
+                    <div className="flex items-center gap-4">
+                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
+                        <TabsList className="bg-muted">
+                          <TabsTrigger value="compose" className="rounded-lg">compose.yaml</TabsTrigger>
+                          <TabsTrigger value="env" disabled={!envExists} className="rounded-lg">.env</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+
+                      {activeTab === 'env' && envFiles.length > 0 && (
+                        <Select value={selectedEnvFile} onValueChange={changeEnvFile} disabled={isEditing || isFileLoading}>
+                          <SelectTrigger className="h-9 text-xs bg-muted border-none min-w-[200px]">
+                            <SelectValue placeholder="Select environment file" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {envFiles.map((file) => (
+                              <SelectItem key={file} value={file} className="text-xs">
+                                {file.split('/').pop()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
                     <div className="flex gap-2">
                       {!isEditing ? (
                         <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>

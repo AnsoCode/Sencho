@@ -1,6 +1,7 @@
 services:
   sencho:
     image: saelix/sencho:latest
+    build: .
     container_name: sencho
     restart: unless-stopped
     ports:

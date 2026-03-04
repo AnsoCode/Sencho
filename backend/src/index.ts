@@ -362,8 +362,8 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   }
 });
 
-// Helper: resolve the env file path dynamically from compose.yaml's env_file field
-async function resolveEnvFilePath(stackName: string): Promise<string> {
+// Helper: resolve all env file paths dynamically from compose.yaml's env_file field
+async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
   const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
   const defaultEnvPath = path.join(stackDir, '.env');
 
@@ -381,47 +381,74 @@ async function resolveEnvFilePath(stackName: string): Promise<string> {
       }
     }
 
-    if (!composeContent) return defaultEnvPath;
+    if (!composeContent) return [defaultEnvPath];
 
     const parsed = YAML.parse(composeContent);
-    if (!parsed?.services) return defaultEnvPath;
+    if (!parsed?.services) return [defaultEnvPath];
 
-    // Iterate through services, looking for the first env_file declaration
+    const envFiles = new Set<string>();
+
+    // Iterate through all services and collect every env_file declaration
     for (const serviceName of Object.keys(parsed.services)) {
       const service = parsed.services[serviceName];
       if (!service?.env_file) continue;
 
-      let envFilePath: string;
-
       if (typeof service.env_file === 'string') {
-        envFilePath = service.env_file;
-      } else if (Array.isArray(service.env_file) && service.env_file.length > 0) {
-        // Handle array format: take the first entry
-        const first = service.env_file[0];
-        envFilePath = typeof first === 'string' ? first : (first?.path || '');
-      } else {
-        continue;
+        const resolvedPath = path.isAbsolute(service.env_file)
+          ? service.env_file
+          : path.resolve(stackDir, service.env_file);
+        envFiles.add(resolvedPath);
+      } else if (Array.isArray(service.env_file)) {
+        for (const entry of service.env_file) {
+          const entryPath = typeof entry === 'string' ? entry : (entry?.path || '');
+          if (entryPath) {
+            const resolvedPath = path.isAbsolute(entryPath)
+              ? entryPath
+              : path.resolve(stackDir, entryPath);
+            envFiles.add(resolvedPath);
+          }
+        }
       }
-
-      if (!envFilePath) continue;
-
-      // Resolve: absolute path stays as-is, relative path resolves against stackDir
-      if (path.isAbsolute(envFilePath)) {
-        return envFilePath;
-      }
-      return path.resolve(stackDir, envFilePath);
     }
+
+    if (envFiles.size === 0) {
+      return [defaultEnvPath];
+    }
+
+    return Array.from(envFiles);
   } catch (error) {
     console.warn(`Could not parse compose.yaml for env_file resolution in stack "${stackName}":`, error);
   }
 
-  return defaultEnvPath;
+  return [defaultEnvPath];
 }
+
+app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
+  try {
+    const stackName = req.params.stackName as string;
+    const envPaths = await resolveAllEnvFilePaths(stackName);
+    res.json({ envFiles: envPaths });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to resolve env files' });
+  }
+});
 
 app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const envPath = await resolveEnvFilePath(stackName);
+    const requestedFile = req.query.file as string | undefined;
+    const envPaths = await resolveAllEnvFilePaths(stackName);
+
+    let envPath = envPaths[0]; // Fallback to the first
+
+    if (requestedFile) {
+      // Validate that the requested file exists in the allowed resolved list
+      if (envPaths.includes(requestedFile)) {
+        envPath = requestedFile;
+      } else {
+        return res.status(400).json({ error: 'Requested env file not allowed' });
+      }
+    }
 
     try {
       await fsPromises.access(envPath);
@@ -448,7 +475,19 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Content must be a string' });
     }
 
-    const envPath = await resolveEnvFilePath(stackName);
+    const requestedFile = req.query.file as string | undefined;
+    const envPaths = await resolveAllEnvFilePaths(stackName);
+
+    let envPath = envPaths[0]; // Fallback
+
+    if (requestedFile) {
+      if (envPaths.includes(requestedFile)) {
+        envPath = requestedFile;
+      } else {
+        return res.status(400).json({ error: 'Requested env file not allowed' });
+      }
+    }
+
     await fsPromises.writeFile(envPath, content, 'utf-8');
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
