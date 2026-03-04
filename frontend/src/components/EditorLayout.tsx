@@ -1081,7 +1081,6 @@ export default function EditorLayout() {
                   <div className="flex-1 min-h-0 flex flex-col">
                     {activeTab === 'env' && (
                       <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-2 flex items-center gap-2 text-xs text-blue-400">
-                        <span className="font-semibold">💡 Pro Tip:</span>
                         <span>
                           Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
                         </span>
