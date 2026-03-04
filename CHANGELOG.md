@@ -8,3 +8,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Git Flow branching strategy and branch protection.
 - GitHub Actions CI pipeline for automated TypeScript build verification.
+- **Added:** Automated Docker Hub CI/CD pipeline for the `dev` and `latest` tags.
