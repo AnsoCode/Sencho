@@ -50,6 +50,7 @@ export class DatabaseService {
         // Default journal mode is safer for arbitrary Docker volume mounts than WAL
 
         this.initSchema();
+        this.migrateJsonConfig(dataDir);
     }
 
     public static getInstance(): DatabaseService {
@@ -104,6 +105,30 @@ export class DatabaseService {
         stmt.run('host_disk_limit', '90');
         stmt.run('global_crash', '1');
         stmt.run('docker_janitor_gb', '5');
+    }
+
+    private migrateJsonConfig(dataDir: string) {
+        const configPath = path.join(dataDir, 'sencho.json');
+        if (fs.existsSync(configPath)) {
+            try {
+                const data = fs.readFileSync(configPath, 'utf-8');
+                const config = JSON.parse(data);
+
+                if (config.username && config.passwordHash && config.jwtSecret) {
+                    const stmt = this.db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
+                    stmt.run('auth_username', config.username);
+                    stmt.run('auth_password_hash', config.passwordHash);
+                    stmt.run('auth_jwt_secret', config.jwtSecret);
+
+                    console.log('Successfully migrated sencho.json credentials to SQLite global_settings.');
+
+                    // Delete the file after migrating
+                    fs.unlinkSync(configPath);
+                }
+            } catch (err) {
+                console.error('Failed to migrate sencho.json:', err);
+            }
+        }
     }
 
     // --- Agents ---

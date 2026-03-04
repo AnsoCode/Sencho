@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, Sun, Moon, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -26,7 +26,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { NotificationSettingsModal } from './NotificationSettingsModal';
+import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
 interface ContainerInfo {
   Id: string;
@@ -846,26 +846,6 @@ export default function EditorLayout() {
               </ScrollArea>
             </PopoverContent>
           </Popover>
-
-          {/* Theme Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setIsDarkMode(!isDarkMode)}
-          >
-            {isDarkMode ? (
-              <>
-                <Sun className="w-4 h-4 mr-2" />
-                Light
-              </>
-            ) : (
-              <>
-                <Moon className="w-4 h-4 mr-2" />
-                Dark
-              </>
-            )}
-          </Button>
         </div>
 
         {/* Main Workspace */}
@@ -1157,10 +1137,12 @@ export default function EditorLayout() {
         onClose={() => setMaintenanceModalOpen(false)}
       />
 
-      {/* Notification Settings Modal */}
-      <NotificationSettingsModal
+      {/* Settings Modal */}
+      <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
+        isDarkMode={isDarkMode}
+        setIsDarkMode={setIsDarkMode}
       />
 
       {/* Stack Alert Sheet */}

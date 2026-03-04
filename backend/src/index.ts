@@ -6,7 +6,8 @@ import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
-import { ConfigService } from './services/ConfigService';
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 // @ts-ignore - composerize lacks proper type definitions
 import composerize from 'composerize';
 import si from 'systeminformation';
@@ -25,9 +26,6 @@ const execAsync = promisify(exec);
 
 const app = express();
 const PORT = 3000;
-
-// ConfigService for persistent auth storage
-const configService = new ConfigService();
 
 // FileSystemService for stack management
 const fileSystemService = new FileSystemService();
@@ -76,7 +74,9 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
   }
 
   try {
-    const jwtSecret = await configService.getJwtSecret();
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) throw new Error('No JWT secret');
     const decoded = jwt.verify(token, jwtSecret) as { username: string };
     req.user = { username: decoded.username };
     next();
@@ -91,7 +91,8 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
 // Check if setup is needed
 app.get('/api/auth/status', async (req: Request, res: Response): Promise<void> => {
   try {
-    const needsSetup = await configService.needsSetup();
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const needsSetup = !settings.auth_username || !settings.auth_password_hash || !settings.auth_jwt_secret;
     res.json({ needsSetup });
   } catch (error) {
     console.error('Error checking setup status:', error);
@@ -102,8 +103,9 @@ app.get('/api/auth/status', async (req: Request, res: Response): Promise<void> =
 // Initial setup endpoint
 app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> => {
   try {
-    // Check if setup is still needed
-    const needsSetup = await configService.needsSetup();
+    const dbSvc = DatabaseService.getInstance();
+    const settings = dbSvc.getGlobalSettings();
+    const needsSetup = !settings.auth_username || !settings.auth_password_hash || !settings.auth_jwt_secret;
     if (!needsSetup) {
       res.status(400).json({ error: 'Setup has already been completed' });
       return;
@@ -133,10 +135,13 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
     }
 
     // Save credentials (this also generates the JWT secret)
-    await configService.saveConfig(username, password);
+    const passwordHash = await bcrypt.hash(password, 10);
+    const jwtSecret = crypto.randomBytes(64).toString('hex');
+    dbSvc.updateGlobalSetting('auth_username', username);
+    dbSvc.updateGlobalSetting('auth_password_hash', passwordHash);
+    dbSvc.updateGlobalSetting('auth_jwt_secret', jwtSecret);
 
     // Issue JWT and log user in
-    const jwtSecret = await configService.getJwtSecret();
     const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
     res.cookie(COOKIE_NAME, token, getCookieOptions(req));
     res.json({ success: true, message: 'Setup completed successfully' });
@@ -156,20 +161,63 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
   }
 
   try {
-    const isValid = await configService.validateCredentials(username, password);
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const storedUsername = settings.auth_username;
+    const storedHash = settings.auth_password_hash;
 
-    if (isValid) {
-      const jwtSecret = await configService.getJwtSecret();
-      const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
-      res.cookie(COOKIE_NAME, token, getCookieOptions(req));
-      res.json({ success: true, message: 'Login successful' });
-      return;
+    if (storedUsername && storedHash && username === storedUsername) {
+      const isValid = await bcrypt.compare(password, storedHash);
+      if (isValid) {
+        const jwtSecret = settings.auth_jwt_secret;
+        if (!jwtSecret) throw new Error('JWT secret missing from DB');
+        const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
+        res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+        res.json({ success: true, message: 'Login successful' });
+        return;
+      }
     }
 
     res.status(401).json({ error: 'Invalid credentials' });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Update password endpoint
+app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      res.status(400).json({ error: 'Old password and new password are required' });
+      return;
+    }
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters' });
+      return;
+    }
+
+    const dbSvc = DatabaseService.getInstance();
+    const settings = dbSvc.getGlobalSettings();
+    const storedHash = settings.auth_password_hash;
+
+    if (!storedHash) {
+      res.status(400).json({ error: 'Auth not configured properly' });
+      return;
+    }
+
+    const isValid = await bcrypt.compare(oldPassword, storedHash);
+    if (!isValid) {
+      res.status(401).json({ error: 'Invalid old password' });
+      return;
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    dbSvc.updateGlobalSetting('auth_password_hash', newHash);
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Password update error:', error);
+    res.status(500).json({ error: 'Failed to update password' });
   }
 });
 
@@ -221,7 +269,9 @@ server.on('upgrade', async (req, socket, head) => {
   }
 
   try {
-    const jwtSecret = await configService.getJwtSecret();
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) throw new Error('No JWT secret');
     jwt.verify(token, jwtSecret);
 
     // Check if this is a stack logs WebSocket request
