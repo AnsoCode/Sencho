@@ -976,6 +976,79 @@ app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/system/images', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const images = await dockerController.getImages();
+    res.json(images);
+  } catch (error) {
+    console.error('Failed to fetch images:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
+});
+
+app.get('/api/system/volumes', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const volumes = await dockerController.getVolumes();
+    res.json(volumes);
+  } catch (error) {
+    console.error('Failed to fetch volumes:', error);
+    res.status(500).json({ error: 'Failed to fetch volumes' });
+  }
+});
+
+app.get('/api/system/networks', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const networks = await dockerController.getNetworks();
+    res.json(networks);
+  } catch (error) {
+    console.error('Failed to fetch networks:', error);
+    res.status(500).json({ error: 'Failed to fetch networks' });
+  }
+});
+
+app.post('/api/system/images/delete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'ID is required' });
+    const dockerController = DockerController.getInstance();
+    await dockerController.removeImage(id);
+    res.json({ success: true, message: 'Image deleted' });
+  } catch (error: any) {
+    console.error('Failed to delete image:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete image' });
+  }
+});
+
+app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'ID is required' });
+    const dockerController = DockerController.getInstance();
+    await dockerController.removeVolume(id);
+    res.json({ success: true, message: 'Volume deleted' });
+  } catch (error: any) {
+    console.error('Failed to delete volume:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete volume' });
+  }
+});
+
+app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'ID is required' });
+    const dockerController = DockerController.getInstance();
+    await dockerController.removeNetwork(id);
+    res.json({ success: true, message: 'Network deleted' });
+  } catch (error: any) {
+    console.error('Failed to delete network:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete network' });
+  }
+});
+
+
 // Serve static files in production (for Docker deployment)
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static('public'));

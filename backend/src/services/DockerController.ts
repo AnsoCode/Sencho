@@ -83,6 +83,34 @@ class DockerController {
     };
   }
 
+  public async getImages() {
+    return await this.docker.listImages({ all: false });
+  }
+
+  public async getVolumes() {
+    const data = await this.docker.listVolumes();
+    return data.Volumes || [];
+  }
+
+  public async getNetworks() {
+    return await this.docker.listNetworks();
+  }
+
+  public async removeImage(id: string) {
+    const image = this.docker.getImage(id);
+    await image.remove({ force: true });
+  }
+
+  public async removeVolume(name: string) {
+    const volume = this.docker.getVolume(name);
+    await volume.remove({ force: true });
+  }
+
+  public async removeNetwork(id: string) {
+    const network = this.docker.getNetwork(id);
+    await network.remove({ force: true });
+  }
+
   public async getRunningContainers() {
     const containers = await this.docker.listContainers({ all: false });
     return containers;

@@ -5,7 +5,7 @@ import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
-import MaintenanceModal from './MaintenanceModal';
+import ResourcesView from './ResourcesView';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, Brush, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -76,7 +76,7 @@ export default function EditorLayout() {
     }
     return true; // Default to dark mode
   });
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -85,8 +85,6 @@ export default function EditorLayout() {
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
 
-  // Maintenance modal state
-  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
 
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -756,16 +754,16 @@ export default function EditorLayout() {
             <Terminal className="w-4 h-4 mr-2" />
             Console
           </Button>
-          {/* System Janitor (Maintenance) Toggle */}
+          {/* Resources Toggle */}
           <Button
             variant="outline"
             size="sm"
             className="rounded-lg"
-            onClick={() => setMaintenanceModalOpen(true)}
-            title="System Maintenance"
+            onClick={() => setActiveView('resources')}
+            title="System Resources"
           >
-            <Brush className="w-4 h-4 mr-2" />
-            Janitor
+            <HardDrive className="w-4 h-4 mr-2" />
+            Resources
           </Button>
 
           {/* Settings Modal Toggle */}
@@ -850,7 +848,9 @@ export default function EditorLayout() {
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-y-auto p-6">
-          {activeView === 'host-console' ? (
+          {activeView === 'resources' ? (
+            <ResourcesView />
+          ) : activeView === 'host-console' ? (
             <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
             <ErrorBoundary>
@@ -1132,10 +1132,6 @@ export default function EditorLayout() {
         />
       )}
 
-      <MaintenanceModal
-        isOpen={maintenanceModalOpen}
-        onClose={() => setMaintenanceModalOpen(false)}
-      />
 
       {/* Settings Modal */}
       <SettingsModal
