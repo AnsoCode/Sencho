@@ -14,7 +14,8 @@ class DockerController {
   private docker: Docker;
 
   private constructor() {
-    this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
+    // Use default constructor to support both Windows named pipes and Linux sockets
+    this.docker = new Docker();
   }
 
   public static getInstance(): DockerController {

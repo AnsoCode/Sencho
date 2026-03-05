@@ -28,7 +28,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
-import { TemplatesView } from './TemplatesView';
+import { AppStoreView } from './AppStoreView';
 
 interface ContainerInfo {
   Id: string;
@@ -767,16 +767,16 @@ export default function EditorLayout() {
             <HardDrive className="w-4 h-4 mr-2" />
             Resources
           </Button>
-          {/* Templates Toggle */}
+          {/* App Store Toggle */}
           <Button
             variant="outline"
             size="sm"
             className="rounded-lg"
             onClick={() => setActiveView('templates')}
-            title="App Templates"
+            title="App Store"
           >
             <CloudDownload className="w-4 h-4 mr-2" />
-            Templates
+            App Store
           </Button>
 
           {/* Settings Modal Toggle */}
@@ -862,7 +862,7 @@ export default function EditorLayout() {
         {/* Main Workspace */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeView === 'templates' ? (
-            <TemplatesView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
+            <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
           ) : activeView === 'resources' ? (
             <ResourcesView />
           ) : activeView === 'host-console' ? (
