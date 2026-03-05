@@ -276,7 +276,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                 </div>
                             </SheetHeader>
 
-                            <ScrollArea className="flex-1 pr-4 mt-4 h-[calc(100vh-16rem)]">
+                            <ScrollArea className="flex-1 pr-4">
                                 <div className="space-y-6 pb-8">
                                     <div className="space-y-2">
                                         <Label htmlFor="stackName" className="font-semibold">
