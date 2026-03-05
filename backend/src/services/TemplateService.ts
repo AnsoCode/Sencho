@@ -147,12 +147,6 @@ export class TemplateService {
                     continue;
                 }
 
-                if (hostPath.includes('portainer/Files') || hostPath.includes('/your/') || hostPath.includes('/path/to/')) {
-                    const containerFolder = containerPath.split('/').filter(Boolean).pop() || 'data';
-                    hostPath = `./${containerFolder}`;
-                } else if (hostPath.startsWith('/')) {
-                    hostPath = hostPath.replace(/^\//, './');
-                }
 
                 yaml += `      - ${hostPath}:${containerPath}${options}\n`;
             }
