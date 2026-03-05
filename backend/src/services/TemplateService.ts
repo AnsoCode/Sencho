@@ -50,7 +50,7 @@ export class TemplateService {
         try {
             const settings = DatabaseService.getInstance().getGlobalSettings();
             // Default to a reliable LSIO Portainer v2 template registry if not set
-            const registryUrl = settings.template_registry_url || 'https://raw.githubusercontent.com/technorabilia/portainer-templates/main/lsio/templates/templates-2.0.json';
+            const registryUrl = settings.template_registry_url || 'https://raw.githubusercontent.com/technorabilia/portainer-templates/main/lsio/templates/templates.json';
 
             const response = await axios.get<TemplatesResponse>(registryUrl);
             // Filter out templates without images as we are generating compose files from image, ports, etc.
