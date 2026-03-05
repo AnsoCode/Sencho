@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { DatabaseService } from './DatabaseService';
+
 
 export interface TemplateEnv {
     name: string;
@@ -38,7 +40,6 @@ export class TemplateService {
     private cachedTemplates: Template[] = [];
     private lastFetchTime: number = 0;
     private readonly CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-    private readonly TEMPLATES_URL = 'https://raw.githubusercontent.com/Lissy93/portainer-templates/main/templates.json';
 
     public async getTemplates(): Promise<Template[]> {
         const now = Date.now();
@@ -47,7 +48,11 @@ export class TemplateService {
         }
 
         try {
-            const response = await axios.get<TemplatesResponse>(this.TEMPLATES_URL);
+            const settings = DatabaseService.getInstance().getGlobalSettings();
+            // Default to a reliable LSIO Portainer v2 template registry if not set
+            const registryUrl = settings.template_registry_url || 'https://raw.githubusercontent.com/technorabilia/portainer-templates/main/lsio/templates/templates-2.0.json';
+
+            const response = await axios.get<TemplatesResponse>(registryUrl);
             // Filter out templates without images as we are generating compose files from image, ports, etc.
             this.cachedTemplates = (response.data.templates || []).filter((t: Template) => !!t.image && t.type === 1);
             this.lastFetchTime = now;
@@ -80,14 +85,37 @@ export class TemplateService {
         if (template.volumes && template.volumes.length > 0) {
             yaml += `    volumes:\n`;
             for (const vol of template.volumes) {
+                let hostPath = '';
+                let containerPath = '';
+                let options = '';
+
                 if (typeof vol === 'string') {
-                    yaml += `      - ${vol}\n`;
+                    const parts = vol.split(':');
+                    if (parts.length === 1) {
+                        yaml += `      - ${vol}\n`;
+                        continue;
+                    }
+                    hostPath = parts[0];
+                    containerPath = parts[1];
+                    options = parts.slice(2).join(':');
+                    if (options) options = `:${options}`;
                 } else if (vol.container) {
-                    // If bind is not provided, we extract the folder name from the container path
-                    const containerFolder = vol.container.split('/').pop() || 'data';
-                    const localBind = vol.bind ? vol.bind.replace(/^\//, './') : `./${containerFolder}`;
-                    yaml += `      - ${localBind}:${vol.container}${vol.readonly ? ':ro' : ''}\n`;
+                    containerPath = vol.container;
+                    const containerFolder = containerPath.split('/').filter(Boolean).pop() || 'data';
+                    hostPath = vol.bind ? vol.bind : `./${containerFolder}`;
+                    options = vol.readonly ? ':ro' : '';
+                } else {
+                    continue;
                 }
+
+                if (hostPath.includes('portainer/Files') || hostPath.includes('/your/') || hostPath.includes('/path/to/')) {
+                    const containerFolder = containerPath.split('/').filter(Boolean).pop() || 'data';
+                    hostPath = `./${containerFolder}`;
+                } else if (hostPath.startsWith('/')) {
+                    hostPath = hostPath.replace(/^\//, './');
+                }
+
+                yaml += `      - ${hostPath}:${containerPath}${options}\n`;
             }
         }
 
