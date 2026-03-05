@@ -25,6 +25,10 @@ export interface Template {
     env?: TemplateEnv[];
     categories?: string[];
     platform?: string;
+    github_url?: string;
+    docs_url?: string;
+    architectures?: string[];
+    stars?: number;
     repository?: {
         url: string;
         stackfile: string;
@@ -50,11 +54,46 @@ export class TemplateService {
         try {
             const settings = DatabaseService.getInstance().getGlobalSettings();
             // Default to a reliable LSIO Portainer v2 template registry if not set
-            const registryUrl = settings.template_registry_url || 'https://raw.githubusercontent.com/technorabilia/portainer-templates/main/lsio/templates/templates.json';
+            const registryUrl = settings.template_registry_url || 'https://api.linuxserver.io/api/v1/images?include_config=true';
 
-            const response = await axios.get<TemplatesResponse>(registryUrl);
-            // Filter out templates without images as we are generating compose files from image, ports, etc.
-            this.cachedTemplates = (response.data.templates || []).filter((t: Template) => !!t.image && t.type === 1);
+            const response = await axios.get<any>(registryUrl);
+
+            if (registryUrl.includes('api.linuxserver.io')) {
+                // Official LSIO API Schema Mapping
+                const lsioApps = response.data?.data?.repositories?.linuxserver || [];
+
+                this.cachedTemplates = Object.values(lsioApps).map((app: any) => {
+                    return {
+                        type: 1,
+                        title: app.name,
+                        description: app.description || '',
+                        logo: app.logo || `https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/${app.name}-logo.png`,
+                        image: `lscr.io/linuxserver/${app.name}:latest`,
+                        github_url: app.github,
+                        docs_url: app.readme,
+                        architectures: app.arch,
+                        stars: app.stars,
+                        // Map configs if available, otherwise default to empty arrays
+                        ports: (app.config?.ports || []).map((p: any) => `${p.external || p.internal}:${p.internal}/${p.protocol || 'tcp'}`),
+                        volumes: (app.config?.volumes || []).map((v: any) => {
+                            const folderName = v.path.split('/').filter(Boolean).pop() || 'data';
+                            return {
+                                container: v.path,
+                                bind: `./${folderName}` // Proactively create a clean relative path
+                            };
+                        }),
+                        env: (app.config?.environment || []).map((e: any) => ({
+                            name: e.name,
+                            label: e.desc || e.name,
+                            default: e.default || ''
+                        }))
+                    };
+                });
+            } else {
+                // Legacy Portainer v2 Format (Fallback for custom registries)
+                this.cachedTemplates = (response.data.templates || []).filter((t: Template) => !!t.image && t.type === 1);
+            }
+
             this.lastFetchTime = now;
             return this.cachedTemplates;
         } catch (error) {
