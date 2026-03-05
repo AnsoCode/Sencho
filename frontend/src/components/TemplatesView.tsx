@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Search, Rocket, Loader2, Info } from "lucide-react";
+import { Search, Rocket, Loader2, Info, ExternalLink, Github, Star } from "lucide-react";
 import { toast } from "sonner";
 
 export interface TemplateEnv {
@@ -24,6 +24,10 @@ export interface Template {
     volumes?: any[];
     env?: TemplateEnv[];
     categories?: string[];
+    github_url?: string;
+    docs_url?: string;
+    architectures?: string[];
+    stars?: number;
 }
 
 interface TemplatesViewProps {
@@ -198,6 +202,41 @@ export function TemplatesView({ onDeploySuccess }: TemplatesViewProps) {
                                         <SheetDescription className="line-clamp-2 mt-1">
                                             {selectedTemplate.description}
                                         </SheetDescription>
+
+                                        {(selectedTemplate.architectures || selectedTemplate.stars !== undefined || selectedTemplate.github_url || selectedTemplate.docs_url) && (
+                                            <div className="mt-3 space-y-2">
+                                                {selectedTemplate.architectures && selectedTemplate.architectures.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {selectedTemplate.architectures.map(arch => (
+                                                            <Badge variant="outline" key={arch} className="text-[10px] px-1.5 py-0">
+                                                                {arch}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                                                    {selectedTemplate.stars !== undefined && (
+                                                        <div className="flex items-center gap-1">
+                                                            <Star className="w-3 h-3 fill-muted-foreground" />
+                                                            <span>{selectedTemplate.stars}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedTemplate.github_url && (
+                                                        <a href={selectedTemplate.github_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground transition-colors">
+                                                            <Github className="w-3 h-3" />
+                                                            <span>Source</span>
+                                                        </a>
+                                                    )}
+                                                    {selectedTemplate.docs_url && (
+                                                        <a href={selectedTemplate.docs_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground transition-colors">
+                                                            <ExternalLink className="w-3 h-3" />
+                                                            <span>Docs</span>
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </SheetHeader>

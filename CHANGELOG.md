@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Added:** Official LinuxServer.io API integration as the default Template Registry.
+- **Added:** Rich metadata display in the App Store (Architectures, Documentation links, GitHub repository links).
 - **Added:** Dynamic Template Registry URL support via global settings, defaulting to LinuxServer.io templates.
 - **Fixed:** Smart Volume Sanitizer to automatically rewrite messy Portainer bind mounts into clean, relative paths (Sencho 1:1 path rule).
 - Git Flow branching strategy and branch protection.
