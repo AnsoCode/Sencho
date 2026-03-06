@@ -1083,8 +1083,14 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       await fsPromises.writeFile(defaultEnvPath, envString, 'utf-8');
     }
 
-    // 4. Deploy the stack
-    await composeService.deployStack(stackName, terminalWs || undefined);
+    // 4. Deploy the stack with atomic rollback
+    try {
+      await composeService.deployStack(stackName, terminalWs || undefined);
+    } catch (deployError) {
+      // ATOMIC ROLLBACK: If Docker fails, delete the folder we just created
+      await fileSystemService.deleteStack(stackName);
+      throw deployError; // Pass error to outer catch block
+    }
 
     res.json({ success: true, message: 'Template deployed successfully' });
   } catch (error: any) {

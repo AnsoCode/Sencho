@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Changed:** Rebranded "Templates" to "App Store" across the UI.
 - **Added:** Advanced deployment configuration panel (Editable Ports and Environment Variables) with smart defaults.
 - **Fixed:** Implemented smart image fallbacks for broken registry logos and added expandable descriptions.
+- **Added:** Atomic Deployments: Failed App Store deployments now automatically roll back and delete their orphaned folders.
+- **Fixed:** Global dark mode scrollbar styling to eliminate blinding white native scrollbars.
+- **Fixed:** Input overlap UI bug in the App Store deployment panel.
 ### Added
 - **Added:** Official LinuxServer.io API integration as the default Template Registry.
 - **Added:** Rich metadata display in the App Store (Architectures, Documentation links, GitHub repository links).
