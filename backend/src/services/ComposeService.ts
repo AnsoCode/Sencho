@@ -88,7 +88,7 @@ export class ComposeService {
       console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
     }
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const args = ['compose', 'up', '-d', '--remove-orphans'];
       const child = spawn('docker', args, {
         cwd: stackDir,
@@ -101,7 +101,11 @@ export class ComposeService {
       let errorLog = '';
 
       if (ws) {
-        child.stdout.on('data', (data: Buffer) => ws.send(data.toString()));
+        child.stdout.on('data', (data: Buffer) => {
+          const text = data.toString();
+          errorLog += text;
+          ws.send(text);
+        });
         child.stderr.on('data', (data: Buffer) => {
           const text = data.toString();
           errorLog += text;
@@ -113,7 +117,9 @@ export class ComposeService {
           else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
         });
       } else {
-        child.stdout.on('data', () => { }); // Drains stdout
+        child.stdout.on('data', (data: Buffer) => {
+          errorLog += data.toString();
+        });
         child.stderr.on('data', (data: Buffer) => {
           errorLog += data.toString();
         });
@@ -129,6 +135,31 @@ export class ComposeService {
         reject(error);
       });
     });
+
+    // Post-Deploy Health Probe
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getDocker().listContainers({
+      all: true,
+      filters: { label: [`com.docker.compose.project=${stackName}`] }
+    });
+
+    for (const containerInfo of containers) {
+      if (containerInfo.State === 'exited') {
+        const container = dockerController.getDocker().getContainer(containerInfo.Id);
+        const inspectData = await container.inspect();
+        const exitCode = inspectData.State.ExitCode;
+
+        if (exitCode !== 0) {
+          const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
+          // Strip Docker log multiplex headers if they exist
+          let logStr = logs.toString('utf-8');
+          throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
+        }
+      }
+    }
+
   }
 
   /**
@@ -335,7 +366,9 @@ export class ComposeService {
       let errorLog = '';
 
       upProcess.stdout.on('data', (data: Buffer) => {
-        sendOutput(data.toString());
+        const text = data.toString();
+        errorLog += text;
+        sendOutput(text);
       });
 
       upProcess.stderr.on('data', (data: Buffer) => {

@@ -20,6 +20,7 @@ import { DatabaseService } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { templateService } from './services/TemplateService';
+import { ErrorParser } from './utils/ErrorParser';
 import YAML from 'yaml';
 import { promises as fsPromises } from 'fs';
 
@@ -1086,13 +1087,23 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
     // 4. Deploy the stack with atomic rollback
     try {
       await composeService.deployStack(stackName, terminalWs || undefined);
-    } catch (deployError) {
-      // ATOMIC ROLLBACK: If Docker fails, delete the folder we just created
-      await fileSystemService.deleteStack(stackName);
-      throw deployError; // Pass error to outer catch block
-    }
+      res.json({ success: true, message: 'Template deployed successfully' });
+    } catch (deployError: any) {
+      const rawError = deployError.message || String(deployError);
+      const parsed = ErrorParser.parse(rawError);
 
-    res.json({ success: true, message: 'Template deployed successfully' });
+      const shouldRollback = parsed.rule ? parsed.rule.canSilentlyRollback : true;
+
+      if (shouldRollback) {
+        await fileSystemService.deleteStack(stackName);
+      }
+
+      res.status(500).json({
+        error: parsed.message,
+        rolledBack: shouldRollback,
+        ruleId: parsed.rule?.id || 'UNKNOWN'
+      });
+    }
   } catch (error: any) {
     console.error('Failed to deploy template:', error);
     res.status(500).json({ error: error.message || 'Failed to deploy template' });
