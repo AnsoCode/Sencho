@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Changed:** Removed rigid volume sanitization, allowing full user control over bind paths.
+- **Added:** Editable Host Volumes in the deployment UI.
+- **Added:** Custom Environment Variable injection tool.
+- **Fixed:** ScrollArea UI height rendering and dynamic browser timezone detection.
 - **Changed:** Rebranded "Templates" to "App Store" across the UI.
 - **Added:** Advanced deployment configuration panel (Editable Ports and Environment Variables) with smart defaults.
 - **Fixed:** Implemented smart image fallbacks for broken registry logos and added expandable descriptions.
