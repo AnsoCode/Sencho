@@ -1,8 +1,11 @@
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
 import WebSocket from 'ws';
 import DockerController from './DockerController';
 import { LogFormatter } from './LogFormatter';
+
+const execAsync = promisify(exec);
 
 export class ComposeService {
   private baseDir: string;
@@ -393,5 +396,15 @@ export class ComposeService {
         reject(error);
       });
     });
+  }
+
+  public async downStack(stackName: string): Promise<void> {
+    const stackPath = path.join(this.baseDir, stackName);
+    try {
+      // Run down to clean up any partially created networks or containers
+      await execAsync(`docker compose -f compose.yaml down`, { cwd: stackPath });
+    } catch (error) {
+      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
+    }
   }
 }

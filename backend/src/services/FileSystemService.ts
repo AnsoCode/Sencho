@@ -194,15 +194,17 @@ export class FileSystemService {
   /**
    * Delete a stack (entire directory and its contents)
    */
-  async deleteStack(stackName: string): Promise<void> {
+  public async deleteStack(stackName: string): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
 
     try {
       await fs.rm(stackDir, { recursive: true, force: true });
       console.log('Stack deleted successfully:', stackName);
-    } catch (error) {
-      console.error('Error deleting stack:', error);
-      throw new Error(`Failed to delete stack: ${stackName}`);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        console.error('Error deleting stack directory:', error.message);
+        throw new Error(`Failed to delete stack directory: ${error.message}`);
+      }
     }
   }
 

@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Atomic Rollback failure where non-empty directories caused silent file system errors.
+- **Added:** Two-Stage Teardown mechanism to ensure `docker compose down` sweeps up ghost networks before deployment files are deleted.
 - **Added:** Smart Error Parser with telemetry-ready rule IDs to translate cryptic Docker output.
 - **Added:** Post-Deploy Health Probe to catch immediate container crashes that slip past Compose.
 - **Changed:** Rollback engine respects a `canSilentlyRollback` flag to protect user-authored configurations.
