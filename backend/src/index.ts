@@ -22,7 +22,7 @@ import { MonitorService } from './services/MonitorService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import YAML from 'yaml';
-import { promises as fsPromises } from 'fs';
+import fs, { promises as fsPromises } from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -568,24 +568,22 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
+app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
+  const stackName = req.params.name as string;
   try {
-    const stackName = req.params.stackName as string;
-
-    // Tear down the stack first to avoid ghost containers
+    // Stage 1: Tell Docker to clean up ghost networks/containers
     try {
-      console.log(`Tearing down stack: ${stackName}`);
-      // Send the down command synchronously before deleting the files
-      await composeService.runCommand(stackName, 'down', terminalWs || undefined);
-    } catch (downError) {
-      console.warn(`Failed to tear down stack ${stackName}, proceeding with file deletion.`, downError);
+      await composeService.downStack(stackName);
+    } catch (downErr) {
+      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }
 
+    // Stage 2: Obliterate the files
     await fileSystemService.deleteStack(stackName);
-    res.json({ message: 'Stack deleted successfully' });
-  } catch (error) {
-    console.error('Failed to delete stack:', error);
-    res.status(500).json({ error: 'Failed to delete stack' });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to delete stack' });
   }
 });
 
@@ -1067,6 +1065,14 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 
     if (!stackName || !template) {
       return res.status(400).json({ error: 'stackName and template are required' });
+    }
+
+    const stackPath = path.join(fileSystemService.getBaseDir(), stackName);
+    if (fs.existsSync(stackPath)) {
+      return res.status(409).json({
+        error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
+        rolledBack: false
+      });
     }
 
     // 1. Create stack directory

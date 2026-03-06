@@ -415,24 +415,31 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                             </ScrollArea>
 
                             <SheetFooter className="pt-4 mt-auto border-t sm:justify-start">
-                                <Button
-                                    onClick={handleDeploy}
-                                    disabled={isDeploying || !stackName.trim()}
-                                    className="w-full"
-                                    size="lg"
-                                >
-                                    {isDeploying ? (
-                                        <>
-                                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                                            Deploying Stack...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Rocket className="w-5 h-5 mr-2" />
-                                            Deploy {selectedTemplate.title}
-                                        </>
+                                <div className="flex flex-col w-full gap-2">
+                                    <Button
+                                        onClick={handleDeploy}
+                                        disabled={isDeploying || !stackName.trim()}
+                                        className="w-full"
+                                        size="lg"
+                                    >
+                                        {isDeploying ? (
+                                            <>
+                                                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                                Deploying Stack...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Rocket className="w-5 h-5 mr-2" />
+                                                Deploy {selectedTemplate.title}
+                                            </>
+                                        )}
+                                    </Button>
+                                    {isDeploying && (
+                                        <p className="text-center text-xs text-muted-foreground animate-pulse">
+                                            This may take a few minutes for large images.
+                                        </p>
                                     )}
-                                </Button>
+                                </div>
                             </SheetFooter>
                         </div>
                     )}
