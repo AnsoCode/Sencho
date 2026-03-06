@@ -1095,7 +1095,19 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       const shouldRollback = parsed.rule ? parsed.rule.canSilentlyRollback : true;
 
       if (shouldRollback) {
-        await fileSystemService.deleteStack(stackName);
+        try {
+          // Stage 1: Tell Docker to clean up ghost networks/containers
+          await composeService.downStack(stackName);
+        } catch (downErr) {
+          console.error("Rollback Stage 1 (Docker down) failed:", downErr);
+        }
+
+        try {
+          // Stage 2: Obliterate the files
+          await fileSystemService.deleteStack(stackName);
+        } catch (fsErr) {
+          console.error("Rollback Stage 2 (File deletion) failed:", fsErr);
+        }
       }
 
       res.status(500).json({
