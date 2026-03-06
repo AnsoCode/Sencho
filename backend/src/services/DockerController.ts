@@ -286,6 +286,52 @@ class DockerController {
     }
   }
 
+  public async streamContainerLogs(containerId: string, req: any, res: any): Promise<void> {
+    const container = this.docker.getContainer(containerId);
+
+    // 1. Set SSE Headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    try {
+      const logStream = await container.logs({
+        follow: true,
+        stdout: true,
+        stderr: true,
+        tail: 100 // Send the last 100 lines immediately for context
+      });
+
+      // 2. Process and forward the stream
+      logStream.on('data', (chunk: Buffer) => {
+        // Docker multiplexes stdout/stderr with an 8-byte header if TTY is false.
+        let data = chunk;
+        if (chunk.length > 8 && (chunk[0] === 1 || chunk[0] === 2)) {
+          data = chunk.slice(8);
+        }
+
+        const text = data.toString('utf-8');
+        const lines = text.split('\n');
+
+        lines.forEach(line => {
+          if (line.trim()) {
+            res.write(`data: ${JSON.stringify(line)}\n\n`);
+          }
+        });
+      });
+
+      // 3. Cleanup on disconnect
+      req.on('close', () => {
+        (logStream as any).destroy();
+      });
+
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify('[Sencho] Error fetching logs: ' + error.message)}\n\n`);
+      res.end();
+    }
+  }
+
   // State-safe: silently ignores 304 "already started" errors
   public async startContainer(containerId: string) {
     try {
