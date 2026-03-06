@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
+import { LogViewer } from './LogViewer';
 
 interface ContainerInfo {
   Id: string;
@@ -86,6 +87,10 @@ export default function EditorLayout() {
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
+
+  // LogViewer state
+  const [logViewerOpen, setLogViewerOpen] = useState(false);
+  const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
 
 
   // Notifications & Settings state
@@ -569,6 +574,16 @@ export default function EditorLayout() {
     setSelectedContainer(null);
   };
 
+  const openLogViewer = (containerId: string, containerName: string) => {
+    setLogContainer({ id: containerId, name: containerName });
+    setLogViewerOpen(true);
+  };
+
+  const closeLogViewer = () => {
+    setLogViewerOpen(false);
+    setLogContainer(null);
+  };
+
   // Safe container list with fallback
   const safeContainers = containers || [];
   // Safe content strings with fallback
@@ -993,6 +1008,22 @@ export default function EditorLayout() {
                                             size="icon"
                                             variant="ghost"
                                             className="rounded-lg h-8 w-8"
+                                            onClick={() => openLogViewer(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
+                                            disabled={container?.State !== 'running'}
+                                          >
+                                            <ScrollText className="w-4 h-4" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>View Live Logs</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="rounded-lg h-8 w-8"
                                             onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
                                             disabled={container?.State !== 'running'}
                                           >
@@ -1144,6 +1175,16 @@ export default function EditorLayout() {
           onClose={closeBashModal}
           containerId={selectedContainer.id}
           containerName={selectedContainer.name}
+        />
+      )}
+
+      {/* LogViewer Modal */}
+      {logContainer && (
+        <LogViewer
+          isOpen={logViewerOpen}
+          onClose={closeLogViewer}
+          containerId={logContainer.id}
+          containerName={logContainer.name}
         />
       )}
 

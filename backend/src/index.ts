@@ -598,6 +598,17 @@ app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response)
   }
 });
 
+app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const dockerController = DockerController.getInstance();
+    // Pass both req and res so we can listen for the client disconnect
+    await dockerController.streamContainerLogs(id, req, res);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to initialize log stream' });
+  }
+});
+
 app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
