@@ -25,6 +25,10 @@ class DockerController {
     return DockerController.instance;
   }
 
+  public getDocker(): Docker {
+    return this.docker;
+  }
+
   public async getDiskUsage() {
     const df = await this.docker.df();
 

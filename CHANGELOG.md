@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Added:** Smart Error Parser with telemetry-ready rule IDs to translate cryptic Docker output.
+- **Added:** Post-Deploy Health Probe to catch immediate container crashes that slip past Compose.
+- **Changed:** Rollback engine respects a `canSilentlyRollback` flag to protect user-authored configurations.
 - **Changed:** Removed rigid volume sanitization, allowing full user control over bind paths.
 - **Added:** Editable Host Volumes in the deployment UI.
 - **Added:** Custom Environment Variable injection tool.
