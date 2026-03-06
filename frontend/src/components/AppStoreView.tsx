@@ -48,6 +48,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
     const [portVars, setPortVars] = useState<Record<string, string>>({});
     const [isDescExpanded, setIsDescExpanded] = useState(false);
+    const [volVars, setVolVars] = useState<Record<string, string>>({});
+    const [customEnvs, setCustomEnvs] = useState<Array<{ key: string, value: string }>>([]);
+    const [newEnvKey, setNewEnvKey] = useState('');
+    const [newEnvVal, setNewEnvVal] = useState('');
 
     useEffect(() => {
         fetchTemplates();
@@ -68,17 +72,33 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
     const handleSelectTemplate = (t: Template) => {
         setSelectedTemplate(t);
-        // Init env vars with defaults
+        const localEnvs = [...(t.env || [])];
+        // Inject LSIO standards if missing from the API
+        if (!localEnvs.find(e => e.name === 'PUID')) localEnvs.push({ name: 'PUID', label: 'User ID (PUID)', default: '1000' });
+        if (!localEnvs.find(e => e.name === 'PGID')) localEnvs.push({ name: 'PGID', label: 'Group ID (PGID)', default: '1000' });
+        if (!localEnvs.find(e => e.name === 'TZ')) {
+            const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            localEnvs.push({ name: 'TZ', label: 'Timezone', default: browserTz });
+        }
+
         const initEnvs: Record<string, string> = {};
-        t.env?.forEach(e => {
-            let defaultVal = e.default || '';
-            // Smart Defaults
-            if (e.name === 'PUID' && !defaultVal) defaultVal = '1000';
-            if (e.name === 'PGID' && !defaultVal) defaultVal = '1000';
-            if (e.name === 'TZ' && !defaultVal) defaultVal = 'America/Toronto';
-            initEnvs[e.name] = defaultVal;
+        localEnvs.forEach(e => {
+            initEnvs[e.name] = e.default || '';
         });
         setEnvVars(initEnvs);
+        t.env = localEnvs; // Mutate local template copy so they render
+
+        // Initialize Volumes
+        const initVols: Record<string, string> = {};
+        t.volumes?.forEach((v: any) => {
+            if (v.container) {
+                initVols[v.container] = v.bind || `./${v.container.split('/').filter(Boolean).pop() || 'data'}`;
+            }
+        });
+        setVolVars(initVols);
+        setCustomEnvs([]); // Reset custom envs
+        setNewEnvKey('');
+        setNewEnvVal('');
 
         const initPorts: Record<string, string> = {};
         t.ports?.forEach(p => {
@@ -119,6 +139,22 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             });
         }
 
+        // Process Volumes
+        if (modifiedTemplate.volumes) {
+            modifiedTemplate.volumes = modifiedTemplate.volumes.map((v: any) => {
+                if (v.container && volVars[v.container] !== undefined) {
+                    return { ...v, bind: volVars[v.container] };
+                }
+                return v;
+            });
+        }
+
+        // Merge envs
+        const finalEnvVars = { ...envVars };
+        customEnvs.forEach(ce => {
+            if (ce.key.trim()) finalEnvVars[ce.key.trim()] = ce.value;
+        });
+
         try {
             const res = await fetch('/api/templates/deploy', {
                 method: 'POST',
@@ -126,7 +162,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                 body: JSON.stringify({
                     stackName: stackName.trim(),
                     template: modifiedTemplate,
-                    envVars
+                    envVars: finalEnvVars
                 })
             });
             const data = await res.json();
@@ -215,7 +251,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             </div>
 
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-                <SheetContent className="w-full sm:max-w-md overflow-y-auto" side="right">
+                <SheetContent className="w-full sm:max-w-md flex flex-col h-full" side="right">
                     {selectedTemplate && (
                         <div className="flex flex-col h-full">
                             <SheetHeader className="mb-6 text-left">
@@ -277,6 +313,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                             </SheetHeader>
 
                             <ScrollArea className="flex-1 pr-4">
+                            <ScrollArea className="flex-1 pr-4 -mx-4 px-4">
                                 <div className="space-y-6 pb-8">
                                     <div className="space-y-2">
                                         <Label htmlFor="stackName" className="font-semibold">
@@ -313,6 +350,25 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                         </div>
                                     )}
 
+                                    {selectedTemplate.volumes && selectedTemplate.volumes.length > 0 && (
+                                        <div className="space-y-4 pt-4 border-t">
+                                            <h4 className="font-semibold">Volumes (Host : Container)</h4>
+                                            {selectedTemplate.volumes.map((v: any, idx: number) => {
+                                                if (!v.container) return null;
+                                                return (
+                                                    <div key={idx} className="space-y-1.5">
+                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {v.container}</Label>
+                                                        <Input
+                                                            value={volVars[v.container] !== undefined ? volVars[v.container] : ''}
+                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [v.container]: e.target.value }))}
+                                                            placeholder={`/path/to/host/dir`}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
                                     {selectedTemplate.env && selectedTemplate.env.length > 0 && (
                                         <div className="space-y-4 pt-4 border-t">
                                             <h4 className="font-semibold">Environment Variables</h4>
@@ -334,6 +390,28 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                             ))}
                                         </div>
                                     )}
+
+                                    <div className="space-y-4 pt-4 border-t">
+                                        <h4 className="font-semibold text-sm">Add Custom Variable</h4>
+                                        {customEnvs.map((ce, idx) => (
+                                            <div key={idx} className="flex gap-2">
+                                                <Input value={ce.key} readOnly className="w-1/3 bg-muted font-mono text-xs" />
+                                                <Input value={ce.value} readOnly className="flex-1 bg-muted font-mono text-xs" />
+                                                <Button variant="destructive" size="icon" onClick={() => setCustomEnvs(prev => prev.filter((_, i) => i !== idx))}>-</Button>
+                                            </div>
+                                        ))}
+                                        <div className="flex gap-2">
+                                            <Input placeholder="KEY" value={newEnvKey} onChange={e => setNewEnvKey(e.target.value)} className="w-1/3 font-mono text-xs" />
+                                            <Input placeholder="VALUE" value={newEnvVal} onChange={e => setNewEnvVal(e.target.value)} className="flex-1 font-mono text-xs" />
+                                            <Button variant="secondary" onClick={() => {
+                                                if (newEnvKey.trim()) {
+                                                    setCustomEnvs(prev => [...prev, { key: newEnvKey, value: newEnvVal }]);
+                                                    setNewEnvKey('');
+                                                    setNewEnvVal('');
+                                                }
+                                            }}>+</Button>
+                                        </div>
+                                    </div>
                                 </div>
                             </ScrollArea>
 
