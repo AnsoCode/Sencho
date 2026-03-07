@@ -807,8 +807,16 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
           }
 
           let level = source === 'STDERR' ? 'ERROR' : 'INFO';
-          if (cleanMessage.toLowerCase().includes('warn')) level = 'WARN';
-          else if (cleanMessage.toLowerCase().includes('error') || cleanMessage.toLowerCase().includes('fail')) level = 'ERROR';
+
+          if (/\b(warn|warning)\b/i.test(cleanMessage)) {
+            level = 'WARN';
+          } else if (/\b(error|err|fatal|exception)\b/i.test(cleanMessage)) {
+            level = 'ERROR';
+          }
+
+          if (/\[\s*(info|inf|debug|dbg)\s*\]/i.test(cleanMessage) || /^(info|debug)\b/i.test(cleanMessage)) {
+            level = 'INFO';
+          }
 
           allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
         };
@@ -834,9 +842,9 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
       } catch (err) { /* ignore */ }
     }));
 
-    // Sort globally by timestamp descending and limit to 1000 lines to prevent payload bloat
-    allLogs.sort((a, b) => b.timestampMs - a.timestampMs);
-    res.json(allLogs.slice(0, 1000));
+    // Sort globally by timestamp ascending (newest bottom) and limit to 2000 lines
+    allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
+    res.json(allLogs.slice(-2000));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch global logs' });
   }
