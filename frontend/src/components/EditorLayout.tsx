@@ -800,10 +800,10 @@ export default function EditorLayout() {
             size="sm"
             className="rounded-lg"
             onClick={() => setActiveView('global-observability')}
-            title="Global Observability"
+            title="Global Logs"
           >
             <Activity className="w-4 h-4 mr-2" />
-            Observability
+            Logs
           </Button>
 
           {/* Settings Modal Toggle */}

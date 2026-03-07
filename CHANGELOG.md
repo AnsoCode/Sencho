@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Global logs misclassifying INFO messages as errors due to naive string matching.
+- **Changed:** Global logs now display chronologically (newest at bottom) with smooth auto-scrolling.
+- **Changed:** Renamed Observability navigation tab to Logs.
 - **Fixed:** TTY container log streams failing to parse globally.
 - **Fixed:** Global logs displaying in UTC instead of local browser timezone.
 - **Changed:** Global Logs UI revamped to use a floating, hover-based action bar to maximize terminal space.

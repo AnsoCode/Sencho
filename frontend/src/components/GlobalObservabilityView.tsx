@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ export function GlobalObservabilityView() {
     const [selectedStacks, setSelectedStacks] = useState<string[]>([]);
     const [streamFilter, setStreamFilter] = useState<'ALL' | 'STDOUT' | 'STDERR'>('ALL');
     const [clearedAt, setClearedAt] = useState<number>(0);
+    const bottomRef = useRef<HTMLDivElement>(null);
 
     const fetchData = async () => {
         setLoading(true);
@@ -44,6 +45,7 @@ export function GlobalObservabilityView() {
         const interval = setInterval(fetchData, 10000); // Poll every 10s
         return () => clearInterval(interval);
     }, []);
+
 
     const uniqueStacks = useMemo(() => {
         const stacks = new Set(logs.map(l => l.stackName));
@@ -74,6 +76,10 @@ export function GlobalObservabilityView() {
             return true;
         });
     }, [logs, selectedStacks, streamFilter, searchQuery, clearedAt]);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [filteredLogs]);
 
     const handleDownload = () => {
         if (filteredLogs.length === 0) return;
@@ -152,14 +158,17 @@ export function GlobalObservabilityView() {
 
             <ScrollArea className="flex-1 p-4">
                 {filteredLogs.length > 0 ? (
-                    filteredLogs.map((log, idx) => (
-                        <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
-                            <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
-                            <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
-                            <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>{log.level}:</span>
-                            <span className={log.source === 'STDERR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
-                        </div>
-                    ))
+                    <>
+                        {filteredLogs.map((log, idx) => (
+                            <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
+                                <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
+                                <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
+                                <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>{log.level}:</span>
+                                <span className={log.source === 'STDERR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
+                            </div>
+                        ))}
+                        <div ref={bottomRef} />
+                    </>
                 ) : (
                     <div className="text-gray-500 italic p-4 text-center mt-10">
                         {logs.length === 0 ? "No active logs found." : "No logs match the current filters."}
