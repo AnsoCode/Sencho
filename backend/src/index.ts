@@ -791,42 +791,45 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
 
       try {
         const container = dockerController.getDocker().getContainer(c.Id);
+        const inspect = await container.inspect();
+        const isTty = inspect.Config.Tty;
         const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 100, timestamps: true }) as Buffer;
 
-        let offset = 0;
-        while (offset < logsBuffer.length) {
+        const parseAndPushLog = (line: string, source: string) => {
+          if (!line.trim()) return;
+          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+          let cleanMessage = line;
+          let timestampMs = Date.now();
+
+          if (timeMatch) {
+            timestampMs = new Date(timeMatch[1]).getTime();
+            cleanMessage = timeMatch[2];
+          }
+
+          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
+          if (cleanMessage.toLowerCase().includes('warn')) level = 'WARN';
+          else if (cleanMessage.toLowerCase().includes('error') || cleanMessage.toLowerCase().includes('fail')) level = 'ERROR';
+
+          allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
+        };
+
+        if (isTty) {
+          // No multiplex headers. Just split by newline.
+          const payload = logsBuffer.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+          payload.split('\n').forEach(line => parseAndPushLog(line, 'STDOUT'));
+        } else {
           // Parse 8-byte Docker multiplex header
-          const streamType = logsBuffer[offset]; // 1 = stdout, 2 = stderr
-          const length = logsBuffer.readUInt32BE(offset + 4);
-          offset += 8;
+          let offset = 0;
+          while (offset < logsBuffer.length) {
+            const streamType = logsBuffer[offset];
+            const length = logsBuffer.readUInt32BE(offset + 4);
+            offset += 8;
+            if (offset + length > logsBuffer.length) break;
 
-          if (offset + length > logsBuffer.length) break;
-          const payload = logsBuffer.slice(offset, offset + length).toString('utf-8');
-          offset += length;
-
-          const lines = payload.split('\n').filter(l => l.trim().length > 0);
-          lines.forEach(line => {
-            // Extract Docker ISO timestamp
-            const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
-            let timestampStr = "";
-            let cleanMessage = line;
-            let timestampMs = Date.now();
-
-            if (timeMatch) {
-              const dateObj = new Date(timeMatch[1]);
-              timestampMs = dateObj.getTime();
-              const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-              const formattedTime = dateObj.toLocaleTimeString('en-US', { hour12: false });
-              timestampStr = `[${formattedDate} ${formattedTime}]`;
-              cleanMessage = timeMatch[2];
-            }
-
-            const source = streamType === 2 ? 'STDERR' : 'STDOUT';
-            let level = source === 'STDERR' ? 'ERROR' : 'INFO';
-            if (cleanMessage.toLowerCase().includes('warn')) level = 'WARN';
-
-            allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampStr, timestampMs });
-          });
+            const payload = logsBuffer.slice(offset, offset + length).toString('utf-8');
+            offset += length;
+            payload.split('\n').forEach(line => parseAndPushLog(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
+          }
         }
       } catch (err) { /* ignore */ }
     }));
