@@ -96,6 +96,20 @@ export class DatabaseService {
         timestamp INTEGER NOT NULL,
         is_read INTEGER DEFAULT 0
       );
+
+      CREATE TABLE IF NOT EXISTS container_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        container_id TEXT NOT NULL,
+        stack_name TEXT NOT NULL,
+        cpu_percent REAL NOT NULL,
+        memory_mb REAL NOT NULL,
+        net_rx_mb REAL NOT NULL,
+        net_tx_mb REAL NOT NULL,
+        timestamp INTEGER NOT NULL
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON container_metrics(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
     `);
 
         // Initialize default global settings if they don't exist
@@ -250,5 +264,26 @@ export class DatabaseService {
     public deleteAllNotifications(): void {
         const stmt = this.db.prepare('DELETE FROM notification_history');
         stmt.run();
+    }
+
+    // --- Container Metrics ---
+
+    public addContainerMetric(metric: Omit<any, 'id'>): void {
+        const stmt = this.db.prepare(
+            'INSERT INTO container_metrics (container_id, stack_name, cpu_percent, memory_mb, net_rx_mb, net_tx_mb, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        stmt.run(metric.container_id, metric.stack_name, metric.cpu_percent, metric.memory_mb, metric.net_rx_mb, metric.net_tx_mb, metric.timestamp);
+    }
+
+    public getContainerMetrics(hoursLookback = 24): any[] {
+        const cutoff = Date.now() - (hoursLookback * 60 * 60 * 1000);
+        const stmt = this.db.prepare('SELECT * FROM container_metrics WHERE timestamp >= ? ORDER BY timestamp ASC');
+        return stmt.all(cutoff);
+    }
+
+    public cleanupOldMetrics(hoursToKeep = 24): void {
+        const cutoff = Date.now() - (hoursToKeep * 60 * 60 * 1000);
+        const stmt = this.db.prepare('DELETE FROM container_metrics WHERE timestamp < ?');
+        stmt.run(cutoff);
     }
 }

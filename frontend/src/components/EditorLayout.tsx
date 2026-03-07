@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -30,6 +30,7 @@ import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
+import { GlobalObservabilityView } from './GlobalObservabilityView';
 
 interface ContainerInfo {
   Id: string;
@@ -79,7 +80,7 @@ export default function EditorLayout() {
     }
     return true; // Default to dark mode
   });
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -793,6 +794,17 @@ export default function EditorLayout() {
             <CloudDownload className="w-4 h-4 mr-2" />
             App Store
           </Button>
+          {/* Global Observability Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setActiveView('global-observability')}
+            title="Global Observability"
+          >
+            <Activity className="w-4 h-4 mr-2" />
+            Observability
+          </Button>
 
           {/* Settings Modal Toggle */}
           <Button
@@ -1146,6 +1158,8 @@ export default function EditorLayout() {
                 </Card>
               </div>
             </ErrorBoundary>
+          ) : activeView === 'global-observability' ? (
+            <GlobalObservabilityView />
           ) : (
             <HomeDashboard />
           )}
