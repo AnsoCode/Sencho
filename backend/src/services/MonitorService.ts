@@ -203,92 +203,92 @@ export class MonitorService {
 
     private async evaluateStackAlerts(db: DatabaseService) {
         const alerts = db.getStackAlerts();
-        if (alerts.length === 0) return;
-
-        // Group alerts by stack so we only fetch stats for stacks we care about
-        const stacksToMonitor = new Set(alerts.map(a => a.stack_name));
-
         const docker = DockerController.getInstance();
 
-        for (const stackName of stacksToMonitor) {
-            const stackAlerts = alerts.filter(a => a.stack_name === stackName);
-            if (stackAlerts.length === 0) continue;
+        try {
+            const containers = await docker.getRunningContainers();
+            for (const container of containers) {
+                const stackName = container.Labels?.['com.docker.compose.project'] || 'system';
 
-            try {
-                const containers = await docker.getContainersByStack(stackName);
-                if (containers.length === 0) continue;
+                try {
+                    const rawStats = await docker.getContainerStatsStream(container.Id);
+                    const stats = JSON.parse(rawStats);
 
-                // Fetch stats for all containers in this stack
-                for (const container of containers) {
-                    if (container.State !== 'running') continue;
+                    const metrics = {
+                        cpu_percent: this.calculateCpuPercent(stats),
+                        memory_percent: this.calculateMemoryPercent(stats),
+                        memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
+                        net_rx: this.calculateNetwork(stats, 'rx'),
+                        net_tx: this.calculateNetwork(stats, 'tx'),
+                        restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
+                    };
 
-                    try {
-                        const rawStats = await docker.getContainerStatsStream(container.Id);
-                        const stats = JSON.parse(rawStats);
+                    db.addContainerMetric({
+                        container_id: container.Id,
+                        stack_name: stackName,
+                        cpu_percent: metrics.cpu_percent || 0,
+                        memory_mb: metrics.memory_mb || 0,
+                        net_rx_mb: metrics.net_rx || 0,
+                        net_tx_mb: metrics.net_tx || 0,
+                        timestamp: Date.now()
+                    });
 
-                        const metrics = {
-                            cpu_percent: this.calculateCpuPercent(stats),
-                            memory_percent: this.calculateMemoryPercent(stats),
-                            memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
-                            net_rx: this.calculateNetwork(stats, 'rx'), // KB/s (naive sum for now, proper net_rx requires time delta but we can do total MB for simple alert or just use what fits)
-                            net_tx: this.calculateNetwork(stats, 'tx'),
-                            restart_count: container.RestartCount || 0
-                        };
+                    const stackAlerts = alerts.filter(a => a.stack_name === stackName);
+                    for (const rule of stackAlerts) {
+                        const ruleId = rule.id!;
+                        const currentValue = metrics[rule.metric as keyof typeof metrics];
 
-                        for (const rule of stackAlerts) {
-                            const ruleId = rule.id!;
-                            const currentValue = metrics[rule.metric as keyof typeof metrics];
+                        if (currentValue === undefined) continue;
 
-                            if (currentValue === undefined) continue;
+                        const isBreaching = this.evaluateCondition(currentValue, rule.operator, rule.threshold);
 
-                            const isBreaching = this.evaluateCondition(currentValue, rule.operator, rule.threshold);
+                        if (isBreaching) {
+                            if (!this.activeBreaches.has(ruleId)) {
+                                this.activeBreaches.set(ruleId, { breachStartedAt: Date.now() });
+                            }
 
-                            if (isBreaching) {
-                                if (!this.activeBreaches.has(ruleId)) {
-                                    this.activeBreaches.set(ruleId, { breachStartedAt: Date.now() });
-                                }
+                            const breachState = this.activeBreaches.get(ruleId)!;
+                            const durationMs = Date.now() - breachState.breachStartedAt;
+                            const requiredDurationMs = rule.duration_mins * 60 * 1000;
 
-                                const breachState = this.activeBreaches.get(ruleId)!;
-                                const durationMs = Date.now() - breachState.breachStartedAt;
-                                const requiredDurationMs = rule.duration_mins * 60 * 1000;
+                            if (durationMs >= requiredDurationMs) {
+                                // Duration met! Check cooldown
+                                const timeSinceLastFired = Date.now() - (rule.last_fired_at || 0);
+                                const requiredCooldownMs = rule.cooldown_mins * 60 * 1000;
 
-                                if (durationMs >= requiredDurationMs) {
-                                    // Duration met! Check cooldown
-                                    const timeSinceLastFired = Date.now() - (rule.last_fired_at || 0);
-                                    const requiredCooldownMs = rule.cooldown_mins * 60 * 1000;
+                                if (timeSinceLastFired >= requiredCooldownMs) {
+                                    // Formatted Alert Message
+                                    const { name: metricName, unit } = getMetricDetails(rule.metric);
+                                    const operatorPhrase = getOperatorPhrase(rule.operator);
 
-                                    if (timeSinceLastFired >= requiredCooldownMs) {
-                                        // Formatted Alert Message
-                                        const { name: metricName, unit } = getMetricDetails(rule.metric);
-                                        const operatorPhrase = getOperatorPhrase(rule.operator);
+                                    const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
+                                    const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
 
-                                        const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
-                                        const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
+                                    const message = `The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
 
-                                        const message = `The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
+                                    await NotificationService.getInstance().dispatchAlert(
+                                        'warning',
+                                        message
+                                    );
 
-                                        await NotificationService.getInstance().dispatchAlert(
-                                            'warning',
-                                            message
-                                        );
-
-                                        // Update last fired
-                                        db.updateStackAlertLastFired(ruleId, Date.now());
-                                    }
-                                }
-                            } else {
-                                // Rule isn't breaching anymore, reset tracker
-                                if (this.activeBreaches.has(ruleId)) {
-                                    this.activeBreaches.delete(ruleId);
+                                    // Update last fired
+                                    db.updateStackAlertLastFired(ruleId, Date.now());
                                 }
                             }
+                        } else {
+                            // Rule isn't breaching anymore, reset tracker
+                            if (this.activeBreaches.has(ruleId)) {
+                                this.activeBreaches.delete(ruleId);
+                            }
                         }
-                    } catch (e) {
-                        console.error(`Error parsing stats for container ${container.Id}`, e);
                     }
+                } catch (e) {
+                    console.error(`Error parsing stats for container ${container.Id}`, e);
                 }
-            } catch (e) { }
-        }
+            }
+
+            db.cleanupOldMetrics(24);
+        } catch (e) { }
     }
 
     private evaluateCondition(actual: number, operator: string, threshold: number): boolean {

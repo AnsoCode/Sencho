@@ -762,6 +762,59 @@ app.get('/api/stats', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/metrics/historical', async (req: Request, res: Response) => {
+  try {
+    const metrics = DatabaseService.getInstance().getContainerMetrics(24);
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch metrics' });
+  }
+});
+
+app.get('/api/logs/global', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance();
+    const containers = await dockerController.getRunningContainers();
+    const allLogs: any[] = [];
+
+    await Promise.all(containers.map(async (c) => {
+      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
+      const containerName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      try {
+        const container = dockerController.getDocker().getContainer(c.Id);
+        // Fetch last 50 lines with timestamps
+        const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 50, timestamps: true });
+
+        // Strip docker multiplex headers (non-tty)
+        const logsString = logsBuffer.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+        const lines = logsString.split('\n').filter(l => l.trim().length > 0);
+
+        lines.forEach(line => {
+          let level = 'INFO';
+          const lowerLine = line.toLowerCase();
+          if (lowerLine.includes('error') || lowerLine.includes('err') || lowerLine.includes('fail') || lowerLine.includes('fatal')) level = 'ERROR';
+          else if (lowerLine.includes('warn')) level = 'WARN';
+
+          // Extract Docker timestamp if present (usually ISO format at start of line)
+          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+          const timestamp = timeMatch ? new Date(timeMatch[1]).getTime() : Date.now();
+          const cleanMessage = timeMatch ? timeMatch[2] : line;
+
+          allLogs.push({ stackName, containerName, level, message: cleanMessage, timestamp });
+        });
+      } catch (err) {
+        // Ignore individual container fetch errors
+      }
+    }));
+
+    // Sort globally by timestamp descending and limit to 1000 lines to prevent payload bloat
+    allLogs.sort((a, b) => b.timestamp - a.timestamp);
+    res.json(allLogs.slice(0, 1000));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch global logs' });
+  }
+});
+
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
