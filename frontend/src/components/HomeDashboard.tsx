@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -58,6 +60,7 @@ export default function HomeDashboard() {
   const [newStackName, setNewStackName] = useState('');
   const [stats, setStats] = useState<Stats>({ active: 0, exited: 0, total: 0, inactive: 0 });
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
+  const [metrics, setMetrics] = useState<any[]>([]);
 
   // Fetch stats from backend
   useEffect(() => {
@@ -79,17 +82,49 @@ export default function HomeDashboard() {
   useEffect(() => {
     const fetchSystemStats = async () => {
       try {
-        const res = await apiFetch('/system/stats');
-        const data = await res.json();
-        setSystemStats(data);
+        const [sysRes, metricsRes] = await Promise.all([
+          apiFetch('/system/stats'),
+          apiFetch('/metrics/historical')
+        ]);
+        if (sysRes.ok) setSystemStats(await sysRes.json());
+        if (metricsRes.ok) setMetrics(await metricsRes.json());
       } catch (error) {
-        console.error('Failed to fetch system stats:', error);
+        console.error('Failed to fetch system stats or metrics:', error);
       }
     };
     fetchSystemStats();
     const interval = setInterval(fetchSystemStats, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const chartData = useMemo(() => {
+    const buckets: Record<string, { time: string; timestamp: number; cpu: number; ram: number }> = {};
+    const cores = systemStats?.cpu.cores || 1;
+
+    metrics.forEach(m => {
+      const date = new Date(m.timestamp);
+      date.setSeconds(0, 0);
+      const key = date.getTime() + '';
+
+      if (!buckets[key]) {
+        buckets[key] = {
+          time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: date.getTime(),
+          cpu: 0,
+          ram: 0
+        };
+      }
+      buckets[key].cpu += (m.cpu_percent / cores);
+      buckets[key].ram += (m.memory_mb / 1024);
+    });
+
+    return Object.values(buckets).sort((a, b) => a.timestamp - b.timestamp);
+  }, [metrics, systemStats]);
+
+  const chartConfig = {
+    cpu: { label: 'CPU Usage (%)', color: 'var(--chart-1)' },
+    ram: { label: 'RAM Usage (GB)', color: 'var(--chart-2)' },
+  };
 
   const handleConvert = async () => {
     if (!dockerRunInput.trim()) return;
@@ -238,6 +273,63 @@ export default function HomeDashboard() {
                 ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}`
                 : 'Loading...'}
             </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Historical Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="rounded-xl border-muted bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-muted-foreground">
+              <Activity className="w-4 h-4 text-primary" />
+              <span>Normalized CPU Usage</span>
+            </CardTitle>
+            <CardDescription className="text-xs">Total CPU percentage over total host cores.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[250px]">
+            {chartData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="w-full h-full">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, 100]} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="cpu" stroke="var(--color-cpu)" fill="var(--color-cpu)" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No historical CPU data.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-xl border-muted bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-muted-foreground">
+              <Activity className="w-4 h-4 text-primary" />
+              <span>Normalized RAM Usage</span>
+            </CardTitle>
+            <CardDescription className="text-xs">Total RAM allocation in GB.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[250px]">
+            {chartData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="w-full h-full">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(1)} GB`} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="ram" stroke="var(--color-ram)" fill="var(--color-ram)" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No historical RAM data.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

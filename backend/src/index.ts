@@ -779,36 +779,60 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      const containerName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+
+      // Standardize naming: Strip stack name prefix if it exists
+      let containerName = rawName;
+      if (rawName.startsWith(`${stackName}-`)) {
+        containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
+      } else if (rawName.startsWith(`${stackName}_`)) {
+        containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
+      }
+
       try {
         const container = dockerController.getDocker().getContainer(c.Id);
-        // Fetch last 50 lines with timestamps
-        const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 50, timestamps: true });
+        const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 100, timestamps: true }) as Buffer;
 
-        // Strip docker multiplex headers (non-tty)
-        const logsString = logsBuffer.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
-        const lines = logsString.split('\n').filter(l => l.trim().length > 0);
+        let offset = 0;
+        while (offset < logsBuffer.length) {
+          // Parse 8-byte Docker multiplex header
+          const streamType = logsBuffer[offset]; // 1 = stdout, 2 = stderr
+          const length = logsBuffer.readUInt32BE(offset + 4);
+          offset += 8;
 
-        lines.forEach(line => {
-          let level = 'INFO';
-          const lowerLine = line.toLowerCase();
-          if (lowerLine.includes('error') || lowerLine.includes('err') || lowerLine.includes('fail') || lowerLine.includes('fatal')) level = 'ERROR';
-          else if (lowerLine.includes('warn')) level = 'WARN';
+          if (offset + length > logsBuffer.length) break;
+          const payload = logsBuffer.slice(offset, offset + length).toString('utf-8');
+          offset += length;
 
-          // Extract Docker timestamp if present (usually ISO format at start of line)
-          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
-          const timestamp = timeMatch ? new Date(timeMatch[1]).getTime() : Date.now();
-          const cleanMessage = timeMatch ? timeMatch[2] : line;
+          const lines = payload.split('\n').filter(l => l.trim().length > 0);
+          lines.forEach(line => {
+            // Extract Docker ISO timestamp
+            const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+            let timestampStr = "";
+            let cleanMessage = line;
+            let timestampMs = Date.now();
 
-          allLogs.push({ stackName, containerName, level, message: cleanMessage, timestamp });
-        });
-      } catch (err) {
-        // Ignore individual container fetch errors
-      }
+            if (timeMatch) {
+              const dateObj = new Date(timeMatch[1]);
+              timestampMs = dateObj.getTime();
+              const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+              const formattedTime = dateObj.toLocaleTimeString('en-US', { hour12: false });
+              timestampStr = `[${formattedDate} ${formattedTime}]`;
+              cleanMessage = timeMatch[2];
+            }
+
+            const source = streamType === 2 ? 'STDERR' : 'STDOUT';
+            let level = source === 'STDERR' ? 'ERROR' : 'INFO';
+            if (cleanMessage.toLowerCase().includes('warn')) level = 'WARN';
+
+            allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampStr, timestampMs });
+          });
+        }
+      } catch (err) { /* ignore */ }
     }));
 
     // Sort globally by timestamp descending and limit to 1000 lines to prevent payload bloat
-    allLogs.sort((a, b) => b.timestamp - a.timestamp);
+    allLogs.sort((a, b) => b.timestampMs - a.timestampMs);
     res.json(allLogs.slice(0, 1000));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch global logs' });
