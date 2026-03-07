@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** TTY container log streams failing to parse globally.
+- **Fixed:** Global logs displaying in UTC instead of local browser timezone.
+- **Changed:** Global Logs UI revamped to use a floating, hover-based action bar to maximize terminal space.
 - **Fixed:** Docker raw byte multiplex headers leaking into global logs stream.
 - **Changed:** Relocated historical CPU/RAM charts to the Home Dashboard and normalized data values (CPU relative to host cores, RAM to GB).
 - **Added:** Dozzle-style Action Bar to Global Logs with multi-select stack filtering, search, and STDOUT/STDERR toggles.
