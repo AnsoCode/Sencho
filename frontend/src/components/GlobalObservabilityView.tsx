@@ -1,56 +1,41 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Activity, Terminal } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { RefreshCw, Download, Trash2, Search, Filter } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-interface Metric {
-    id: number;
-    container_id: string;
-    stack_name: string;
-    cpu_percent: number;
-    memory_mb: number;
-    net_rx_mb: number;
-    net_tx_mb: number;
-    timestamp: number;
-}
 
 interface LogEntry {
     stackName: string;
     containerName: string;
+    source: string;
     level: string;
     message: string;
-    timestamp: number;
+    timestampStr: string;
+    timestampMs: number;
 }
 
 export function GlobalObservabilityView() {
-    const [metrics, setMetrics] = useState<Metric[]>([]);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Filters
-    const [selectedStack, setSelectedStack] = useState<string>('all');
-    const [selectedLevel, setSelectedLevel] = useState<string>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedStacks, setSelectedStacks] = useState<string[]>([]);
+    const [streamFilter, setStreamFilter] = useState<'ALL' | 'STDOUT' | 'STDERR'>('ALL');
+    const [clearedAt, setClearedAt] = useState<number>(0);
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [metricsRes, logsRes] = await Promise.all([
-                fetch('/api/metrics/historical'),
-                fetch('/api/logs/global')
-            ]);
-
-            if (metricsRes.ok) {
-                setMetrics(await metricsRes.json());
-            }
+            const logsRes = await fetch('/api/logs/global');
             if (logsRes.ok) {
                 setLogs(await logsRes.json());
             }
         } catch (error) {
-            console.error('Failed to fetch observability data:', error);
+            console.error('Failed to fetch global logs:', error);
         } finally {
             setLoading(false);
         }
@@ -58,187 +43,149 @@ export function GlobalObservabilityView() {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 30000); // 30s auto-refresh
+        const interval = setInterval(fetchData, 10000); // Poll every 10s
         return () => clearInterval(interval);
     }, []);
-
-    // Aggregate metrics by timestamp (minute buckets) for the chart
-    const chartData = useMemo(() => {
-        const buckets: Record<string, { time: string; timestamp: number; cpu: number; ram: number }> = {};
-
-        metrics.forEach(m => {
-            // Bucket by minute (ignoring seconds)
-            const date = new Date(m.timestamp);
-            date.setSeconds(0, 0);
-            const key = date.getTime() + '';
-
-            if (!buckets[key]) {
-                buckets[key] = {
-                    time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    timestamp: date.getTime(),
-                    cpu: 0,
-                    ram: 0
-                };
-            }
-            buckets[key].cpu += m.cpu_percent;
-            buckets[key].ram += m.memory_mb;
-        });
-
-        return Object.values(buckets).sort((a, b) => a.timestamp - b.timestamp);
-    }, [metrics]);
-
-    const chartConfig = {
-        cpu: { label: 'CPU Usage (%)', color: 'var(--chart-1)' },
-        ram: { label: 'RAM Usage (MB)', color: 'var(--chart-2)' },
-    };
-
-    // Filter logs
-    const filteredLogs = useMemo(() => {
-        return logs.filter(log => {
-            if (selectedStack !== 'all' && log.stackName !== selectedStack) return false;
-            if (selectedLevel !== 'all' && log.level !== selectedLevel) return false;
-            return true;
-        });
-    }, [logs, selectedStack, selectedLevel]);
 
     const uniqueStacks = useMemo(() => {
         const stacks = new Set(logs.map(l => l.stackName));
         return Array.from(stacks).sort();
     }, [logs]);
 
+    const handleStackToggle = (stack: string) => {
+        setSelectedStacks(prev =>
+            prev.includes(stack) ? prev.filter(s => s !== stack) : [...prev, stack]
+        );
+    };
+
+    const handleClearLogs = () => {
+        setClearedAt(Date.now());
+    };
+
+    const filteredLogs = useMemo(() => {
+        return logs.filter(log => {
+            if (log.timestampMs < clearedAt) return false;
+            if (selectedStacks.length > 0 && !selectedStacks.includes(log.stackName)) return false;
+            if (streamFilter !== 'ALL' && log.source !== streamFilter) return false;
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                return log.message.toLowerCase().includes(query) ||
+                    log.containerName.toLowerCase().includes(query) ||
+                    log.stackName.toLowerCase().includes(query);
+            }
+            return true;
+        });
+    }, [logs, selectedStacks, streamFilter, searchQuery, clearedAt]);
+
+    const handleDownload = () => {
+        if (filteredLogs.length === 0) return;
+        const blob = new Blob([filteredLogs.map(l => `${l.timestampStr} [${l.stackName} | ${l.containerName}] ${l.level}: ${l.message}`).join('\n')], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `sencho-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
-        <div className="flex flex-col h-full bg-background text-foreground overflow-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
+        <div className="flex flex-col h-full bg-background text-foreground overflow-hidden p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Global Observability</h1>
-                    <p className="text-muted-foreground mt-1">24-hour historical metrics and centralized logging.</p>
+                    <h1 className="text-3xl font-bold tracking-tight">Global Logs</h1>
+                    <p className="text-muted-foreground mt-1">Centralized log viewer across all containers.</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-                    <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh
-                </Button>
+                <div className="flex items-center space-x-2">
+                    <Button variant="outline" size="sm" onClick={handleClearLogs}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Clear
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleDownload} disabled={filteredLogs.length === 0}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center space-x-2">
-                            <Activity className="w-5 h-5 text-primary" />
-                            <span>Aggregate CPU Usage</span>
-                        </CardTitle>
-                        <CardDescription>Total CPU percentage across all containers.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="h-[300px]">
-                        {chartData.length > 0 ? (
-                            <ChartContainer config={chartConfig} className="w-full h-full">
-                                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
-                                    <YAxis tickFormatter={(val) => `${val}%`} />
-                                    <ChartTooltip content={<ChartTooltipContent />} />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="cpu"
-                                        stroke="var(--color-cpu)"
-                                        fill="var(--color-cpu)"
-                                        fillOpacity={0.4}
-                                    />
-                                </AreaChart>
-                            </ChartContainer>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No historical CPU data available.
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+            <Card className="flex-1 flex flex-col overflow-hidden min-h-[400px] border-muted">
+                {/* Action Bar */}
+                <CardHeader className="py-3 px-4 border-b bg-muted/30">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <div className="relative flex-1 max-w-sm">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search logs..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 h-9"
+                            />
+                        </div>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center space-x-2">
-                            <Activity className="w-5 h-5 text-primary" />
-                            <span>Aggregate Memory Usage</span>
-                        </CardTitle>
-                        <CardDescription>Total Memory (MB) allocated across all containers.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="h-[300px]">
-                        {chartData.length > 0 ? (
-                            <ChartContainer config={chartConfig} className="w-full h-full">
-                                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
-                                    <YAxis tickFormatter={(val) => `${val}MB`} />
-                                    <ChartTooltip content={<ChartTooltipContent />} />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="ram"
-                                        stroke="var(--color-ram)"
-                                        fill="var(--color-ram)"
-                                        fillOpacity={0.4}
-                                    />
-                                </AreaChart>
-                            </ChartContainer>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No historical Memory data available.
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Global Logs Section */}
-            <Card className="flex-1 flex flex-col overflow-hidden min-h-[400px]">
-                <CardHeader className="py-4 border-b">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-                        <CardTitle className="flex items-center space-x-2">
-                            <Terminal className="w-5 h-5 text-primary" />
-                            <span>Unified Global Logs</span>
-                        </CardTitle>
-
-                        <div className="flex items-center space-x-4">
-                            <Select value={selectedStack} onValueChange={setSelectedStack}>
-                                <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Filter by Stack" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Stacks</SelectItem>
-                                    {uniqueStacks.map(s => (
-                                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                        <div className="flex items-center gap-2">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-9">
+                                        <Filter className="w-4 h-4 mr-2" />
+                                        Stacks ({selectedStacks.length === 0 ? 'All' : selectedStacks.length})
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                    {uniqueStacks.map(stack => (
+                                        <DropdownMenuCheckboxItem
+                                            key={stack}
+                                            checked={selectedStacks.includes(stack)}
+                                            onCheckedChange={() => handleStackToggle(stack)}
+                                        >
+                                            {stack}
+                                        </DropdownMenuCheckboxItem>
                                     ))}
-                                </SelectContent>
-                            </Select>
+                                    {uniqueStacks.length === 0 && (
+                                        <div className="px-2 py-1.5 text-sm text-muted-foreground">No stacks found</div>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
 
-                            <Select value={selectedLevel} onValueChange={setSelectedLevel}>
-                                <SelectTrigger className="w-[150px]">
-                                    <SelectValue placeholder="Log Level" />
+                            <Select value={streamFilter} onValueChange={(val: any) => setStreamFilter(val)}>
+                                <SelectTrigger className="w-[120px] h-9">
+                                    <SelectValue placeholder="Stream" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All Levels</SelectItem>
-                                    <SelectItem value="INFO">INFO</SelectItem>
-                                    <SelectItem value="WARN">WARN</SelectItem>
-                                    <SelectItem value="ERROR">ERROR</SelectItem>
+                                    <SelectItem value="ALL">All Streams</SelectItem>
+                                    <SelectItem value="STDOUT">STDOUT</SelectItem>
+                                    <SelectItem value="STDERR">STDERR</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent className="p-0 overflow-hidden bg-black text-gray-300 flex-1 flex flex-col">
-                    <ScrollArea className="flex-1 p-4 font-mono text-xs sm:text-sm">
+
+                {/* Terminal Window */}
+                <CardContent className="p-0 overflow-hidden bg-[#0A0A0A] text-gray-300 flex-1 flex flex-col relative">
+                    {loading && logs.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+                            <RefreshCw className="w-6 h-6 text-primary animate-spin" />
+                        </div>
+                    )}
+                    <ScrollArea className="flex-1 p-4">
                         {filteredLogs.length > 0 ? (
                             filteredLogs.map((log, idx) => (
-                                <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2">
-                                    <span className="text-gray-500 mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                                    <span className="text-blue-400 font-semibold mr-2">[{log.stackName}/{log.containerName}]</span>
-                                    <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>
-                                        {log.level}:
-                                    </span>
-                                    <span className={log.level === 'ERROR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
+                                <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
+                                    <span className="text-gray-500 mr-2">{log.timestampStr}</span>
+                                    <span className="text-blue-400 font-semibold mr-2">[{log.stackName} | {log.containerName}]</span>
+                                    <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>{log.level}:</span>
+                                    <span className={log.source === 'STDERR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
                                 </div>
                             ))
                         ) : (
-                            <div className="text-gray-500 italic p-4 text-center">No logs found matching criteria.</div>
+                            <div className="text-gray-500 italic p-4 text-center mt-10">
+                                {logs.length === 0 ? "No active logs found." : "No logs match the current filters."}
+                            </div>
                         )}
                     </ScrollArea>
                 </CardContent>
