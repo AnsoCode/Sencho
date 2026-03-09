@@ -1,10 +1,10 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RefreshCw, Download, Trash2, Search, Filter } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 interface LogEntry {
     stackName: string;
@@ -18,6 +18,7 @@ interface LogEntry {
 export function GlobalObservabilityView() {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [allStacks, setAllStacks] = useState<string[]>([]);
 
     // Filters
     const [searchQuery, setSearchQuery] = useState('');
@@ -25,6 +26,7 @@ export function GlobalObservabilityView() {
     const [streamFilter, setStreamFilter] = useState<'ALL' | 'STDOUT' | 'STDERR'>('ALL');
     const [clearedAt, setClearedAt] = useState<number>(0);
     const bottomRef = useRef<HTMLDivElement>(null);
+    const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 
     const fetchData = async () => {
         setLoading(true);
@@ -46,11 +48,21 @@ export function GlobalObservabilityView() {
         return () => clearInterval(interval);
     }, []);
 
-
-    const uniqueStacks = useMemo(() => {
-        const stacks = new Set(logs.map(l => l.stackName));
-        return Array.from(stacks).sort();
-    }, [logs]);
+    // Fetch definitive stack list from the filesystem, independent of log data
+    useEffect(() => {
+        const fetchStacks = async () => {
+            try {
+                const res = await fetch('/api/stacks');
+                if (res.ok) {
+                    const stacks: string[] = await res.json();
+                    setAllStacks(stacks.sort());
+                }
+            } catch (err) {
+                console.error('Failed to fetch stacks:', err);
+            }
+        };
+        fetchStacks();
+    }, []);
 
     const handleStackToggle = (stack: string) => {
         setSelectedStacks(prev =>
@@ -78,8 +90,16 @@ export function GlobalObservabilityView() {
     }, [logs, selectedStacks, streamFilter, searchQuery, clearedAt]);
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [filteredLogs]);
+        if (isAutoScrollEnabled) {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [filteredLogs, isAutoScrollEnabled]);
+
+    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 50;
+        setIsAutoScrollEnabled(isAtBottom);
+    }, []);
 
     const handleDownload = () => {
         if (filteredLogs.length === 0) return;
@@ -116,7 +136,7 @@ export function GlobalObservabilityView() {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48">
-                        {uniqueStacks.map(stack => (
+                        {allStacks.map(stack => (
                             <DropdownMenuCheckboxItem
                                 key={stack}
                                 checked={selectedStacks.includes(stack)}
@@ -125,7 +145,7 @@ export function GlobalObservabilityView() {
                                 {stack}
                             </DropdownMenuCheckboxItem>
                         ))}
-                        {uniqueStacks.length === 0 && (
+                        {allStacks.length === 0 && (
                             <div className="px-2 py-1.5 text-sm text-muted-foreground">No stacks found</div>
                         )}
                     </DropdownMenuContent>
@@ -156,7 +176,7 @@ export function GlobalObservabilityView() {
                 </div>
             )}
 
-            <ScrollArea className="flex-1 p-4">
+            <div className="flex-1 overflow-auto p-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent" onScroll={handleScroll}>
                 {filteredLogs.length > 0 ? (
                     <>
                         {filteredLogs.map((log, idx) => (
@@ -174,7 +194,7 @@ export function GlobalObservabilityView() {
                         {logs.length === 0 ? "No active logs found." : "No logs match the current filters."}
                     </div>
                 )}
-            </ScrollArea>
+            </div>
         </div>
     );
 }

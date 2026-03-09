@@ -839,7 +839,9 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
             payload.split('\n').forEach(line => parseAndPushLog(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
           }
         }
-      } catch (err) { /* ignore */ }
+      } catch (err) {
+        console.warn(`[GlobalLogs] Failed to fetch/parse logs for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
+      }
     }));
 
     // Sort globally by timestamp ascending (newest bottom) and limit to 2000 lines
