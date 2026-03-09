@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import { Shield, Activity, Bell, Palette, Moon, Sun } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Code } from 'lucide-react';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -27,7 +28,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
-    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance'>('account');
+    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer'>('account');
 
     // Auth State
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -45,7 +46,9 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         host_ram_limit: '90',
         host_disk_limit: '90',
         global_crash: '1',
-        docker_janitor_gb: '5'
+        docker_janitor_gb: '5',
+        global_logs_refresh: '5',
+        developer_mode: '0'
     });
 
     const [isLoading, setIsLoading] = useState(false);
@@ -255,6 +258,14 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                             <Palette className="w-4 h-4 mr-2" />
                             Appearance
                         </Button>
+                        <Button
+                            variant={activeSection === 'developer' ? 'secondary' : 'ghost'}
+                            className="w-full justify-start font-medium"
+                            onClick={() => setActiveSection('developer')}
+                        >
+                            <Code className="w-4 h-4 mr-2" />
+                            Developer
+                        </Button>
                     </nav>
                 </div>
 
@@ -414,6 +425,55 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                     <Moon className="w-6 h-6" />
                                     Dark
                                 </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeSection === 'developer' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">Developer</h3>
+                                <p className="text-sm text-muted-foreground">Power user settings for real-time observability and extended diagnostics.</p>
+                            </div>
+
+                            <div className="space-y-6 bg-muted/10 p-4 border border-border rounded-xl">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
+                                        <p className="text-xs text-muted-foreground">Enable Real-Time Metrics & Extended Logs</p>
+                                    </div>
+                                    <Switch
+                                        id="developer_mode"
+                                        checked={settings.developer_mode === '1'}
+                                        onCheckedChange={(c) => handleSettingChange('developer_mode', c ? '1' : '0')}
+                                    />
+                                </div>
+
+                                <div className="space-y-2 pt-4 border-t border-border">
+                                    <Label className={`text-base ${settings.developer_mode === '1' ? 'text-muted-foreground' : ''}`}>Standard Log Polling Rate</Label>
+                                    <Select
+                                        value={settings.global_logs_refresh}
+                                        onValueChange={(val) => handleSettingChange('global_logs_refresh', val)}
+                                        disabled={settings.developer_mode === '1'}
+                                    >
+                                        <SelectTrigger className="max-w-[200px]">
+                                            <SelectValue placeholder="Select rate" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="1">1 second</SelectItem>
+                                            <SelectItem value="3">3 seconds</SelectItem>
+                                            <SelectItem value="5">5 seconds</SelectItem>
+                                            <SelectItem value="10">10 seconds</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    {settings.developer_mode === '1' && (
+                                        <p className="text-xs text-amber-500">SSE streaming is active — polling rate is overridden by real-time streaming.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end mt-4">
+                                <Button onClick={saveSettings} disabled={isLoading}>Save Developer Settings</Button>
                             </div>
                         </div>
                     )}

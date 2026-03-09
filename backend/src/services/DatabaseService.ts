@@ -119,6 +119,8 @@ export class DatabaseService {
         stmt.run('host_disk_limit', '90');
         stmt.run('global_crash', '1');
         stmt.run('docker_janitor_gb', '5');
+        stmt.run('global_logs_refresh', '5'); // Default 5 seconds
+        stmt.run('developer_mode', '0'); // Default off
     }
 
     private migrateJsonConfig(dataDir: string) {

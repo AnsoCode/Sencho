@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Added:** Developer Mode setting to enable true Real-Time (SSE) global log streaming and infinite scroll.
+- **Added:** Configurable polling rates for standard global logs monitoring.
+- **Added:** React Throttle Buffer to prevent UI freezing during heavy real-time log ingestion.
 - **Fixed:** Global Logs aggressive auto-scrolling preventing users from reading log history.
 - **Fixed:** Quiet stacks missing from the Global Logs filter dropdown by fetching the definitive stack list independently.
 - **Fixed:** Global logs misclassifying INFO messages as errors due to naive string matching.

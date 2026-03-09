@@ -852,6 +852,88 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const dockerController = DockerController.getInstance();
+  const streams: NodeJS.ReadableStream[] = [];
+
+  try {
+    const containers = await dockerController.getRunningContainers();
+
+    await Promise.all(containers.map(async (c) => {
+      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
+      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      let containerName = rawName;
+      if (rawName.startsWith(`${stackName}-`)) containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
+      else if (rawName.startsWith(`${stackName}_`)) containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
+
+      try {
+        const container = dockerController.getDocker().getContainer(c.Id);
+        const inspect = await container.inspect();
+        const isTty = inspect.Config.Tty;
+
+        // Dev mode gets a larger tail
+        const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 500, timestamps: true });
+        streams.push(stream);
+
+        const processLine = (line: string, source: string) => {
+          if (!line.trim()) return;
+          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+          let cleanMessage = line;
+          let timestampMs = Date.now();
+
+          if (timeMatch) {
+            timestampMs = new Date(timeMatch[1]).getTime();
+            cleanMessage = timeMatch[2];
+          }
+
+          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
+          if (/\[\s*(info|inf|debug|dbg)\s*\]/i.test(cleanMessage) || /^(info|debug)\b/i.test(cleanMessage)) level = 'INFO';
+          else if (/\b(warn|warning)\b/i.test(cleanMessage)) level = 'WARN';
+          else if (/\b(error|err|fatal|exception)\b/i.test(cleanMessage)) level = 'ERROR';
+
+          res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
+        };
+
+        stream.on('data', (chunk: Buffer) => {
+          if (isTty) {
+            const payload = chunk.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+            payload.split('\n').forEach(line => processLine(line, 'STDOUT'));
+          } else {
+            let offset = 0;
+            while (offset < chunk.length) {
+              if (offset + 8 > chunk.length) break;
+              const streamType = chunk[offset];
+              const length = chunk.readUInt32BE(offset + 4);
+              offset += 8;
+              if (offset + length > chunk.length) break;
+
+              const payload = chunk.slice(offset, offset + length).toString('utf-8');
+              offset += length;
+              payload.split('\n').forEach(line => processLine(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
+            }
+          }
+        });
+      } catch (err) { /* ignore */ }
+    }));
+
+    // Cleanup when client closes the tab or switches views
+    req.on('close', () => {
+      streams.forEach(s => {
+        try { (s as any).destroy(); } catch (e) { }
+      });
+    });
+
+  } catch (error) {
+    res.write(`data: ${JSON.stringify({ level: 'ERROR', message: '[Sencho] Failed to attach global log stream.', timestampMs: Date.now(), stackName: 'system', containerName: 'backend', source: 'STDERR' })}\n\n`);
+    res.end();
+  }
+});
+
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
