@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RefreshCw, Download, Trash2, Search, Filter } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
 
 
 interface LogEntry {
@@ -20,6 +21,10 @@ export function GlobalObservabilityView() {
     const [loading, setLoading] = useState(true);
     const [allStacks, setAllStacks] = useState<string[]>([]);
 
+    // Settings state
+    const [devMode, setDevMode] = useState(false);
+    const [pollRate, setPollRate] = useState(5);
+
     // Filters
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStacks, setSelectedStacks] = useState<string[]>([]);
@@ -28,24 +33,24 @@ export function GlobalObservabilityView() {
     const bottomRef = useRef<HTMLDivElement>(null);
     const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const logsRes = await fetch('/api/logs/global');
-            if (logsRes.ok) {
-                setLogs(await logsRes.json());
-            }
-        } catch (error) {
-            console.error('Failed to fetch global logs:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // SSE throttle buffer
+    const bufferRef = useRef<LogEntry[]>([]);
 
+    // Fetch settings on mount
     useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 10000); // Poll every 10s
-        return () => clearInterval(interval);
+        const fetchSettings = async () => {
+            try {
+                const res = await apiFetch('/settings');
+                if (res.ok) {
+                    const data = await res.json();
+                    setDevMode(data.developer_mode === '1');
+                    setPollRate(parseInt(data.global_logs_refresh || '5', 10));
+                }
+            } catch (e) {
+                console.error('Failed to fetch settings:', e);
+            }
+        };
+        fetchSettings();
     }, []);
 
     // Fetch definitive stack list from the filesystem, independent of log data
@@ -63,6 +68,65 @@ export function GlobalObservabilityView() {
         };
         fetchStacks();
     }, []);
+
+    // Data fetching: Polling (standard) vs SSE (dev mode)
+    useEffect(() => {
+        if (devMode) {
+            // SSE mode
+            const eventSource = new EventSource('/api/logs/global/stream');
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const entry: LogEntry = JSON.parse(event.data);
+                    bufferRef.current.push(entry);
+                } catch (e) { /* ignore parse errors */ }
+            };
+
+            eventSource.onerror = () => {
+                // SSE will auto-reconnect, no action needed
+            };
+
+            // 500ms throttle: flush buffer into React state
+            const flushInterval = setInterval(() => {
+                if (bufferRef.current.length > 0) {
+                    const batch = bufferRef.current.splice(0);
+                    setLogs(prev => {
+                        const merged = [...prev, ...batch];
+                        // Infinite scroll: no slice limit in dev mode
+                        merged.sort((a, b) => a.timestampMs - b.timestampMs);
+                        return merged;
+                    });
+                }
+            }, 500);
+
+            setLoading(false);
+
+            return () => {
+                eventSource.close();
+                clearInterval(flushInterval);
+                bufferRef.current = [];
+            };
+        } else {
+            // Standard polling mode
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const logsRes = await fetch('/api/logs/global');
+                    if (logsRes.ok) {
+                        setLogs(await logsRes.json());
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch global logs:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            fetchData();
+            const interval = setInterval(fetchData, pollRate * 1000);
+            return () => clearInterval(interval);
+        }
+    }, [devMode, pollRate]);
 
     const handleStackToggle = (stack: string) => {
         setSelectedStacks(prev =>
@@ -168,6 +232,12 @@ export function GlobalObservabilityView() {
                 <Button variant="outline" size="sm" onClick={handleDownload} disabled={filteredLogs.length === 0} className="h-8 text-sm px-2">
                     <Download className="w-3.5 h-3.5" />
                 </Button>
+
+                {devMode && (
+                    <div className="flex items-center px-2 text-xs text-emerald-400 font-mono animate-pulse">
+                        ● LIVE
+                    </div>
+                )}
             </div>
 
             {loading && logs.length === 0 && (
