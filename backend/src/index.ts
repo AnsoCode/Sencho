@@ -806,16 +806,27 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
             cleanMessage = timeMatch[2];
           }
 
+          // Default to INFO, or ERROR if coming from STDERR.
           let level = source === 'STDERR' ? 'ERROR' : 'INFO';
 
-          if (/\b(warn|warning)\b/i.test(cleanMessage)) {
-            level = 'WARN';
-          } else if (/\b(error|err|fatal|exception)\b/i.test(cleanMessage)) {
-            level = 'ERROR';
-          }
-
-          if (/\[\s*(info|inf|debug|dbg)\s*\]/i.test(cleanMessage) || /^(info|debug)\b/i.test(cleanMessage)) {
+          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
+          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
+            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
             level = 'INFO';
+          }
+          // 2. Check for WARN indicators
+          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
+            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'WARN';
+          }
+          // 3. Check for ERROR indicators
+          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
+            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
+            /Exception:/i.test(cleanMessage)) {
+            level = 'ERROR';
           }
 
           allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
@@ -891,10 +902,28 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
             cleanMessage = timeMatch[2];
           }
 
+          // Default to INFO, or ERROR if coming from STDERR.
           let level = source === 'STDERR' ? 'ERROR' : 'INFO';
-          if (/\[\s*(info|inf|debug|dbg)\s*\]/i.test(cleanMessage) || /^(info|debug)\b/i.test(cleanMessage)) level = 'INFO';
-          else if (/\b(warn|warning)\b/i.test(cleanMessage)) level = 'WARN';
-          else if (/\b(error|err|fatal|exception)\b/i.test(cleanMessage)) level = 'ERROR';
+
+          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
+          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
+            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'INFO';
+          }
+          // 2. Check for WARN indicators
+          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
+            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'WARN';
+          }
+          // 3. Check for ERROR indicators
+          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
+            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
+            /Exception:/i.test(cleanMessage)) {
+            level = 'ERROR';
+          }
 
           res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
         };
