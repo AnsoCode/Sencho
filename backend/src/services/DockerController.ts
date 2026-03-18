@@ -29,6 +29,14 @@ class DockerController {
     return this.docker;
   }
 
+  private validateApiData<T>(data: any): T {
+    // If the daemon port points to a web server (like Sencho UI), Dockerode receives HTML
+    if (typeof data === 'string') {
+      throw new Error("Invalid response from Docker API. Did you provide a web port instead of the Docker daemon port?");
+    }
+    return data as T;
+  }
+
   public async getDiskUsage() {
     const df = await this.docker.df();
 
@@ -89,16 +97,19 @@ class DockerController {
   }
 
   public async getImages() {
-    return await this.docker.listImages({ all: false });
+    const data = await this.docker.listImages({ all: false });
+    return this.validateApiData<any[]>(data);
   }
 
   public async getVolumes() {
     const data = await this.docker.listVolumes();
-    return data.Volumes || [];
+    const validated = this.validateApiData<any>(data);
+    return validated.Volumes || [];
   }
 
   public async getNetworks() {
-    return await this.docker.listNetworks();
+    const data = await this.docker.listNetworks();
+    return this.validateApiData<any[]>(data);
   }
 
   public async removeImage(id: string) {
@@ -118,12 +129,12 @@ class DockerController {
 
   public async getRunningContainers() {
     const containers = await this.docker.listContainers({ all: false });
-    return containers;
+    return this.validateApiData<any[]>(containers);
   }
 
   public async getAllContainers() {
     const containers = await this.docker.listContainers({ all: true });
-    return containers;
+    return this.validateApiData<any[]>(containers);
   }
 
   public async getContainersByStack(stackName: string) {

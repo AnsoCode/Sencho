@@ -212,9 +212,12 @@ export function NodeManager() {
           value={formData.compose_dir}
           onChange={(e) => setFormData({ ...formData, compose_dir: e.target.value })}
         />
-        <p className="text-xs text-muted-foreground">
-          The root directory where compose stack folders live on this node
-        </p>
+        <div className="text-xs text-muted-foreground space-y-1 mt-1">
+          <p>The root directory where compose stack folders live on this node.</p>
+          <p className="text-amber-600 dark:text-amber-400 font-medium">
+            Note: Strategy B requires valid SSH credentials to read and edit compose.yaml files. TCP alone only grants container lifecycle management.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -238,7 +241,7 @@ export function NodeManager() {
               Add Node
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-4xl">
             <DialogHeader>
               <DialogTitle>Add Remote Node</DialogTitle>
             </DialogHeader>
@@ -256,7 +259,7 @@ export function NodeManager() {
       <Separator />
 
       {/* Nodes Table */}
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-x-auto w-full">
         <Table>
           <TableHeader>
             <TableRow>
@@ -380,7 +383,7 @@ export function NodeManager() {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Edit Node</DialogTitle>
           </DialogHeader>
