@@ -26,7 +26,7 @@ export interface StackAlert {
 }
 
 export interface Node {
-    id?: number;
+    id: number;
     name: string;
     type: 'local' | 'remote';
     host: string;
@@ -35,6 +35,12 @@ export interface Node {
     is_default: boolean;
     status: 'online' | 'offline' | 'unknown';
     created_at: number;
+    ssh_user?: string;
+    ssh_password?: string;
+    ssh_key?: string;
+    tls_ca?: string;
+    tls_cert?: string;
+    tls_key?: string;
 }
 
 export interface NotificationHistory {
@@ -134,7 +140,19 @@ export class DatabaseService {
         status TEXT NOT NULL DEFAULT 'unknown',
         created_at INTEGER NOT NULL
       );
+      );
     `);
+
+        // Apply migrations safely (ignore if columns already exist)
+        const maybeAddCol = (table: string, col: string, def: string) => {
+            try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch (e) { /* ignore */ }
+        };
+        maybeAddCol('nodes', 'ssh_user', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'ssh_password', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'ssh_key', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_ca', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_cert', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_key', "TEXT DEFAULT ''");
 
         // Initialize default global settings if they don't exist
         const stmt = this.db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
@@ -351,7 +369,7 @@ export class DatabaseService {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
         const stmt = this.db.prepare(
-            'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         const result = stmt.run(
             node.name,
@@ -361,7 +379,13 @@ export class DatabaseService {
             node.compose_dir,
             node.is_default ? 1 : 0,
             'unknown',
-            Date.now()
+            Date.now(),
+            node.ssh_user || '',
+            node.ssh_password || '',
+            node.ssh_key || '',
+            node.tls_ca || '',
+            node.tls_cert || '',
+            node.tls_key || ''
         );
         return result.lastInsertRowid as number;
     }
@@ -385,6 +409,12 @@ export class DatabaseService {
         if (updates.compose_dir !== undefined) { fields.push('compose_dir = ?'); values.push(updates.compose_dir); }
         if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
         if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+        if (updates.ssh_user !== undefined) { fields.push('ssh_user = ?'); values.push(updates.ssh_user); }
+        if (updates.ssh_password !== undefined) { fields.push('ssh_password = ?'); values.push(updates.ssh_password); }
+        if (updates.ssh_key !== undefined) { fields.push('ssh_key = ?'); values.push(updates.ssh_key); }
+        if (updates.tls_ca !== undefined) { fields.push('tls_ca = ?'); values.push(updates.tls_ca); }
+        if (updates.tls_cert !== undefined) { fields.push('tls_cert = ?'); values.push(updates.tls_cert); }
+        if (updates.tls_key !== undefined) { fields.push('tls_key = ?'); values.push(updates.tls_key); }
 
         if (fields.length === 0) return;
 

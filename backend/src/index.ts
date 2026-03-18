@@ -30,11 +30,7 @@ const execAsync = promisify(exec);
 const app = express();
 const PORT = 3000;
 
-// FileSystemService for stack management
-const fileSystemService = new FileSystemService();
-
-// ComposeService for stack operations
-const composeService = new ComposeService();
+// FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
 
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
@@ -60,10 +56,29 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Extend Express Request type for user
-declare module 'express' {
-  interface Request {
-    user?: { username: string };
+// Node Context Middleware
+const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const nodeIdHeader = req.headers['x-node-id'] as string;
+  const nodeIdQuery = req.query.nodeId as string;
+  if (nodeIdHeader) {
+    req.nodeId = parseInt(nodeIdHeader, 10);
+  } else if (nodeIdQuery) {
+    req.nodeId = parseInt(nodeIdQuery, 10);
+  } else {
+    req.nodeId = NodeRegistry.getInstance().getDefaultNodeId();
+  }
+  next();
+};
+
+app.use(nodeContextMiddleware);
+
+// Extend Express Request type for user and node
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { username: string };
+      nodeId: number;
+    }
   }
 }
 
@@ -279,16 +294,22 @@ server.on('upgrade', async (req, socket, head) => {
 
     // Check if this is a stack logs WebSocket request
     const url = req.url || '';
-    const logsMatch = url.match(/^\/api\/stacks\/([^/]+)\/logs$/);
-    const hostConsoleMatch = url.match(/^\/api\/system\/host-console/);
+    const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname;
+
+    const logsMatch = pathname.match(/^\/api\/stacks\/([^/]+)\/logs$/);
+    const hostConsoleMatch = pathname.match(/^\/api\/system\/host-console/);
 
     if (logsMatch) {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
       const logsWss = new WebSocket.Server({ noServer: true });
       logsWss.handleUpgrade(req, socket, head, (ws) => {
         const stackName = decodeURIComponent(logsMatch[1]);
+        const nodeIdParam = parsedUrl.searchParams.get('nodeId');
+        const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+
         try {
-          composeService.streamLogs(stackName, ws);
+          ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
         } catch (error) {
           console.error('Failed to stream logs:', error);
           if (ws.readyState === WebSocket.OPEN) {
@@ -299,15 +320,20 @@ server.on('upgrade', async (req, socket, head) => {
     } else if (hostConsoleMatch) {
       const hostConsoleWss = new WebSocket.Server({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
-        let targetDirectory = fileSystemService.getBaseDir();
+        let targetDirectory = '';
         try {
           const reqUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+          const nodeIdParam = reqUrl.searchParams.get('nodeId');
+          const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+          targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
+          
           const stackParam = reqUrl.searchParams.get('stack');
           if (stackParam) {
             targetDirectory = path.join(targetDirectory, stackParam);
           }
         } catch (e) {
           // ignore parsing error, fallback to base dir
+          targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
         }
         try {
           HostTerminalService.spawnTerminal(ws, targetDirectory);
@@ -347,12 +373,14 @@ wss.on('connection', (ws) => {
       if (data.action === 'connectTerminal') {
         terminalWs = ws;
       } else if (data.action === 'streamStats') {
-        const dockerController = DockerController.getInstance();
+        const nodeId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        const dockerController = DockerController.getInstance(nodeId);
         dockerController.streamStats(data.containerId, ws);
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
         // Input, resize, and cleanup are handled inside execContainer's closure
-        const dockerController = DockerController.getInstance();
+        const nodeId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        const dockerController = DockerController.getInstance(nodeId);
         dockerController.execContainer(data.containerId, ws);
       }
     } catch (error) {
@@ -365,7 +393,7 @@ wss.on('connection', (ws) => {
 
 app.get('/api/containers', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
     res.json(containers);
   } catch (error) {
@@ -377,7 +405,7 @@ app.get('/api/containers', async (req: Request, res: Response) => {
 
 app.get('/api/stacks', async (req: Request, res: Response) => {
   try {
-    const stacks = await fileSystemService.getStacks();
+    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     res.json(stacks);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stacks' });
@@ -387,7 +415,7 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const content = await fileSystemService.getStackContent(stackName);
+    const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     res.send(content);
   } catch (error) {
     res.status(500).json({ error: 'Failed to read stack' });
@@ -406,7 +434,7 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
       console.error('Content is not a string:', content);
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    await fileSystemService.saveStackContent(stackName, content);
+    await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
     console.log('Stack saved successfully:', stackName);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
@@ -416,8 +444,9 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
 });
 
 // Helper: resolve all env file paths dynamically from compose.yaml's env_file field
-async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
-  const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
+async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
+  const fsService = FileSystemService.getInstance(nodeId);
+  const stackDir = path.join(fsService.getBaseDir(), stackName);
   const defaultEnvPath = path.join(stackDir, '.env');
 
   try {
@@ -427,7 +456,7 @@ async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
 
     for (const file of composeFiles) {
       try {
-        composeContent = await fsPromises.readFile(path.join(stackDir, file), 'utf-8');
+        composeContent = await fsService.readFile(path.join(stackDir, file), 'utf-8');
         break;
       } catch {
         // Try next file
@@ -479,7 +508,7 @@ async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
 app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
     res.json({ envFiles: envPaths });
   } catch (error) {
     res.status(500).json({ error: 'Failed to resolve env files' });
@@ -490,7 +519,7 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
     const requestedFile = req.query.file as string | undefined;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
     let envPath = envPaths[0]; // Fallback to the first
 
@@ -503,13 +532,15 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
       }
     }
 
+    const fsService = FileSystemService.getInstance(req.nodeId);
+
     try {
-      await fsPromises.access(envPath);
+      await fsService.access(envPath);
     } catch {
       return res.status(404).json({ error: 'Env file not found' });
     }
 
-    const content = await fsPromises.readFile(envPath, 'utf-8');
+    const content = await fsService.readFile(envPath, 'utf-8');
     res.send(content);
   } catch (error) {
     console.error('Failed to read env file:', error);
@@ -529,7 +560,7 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
     }
 
     const requestedFile = req.query.file as string | undefined;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
     let envPath = envPaths[0]; // Fallback
 
@@ -541,7 +572,8 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
       }
     }
 
-    await fsPromises.writeFile(envPath, content, 'utf-8');
+    const fsService = FileSystemService.getInstance(req.nodeId);
+    await fsService.writeFile(envPath, content, 'utf-8');
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
     console.error('Failed to save env file:', error);
@@ -558,7 +590,7 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
     if (!/^[a-zA-Z0-9-]+$/.test(stackName)) {
       return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters and hyphens' });
     }
-    await fileSystemService.createStack(stackName);
+    await FileSystemService.getInstance(req.nodeId).createStack(stackName);
     res.json({ message: 'Stack created successfully', name: stackName });
   } catch (error: any) {
     if (error.message && error.message.includes('already exists')) {
@@ -574,13 +606,13 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
   try {
     // Stage 1: Tell Docker to clean up ghost networks/containers
     try {
-      await composeService.downStack(stackName);
+      await ComposeService.getInstance(req.nodeId).downStack(stackName);
     } catch (downErr) {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }
 
     // Stage 2: Obliterate the files
-    await fileSystemService.deleteStack(stackName);
+    await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
 
     res.json({ success: true });
   } catch (error: any) {
@@ -591,7 +623,7 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
     res.json(containers);
   } catch (error) {
@@ -602,7 +634,7 @@ app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response)
 app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     // Pass both req and res so we can listen for the client disconnect
     await dockerController.streamContainerLogs(id, req, res);
   } catch (error) {
@@ -613,7 +645,7 @@ app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
 app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.startContainer(id);
     res.json({ message: 'Container started' });
   } catch (error) {
@@ -624,7 +656,7 @@ app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
 app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.stopContainer(id);
     res.json({ message: 'Container stopped' });
   } catch (error) {
@@ -635,7 +667,7 @@ app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
 app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.restartContainer(id);
     res.json({ message: 'Container restarted' });
   } catch (error) {
@@ -647,7 +679,7 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.deployStack(stackName, terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
     res.json({ message: 'Deployed successfully' });
   } catch (error: any) {
     console.error('Failed to deploy stack:', error);
@@ -658,7 +690,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.runCommand(stackName, 'down', terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
@@ -668,7 +700,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -686,7 +718,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -704,7 +736,7 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -724,7 +756,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
   try {
     const stackName = req.params.stackName as string;
     // Await update completion
-    await composeService.updateStack(stackName, terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined);
     res.json({ status: 'Update completed' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update' });
@@ -749,7 +781,7 @@ app.post('/api/convert', async (req: Request, res: Response) => {
 // Get all containers stats for dashboard
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
     const allContainers = await dockerController.getAllContainers();
 
@@ -774,7 +806,7 @@ app.get('/api/metrics/historical', async (req: Request, res: Response) => {
 
 app.get('/api/logs/global', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
     const allLogs: any[] = [];
 
@@ -870,7 +902,7 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  const dockerController = DockerController.getInstance();
+  const dockerController = DockerController.getInstance(req.nodeId);
   const streams: NodeJS.ReadableStream[] = [];
 
   try {
@@ -1136,8 +1168,8 @@ app.post('/api/notifications/test', async (req: Request, res: Response) => {
 
 app.get('/api/system/orphans', async (req: Request, res: Response) => {
   try {
-    const knownStacks = await fileSystemService.getStacks();
-    const dockerController = DockerController.getInstance();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const orphans = await dockerController.getOrphanContainers(knownStacks);
     res.json(orphans);
   } catch (error) {
@@ -1152,7 +1184,7 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
     if (!Array.isArray(containerIds)) {
       return res.status(400).json({ error: 'containerIds must be an array' });
     }
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const results = await dockerController.removeContainers(containerIds);
     res.json({ results });
   } catch (error) {
@@ -1168,7 +1200,7 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const result = await dockerController.pruneSystem(target);
 
     res.json({ message: 'Prune completed', ...result });
@@ -1180,7 +1212,7 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
 
 app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const df = await dockerController.getDiskUsage();
     res.json(df);
   } catch (error) {
@@ -1191,7 +1223,7 @@ app.get('/api/system/docker-df', async (req: Request, res: Response) => {
 
 app.get('/api/system/images', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const images = await dockerController.getImages();
     res.json(images);
   } catch (error) {
@@ -1202,7 +1234,7 @@ app.get('/api/system/images', async (req: Request, res: Response) => {
 
 app.get('/api/system/volumes', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const volumes = await dockerController.getVolumes();
     res.json(volumes);
   } catch (error) {
@@ -1213,7 +1245,7 @@ app.get('/api/system/volumes', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const networks = await dockerController.getNetworks();
     res.json(networks);
   } catch (error) {
@@ -1226,7 +1258,7 @@ app.post('/api/system/images/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeImage(id);
     res.json({ success: true, message: 'Image deleted' });
   } catch (error: any) {
@@ -1239,7 +1271,7 @@ app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeVolume(id);
     res.json({ success: true, message: 'Volume deleted' });
   } catch (error: any) {
@@ -1252,7 +1284,7 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeNetwork(id);
     res.json({ success: true, message: 'Network deleted' });
   } catch (error: any) {
@@ -1280,7 +1312,7 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'stackName and template are required' });
     }
 
-    const stackPath = path.join(fileSystemService.getBaseDir(), stackName);
+    const stackPath = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
     if (fs.existsSync(stackPath)) {
       return res.status(409).json({
         error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
@@ -1289,23 +1321,23 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
     }
 
     // 1. Create stack directory
-    await fileSystemService.createStack(stackName);
+    await FileSystemService.getInstance(req.nodeId).createStack(stackName);
 
     // 2. Generate compose YAML and save
     const composeYaml = templateService.generateComposeFromTemplate(template);
-    await fileSystemService.saveStackContent(stackName, composeYaml);
+    await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, composeYaml);
 
     // 3. Generate env string and save to default .env
     if (envVars) {
       const envString = templateService.generateEnvString(envVars);
-      const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
+      const stackDir = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
       const defaultEnvPath = path.join(stackDir, '.env');
       await fsPromises.writeFile(defaultEnvPath, envString, 'utf-8');
     }
 
     // 4. Deploy the stack with atomic rollback
     try {
-      await composeService.deployStack(stackName, terminalWs || undefined);
+      await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
       res.json({ success: true, message: 'Template deployed successfully' });
     } catch (deployError: any) {
       const rawError = deployError.message || String(deployError);
@@ -1316,14 +1348,14 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       if (shouldRollback) {
         try {
           // Stage 1: Tell Docker to clean up ghost networks/containers
-          await composeService.downStack(stackName);
+          await ComposeService.getInstance(req.nodeId).downStack(stackName);
         } catch (downErr) {
           console.error("Rollback Stage 1 (Docker down) failed:", downErr);
         }
 
         try {
           // Stage 2: Obliterate the files
-          await fileSystemService.deleteStack(stackName);
+          await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
         } catch (fsErr) {
           console.error("Rollback Stage 2 (File deletion) failed:", fsErr);
         }
@@ -1473,7 +1505,8 @@ async function startServer() {
   try {
     // Run migration before starting server
     console.log('Running stack migration check...');
-    await fileSystemService.migrateFlatToDirectory();
+    const defaultFsService = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId());
+    await defaultFsService.migrateFlatToDirectory();
     console.log('Migration check completed');
   } catch (error) {
     console.error('Migration failed:', error);

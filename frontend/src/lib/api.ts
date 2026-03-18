@@ -5,10 +5,13 @@ export async function apiFetch(
   options: RequestInit = {}
 ): Promise<Response> {
   const url = `${API_BASE}${endpoint}`;
+  const activeNodeId = localStorage.getItem('sencho-active-node');
+  
   const defaultOptions: RequestInit = {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(activeNodeId ? { 'x-node-id': activeNodeId } : {}),
       ...options.headers,
     },
   };

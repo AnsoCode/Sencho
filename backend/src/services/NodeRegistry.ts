@@ -67,6 +67,14 @@ export class NodeRegistry {
     }
 
     /**
+     * Get a node configuration by its ID.
+     */
+    public getNode(nodeId: number): Node | undefined {
+        const db = DatabaseService.getInstance();
+        return db.getNode(nodeId);
+    }
+
+    /**
      * Create a Docker client based on node configuration.
      * - Local nodes: use the default socket (Docker autodetects)
      * - Remote nodes: connect via TCP to host:port
