@@ -86,8 +86,9 @@ export class FileSystemService {
       }
 
       return stackNames;
-    } catch (error) {
-      console.error('Error reading stacks:', error);
+    } catch (error: any) {
+      const nodeName = NodeRegistry.getInstance().getNode(this.nodeId)?.name || 'Unknown';
+      console.warn(`[SFTP] Failed to fetch stacks for Node ${nodeName}: ${error.message || error}`);
       return [];
     }
   }

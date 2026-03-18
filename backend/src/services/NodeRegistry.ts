@@ -112,6 +112,12 @@ export class NodeRegistry {
         try {
             const docker = this.createDockerClient(node);
             const info = await docker.info();
+
+            // Validate the payload contains actual Docker daemon info, not arbitrary HTML
+            if (!info || !info.OperatingSystem || typeof info.Containers !== 'number') {
+                throw new Error("Invalid response from Docker API. Did you provide a web port instead of the Docker daemon port?");
+            }
+
             db.updateNodeStatus(nodeId, 'online');
             return {
                 success: true,
