@@ -1,4 +1,5 @@
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NodeProvider } from './context/NodeContext';
 import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import EditorLayout from './components/EditorLayout';
@@ -38,8 +39,10 @@ import { Toaster } from 'sonner';
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
-      <Toaster position="bottom-right" richColors />
+      <NodeProvider>
+        <AppContent />
+        <Toaster position="bottom-right" richColors />
+      </NodeProvider>
     </AuthProvider>
   );
 }
