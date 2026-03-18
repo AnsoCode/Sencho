@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Added:** Remote Nodes Foundation (Strategy B) — `nodes` table in SQLite with auto-seeded default local node.
+- **Added:** `NodeRegistry` service for managing multiple Docker daemon connections (local socket + TCP).
+- **Added:** Node management API endpoints: list, get, create, update, delete, and test connection.
+- **Added:** Settings Hub → Nodes tab with full CRUD UI, connection testing, and Docker info display.
+- **Added:** Node switcher dropdown in sidebar (auto-visible when multiple nodes are configured).
+- **Added:** `NodeContext` for frontend-wide active node state management.
 - **Fixed:** Global logs false-positive error misclassifications caused by Docker containers writing INFO logs to STDERR. Replaced naive regex with a robust 3-tier classification engine supporting `level=info`, `[INFO]`, and ` INFO ` format standards.
 - **Added:** Developer Mode setting to enable true Real-Time (SSE) global log streaming and infinite scroll.
 - **Added:** Configurable polling rates for standard global logs monitoring.

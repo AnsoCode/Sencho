@@ -12,7 +12,8 @@ import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Palette, Moon, Sun, Code } from 'lucide-react';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server } from 'lucide-react';
+import { NodeManager } from './NodeManager';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -28,7 +29,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
-    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer'>('account');
+    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes'>('account');
 
     // Auth State
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -221,7 +222,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="sm:max-w-[800px] h-[600px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
+            <DialogContent className="sm:max-w-[900px] h-[650px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
                 {/* Sidebar */}
                 <div className="w-[200px] bg-muted/20 border-r border-border flex flex-col p-4 shrink-0">
                     <div className="font-semibold text-lg mb-6 text-foreground tracking-tight">Settings Hub</div>
@@ -265,6 +266,14 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                         >
                             <Code className="w-4 h-4 mr-2" />
                             Developer
+                        </Button>
+                        <Button
+                            variant={activeSection === 'nodes' ? 'secondary' : 'ghost'}
+                            className="w-full justify-start font-medium"
+                            onClick={() => setActiveSection('nodes')}
+                        >
+                            <Server className="w-4 h-4 mr-2" />
+                            Nodes
                         </Button>
                     </nav>
                 </div>
@@ -476,6 +485,10 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                 <Button onClick={saveSettings} disabled={isLoading}>Save Developer Settings</Button>
                             </div>
                         </div>
+                    )}
+
+                    {activeSection === 'nodes' && (
+                        <NodeManager />
                     )}
 
                 </div>

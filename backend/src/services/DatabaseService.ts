@@ -25,6 +25,18 @@ export interface StackAlert {
     last_fired_at?: number;
 }
 
+export interface Node {
+    id?: number;
+    name: string;
+    type: 'local' | 'remote';
+    host: string;
+    port: number;
+    compose_dir: string;
+    is_default: boolean;
+    status: 'online' | 'offline' | 'unknown';
+    created_at: number;
+}
+
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
@@ -110,6 +122,18 @@ export class DatabaseService {
       
       CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON container_metrics(timestamp);
       CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
+
+      CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        type TEXT NOT NULL DEFAULT 'local',
+        host TEXT NOT NULL DEFAULT '',
+        port INTEGER NOT NULL DEFAULT 2375,
+        compose_dir TEXT NOT NULL DEFAULT '/app/compose',
+        is_default INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'unknown',
+        created_at INTEGER NOT NULL
+      );
     `);
 
         // Initialize default global settings if they don't exist
@@ -121,6 +145,14 @@ export class DatabaseService {
         stmt.run('docker_janitor_gb', '5');
         stmt.run('global_logs_refresh', '5'); // Default 5 seconds
         stmt.run('developer_mode', '0'); // Default off
+
+        // Seed the default local node if none exists
+        const nodeCount = (this.db.prepare('SELECT COUNT(*) as count FROM nodes').get() as any)?.count || 0;
+        if (nodeCount === 0) {
+            this.db.prepare(
+                'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            ).run('Local', 'local', '', 0, process.env.COMPOSE_DIR || '/app/compose', 1, 'online', Date.now());
+        }
     }
 
     private migrateJsonConfig(dataDir: string) {
@@ -287,5 +319,88 @@ export class DatabaseService {
         const cutoff = Date.now() - (hoursToKeep * 60 * 60 * 1000);
         const stmt = this.db.prepare('DELETE FROM container_metrics WHERE timestamp < ?');
         stmt.run(cutoff);
+    }
+
+    // --- Nodes ---
+
+    public getNodes(): Node[] {
+        const stmt = this.db.prepare('SELECT * FROM nodes ORDER BY is_default DESC, name ASC');
+        return stmt.all().map((row: any) => ({
+            ...row,
+            is_default: row.is_default === 1
+        }));
+    }
+
+    public getNode(id: number): Node | undefined {
+        const stmt = this.db.prepare('SELECT * FROM nodes WHERE id = ?');
+        const row = stmt.get(id) as any;
+        if (!row) return undefined;
+        return { ...row, is_default: row.is_default === 1 };
+    }
+
+    public getDefaultNode(): Node | undefined {
+        const stmt = this.db.prepare('SELECT * FROM nodes WHERE is_default = 1 LIMIT 1');
+        const row = stmt.get() as any;
+        if (!row) return undefined;
+        return { ...row, is_default: row.is_default === 1 };
+    }
+
+    public addNode(node: Omit<Node, 'id' | 'status' | 'created_at'>): number {
+        // If this node is set as default, clear other defaults first
+        if (node.is_default) {
+            this.db.prepare('UPDATE nodes SET is_default = 0').run();
+        }
+        const stmt = this.db.prepare(
+            'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        const result = stmt.run(
+            node.name,
+            node.type,
+            node.host,
+            node.port,
+            node.compose_dir,
+            node.is_default ? 1 : 0,
+            'unknown',
+            Date.now()
+        );
+        return result.lastInsertRowid as number;
+    }
+
+    public updateNode(id: number, updates: Partial<Omit<Node, 'id' | 'created_at'>>): void {
+        const node = this.getNode(id);
+        if (!node) throw new Error(`Node with id ${id} not found`);
+
+        // If setting as default, clear other defaults first
+        if (updates.is_default) {
+            this.db.prepare('UPDATE nodes SET is_default = 0').run();
+        }
+
+        const fields: string[] = [];
+        const values: any[] = [];
+
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.type !== undefined) { fields.push('type = ?'); values.push(updates.type); }
+        if (updates.host !== undefined) { fields.push('host = ?'); values.push(updates.host); }
+        if (updates.port !== undefined) { fields.push('port = ?'); values.push(updates.port); }
+        if (updates.compose_dir !== undefined) { fields.push('compose_dir = ?'); values.push(updates.compose_dir); }
+        if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
+        if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+
+        if (fields.length === 0) return;
+
+        values.push(id);
+        this.db.prepare(`UPDATE nodes SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteNode(id: number): void {
+        const node = this.getNode(id);
+        if (node?.is_default) {
+            throw new Error('Cannot delete the default node');
+        }
+        this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+    }
+
+    public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
+        this.db.prepare('UPDATE nodes SET status = ? WHERE id = ?').run(status, id);
     }
 }

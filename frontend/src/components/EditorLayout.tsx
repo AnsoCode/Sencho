@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -31,6 +31,7 @@ import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
+import { useNodes } from '@/context/NodeContext';
 
 interface ContainerInfo {
   Id: string;
@@ -54,6 +55,7 @@ const formatBytes = (bytes: number) => {
 
 export default function EditorLayout() {
   const { logout } = useAuth();
+  const { nodes, activeNode, setActiveNode } = useNodes();
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -646,6 +648,39 @@ export default function EditorLayout() {
             </Tooltip>
           </TooltipProvider>
         </div>
+
+        {/* Node Switcher */}
+        {nodes.length > 1 && (
+          <div className="px-4 pt-2 pb-0">
+            <Select
+              value={activeNode?.id?.toString() || ''}
+              onValueChange={(val) => {
+                const node = nodes.find(n => n.id === parseInt(val));
+                if (node) setActiveNode(node);
+              }}
+            >
+              <SelectTrigger className="w-full h-9 text-sm">
+                <div className="flex items-center gap-2">
+                  <Server className="w-3.5 h-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Select node" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {nodes.map(node => (
+                  <SelectItem key={node.id} value={node.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${
+                        node.status === 'online' ? 'bg-green-500' :
+                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                      }`} />
+                      {node.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Create Stack Button */}
         <div className="p-4">

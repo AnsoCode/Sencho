@@ -21,6 +21,7 @@ import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
+import { NodeRegistry } from './services/NodeRegistry';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
 
@@ -1340,6 +1341,109 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
   }
 });
 
+// =========================
+// Node Management API
+// =========================
+
+// List all nodes
+app.get('/api/nodes', async (req: Request, res: Response) => {
+  try {
+    const nodes = DatabaseService.getInstance().getNodes();
+    res.json(nodes);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch nodes' });
+  }
+});
+
+// Get a specific node
+app.get('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const node = DatabaseService.getInstance().getNode(id);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    res.json(node);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch node' });
+  }
+});
+
+// Create a new node
+app.post('/api/nodes', async (req: Request, res: Response) => {
+  try {
+    const { name, type, host, port, compose_dir, is_default } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Node name is required' });
+    }
+    if (!type || !['local', 'remote'].includes(type)) {
+      return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
+    }
+    if (type === 'remote' && (!host || typeof host !== 'string')) {
+      return res.status(400).json({ error: 'Host is required for remote nodes' });
+    }
+
+    const id = DatabaseService.getInstance().addNode({
+      name,
+      type,
+      host: host || '',
+      port: port || 2375,
+      compose_dir: compose_dir || '/opt/docker',
+      is_default: is_default || false,
+    });
+
+    res.json({ success: true, id });
+  } catch (error: any) {
+    if (error.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: 'A node with that name already exists' });
+    }
+    console.error('Failed to create node:', error);
+    res.status(500).json({ error: error.message || 'Failed to create node' });
+  }
+});
+
+// Update a node
+app.put('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const updates = req.body;
+
+    DatabaseService.getInstance().updateNode(id, updates);
+
+    // Evict cached Docker connection so it reconnects with new config
+    NodeRegistry.getInstance().evictConnection(id);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to update node:', error);
+    res.status(500).json({ error: error.message || 'Failed to update node' });
+  }
+});
+
+// Delete a node
+app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    DatabaseService.getInstance().deleteNode(id);
+    NodeRegistry.getInstance().evictConnection(id);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to delete node:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete node' });
+  }
+});
+
+// Test connection to a node
+app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const result = await NodeRegistry.getInstance().testConnection(id);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Connection test failed' });
+  }
+});
 
 
 // Serve static files in production (for Docker deployment)
