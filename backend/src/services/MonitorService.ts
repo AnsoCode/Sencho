@@ -118,31 +118,30 @@ export class MonitorService {
         // 2. Global Crash Detect
         if (settings['global_crash'] === '1') {
             try {
-                const docker = DockerController.getInstance();
-                const containers = await docker.getAllContainers();
-                for (const c of containers) {
-                    if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
-                        // Basic deduplication could be added, but for now we just dispatch.
-                        // Usually, users will restart or remove the container.
-                        // To prevent massive spam, we check if it exited in the last 30 secs
-                        if (c.State === 'exited') {
-                            // Check if it exited recently
-                            if (c.Status.includes('seconds ago')) {
-                                // Extract the exit code from the status string (e.g., "Exited (143) 5 seconds ago")
-                                const match = c.Status.match(/Exited \((\d+)\)/i);
-                                const exitCode = match ? parseInt(match[1], 10) : null;
-
-                                // 0: Success, 137: SIGKILL (Force Stop), 143: SIGTERM (Graceful Stop), 255: Docker Daemon Stop
-                                const intentionalExitCodes = [0, 137, 143, 255];
-
-                                // Only alert if we found a code AND it is not an intentional stop
-                                if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
-                                    await notifier.dispatchAlert('error', `Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                const nodes = DatabaseService.getInstance().getNodes();
+                for (const node of nodes) {
+                    if (!node.id) continue;
+                    try {
+                        const docker = DockerController.getInstance(node.id);
+                        const containers = await docker.getAllContainers();
+                        for (const c of containers) {
+                            if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
+                                if (c.State === 'exited') {
+                                    if (c.Status.includes('seconds ago')) {
+                                        const match = c.Status.match(/Exited \((\d+)\)/i);
+                                        const exitCode = match ? parseInt(match[1], 10) : null;
+                                        const intentionalExitCodes = [0, 137, 143, 255];
+                                        if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
+                                            await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                                        }
+                                    }
+                                } else if (String(c.Status).includes('unhealthy')) {
+                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
                                 }
                             }
-                        } else if (String(c.Status).includes('unhealthy')) {
-                            await notifier.dispatchAlert('error', `Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
                         }
+                    } catch (err) {
+                        console.error(`Error checking crashes on node ${node.name}`, err);
                     }
                 }
             } catch (e) {
@@ -203,90 +202,98 @@ export class MonitorService {
 
     private async evaluateStackAlerts(db: DatabaseService) {
         const alerts = db.getStackAlerts();
-        const docker = DockerController.getInstance();
+        const nodes = db.getNodes();
 
-        try {
-            const containers = await docker.getRunningContainers();
-            for (const container of containers) {
-                const stackName = container.Labels?.['com.docker.compose.project'] || 'system';
+        for (const node of nodes) {
+            if (!node.id) continue;
+            try {
+                const docker = DockerController.getInstance(node.id);
+                const containers = await docker.getRunningContainers();
+                for (const container of containers) {
+                    const stackName = container.Labels?.['com.docker.compose.project'] || 'system';
 
-                try {
-                    const rawStats = await docker.getContainerStatsStream(container.Id);
-                    const stats = JSON.parse(rawStats);
+                    try {
+                        const rawStats = await docker.getContainerStatsStream(container.Id);
+                        const stats = JSON.parse(rawStats);
 
-                    const metrics = {
-                        cpu_percent: this.calculateCpuPercent(stats),
-                        memory_percent: this.calculateMemoryPercent(stats),
-                        memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
-                        net_rx: this.calculateNetwork(stats, 'rx'),
-                        net_tx: this.calculateNetwork(stats, 'tx'),
-                        restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
-                    };
+                        const metrics = {
+                            cpu_percent: this.calculateCpuPercent(stats),
+                            memory_percent: this.calculateMemoryPercent(stats),
+                            memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
+                            net_rx: this.calculateNetwork(stats, 'rx'),
+                            net_tx: this.calculateNetwork(stats, 'tx'),
+                            restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
+                        };
 
-                    db.addContainerMetric({
-                        container_id: container.Id,
-                        stack_name: stackName,
-                        cpu_percent: metrics.cpu_percent || 0,
-                        memory_mb: metrics.memory_mb || 0,
-                        net_rx_mb: metrics.net_rx || 0,
-                        net_tx_mb: metrics.net_tx || 0,
-                        timestamp: Date.now()
-                    });
+                        db.addContainerMetric({
+                            container_id: container.Id,
+                            stack_name: stackName,
+                            cpu_percent: metrics.cpu_percent || 0,
+                            memory_mb: metrics.memory_mb || 0,
+                            net_rx_mb: metrics.net_rx || 0,
+                            net_tx_mb: metrics.net_tx || 0,
+                            timestamp: Date.now()
+                        });
 
-                    const stackAlerts = alerts.filter(a => a.stack_name === stackName);
-                    for (const rule of stackAlerts) {
-                        const ruleId = rule.id!;
-                        const currentValue = metrics[rule.metric as keyof typeof metrics];
+                        const stackAlerts = alerts.filter(a => a.stack_name === stackName);
+                        for (const rule of stackAlerts) {
+                            const ruleId = rule.id!;
+                            const currentValue = metrics[rule.metric as keyof typeof metrics];
 
-                        if (currentValue === undefined) continue;
+                            if (currentValue === undefined) continue;
 
-                        const isBreaching = this.evaluateCondition(currentValue, rule.operator, rule.threshold);
+                            const isBreaching = this.evaluateCondition(currentValue, rule.operator, rule.threshold);
 
-                        if (isBreaching) {
-                            if (!this.activeBreaches.has(ruleId)) {
-                                this.activeBreaches.set(ruleId, { breachStartedAt: Date.now() });
-                            }
+                            if (isBreaching) {
+                                if (!this.activeBreaches.has(ruleId)) {
+                                    this.activeBreaches.set(ruleId, { breachStartedAt: Date.now() });
+                                }
 
-                            const breachState = this.activeBreaches.get(ruleId)!;
-                            const durationMs = Date.now() - breachState.breachStartedAt;
-                            const requiredDurationMs = rule.duration_mins * 60 * 1000;
+                                const breachState = this.activeBreaches.get(ruleId)!;
+                                const durationMs = Date.now() - breachState.breachStartedAt;
+                                const requiredDurationMs = rule.duration_mins * 60 * 1000;
 
-                            if (durationMs >= requiredDurationMs) {
-                                // Duration met! Check cooldown
-                                const timeSinceLastFired = Date.now() - (rule.last_fired_at || 0);
-                                const requiredCooldownMs = rule.cooldown_mins * 60 * 1000;
+                                if (durationMs >= requiredDurationMs) {
+                                    // Duration met! Check cooldown
+                                    const timeSinceLastFired = Date.now() - (rule.last_fired_at || 0);
+                                    const requiredCooldownMs = rule.cooldown_mins * 60 * 1000;
 
-                                if (timeSinceLastFired >= requiredCooldownMs) {
-                                    // Formatted Alert Message
-                                    const { name: metricName, unit } = getMetricDetails(rule.metric);
-                                    const operatorPhrase = getOperatorPhrase(rule.operator);
+                                    if (timeSinceLastFired >= requiredCooldownMs) {
+                                        // Formatted Alert Message
+                                        const { name: metricName, unit } = getMetricDetails(rule.metric);
+                                        const operatorPhrase = getOperatorPhrase(rule.operator);
 
-                                    const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
-                                    const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
+                                        const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
+                                        const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
 
-                                    const message = `The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
+                                        const message = `[Node: ${node.name}] The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
 
-                                    await NotificationService.getInstance().dispatchAlert(
-                                        'warning',
-                                        message
-                                    );
+                                        await NotificationService.getInstance().dispatchAlert(
+                                            'warning',
+                                            message
+                                        );
 
-                                    // Update last fired
-                                    db.updateStackAlertLastFired(ruleId, Date.now());
+                                        // Update last fired
+                                        db.updateStackAlertLastFired(ruleId, Date.now());
+                                    }
+                                }
+                            } else {
+                                // Rule isn't breaching anymore, reset tracker
+                                if (this.activeBreaches.has(ruleId)) {
+                                    this.activeBreaches.delete(ruleId);
                                 }
                             }
-                        } else {
-                            // Rule isn't breaching anymore, reset tracker
-                            if (this.activeBreaches.has(ruleId)) {
-                                this.activeBreaches.delete(ruleId);
-                            }
                         }
+                    } catch (e) {
+                        console.error(`Error parsing stats for container ${container.Id} on node ${node.name}`, e);
                     }
-                } catch (e) {
-                    console.error(`Error parsing stats for container ${container.Id}`, e);
                 }
+            } catch (err) {
+                console.error(`Error fetching containers for node ${node.name}`, err);
             }
+        }
 
+        try {
             db.cleanupOldMetrics(24);
         } catch (e) { }
     }

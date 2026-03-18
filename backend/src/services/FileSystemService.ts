@@ -1,11 +1,29 @@
-import { promises as fs, Dirent } from 'fs';
 import path from 'path';
+import { IFileAdapter } from './fs/IFileAdapter';
+import { LocalFileAdapter } from './fs/LocalFileAdapter';
+import { SSHFileAdapter } from './fs/SSHFileAdapter';
+import { NodeRegistry } from './NodeRegistry';
 
 export class FileSystemService {
   private baseDir: string;
+  private adapter: IFileAdapter;
+  private nodeId: number;
 
-  constructor() {
+  constructor(nodeId?: number) {
     this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
+    this.nodeId = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
+    
+    const node = NodeRegistry.getInstance().getNode(this.nodeId);
+
+    if (!node || node.type === 'local' || !node.host) {
+      this.adapter = new LocalFileAdapter();
+    } else {
+      this.adapter = new SSHFileAdapter(node);
+    }
+  }
+
+  public static getInstance(nodeId?: number): FileSystemService {
+    return new FileSystemService(nodeId);
   }
 
   /**
@@ -16,7 +34,7 @@ export class FileSystemService {
 
     for (const file of composeFiles) {
       try {
-        await fs.access(path.join(dir, file));
+        await this.adapter.access(path.join(dir, file));
         return true;
       } catch {
         // Continue checking other options
@@ -37,7 +55,7 @@ export class FileSystemService {
     for (const file of composeFiles) {
       const filePath = path.join(stackDir, file);
       try {
-        await fs.access(filePath);
+        await this.adapter.access(filePath);
         return filePath;
       } catch {
         // Continue checking other options
@@ -53,7 +71,7 @@ export class FileSystemService {
    */
   async getStacks(): Promise<string[]> {
     try {
-      const items = await fs.readdir(this.baseDir, { withFileTypes: true });
+      const items = await this.adapter.readdir(this.baseDir, { withFileTypes: true });
       const stackNames: string[] = [];
 
       for (const item of items) {
@@ -80,7 +98,7 @@ export class FileSystemService {
   async getStackContent(stackName: string): Promise<string> {
     try {
       const filePath = await this.getComposeFilePath(stackName);
-      return await fs.readFile(filePath, 'utf-8');
+      return await this.adapter.readFile(filePath, 'utf-8');
     } catch (error) {
       console.error('Error reading stack content:', error);
       throw new Error(`Failed to read stack: ${stackName}`);
@@ -98,7 +116,7 @@ export class FileSystemService {
     console.log('Saving to path:', filePath);
 
     try {
-      await fs.writeFile(filePath, content, 'utf-8');
+      await this.adapter.writeFile(filePath, content, 'utf-8');
       console.log('File written successfully');
     } catch (error) {
       console.error('Error writing file:', error);
@@ -112,11 +130,25 @@ export class FileSystemService {
   async envExists(stackName: string): Promise<boolean> {
     const envPath = path.join(this.baseDir, stackName, '.env');
     try {
-      await fs.access(envPath);
+      await this.adapter.access(envPath);
       return true;
     } catch {
       return false;
     }
+  }
+
+  // Proxy to adapter read/write operations for use in other services and generic routes
+  
+  async readFile(filePath: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
+    return this.adapter.readFile(filePath, encoding);
+  }
+
+  async writeFile(filePath: string, content: string, encoding: BufferEncoding = 'utf-8'): Promise<void> {
+    return this.adapter.writeFile(filePath, content, encoding);
+  }
+
+  async access(filePath: string): Promise<void> {
+    return this.adapter.access(filePath);
   }
 
   /**
@@ -125,7 +157,7 @@ export class FileSystemService {
   async getEnvContent(stackName: string): Promise<string> {
     const envPath = path.join(this.baseDir, stackName, '.env');
     try {
-      return await fs.readFile(envPath, 'utf-8');
+      return await this.adapter.readFile(envPath, 'utf-8');
     } catch (error) {
       console.error('Error reading env file:', error);
       throw new Error(`Failed to read env file for stack: ${stackName}`);
@@ -140,7 +172,7 @@ export class FileSystemService {
     console.log('Saving env to path:', envPath);
 
     try {
-      await fs.writeFile(envPath, content, 'utf-8');
+      await this.adapter.writeFile(envPath, content, 'utf-8');
       console.log('Env file written successfully');
     } catch (error) {
       console.error('Error writing env file:', error);
@@ -161,7 +193,7 @@ export class FileSystemService {
 
     // Check if directory already exists
     try {
-      await fs.access(stackDir);
+      await this.adapter.access(stackDir);
       throw new Error(`Stack "${stackName}" already exists`);
     } catch (error: any) {
       if (error.message.includes('already exists')) {
@@ -171,7 +203,7 @@ export class FileSystemService {
     }
 
     // Create the directory
-    await fs.mkdir(stackDir, { recursive: true });
+    await this.adapter.mkdir(stackDir, { recursive: true });
 
     // Write boilerplate compose.yaml
     const composePath = path.join(stackDir, 'compose.yaml');
@@ -183,7 +215,7 @@ export class FileSystemService {
     restart: always
 `;
     try {
-      await fs.writeFile(composePath, boilerplate, 'utf-8');
+      await this.adapter.writeFile(composePath, boilerplate, 'utf-8');
       console.log('Stack created successfully:', stackName);
     } catch (error) {
       console.error('Error creating stack:', error);
@@ -198,7 +230,7 @@ export class FileSystemService {
     const stackDir = path.join(this.baseDir, stackName);
 
     try {
-      await fs.rm(stackDir, { recursive: true, force: true });
+      await this.adapter.rm(stackDir, { recursive: true, force: true });
       console.log('Stack deleted successfully:', stackName);
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
@@ -223,14 +255,14 @@ export class FileSystemService {
     try {
       // Ensure base directory exists
       try {
-        await fs.access(this.baseDir);
+        await this.adapter.access(this.baseDir);
       } catch {
         console.log('Creating compose directory:', this.baseDir);
-        await fs.mkdir(this.baseDir, { recursive: true });
+        await this.adapter.mkdir(this.baseDir, { recursive: true });
         return; // No files to migrate in a new directory
       }
 
-      const items = await fs.readdir(this.baseDir, { withFileTypes: true });
+      const items = await this.adapter.readdir(this.baseDir, { withFileTypes: true });
 
       for (const item of items) {
         // Only process .yml/.yaml files (skip directories and other files)
@@ -242,7 +274,7 @@ export class FileSystemService {
 
         // Check if target directory already exists
         try {
-          await fs.access(stackDir);
+          await this.adapter.access(stackDir);
           console.log(`Skipping migration for "${stackName}": directory already exists`);
           continue;
         } catch {
@@ -252,19 +284,19 @@ export class FileSystemService {
         console.log(`Migrating stack: ${stackName}`);
 
         // Create the stack directory
-        await fs.mkdir(stackDir, { recursive: true });
+        await this.adapter.mkdir(stackDir, { recursive: true });
 
         // Move compose file to new location (standardize on compose.yaml)
         const oldComposePath = path.join(this.baseDir, item.name);
         const newComposePath = path.join(stackDir, 'compose.yaml');
-        await fs.rename(oldComposePath, newComposePath);
+        await this.adapter.rename(oldComposePath, newComposePath);
 
         // Move env file if it exists (old pattern: stackname.env)
         const oldEnvPath = path.join(this.baseDir, `${stackName}.env`);
         const newEnvPath = path.join(stackDir, '.env');
         try {
-          await fs.access(oldEnvPath);
-          await fs.rename(oldEnvPath, newEnvPath);
+          await this.adapter.access(oldEnvPath);
+          await this.adapter.rename(oldEnvPath, newEnvPath);
           console.log(`Migrated env file for: ${stackName}`);
         } catch {
           // No env file to migrate, that's fine

@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Changed:** Global `FileSystemService` and `ComposeService` singletons refactored into node-aware instances.
+- **Added:** `IFileAdapter`, `LocalFileAdapter`, and `SSHFileAdapter` to abstract all filesystem interactions for remote node support.
+- **Changed:** `MonitorService` now evaluates limits, fetches metrics, and detects container crashes across all registered nodes concurrently.
+- **Added:** Node Context Middleware in Express API to dynamically extract `x-node-id` headers and parse WebSocket query parameters.
 - **Added:** Remote Nodes Foundation (Strategy B) — `nodes` table in SQLite with auto-seeded default local node.
 - **Added:** `NodeRegistry` service for managing multiple Docker daemon connections (local socket + TCP).
 - **Added:** Node management API endpoints: list, get, create, update, delete, and test connection.

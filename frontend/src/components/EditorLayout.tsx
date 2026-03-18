@@ -193,7 +193,11 @@ export default function EditorLayout() {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
         wsMap[container.Id] = ws;
-        ws.onopen = () => ws.send(JSON.stringify({ action: 'streamStats', containerId: container.Id }));
+        ws.onopen = () => ws.send(JSON.stringify({ 
+          action: 'streamStats', 
+          containerId: container.Id, 
+          nodeId: localStorage.getItem('sencho-active-node') || undefined 
+        }));
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);

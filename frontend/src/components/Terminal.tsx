@@ -125,11 +125,12 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const cleanStackName = stackName?.replace(/\.(yml|yaml)$/, '');
+        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
 
         // If a stackName is provided, connect to the dedicated logs WebSocket
         // Otherwise, fall back to the generic terminal WebSocket
         const wsUrl = cleanStackName
-          ? `${wsProtocol}//${window.location.host}/api/stacks/${cleanStackName}/logs`
+          ? `${wsProtocol}//${window.location.host}/api/stacks/${cleanStackName}/logs${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`
           : `${wsProtocol}//${window.location.host}`;
 
         const ws = new WebSocket(wsUrl);

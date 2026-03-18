@@ -6,23 +6,23 @@ import path from 'path';
 import fs from 'fs/promises';
 import * as yaml from 'yaml';
 
+import { NodeRegistry } from './NodeRegistry';
+
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
 class DockerController {
-  private static instance: DockerController;
   private docker: Docker;
+  private nodeId: number;
 
-  private constructor() {
-    // Use default constructor to support both Windows named pipes and Linux sockets
-    this.docker = new Docker();
+  private constructor(nodeId: number) {
+    this.nodeId = nodeId;
+    this.docker = NodeRegistry.getInstance().getDocker(nodeId);
   }
 
-  public static getInstance(): DockerController {
-    if (!DockerController.instance) {
-      DockerController.instance = new DockerController();
-    }
-    return DockerController.instance;
+  public static getInstance(nodeId?: number): DockerController {
+    const id = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
+    return new DockerController(id);
   }
 
   public getDocker(): Docker {
@@ -533,7 +533,8 @@ let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
 
 export const updateGlobalDockerNetwork = async () => {
   try {
-    const dockerController = DockerController.getInstance();
+    const nodeId = NodeRegistry.getInstance().getDefaultNodeId();
+    const dockerController = DockerController.getInstance(nodeId);
     const containers = await dockerController.getRunningContainers();
 
     const statsResults = await Promise.allSettled(

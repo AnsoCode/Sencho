@@ -73,7 +73,8 @@ export function GlobalObservabilityView() {
     useEffect(() => {
         if (devMode) {
             // SSE mode
-            const eventSource = new EventSource('/api/logs/global/stream');
+            const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+            const eventSource = new EventSource(`/api/logs/global/stream?nodeId=${activeNodeId}`);
 
             eventSource.onmessage = (event) => {
                 try {

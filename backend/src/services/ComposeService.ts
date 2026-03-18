@@ -4,97 +4,54 @@ import path from 'path';
 import WebSocket from 'ws';
 import DockerController from './DockerController';
 import { LogFormatter } from './LogFormatter';
+import { NodeRegistry } from './NodeRegistry';
+import { Client as SSHClient } from 'ssh2';
 
 const execAsync = promisify(exec);
 
 export class ComposeService {
   private baseDir: string;
+  private nodeId: number;
 
-  constructor() {
-    this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
+  constructor(nodeId?: number) {
+    this.nodeId = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
+    this.baseDir = NodeRegistry.getInstance().getComposeDir(this.nodeId);
+  }
+
+  public static getInstance(nodeId?: number): ComposeService {
+    return new ComposeService(nodeId);
   }
 
   /**
-   * Run docker compose up or down command
-   * CRITICAL: cwd is set to the stack directory so relative paths in compose files
-   * resolve correctly inside the isolated stack folder
+   * Universal command execution (Local or Remote SSH)
    */
-  async runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket): Promise<void> {
-    const stackDir = path.join(this.baseDir, stackName);
+  private async executeCommand(
+    command: string, 
+    args: string[], 
+    cwd: string, 
+    ws?: WebSocket, 
+    throwOnError = true
+  ): Promise<void> {
+    const node = NodeRegistry.getInstance().getNode(this.nodeId);
+    if (!node) throw new Error(`Node ${this.nodeId} not found`);
 
-    // Run docker compose from within the stack directory
-    // This ensures relative paths (e.g., ./data:/config) resolve correctly
-    const args = ['compose', action];
-
-    return new Promise((resolve, reject) => {
-      const child = spawn('docker', args, {
-        cwd: stackDir,  // CRITICAL: Set working directory to stack folder
-        env: {
-          ...process.env,
-          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-        }
-      });
-
-      if (ws) {
-        child.stdout.on('data', (data: Buffer) => {
-          ws.send(data.toString());
-        });
-
-        child.stderr.on('data', (data: Buffer) => {
-          ws.send(data.toString());
-        });
-
-        child.on('close', (code: number | null) => {
-          ws.send(`Command exited with code ${code}\n`);
-          if (code === 0) resolve();
-          else reject(new Error(`Command exited with code ${code}`));
-        });
-
-        child.on('error', (error: Error) => {
-          console.error(`Docker Compose Error for ${stackName}:`, error.message);
-          ws.send(`Error: ${error.message}\n`);
-          reject(error);
-        });
-      } else {
-        // Without WS, just wait for resolution
-        let stderr = '';
-        child.stdout.on('data', () => { }); // Drain stdout to prevent pipe buffer from blocking the process
-        child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-        child.on('close', (code: number | null) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Command failed with code ${code}. Stderr: ${stderr}`));
-        });
-
-        child.on('error', (error: Error) => {
-          console.error(`Docker Compose Error for ${stackName}:`, error.message);
-          reject(error);
-        });
-      }
-    });
-  }
-
-  /**
-   * Deploy stack: executes up -d --remove-orphans and awaits completion.
-   */
-  async deployStack(stackName: string, ws?: WebSocket): Promise<void> {
-    const stackDir = path.join(this.baseDir, stackName);
-
-    try {
-      const dockerController = DockerController.getInstance();
-      const legacyContainers = await dockerController.getContainersByStack(stackName);
-      if (legacyContainers && legacyContainers.length > 0) {
-        if (ws) ws.send(`=== Cleaning up existing containers for clean deployment ===\n`);
-        await dockerController.removeContainers(legacyContainers.map(c => c.Id));
-      }
-    } catch (e) {
-      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+    if (node.type === 'local' || !node.host) {
+      return this.executeLocal(command, args, cwd, ws, throwOnError);
+    } else {
+      return this.executeRemote(node, command, args, cwd, ws, throwOnError);
     }
+  }
 
-    await new Promise<void>((resolve, reject) => {
-      const args = ['compose', 'up', '-d', '--remove-orphans'];
-      const child = spawn('docker', args, {
-        cwd: stackDir,
+  private async executeLocal(
+    command: string, 
+    args: string[], 
+    cwd: string, 
+    ws?: WebSocket,
+    throwOnError = true
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        cwd,
         env: {
           ...process.env,
           PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
@@ -103,46 +60,117 @@ export class ComposeService {
 
       let errorLog = '';
 
-      if (ws) {
-        child.stdout.on('data', (data: Buffer) => {
-          const text = data.toString();
-          errorLog += text;
+      const onData = (data: Buffer) => {
+        const text = data.toString();
+        errorLog += text;
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(text);
-        });
-        child.stderr.on('data', (data: Buffer) => {
-          const text = data.toString();
-          errorLog += text;
-          ws.send(text);
-        });
-        child.on('close', (code: number | null) => {
+        }
+      };
+
+      child.stdout.on('data', onData);
+      child.stderr.on('data', onData);
+
+      child.on('close', (code: number | null) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(`Command exited with code ${code}\n`);
-          if (code === 0) resolve();
-          else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
-        });
-      } else {
-        child.stdout.on('data', (data: Buffer) => {
-          errorLog += data.toString();
-        });
-        child.stderr.on('data', (data: Buffer) => {
-          errorLog += data.toString();
-        });
-        child.on('close', (code: number | null) => {
-          if (code === 0) resolve();
-          else reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
-        });
-      }
+        }
+        if (code === 0) resolve();
+        else if (throwOnError) reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
+        else resolve();
+      });
 
       child.on('error', (error: Error) => {
-        console.error(`Docker Compose Deploy Error for ${stackName}:`, error.message);
-        if (ws) ws.send(`Error: ${error.message}\n`);
-        reject(error);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(`Error: ${error.message}\n`);
+        }
+        if (throwOnError) reject(error);
+        else resolve();
       });
     });
+  }
+
+  private async executeRemote(
+    node: any,
+    command: string, 
+    args: string[], 
+    cwd: string, 
+    ws?: WebSocket,
+    throwOnError = true
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const conn = new SSHClient();
+      let errorLog = '';
+
+      conn.on('ready', () => {
+        const cmdString = `cd "${cwd}" && ${command} ${args.map(a => `"${a}"`).join(' ')}`;
+        
+        conn.exec(cmdString, (err, stream) => {
+          if (err) {
+            conn.end();
+            if (throwOnError) reject(err); else resolve();
+            return;
+          }
+
+          const onData = (data: any) => {
+            const text = data.toString();
+            errorLog += text;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(text);
+            }
+          };
+
+          stream.on('data', onData).stderr.on('data', onData);
+          
+          stream.on('close', (code: any, signal: any) => {
+            conn.end();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(`Command exited with code ${code}\n`);
+            }
+            if (code === 0) resolve();
+            else if (throwOnError) reject(new Error(errorLog.trim() || `Command failed with code ${code}`));
+            else resolve();
+          });
+        });
+      }).on('error', (err) => {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(`SSH Error: ${err.message}\n`);
+        if (throwOnError) reject(err); else resolve();
+      }).connect({
+        host: node.host,
+        port: node.port || 22,
+        username: node.ssh_user!,
+        password: node.ssh_password,
+        privateKey: node.ssh_key,
+        readyTimeout: 10000,
+      });
+    });
+  }
+
+  async runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
+    await this.executeCommand('docker', ['compose', action], stackDir, ws);
+  }
+
+  async deployStack(stackName: string, ws?: WebSocket): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
+
+    try {
+      const dockerController = DockerController.getInstance(this.nodeId);
+      const legacyContainers = await dockerController.getContainersByStack(stackName);
+      if (legacyContainers && legacyContainers.length > 0) {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(`=== Cleaning up existing containers for clean deployment ===\n`);
+        await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
+      }
+    } catch (e) {
+      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+    }
+
+    await this.executeCommand('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
 
     // Post-Deploy Health Probe
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(this.nodeId);
     const containers = await dockerController.getDocker().listContainers({
       all: true,
       filters: { label: [`com.docker.compose.project=${stackName}`] }
@@ -156,35 +184,25 @@ export class ComposeService {
 
         if (exitCode !== 0) {
           const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
-          // Strip Docker log multiplex headers if they exist
           let logStr = logs.toString('utf-8');
           throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
         }
       }
     }
-
   }
 
-  /**
-   * Stream docker logs for a stack via WebSocket.
-   * Supervisors: Fetches containers via DockerController and spawns `docker logs -f` for each.
-   * Automatically re-spawns on process exit if WebSocket is still OPEN, creating a persistent stream.
-   * Kills the child processes when the WebSocket closes.
-   */
   streamLogs(stackName: string, ws: WebSocket) {
     let isClosed = false;
     let isFirstRun = true;
     let isWaitingForActivity = false;
 
-    ws.on('close', () => {
-      isClosed = true;
-    });
+    ws.on('close', () => { isClosed = true; });
 
     const startStream = async () => {
       if (isClosed || ws.readyState !== WebSocket.OPEN) return;
 
       try {
-        const dockerController = DockerController.getInstance();
+        const dockerController = DockerController.getInstance(this.nodeId);
         const containers = await dockerController.getContainersByStack(stackName);
 
         if (!containers || containers.length === 0) {
@@ -196,9 +214,8 @@ export class ComposeService {
           return;
         }
 
-        const runningContainers = containers.filter(c => c.State === 'running');
+        const runningContainers = containers.filter((c: any) => c.State === 'running');
 
-        // If not first run and no containers are running, we poll to wait for activity
         if (!isFirstRun && runningContainers.length === 0) {
           if (!isWaitingForActivity) {
             ws.send(`\r\n\x1b[33m[Sencho] Log stream ended. Waiting for container activity...\x1b[0m\r\n`);
@@ -208,20 +225,19 @@ export class ComposeService {
           return;
         }
 
-        // On first run, we stream all containers to dump history.
-        // On subsequent runs, we only attach to running containers to avoid immediate exit loop.
         const containersToLog = isFirstRun ? containers : runningContainers;
         isFirstRun = false;
-        isWaitingForActivity = false; // Reset since we are tracking active elements
+        isWaitingForActivity = false;
 
         let activeProcesses = 0;
         let streamEndedHandled = false;
-        const childProcesses: ReturnType<typeof spawn>[] = [];
+        
+        let clientConnections: any[] = [];
+        let localProcesses: ReturnType<typeof spawn>[] = [];
 
         const onWsClose = () => {
-          childProcesses.forEach(cp => {
-            try { cp.kill(); } catch { /* ignore */ }
-          });
+          localProcesses.forEach(cp => { try { cp.kill(); } catch {} });
+          clientConnections.forEach(conn => { try { conn.end(); } catch {} });
         };
 
         ws.on('close', onWsClose);
@@ -231,35 +247,25 @@ export class ComposeService {
           if (activeProcesses <= 0 && !streamEndedHandled) {
             streamEndedHandled = true;
             ws.removeListener('close', onWsClose);
-
             if (!isClosed && ws.readyState === WebSocket.OPEN) {
               setTimeout(startStream, 1000);
             }
           }
         };
 
+        const node = NodeRegistry.getInstance().getNode(this.nodeId);
+        const isRemote = (node && node.type === 'remote' && node.host);
+
         for (const container of containersToLog) {
           const containerName = container.Names?.[0]?.replace(/^\//, '') || container.Id;
-          const child = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
-            env: {
-              ...process.env,
-              PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-            }
-          });
-
           activeProcesses++;
-          childProcesses.push(child);
-
           let lineBuffer = '';
 
-          const sendOutput = (data: Buffer) => {
+          const sendOutput = (data: Buffer | any) => {
             if (ws.readyState === WebSocket.OPEN) {
               lineBuffer += data.toString();
               const lines = lineBuffer.split(/\r?\n/);
-
-              // The last element is either an incomplete line or empty string
               lineBuffer = lines.pop() || '';
-
               for (const line of lines) {
                 const formattedLine = LogFormatter.process(line);
                 ws.send(formattedLine + '\r\n');
@@ -267,20 +273,61 @@ export class ComposeService {
             }
           };
 
-          child.stdout.on('data', sendOutput);
-          child.stderr.on('data', sendOutput);
-          child.on('error', handleProcessEnd);
-          child.on('close', () => {
-            // Flush any remaining partial line before ending
-            if (lineBuffer && ws.readyState === WebSocket.OPEN) {
-              const formattedLine = LogFormatter.process(lineBuffer);
-              ws.send(formattedLine + '\r\n');
-              lineBuffer = '';
+          const flushBuffer = () => {
+             if (lineBuffer && ws.readyState === WebSocket.OPEN) {
+                const formattedLine = LogFormatter.process(lineBuffer);
+                ws.send(formattedLine + '\r\n');
+                lineBuffer = '';
             }
-            handleProcessEnd();
-          });
-        }
+          }
 
+          if (isRemote) {
+            const conn = new SSHClient();
+            clientConnections.push(conn);
+            conn.on('ready', () => {
+              conn.exec(`docker logs -f --tail 100 "${containerName}"`, {
+                env: {
+                  ...process.env,
+                  PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                }
+              }, (err, stream) => {
+                if (err) {
+                  conn.end();
+                  handleProcessEnd();
+                  return;
+                }
+                stream.on('data', sendOutput).stderr.on('data', sendOutput);
+                stream.on('close', () => {
+                   flushBuffer();
+                   conn.end();
+                   handleProcessEnd();
+                });
+              });
+            }).on('error', handleProcessEnd).connect({
+              host: node!.host,
+              port: node!.port || 22,
+              username: node!.ssh_user!,
+              password: node!.ssh_password,
+              privateKey: node!.ssh_key,
+              readyTimeout: 10000,
+            });
+          } else {
+             const child = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
+                env: {
+                  ...process.env,
+                  PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                }
+              });
+              localProcesses.push(child);
+              child.stdout.on('data', sendOutput);
+              child.stderr.on('data', sendOutput);
+              child.on('error', handleProcessEnd);
+              child.on('close', () => {
+                flushBuffer();
+                handleProcessEnd();
+              });
+          }
+        }
       } catch (err) {
         if (!isClosed && ws.readyState === WebSocket.OPEN) {
           if (!isWaitingForActivity) {
@@ -295,114 +342,35 @@ export class ComposeService {
     startStream();
   }
 
-  /**
-   * Update stack: pull images first, then recreate containers
-   * CRITICAL: cwd is set to the stack directory so relative paths resolve correctly
-   */
   async updateStack(stackName: string, ws?: WebSocket): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
-
     const sendOutput = (data: string) => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
     };
 
     try {
-      const dockerController = DockerController.getInstance();
+      const dockerController = DockerController.getInstance(this.nodeId);
       const legacyContainers = await dockerController.getContainersByStack(stackName);
       if (legacyContainers && legacyContainers.length > 0) {
         sendOutput(`=== Cleaning up existing containers for clean update ===\n`);
-        await dockerController.removeContainers(legacyContainers.map(c => c.Id));
+        await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
       }
     } catch (e) {
       console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
     }
 
-    // Step 1: Pull images
     sendOutput('=== Pulling latest images ===\n');
-    await new Promise<void>((resolve, reject) => {
-      const pullProcess = spawn('docker', ['compose', 'pull'], {
-        cwd: stackDir,
-        env: {
-          ...process.env,
-          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-        }
-      });
+    await this.executeCommand('docker', ['compose', 'pull'], stackDir, ws);
 
-      pullProcess.stdout.on('data', (data: Buffer) => {
-        sendOutput(data.toString());
-      });
-
-      pullProcess.stderr.on('data', (data: Buffer) => {
-        sendOutput(data.toString());
-      });
-
-      pullProcess.on('close', (code: number | null) => {
-        if (code === 0) {
-          sendOutput('=== Images pulled successfully ===\n');
-          resolve();
-        } else {
-          sendOutput(`=== Pull failed with code ${code} ===\n`);
-          reject(new Error(`Pull failed with code ${code}`));
-        }
-      });
-
-      pullProcess.on('error', (error: Error) => {
-        console.error(`Docker Compose Pull Error for ${stackName}:`, error.message);
-        sendOutput(`Pull error: ${error.message}\n`);
-        reject(error);
-      });
-    });
-
-    // Step 2: Recreate containers with new images
     sendOutput('=== Recreating containers ===\n');
-    await new Promise<void>((resolve, reject) => {
-      const upProcess = spawn('docker', ['compose', 'up', '-d', '--remove-orphans'], {
-        cwd: stackDir,
-        env: {
-          ...process.env,
-          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-        }
-      });
-
-      let errorLog = '';
-
-      upProcess.stdout.on('data', (data: Buffer) => {
-        const text = data.toString();
-        errorLog += text;
-        sendOutput(text);
-      });
-
-      upProcess.stderr.on('data', (data: Buffer) => {
-        const text = data.toString();
-        errorLog += text;
-        sendOutput(text);
-      });
-
-      upProcess.on('close', (code: number | null) => {
-        if (code === 0) {
-          sendOutput('=== Stack updated successfully ===\n');
-          resolve();
-        } else {
-          sendOutput(`=== Update failed with code ${code} ===\n`);
-          reject(new Error(errorLog.trim() || `Up failed with code ${code}`));
-        }
-      });
-
-      upProcess.on('error', (error: Error) => {
-        console.error(`Docker Compose Up Error for ${stackName}:`, error.message);
-        sendOutput(`Update error: ${error.message}\n`);
-        reject(error);
-      });
-    });
+    await this.executeCommand('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+    sendOutput('=== Stack updated successfully ===\n');
   }
 
   public async downStack(stackName: string): Promise<void> {
     const stackPath = path.join(this.baseDir, stackName);
     try {
-      // Run down to clean up any partially created networks or containers
-      await execAsync(`docker compose -f compose.yaml down`, { cwd: stackPath });
+      await this.executeCommand('docker', ['compose', 'down'], stackPath, undefined, false);
     } catch (error) {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }

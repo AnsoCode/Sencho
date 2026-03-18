@@ -27,7 +27,8 @@ export function LogViewer({ containerId, containerName, isOpen, onClose }: LogVi
         setLogs([]);
         setIsConnected(false);
 
-        const eventSource = new EventSource(`/api/containers/${containerId}/logs`);
+        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+        const eventSource = new EventSource(`/api/containers/${containerId}/logs?nodeId=${activeNodeId}`);
 
         eventSource.onopen = () => setIsConnected(true);
 

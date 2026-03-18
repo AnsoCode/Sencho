@@ -118,10 +118,10 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Kick off the exec session
         ws.send(JSON.stringify({
           action: 'execContainer',
           containerId: containerId,
+          nodeId: localStorage.getItem('sencho-active-node') || undefined
         }));
         setIsConnected(true);
 
