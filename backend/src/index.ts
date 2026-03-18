@@ -1358,7 +1358,7 @@ app.get('/api/nodes', async (req: Request, res: Response) => {
 // Get a specific node
 app.get('/api/nodes/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     const node = DatabaseService.getInstance().getNode(id);
     if (!node) {
       return res.status(404).json({ error: 'Node not found' });
@@ -1406,7 +1406,7 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
 // Update a node
 app.put('/api/nodes/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     const updates = req.body;
 
     DatabaseService.getInstance().updateNode(id, updates);
@@ -1424,7 +1424,7 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
 // Delete a node
 app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
     res.json({ success: true });
@@ -1437,7 +1437,7 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
 // Test connection to a node
 app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     const result = await NodeRegistry.getInstance().testConnection(id);
     res.json(result);
   } catch (error: any) {
