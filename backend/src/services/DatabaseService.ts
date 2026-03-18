@@ -140,7 +140,6 @@ export class DatabaseService {
         status TEXT NOT NULL DEFAULT 'unknown',
         created_at INTEGER NOT NULL
       );
-      );
     `);
 
         // Apply migrations safely (ignore if columns already exist)
