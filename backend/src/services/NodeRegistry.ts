@@ -90,11 +90,19 @@ export class NodeRegistry {
             throw new Error(`Remote node "${node.name}" is missing a host address`);
         }
 
-        return new Docker({
+        const dockerOptions: Docker.DockerOptions = {
             host: node.host,
             port: node.port || 2375,
-            // TODO: Phase 55.2 — Add TLS certificate support for secure remote connections
-        });
+        };
+
+        // Phase 55.4 — TLS: if all three certs are present, enable secure connection
+        if (node.tls_ca && node.tls_cert && node.tls_key) {
+            dockerOptions.ca = node.tls_ca;
+            dockerOptions.cert = node.tls_cert;
+            dockerOptions.key = node.tls_key;
+        }
+
+        return new Docker(dockerOptions);
     }
 
     /**

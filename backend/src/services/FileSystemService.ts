@@ -11,14 +11,17 @@ export class FileSystemService {
 
   constructor(nodeId?: number) {
     this.nodeId = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
-    
+
     const node = NodeRegistry.getInstance().getNode(this.nodeId);
 
     if (!node || node.type === 'local' || !node.host) {
       this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
       this.adapter = new LocalFileAdapter();
     } else {
-      this.baseDir = node.compose_dir || '/app/compose';
+      this.baseDir = node.compose_dir;
+      if (!this.baseDir || typeof this.baseDir !== 'string' || this.baseDir.trim() === '') {
+        throw new Error(`Remote node "${node.name}" has no compose_dir configured. Please set a compose directory in the Node Manager.`);
+      }
       this.adapter = new SSHFileAdapter(node);
     }
   }
@@ -77,6 +80,7 @@ export class FileSystemService {
 
       for (const item of items) {
         if (!item.isDirectory()) continue;
+        if (!item.name || typeof item.name !== 'string') continue;
 
         const stackDir = path.join(this.baseDir, item.name);
         const hasCompose = await this.hasComposeFile(stackDir);

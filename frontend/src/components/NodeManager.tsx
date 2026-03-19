@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe } from 'lucide-react';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, ShieldCheck } from 'lucide-react';
 
 interface NodeFormData {
   name: string;
@@ -24,8 +24,13 @@ interface NodeFormData {
   compose_dir: string;
   is_default: boolean;
   ssh_user: string;
+  ssh_auth_type: 'password' | 'key';
   ssh_password: string;
   ssh_key: string;
+  tls_enabled: boolean;
+  tls_ca: string;
+  tls_cert: string;
+  tls_key: string;
 }
 
 const defaultFormData: NodeFormData = {
@@ -37,8 +42,13 @@ const defaultFormData: NodeFormData = {
   compose_dir: '/opt/docker',
   is_default: false,
   ssh_user: '',
+  ssh_auth_type: 'password',
   ssh_password: '',
   ssh_key: '',
+  tls_enabled: false,
+  tls_ca: '',
+  tls_cert: '',
+  tls_key: '',
 };
 
 export function NodeManager() {
@@ -54,17 +64,49 @@ export function NodeManager() {
 
   const handleCreate = async () => {
     try {
+      const payload = {
+        ...formData,
+        // Only pass TLS fields if TLS is enabled
+        tls_ca: formData.tls_enabled ? formData.tls_ca : '',
+        tls_cert: formData.tls_enabled ? formData.tls_cert : '',
+        tls_key: formData.tls_enabled ? formData.tls_key : '',
+        // Only pass the relevant SSH credential
+        ssh_password: formData.ssh_auth_type === 'password' ? formData.ssh_password : '',
+        ssh_key: formData.ssh_auth_type === 'key' ? formData.ssh_key : '',
+      };
+
       const res = await apiFetch('/nodes', {
         method: 'POST',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Failed to create node');
       }
+      const { id: newNodeId } = await res.json();
       toast.success(`Node "${formData.name}" created successfully`);
       setCreateOpen(false);
       setFormData(defaultFormData);
+
+      // Auto-test the new node connection immediately after creation
+      if (newNodeId) {
+        setTesting(newNodeId);
+        try {
+          const testRes = await apiFetch(`/nodes/${newNodeId}/test`, { method: 'POST' });
+          const testData = await testRes.json();
+          if (testData.success) {
+            toast.success(`Connected to "${formData.name}" successfully`);
+            setTestResult({ nodeId: newNodeId, info: testData.info });
+          } else {
+            toast.warning(`Node saved, but connection test failed: ${testData.error}`);
+          }
+        } catch {
+          // Non-fatal — node was created, test just didn't succeed
+        } finally {
+          setTesting(null);
+        }
+      }
+
       await refreshNodes();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create node');
@@ -74,9 +116,18 @@ export function NodeManager() {
   const handleEdit = async () => {
     if (!editingNodeId) return;
     try {
+      const payload = {
+        ...formData,
+        tls_ca: formData.tls_enabled ? formData.tls_ca : '',
+        tls_cert: formData.tls_enabled ? formData.tls_cert : '',
+        tls_key: formData.tls_enabled ? formData.tls_key : '',
+        ssh_password: formData.ssh_auth_type === 'password' ? formData.ssh_password : '',
+        ssh_key: formData.ssh_auth_type === 'key' ? formData.ssh_key : '',
+      };
+
       const res = await apiFetch(`/nodes/${editingNodeId}`, {
         method: 'PUT',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -93,6 +144,7 @@ export function NodeManager() {
   };
 
   const openEditDialog = (node: Node) => {
+    const hasTls = !!(node.tls_ca && node.tls_cert && node.tls_key);
     setFormData({
       name: node.name,
       type: node.type,
@@ -102,8 +154,13 @@ export function NodeManager() {
       compose_dir: node.compose_dir,
       is_default: node.is_default,
       ssh_user: node.ssh_user || '',
+      ssh_auth_type: node.ssh_key ? 'key' : 'password',
       ssh_password: node.ssh_password || '',
       ssh_key: node.ssh_key || '',
+      tls_enabled: hasTls,
+      tls_ca: node.tls_ca || '',
+      tls_cert: node.tls_cert || '',
+      tls_key: node.tls_key || '',
     });
     setEditingNodeId(node.id);
     setEditOpen(true);
@@ -164,7 +221,7 @@ export function NodeManager() {
   };
 
   const renderFormFields = () => (
-    <div className="space-y-4 py-4">
+    <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
       <div className="space-y-2">
         <Label htmlFor="node-name">Name</Label>
         <Input
@@ -190,6 +247,19 @@ export function NodeManager() {
 
       {formData.type === 'remote' && (
         <>
+          <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-400">How to expose Docker via TCP on the remote machine</p>
+            <p className="text-xs text-amber-700 dark:text-amber-500">
+              Edit <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded">/lib/systemd/system/docker.service</code> and update the ExecStart line:
+            </p>
+            <code className="block text-xs font-mono bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-300 px-2 py-1.5 rounded break-all">
+              ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375 --containerd=/run/containerd/containerd.sock
+            </code>
+            <p className="text-xs text-amber-700 dark:text-amber-500">
+              Then restart: <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded">systemctl daemon-reload && systemctl restart docker</code>
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="node-host">Host</Label>
             <Input
@@ -231,9 +301,10 @@ export function NodeManager() {
 
           <Separator />
 
-          <p className="text-sm font-medium text-muted-foreground">SSH Credentials (for file operations)</p>
+          {/* SSH Credentials Section */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium">SSH Credentials <span className="text-muted-foreground font-normal">(for file operations via SFTP)</span></p>
 
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="node-ssh-user">SSH Username</Label>
               <Input
@@ -243,30 +314,116 @@ export function NodeManager() {
                 onChange={(e) => setFormData({ ...formData, ssh_user: e.target.value })}
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="node-ssh-password">SSH Password</Label>
-              <Input
-                id="node-ssh-password"
-                type="password"
-                placeholder="Optional if using SSH key"
-                value={formData.ssh_password}
-                onChange={(e) => setFormData({ ...formData, ssh_password: e.target.value })}
-              />
+              <Label>Authentication Type</Label>
+              <Select
+                value={formData.ssh_auth_type}
+                onValueChange={(v) => setFormData({ ...formData, ssh_auth_type: v as 'password' | 'key' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="password">Password</SelectItem>
+                  <SelectItem value="key">Private Key</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {formData.ssh_auth_type === 'password' ? (
+              <div className="space-y-2">
+                <Label htmlFor="node-ssh-password">SSH Password</Label>
+                <Input
+                  id="node-ssh-password"
+                  type="password"
+                  placeholder="Enter SSH password"
+                  value={formData.ssh_password}
+                  onChange={(e) => setFormData({ ...formData, ssh_password: e.target.value })}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="node-ssh-key">SSH Private Key</Label>
+                <textarea
+                  id="node-ssh-key"
+                  className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  value={formData.ssh_key}
+                  onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paste the full private key contents (PEM format).
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="node-ssh-key">SSH Private Key</Label>
-            <textarea
-              id="node-ssh-key"
-              className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              value={formData.ssh_key}
-              onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
-            />
-            <p className="text-xs text-muted-foreground">
-              Paste the full private key contents. Optional if using password auth.
-            </p>
+          <Separator />
+
+          {/* TLS Security Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-blue-500" />
+                  Enable TLS
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Secure the Docker TCP connection with mutual TLS (port 2376).
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={formData.tls_enabled}
+                onClick={() => setFormData({ ...formData, tls_enabled: !formData.tls_enabled })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                  formData.tls_enabled ? 'bg-blue-600' : 'bg-input'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    formData.tls_enabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {formData.tls_enabled && (
+              <div className="space-y-3 rounded-md border p-3">
+                <div className="space-y-2">
+                  <Label htmlFor="node-tls-ca">CA Certificate</Label>
+                  <textarea
+                    id="node-tls-ca"
+                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
+                    placeholder="-----BEGIN CERTIFICATE-----"
+                    value={formData.tls_ca}
+                    onChange={(e) => setFormData({ ...formData, tls_ca: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="node-tls-cert">Client Certificate</Label>
+                  <textarea
+                    id="node-tls-cert"
+                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
+                    placeholder="-----BEGIN CERTIFICATE-----"
+                    value={formData.tls_cert}
+                    onChange={(e) => setFormData({ ...formData, tls_cert: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="node-tls-key">Client Private Key</Label>
+                  <textarea
+                    id="node-tls-key"
+                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
+                    placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                    value={formData.tls_key}
+                    onChange={(e) => setFormData({ ...formData, tls_key: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -279,19 +436,17 @@ export function NodeManager() {
           value={formData.compose_dir}
           onChange={(e) => setFormData({ ...formData, compose_dir: e.target.value })}
         />
-        <div className="text-xs text-muted-foreground space-y-1 mt-1">
-          <p>The root directory where compose stack folders live on this node.</p>
-          <p className="text-amber-600 dark:text-amber-400 font-medium">
-            Note: Strategy B requires valid SSH credentials to read and edit compose.yaml files. TCP alone only grants container lifecycle management.
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          The root directory where compose stack folders live on this node. SSH credentials above are used to read and write compose files via SFTP.
+        </p>
       </div>
     </div>
   );
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header — pr-8 ensures the Add Node button clears any parent dialog's X close icon */}
+      <div className="flex items-center justify-between pr-8">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Server className="w-5 h-5" />
@@ -303,13 +458,13 @@ export function NodeManager() {
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" className="gap-1">
+            <Button size="sm" className="gap-1 shrink-0">
               <Plus className="w-4 h-4" />
               Add Node
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl">
-            <DialogHeader>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader className="pr-8">
               <DialogTitle>Add Remote Node</DialogTitle>
             </DialogHeader>
             {renderFormFields()}
@@ -450,8 +605,8 @@ export function NodeManager() {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader className="pr-8">
             <DialogTitle>Edit Node</DialogTitle>
           </DialogHeader>
           {renderFormFields()}

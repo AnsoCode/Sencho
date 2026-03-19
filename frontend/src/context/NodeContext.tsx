@@ -15,6 +15,9 @@ export interface Node {
   ssh_user?: string;
   ssh_password?: string;
   ssh_key?: string;
+  tls_ca?: string;
+  tls_cert?: string;
+  tls_key?: string;
 }
 
 interface NodeContextType {

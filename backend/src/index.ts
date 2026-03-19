@@ -1009,18 +1009,41 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
+    const nodeId = req.nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+
+    const rxSec = Math.max(0, globalDockerNetwork.rxSec);
+    const txSec = Math.max(0, globalDockerNetwork.txSec);
+
+    if (node && node.type === 'remote') {
+      // Remote node: use Docker daemon info for CPU/RAM — disk is not available via Docker API
+      const docker = NodeRegistry.getInstance().getDocker(nodeId);
+      const info = await docker.info();
+
+      res.json({
+        cpu: {
+          usage: '0',
+          cores: info.NCPU ?? 0,
+        },
+        memory: {
+          total: info.MemTotal ?? 0,
+          used: 0,
+          free: info.MemTotal ?? 0,
+          usagePercent: '0',
+        },
+        disk: null,
+        network: { rxBytes: 0, txBytes: 0, rxSec, txSec },
+      });
+      return;
+    }
+
+    // Local node: use systeminformation for accurate host metrics
     const [currentLoad, mem, fsSize] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize()
     ]);
 
-    let rxSec = Math.max(0, globalDockerNetwork.rxSec);
-    let txSec = Math.max(0, globalDockerNetwork.txSec);
-    let rxBytes = 0;
-    let txBytes = 0;
-
-    // Find the main mount (usually the largest or root mount)
     const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
 
     res.json({
@@ -1042,12 +1065,7 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
         free: mainDisk.available,
         usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
       } : null,
-      network: {
-        rxBytes,
-        txBytes,
-        rxSec,
-        txSec
-      }
+      network: { rxBytes: 0, txBytes: 0, rxSec, txSec },
     });
   } catch (error) {
     console.error('Failed to fetch system stats:', error);
@@ -1414,7 +1432,7 @@ app.get('/api/nodes/:id', async (req: Request, res: Response) => {
 // Create a new node
 app.post('/api/nodes', async (req: Request, res: Response) => {
   try {
-    const { name, type, host, port, ssh_port, compose_dir, is_default, ssh_user, ssh_password, ssh_key } = req.body;
+    const { name, type, host, port, ssh_port, compose_dir, is_default, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key } = req.body;
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Node name is required' });
@@ -1437,6 +1455,9 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
       ssh_user: ssh_user || '',
       ssh_password: ssh_password || '',
       ssh_key: ssh_key || '',
+      tls_ca: tls_ca || '',
+      tls_cert: tls_cert || '',
+      tls_key: tls_key || '',
     });
 
     res.json({ success: true, id });
