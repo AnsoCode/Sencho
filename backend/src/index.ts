@@ -1414,7 +1414,7 @@ app.get('/api/nodes/:id', async (req: Request, res: Response) => {
 // Create a new node
 app.post('/api/nodes', async (req: Request, res: Response) => {
   try {
-    const { name, type, host, port, compose_dir, is_default } = req.body;
+    const { name, type, host, port, ssh_port, compose_dir, is_default, ssh_user, ssh_password, ssh_key } = req.body;
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Node name is required' });
@@ -1431,8 +1431,12 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
       type,
       host: host || '',
       port: port || 2375,
+      ssh_port: ssh_port || 22,
       compose_dir: compose_dir || '/opt/docker',
       is_default: is_default || false,
+      ssh_user: ssh_user || '',
+      ssh_password: ssh_password || '',
+      ssh_key: ssh_key || '',
     });
 
     res.json({ success: true, id });

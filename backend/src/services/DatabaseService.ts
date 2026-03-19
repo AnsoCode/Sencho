@@ -31,6 +31,7 @@ export interface Node {
     type: 'local' | 'remote';
     host: string;
     port: number;
+    ssh_port: number;
     compose_dir: string;
     is_default: boolean;
     status: 'online' | 'offline' | 'unknown';
@@ -146,6 +147,7 @@ export class DatabaseService {
         const maybeAddCol = (table: string, col: string, def: string) => {
             try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch (e) { /* ignore */ }
         };
+        maybeAddCol('nodes', 'ssh_port', 'INTEGER DEFAULT 22');
         maybeAddCol('nodes', 'ssh_user', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'ssh_password', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'ssh_key', "TEXT DEFAULT ''");
@@ -368,13 +370,14 @@ export class DatabaseService {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
         const stmt = this.db.prepare(
-            'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO nodes (name, type, host, port, ssh_port, compose_dir, is_default, status, created_at, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         const result = stmt.run(
             node.name,
             node.type,
             node.host,
             node.port,
+            node.ssh_port || 22,
             node.compose_dir,
             node.is_default ? 1 : 0,
             'unknown',
@@ -405,6 +408,7 @@ export class DatabaseService {
         if (updates.type !== undefined) { fields.push('type = ?'); values.push(updates.type); }
         if (updates.host !== undefined) { fields.push('host = ?'); values.push(updates.host); }
         if (updates.port !== undefined) { fields.push('port = ?'); values.push(updates.port); }
+        if (updates.ssh_port !== undefined) { fields.push('ssh_port = ?'); values.push(updates.ssh_port); }
         if (updates.compose_dir !== undefined) { fields.push('compose_dir = ?'); values.push(updates.compose_dir); }
         if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
         if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }

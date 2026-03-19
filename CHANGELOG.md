@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Critical port routing conflict — separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
+- **Fixed:** `FileSystemService` now reads the node's `compose_dir` from the database for remote nodes instead of always using the `COMPOSE_DIR` env var.
+- **Fixed:** SSH/SFTP connections in `SSHFileAdapter`, `ComposeService.executeRemote()`, and `ComposeService.streamLogs()` now use `ssh_port` (default 22) instead of Docker API `port`.
+- **Added:** Full SSH credential fields (SSH Port, Username, Password, Private Key) to the Node Manager Add/Edit forms.
+- **Added:** `ssh_port` column to the `nodes` database table with migration support (default: 22).
 - **Changed:** Global `FileSystemService` and `ComposeService` singletons refactored into node-aware instances.
 - **Added:** `IFileAdapter`, `LocalFileAdapter`, and `SSHFileAdapter` to abstract all filesystem interactions for remote node support.
 - **Changed:** `MonitorService` now evaluates limits, fetches metrics, and detects container crashes across all registered nodes concurrently.

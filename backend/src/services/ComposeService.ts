@@ -137,7 +137,7 @@ export class ComposeService {
         if (throwOnError) reject(err); else resolve();
       }).connect({
         host: node.host,
-        port: node.port || 22,
+        port: node.ssh_port || 22,
         username: node.ssh_user!,
         password: node.ssh_password,
         privateKey: node.ssh_key,
@@ -305,7 +305,7 @@ export class ComposeService {
               });
             }).on('error', handleProcessEnd).connect({
               host: node!.host,
-              port: node!.port || 22,
+              port: node!.ssh_port || 22,
               username: node!.ssh_user!,
               password: node!.ssh_password,
               privateKey: node!.ssh_key,

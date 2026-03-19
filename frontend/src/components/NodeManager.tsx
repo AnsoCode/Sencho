@@ -20,8 +20,12 @@ interface NodeFormData {
   type: 'local' | 'remote';
   host: string;
   port: number;
+  ssh_port: number;
   compose_dir: string;
   is_default: boolean;
+  ssh_user: string;
+  ssh_password: string;
+  ssh_key: string;
 }
 
 const defaultFormData: NodeFormData = {
@@ -29,8 +33,12 @@ const defaultFormData: NodeFormData = {
   type: 'remote',
   host: '',
   port: 2375,
+  ssh_port: 22,
   compose_dir: '/opt/docker',
   is_default: false,
+  ssh_user: '',
+  ssh_password: '',
+  ssh_key: '',
 };
 
 export function NodeManager() {
@@ -90,8 +98,12 @@ export function NodeManager() {
       type: node.type,
       host: node.host,
       port: node.port,
+      ssh_port: node.ssh_port || 22,
       compose_dir: node.compose_dir,
       is_default: node.is_default,
+      ssh_user: node.ssh_user || '',
+      ssh_password: node.ssh_password || '',
+      ssh_key: node.ssh_key || '',
     });
     setEditingNodeId(node.id);
     setEditOpen(true);
@@ -188,17 +200,72 @@ export function NodeManager() {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="node-port">Docker API Port</Label>
+              <Input
+                id="node-port"
+                type="number"
+                placeholder="2375"
+                value={formData.port}
+                onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 2375 })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Default: 2375 (unencrypted) or 2376 (TLS)
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node-ssh-port">SSH Port</Label>
+              <Input
+                id="node-ssh-port"
+                type="number"
+                placeholder="22"
+                value={formData.ssh_port}
+                onChange={(e) => setFormData({ ...formData, ssh_port: parseInt(e.target.value) || 22 })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Default: 22. Used for file operations (SFTP).
+              </p>
+            </div>
+          </div>
+
+          <Separator />
+
+          <p className="text-sm font-medium text-muted-foreground">SSH Credentials (for file operations)</p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="node-ssh-user">SSH Username</Label>
+              <Input
+                id="node-ssh-user"
+                placeholder="e.g., root"
+                value={formData.ssh_user}
+                onChange={(e) => setFormData({ ...formData, ssh_user: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node-ssh-password">SSH Password</Label>
+              <Input
+                id="node-ssh-password"
+                type="password"
+                placeholder="Optional if using SSH key"
+                value={formData.ssh_password}
+                onChange={(e) => setFormData({ ...formData, ssh_password: e.target.value })}
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="node-port">Docker API Port</Label>
-            <Input
-              id="node-port"
-              type="number"
-              placeholder="2375"
-              value={formData.port}
-              onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 2375 })}
+            <Label htmlFor="node-ssh-key">SSH Private Key</Label>
+            <textarea
+              id="node-ssh-key"
+              className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+              value={formData.ssh_key}
+              onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Default: 2375 (unencrypted) or 2376 (TLS)
+              Paste the full private key contents. Optional if using password auth.
             </p>
           </div>
         </>
