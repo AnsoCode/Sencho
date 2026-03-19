@@ -40,24 +40,29 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
 
         const currentActive = activeNodeRef.current;
         if (!currentActive) {
-          const defaultNode = data.find((n: Node) => n.is_default);
-          if (defaultNode) {
-            setActiveNodeState(defaultNode);
-          } else if (data.length > 0) {
-            setActiveNodeState(data[0]);
+          // On initial load, restore from localStorage before falling back to default.
+          // This keeps the UI dropdown in sync with the node ID that apiFetch is already
+          // injecting via x-node-id (read directly from localStorage on every request).
+          const storedId = localStorage.getItem('sencho-active-node');
+          const storedNode = storedId ? data.find((n: Node) => n.id === parseInt(storedId, 10)) : null;
+          const nodeToActivate = storedNode ?? data.find((n: Node) => n.is_default) ?? data[0] ?? null;
+          if (nodeToActivate) {
+            setActiveNodeState(nodeToActivate);
+            localStorage.setItem('sencho-active-node', String(nodeToActivate.id));
           }
         } else {
           const updatedActive = data.find((n: Node) => n.id === currentActive.id);
           if (updatedActive) {
             setActiveNodeState(updatedActive);
+            localStorage.setItem('sencho-active-node', String(updatedActive.id));
           } else {
-            const defaultNode = data.find((n: Node) => n.is_default);
-            if (defaultNode) {
-              setActiveNodeState(defaultNode);
-            } else if (data.length > 0) {
-              setActiveNodeState(data[0]);
+            const fallback = data.find((n: Node) => n.is_default) ?? data[0] ?? null;
+            if (fallback) {
+              setActiveNodeState(fallback);
+              localStorage.setItem('sencho-active-node', String(fallback.id));
             } else {
               setActiveNodeState(null);
+              localStorage.removeItem('sencho-active-node');
             }
           }
         }
