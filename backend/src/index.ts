@@ -82,8 +82,15 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
     req.nodeId = NodeRegistry.getInstance().getDefaultNodeId();
   }
 
-  // Intercept requests to deleted nodes to prevent downstream errors
-  if (req.path.startsWith('/api/') && !req.path.startsWith('/api/auth/')) {
+  // Intercept requests to deleted nodes to prevent downstream errors.
+  // /api/nodes is intentionally exempt: it must always be reachable so the
+  // frontend can re-sync after a node is deleted (otherwise a stale x-node-id
+  // in localStorage causes an unrecoverable 404 loop).
+  if (
+    req.path.startsWith('/api/') &&
+    !req.path.startsWith('/api/auth/') &&
+    !req.path.startsWith('/api/nodes')
+  ) {
     const node = DatabaseService.getInstance().getNode(req.nodeId);
     if (!node) {
       res.status(404).json({ error: `Node with id ${req.nodeId} not found or was deleted.` });
@@ -338,8 +345,13 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
   on: {
     proxyReq: (proxyReq, req) => {
       const node = NodeRegistry.getInstance().getNode(req.nodeId);
-      // Remote Sencho sees itself as local - strip node context and inject bearer auth
+      // Strip headers that must not reach the remote instance:
+      // - x-node-id: remote Sencho treats all requests as local
+      // - cookie: the browser's sencho_token is signed with THIS instance's JWT secret;
+      //   the remote would try to verify it with its own secret and return 401.
+      //   Authentication is handled exclusively via the Bearer token below.
       proxyReq.removeHeader('x-node-id');
+      proxyReq.removeHeader('cookie');
       if (node?.api_token) {
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
       }
