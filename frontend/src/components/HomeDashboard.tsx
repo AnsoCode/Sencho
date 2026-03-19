@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNodes } from '@/context/NodeContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
@@ -53,6 +54,7 @@ const formatBytes = (bytes: number) => {
 };
 
 export default function HomeDashboard() {
+  const { activeNode } = useNodes();
   const [dockerRunInput, setDockerRunInput] = useState('');
   const [isConverting, setIsConverting] = useState(false);
   const [convertedYaml, setConvertedYaml] = useState('');
@@ -62,11 +64,13 @@ export default function HomeDashboard() {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [metrics, setMetrics] = useState<any[]>([]);
 
-  // Fetch stats from backend
+  // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
+    setStats({ active: 0, exited: 0, total: 0, inactive: 0 });
     const fetchStats = async () => {
       try {
         const res = await apiFetch('/stats');
+        if (!res.ok) return;
         const data = await res.json();
         setStats(data);
       } catch (error) {
@@ -76,10 +80,12 @@ export default function HomeDashboard() {
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch system stats from backend
+  // Fetch system stats and historical metrics - re-runs when active node changes
   useEffect(() => {
+    setSystemStats(null);
+    setMetrics([]);
     const fetchSystemStats = async () => {
       try {
         const [sysRes, metricsRes] = await Promise.all([
@@ -95,7 +101,7 @@ export default function HomeDashboard() {
     fetchSystemStats();
     const interval = setInterval(fetchSystemStats, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chartData = useMemo(() => {
     const buckets: Record<string, { time: string; timestamp: number; cpu: number; ram: number }> = {};
