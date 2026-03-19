@@ -147,12 +147,27 @@ export default function EditorLayout() {
     }
   };
 
+  // Notification polling — independent of active node, runs once on mount
   useEffect(() => {
-    refreshStacks();
     fetchNotifications();
     const notificationInterval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(notificationInterval);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch stacks whenever the active node changes (or becomes available on mount).
+  // Also clears any stale editor/container state that belonged to the previous node.
+  useEffect(() => {
+    if (!activeNode) return;
+    setSelectedFile(null);
+    setContent('');
+    setOriginalContent('');
+    setEnvContent('');
+    setOriginalEnvContent('');
+    setContainers([]);
+    setIsEditing(false);
+    setActiveView('dashboard');
+    refreshStacks();
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchNotifications = async () => {
     try {

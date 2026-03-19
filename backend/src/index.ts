@@ -305,7 +305,40 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
-// Remote Node HTTP Proxy
+// Remote Node HTTP Proxy — single global instance.
+// Previously, createProxyMiddleware was called inside the request handler on every API
+// call, spawning a new proxy instance (and http-proxy server) each time. This caused:
+//   - MaxListenersExceededWarning: repeated 'close' listeners added to [Server]
+//   - DEP0060: util._extend called on every http-proxy initialisation
+// Fix: create ONE instance at startup; use the router option to resolve the
+// target URL dynamically per request without constructing new listeners.
+const remoteNodeProxy = createProxyMiddleware<Request, Response>({
+  target: 'http://localhost:0', // placeholder — overridden per-request by router
+  changeOrigin: true,
+  router: (req) => {
+    const node = NodeRegistry.getInstance().getNode(req.nodeId);
+    return node?.api_url?.replace(/\/$/, '');
+  },
+  on: {
+    proxyReq: (proxyReq, req) => {
+      const node = NodeRegistry.getInstance().getNode(req.nodeId);
+      // Remote Sencho sees itself as local — strip node context and inject bearer auth
+      proxyReq.removeHeader('x-node-id');
+      if (node?.api_token) {
+        proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
+      }
+    },
+    error: (err, _req, proxyRes) => {
+      console.error('[Proxy] Remote node error:', (err as Error).message);
+      if (!(proxyRes as Response).headersSent) {
+        (proxyRes as Response).status(502).json({
+          error: 'Remote node is unreachable. Check the API URL and ensure Sencho is running on that host.'
+        });
+      }
+    },
+  },
+});
+
 // Intercepts all /api/ requests for remote Distributed API nodes and forwards them
 // to the target Sencho instance. Node management and auth routes always execute locally.
 app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
@@ -327,24 +360,7 @@ app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
     return;
   }
 
-  createProxyMiddleware<Request, Response>({
-    target: node.api_url.replace(/\/$/, ''),
-    changeOrigin: true,
-    on: {
-      proxyReq: (proxyReq) => {
-        // Remote Sencho is always "local" to itself — strip node context
-        proxyReq.removeHeader('x-node-id');
-        proxyReq.setHeader('Authorization', `Bearer ${node.api_token!}`);
-      },
-      error: (_err, _req, proxyRes) => {
-        if (!(proxyRes as Response).headersSent) {
-          (proxyRes as Response).status(502).json({
-            error: `Remote node "${node.name}" is unreachable. Check the API URL and ensure Sencho is running on that host.`
-          });
-        }
-      },
-    },
-  })(req, res, next);
+  remoteNodeProxy(req, res, next);
 });
 
 // Create HTTP server for WebSocket upgrade handling

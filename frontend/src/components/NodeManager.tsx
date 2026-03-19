@@ -177,10 +177,31 @@ export function NodeManager() {
 
   const copyToken = async () => {
     if (!generatedToken) return;
-    await navigator.clipboard.writeText(generatedToken);
-    setTokenCopied(true);
-    toast.success('Token copied to clipboard');
-    setTimeout(() => setTokenCopied(false), 2000);
+    try {
+      // Clipboard API requires a secure context (HTTPS or localhost)
+      await navigator.clipboard.writeText(generatedToken);
+      setTokenCopied(true);
+      toast.success('Token copied to clipboard');
+      setTimeout(() => setTokenCopied(false), 2000);
+    } catch {
+      // Fallback for HTTP / non-localhost deployments where Clipboard API is unavailable
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = generatedToken;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setTokenCopied(true);
+        toast.success('Token copied to clipboard');
+        setTimeout(() => setTokenCopied(false), 2000);
+      } catch {
+        toast.error('Could not copy automatically — please select and copy the token manually.');
+      }
+    }
   };
 
   const getStatusBadge = (status: string) => {
