@@ -36,14 +36,17 @@ export class SSHFileAdapter implements IFileAdapter {
     const sftp = await this.getClient();
     try {
       const list = await sftp.list(dirPath);
+      // Guard: filter out any entries with missing or non-string names to prevent
+      // downstream path.join crashes (TypeError on undefined.split)
+      const valid = list.filter((item: any) => item.name && typeof item.name === 'string');
       if (options?.withFileTypes) {
-        return list.map((item: any) => ({
+        return valid.map((item: any) => ({
           name: item.name,
           isDirectory: () => item.type === 'd',
           isFile: () => item.type === '-',
         }));
       }
-      return list.map((item: any) => item.name);
+      return valid.map((item: any) => item.name);
     } catch(err: any) {
         if(err.code === 2 || err.message.includes('No such file')) throw Object.assign(new Error(), { code: 'ENOENT' });
         throw err;

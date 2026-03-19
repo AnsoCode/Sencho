@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Added:** TLS certificate support for secure remote Docker daemon connections.
+- **Added:** SSH Private Key authentication UI for the Smart Proxy file system.
+- **Fixed:** Fatal path.join crash in FileSystemService caused by malformed SSH directory reads.
+- **Fixed:** Home dashboard System Stats incorrectly showing local hardware metrics when a remote node was active.
+- **Fixed:** UI overlap between the 'Add Node' button and the Settings dialog close icon.
 - **Fixed:** Critical port routing conflict — separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
 - **Fixed:** `FileSystemService` now reads the node's `compose_dir` from the database for remote nodes instead of always using the `COMPOSE_DIR` env var.
 - **Fixed:** SSH/SFTP connections in `SSHFileAdapter`, `ComposeService.executeRemote()`, and `ComposeService.streamLogs()` now use `ssh_port` (default 22) instead of Docker API `port`.
