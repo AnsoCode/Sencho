@@ -1,10 +1,14 @@
 import Docker from 'dockerode';
+import axios from 'axios';
 import { DatabaseService, Node } from './DatabaseService';
 
 /**
- * NodeRegistry: Manages Docker daemon connections for multiple nodes.
- * Replaces the old singleton DockerController pattern. Each node
- * (local or remote) gets its own dedicated Docker client instance.
+ * NodeRegistry: Manages connections for multiple nodes.
+ *
+ * In the Distributed API model:
+ * - Local nodes: direct Docker socket connection via Dockerode (unchanged)
+ * - Remote nodes: HTTP/WS proxy to a remote Sencho instance (api_url + api_token)
+ *   No direct Docker TCP connections are made for remote nodes.
  */
 export class NodeRegistry {
     private static instance: NodeRegistry;
@@ -20,11 +24,10 @@ export class NodeRegistry {
     }
 
     /**
-     * Get a Docker client for a specific node.
-     * Creates the connection lazily on first request and caches it.
+     * Get a Docker client for a LOCAL node only.
+     * Remote nodes are never accessed via Dockerode — use the HTTP proxy instead.
      */
     public getDocker(nodeId: number): Docker {
-        // Return cached connection if available
         if (this.connections.has(nodeId)) {
             return this.connections.get(nodeId)!;
         }
@@ -36,21 +39,27 @@ export class NodeRegistry {
             throw new Error(`Node with id ${nodeId} not found`);
         }
 
-        const docker = this.createDockerClient(node);
+        if (node.type === 'remote') {
+            throw new Error(
+                `Node "${node.name}" is a remote Distributed API node. ` +
+                `Its Docker daemon is not directly accessible — all requests are proxied via HTTP.`
+            );
+        }
+
+        const docker = new Docker();
         this.connections.set(nodeId, docker);
         return docker;
     }
 
     /**
      * Get the Docker client for the default node.
-     * This is the backward-compatible path for all existing code.
+     * Backward-compatible path for local-node code.
      */
     public getDefaultDocker(): Docker {
         const db = DatabaseService.getInstance();
         const defaultNode = db.getDefaultNode();
 
         if (!defaultNode || !defaultNode.id) {
-            // Absolute fallback: local socket (preserves legacy behavior)
             return new Docker();
         }
 
@@ -58,7 +67,7 @@ export class NodeRegistry {
     }
 
     /**
-     * Get the default node ID. Returns the ID of the node marked as default.
+     * Get the default node ID.
      */
     public getDefaultNodeId(): number {
         const db = DatabaseService.getInstance();
@@ -75,39 +84,21 @@ export class NodeRegistry {
     }
 
     /**
-     * Create a Docker client based on node configuration.
-     * - Local nodes: use the default socket (Docker autodetects)
-     * - Remote nodes: connect via TCP to host:port
+     * Get the HTTP proxy target for a remote node.
+     * Returns { apiUrl, apiToken } for use by the HTTP proxy middleware.
      */
-    private createDockerClient(node: Node): Docker {
-        if (node.type === 'local') {
-            // Local node: use the default Docker socket
-            return new Docker();
+    public getProxyTarget(nodeId: number): { apiUrl: string; apiToken: string } | null {
+        const node = DatabaseService.getInstance().getNode(nodeId);
+        if (!node || node.type !== 'remote' || !node.api_url || !node.api_token) {
+            return null;
         }
-
-        // Remote node: connect via Docker TCP API
-        if (!node.host) {
-            throw new Error(`Remote node "${node.name}" is missing a host address`);
-        }
-
-        const dockerOptions: Docker.DockerOptions = {
-            host: node.host,
-            port: node.port || 2375,
-        };
-
-        // Phase 55.4 — TLS: if all three certs are present, enable secure connection
-        if (node.tls_ca && node.tls_cert && node.tls_key) {
-            dockerOptions.ca = node.tls_ca;
-            dockerOptions.cert = node.tls_cert;
-            dockerOptions.key = node.tls_key;
-        }
-
-        return new Docker(dockerOptions);
+        return { apiUrl: node.api_url, apiToken: node.api_token };
     }
 
     /**
      * Test connectivity to a specific node.
-     * Returns true if we can ping the Docker daemon.
+     * - Local: pings the Docker daemon directly
+     * - Remote: makes a GET to /api/auth/check on the remote Sencho instance
      */
     public async testConnection(nodeId: number): Promise<{ success: boolean; error?: string; info?: any }> {
         const db = DatabaseService.getInstance();
@@ -117,13 +108,21 @@ export class NodeRegistry {
             return { success: false, error: 'Node not found' };
         }
 
+        if (node.type === 'remote') {
+            return this.testRemoteConnection(node);
+        }
+
+        return this.testLocalConnection(nodeId);
+    }
+
+    private async testLocalConnection(nodeId: number): Promise<{ success: boolean; error?: string; info?: any }> {
+        const db = DatabaseService.getInstance();
         try {
-            const docker = this.createDockerClient(node);
+            const docker = new Docker();
             const info = await docker.info();
 
-            // Validate the payload contains actual Docker daemon info, not arbitrary HTML
             if (!info || !info.OperatingSystem || typeof info.Containers !== 'number') {
-                throw new Error("Invalid response from Docker API. Did you provide a web port instead of the Docker daemon port?");
+                throw new Error('Invalid response from Docker daemon.');
             }
 
             db.updateNodeStatus(nodeId, 'online');
@@ -147,8 +146,49 @@ export class NodeRegistry {
         }
     }
 
+    private async testRemoteConnection(node: Node): Promise<{ success: boolean; error?: string; info?: any }> {
+        const db = DatabaseService.getInstance();
+
+        if (!node.api_url || !node.api_token) {
+            return { success: false, error: 'Remote node is missing an API URL or token. Configure it in Settings → Nodes.' };
+        }
+
+        try {
+            const response = await axios.get(`${node.api_url}/api/auth/check`, {
+                headers: { Authorization: `Bearer ${node.api_token}` },
+                timeout: 8000,
+            });
+
+            if (response.status === 200) {
+                db.updateNodeStatus(node.id, 'online');
+                return {
+                    success: true,
+                    info: {
+                        name: node.name,
+                        serverVersion: 'Remote Sencho',
+                        os: 'Remote',
+                        architecture: 'Remote',
+                        containers: '—',
+                        containersRunning: '—',
+                        images: '—',
+                        memTotal: 0,
+                        cpus: '—',
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected status ${response.status}`);
+        } catch (error: any) {
+            db.updateNodeStatus(node.id, 'offline');
+            const msg = error.response?.status === 401
+                ? 'Authentication failed — check the API token.'
+                : (error.message || 'Connection failed');
+            return { success: false, error: msg };
+        }
+    }
+
     /**
-     * Evict a cached connection (e.g., after node config changes).
+     * Evict a cached Docker connection (e.g., after node config change).
      */
     public evictConnection(nodeId: number): void {
         this.connections.delete(nodeId);
@@ -162,7 +202,7 @@ export class NodeRegistry {
     }
 
     /**
-     * Get the compose directory for a specific node.
+     * Get the compose directory for a local node.
      */
     public getComposeDir(nodeId: number): string {
         const db = DatabaseService.getInstance();

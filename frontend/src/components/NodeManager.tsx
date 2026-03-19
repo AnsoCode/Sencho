@@ -9,46 +9,27 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check } from 'lucide-react';
 
 interface NodeFormData {
   name: string;
   type: 'local' | 'remote';
-  host: string;
-  port: number;
-  ssh_port: number;
+  api_url: string;
+  api_token: string;
   compose_dir: string;
   is_default: boolean;
-  ssh_user: string;
-  ssh_auth_type: 'password' | 'key';
-  ssh_password: string;
-  ssh_key: string;
-  tls_enabled: boolean;
-  tls_ca: string;
-  tls_cert: string;
-  tls_key: string;
 }
 
 const defaultFormData: NodeFormData = {
   name: '',
   type: 'remote',
-  host: '',
-  port: 2375,
-  ssh_port: 22,
-  compose_dir: '/opt/docker',
+  api_url: '',
+  api_token: '',
+  compose_dir: '/app/compose',
   is_default: false,
-  ssh_user: '',
-  ssh_auth_type: 'password',
-  ssh_password: '',
-  ssh_key: '',
-  tls_enabled: false,
-  tls_ca: '',
-  tls_cert: '',
-  tls_key: '',
 };
 
 export function NodeManager() {
@@ -62,22 +43,16 @@ export function NodeManager() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testResult, setTestResult] = useState<{ nodeId: number; info: any } | null>(null);
 
+  // Node token generation state
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [generatingToken, setGeneratingToken] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+
   const handleCreate = async () => {
     try {
-      const payload = {
-        ...formData,
-        // Only pass TLS fields if TLS is enabled
-        tls_ca: formData.tls_enabled ? formData.tls_ca : '',
-        tls_cert: formData.tls_enabled ? formData.tls_cert : '',
-        tls_key: formData.tls_enabled ? formData.tls_key : '',
-        // Only pass the relevant SSH credential
-        ssh_password: formData.ssh_auth_type === 'password' ? formData.ssh_password : '',
-        ssh_key: formData.ssh_auth_type === 'key' ? formData.ssh_key : '',
-      };
-
       const res = await apiFetch('/nodes', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -88,8 +63,8 @@ export function NodeManager() {
       setCreateOpen(false);
       setFormData(defaultFormData);
 
-      // Auto-test the new node connection immediately after creation
-      if (newNodeId) {
+      // Auto-test the new node connection immediately
+      if (newNodeId && formData.type === 'remote') {
         setTesting(newNodeId);
         try {
           const testRes = await apiFetch(`/nodes/${newNodeId}/test`, { method: 'POST' });
@@ -101,7 +76,7 @@ export function NodeManager() {
             toast.warning(`Node saved, but connection test failed: ${testData.error}`);
           }
         } catch {
-          // Non-fatal — node was created, test just didn't succeed
+          // Non-fatal
         } finally {
           setTesting(null);
         }
@@ -116,18 +91,9 @@ export function NodeManager() {
   const handleEdit = async () => {
     if (!editingNodeId) return;
     try {
-      const payload = {
-        ...formData,
-        tls_ca: formData.tls_enabled ? formData.tls_ca : '',
-        tls_cert: formData.tls_enabled ? formData.tls_cert : '',
-        tls_key: formData.tls_enabled ? formData.tls_key : '',
-        ssh_password: formData.ssh_auth_type === 'password' ? formData.ssh_password : '',
-        ssh_key: formData.ssh_auth_type === 'key' ? formData.ssh_key : '',
-      };
-
       const res = await apiFetch(`/nodes/${editingNodeId}`, {
         method: 'PUT',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -144,23 +110,13 @@ export function NodeManager() {
   };
 
   const openEditDialog = (node: Node) => {
-    const hasTls = !!(node.tls_ca && node.tls_cert && node.tls_key);
     setFormData({
       name: node.name,
       type: node.type,
-      host: node.host,
-      port: node.port,
-      ssh_port: node.ssh_port || 22,
+      api_url: node.api_url || '',
+      api_token: node.api_token || '',
       compose_dir: node.compose_dir,
       is_default: node.is_default,
-      ssh_user: node.ssh_user || '',
-      ssh_auth_type: node.ssh_key ? 'key' : 'password',
-      ssh_password: node.ssh_password || '',
-      ssh_key: node.ssh_key || '',
-      tls_enabled: hasTls,
-      tls_ca: node.tls_ca || '',
-      tls_cert: node.tls_cert || '',
-      tls_key: node.tls_key || '',
     });
     setEditingNodeId(node.id);
     setEditOpen(true);
@@ -203,6 +159,30 @@ export function NodeManager() {
     }
   };
 
+  const generateNodeToken = async () => {
+    setGeneratingToken(true);
+    setGeneratedToken(null);
+    try {
+      const res = await apiFetch('/auth/generate-node-token', { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to generate token');
+      const { token } = await res.json();
+      setGeneratedToken(token);
+      toast.success('Node token generated');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to generate token');
+    } finally {
+      setGeneratingToken(false);
+    }
+  };
+
+  const copyToken = async () => {
+    if (!generatedToken) return;
+    await navigator.clipboard.writeText(generatedToken);
+    setTokenCopied(true);
+    toast.success('Token copied to clipboard');
+    setTimeout(() => setTokenCopied(false), 2000);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'online':
@@ -221,7 +201,7 @@ export function NodeManager() {
   };
 
   const renderFormFields = () => (
-    <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
+    <div className="space-y-4 py-4">
       <div className="space-y-2">
         <Label htmlFor="node-name">Name</Label>
         <Input
@@ -232,198 +212,33 @@ export function NodeManager() {
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="node-type">Type</Label>
-        <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v as 'local' | 'remote' })}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="local">Local (Docker Socket)</SelectItem>
-            <SelectItem value="remote">Remote (TCP)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {formData.type === 'remote' && (
         <>
-          <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1.5">
-            <p className="text-xs font-semibold text-amber-800 dark:text-amber-400">How to expose Docker via TCP on the remote machine</p>
-            <p className="text-xs text-amber-700 dark:text-amber-500">
-              Edit <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded">/lib/systemd/system/docker.service</code> and update the ExecStart line:
-            </p>
-            <code className="block text-xs font-mono bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-300 px-2 py-1.5 rounded break-all">
-              ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375 --containerd=/run/containerd/containerd.sock
-            </code>
-            <p className="text-xs text-amber-700 dark:text-amber-500">
-              Then restart: <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded">systemctl daemon-reload && systemctl restart docker</code>
+          <div className="space-y-2">
+            <Label htmlFor="node-api-url">Sencho API URL</Label>
+            <Input
+              id="node-api-url"
+              placeholder="http://192.168.1.50:3000"
+              value={formData.api_url}
+              onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              The base URL of the Sencho instance running on the remote machine.
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="node-host">Host</Label>
+            <Label htmlFor="node-api-token">API Token</Label>
             <Input
-              id="node-host"
-              placeholder="e.g., 192.168.1.50 or vps.example.com"
-              value={formData.host}
-              onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+              id="node-api-token"
+              type="password"
+              placeholder="Paste token from remote Sencho → Settings → Nodes → Generate Token"
+              value={formData.api_token}
+              onChange={(e) => setFormData({ ...formData, api_token: e.target.value })}
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="node-port">Docker API Port</Label>
-              <Input
-                id="node-port"
-                type="number"
-                placeholder="2375"
-                value={formData.port}
-                onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 2375 })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Default: 2375 (unencrypted) or 2376 (TLS)
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="node-ssh-port">SSH Port</Label>
-              <Input
-                id="node-ssh-port"
-                type="number"
-                placeholder="22"
-                value={formData.ssh_port}
-                onChange={(e) => setFormData({ ...formData, ssh_port: parseInt(e.target.value) || 22 })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Default: 22. Used for file operations (SFTP).
-              </p>
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* SSH Credentials Section */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium">SSH Credentials <span className="text-muted-foreground font-normal">(for file operations via SFTP)</span></p>
-
-            <div className="space-y-2">
-              <Label htmlFor="node-ssh-user">SSH Username</Label>
-              <Input
-                id="node-ssh-user"
-                placeholder="e.g., root"
-                value={formData.ssh_user}
-                onChange={(e) => setFormData({ ...formData, ssh_user: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Authentication Type</Label>
-              <Select
-                value={formData.ssh_auth_type}
-                onValueChange={(v) => setFormData({ ...formData, ssh_auth_type: v as 'password' | 'key' })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="password">Password</SelectItem>
-                  <SelectItem value="key">Private Key</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.ssh_auth_type === 'password' ? (
-              <div className="space-y-2">
-                <Label htmlFor="node-ssh-password">SSH Password</Label>
-                <Input
-                  id="node-ssh-password"
-                  type="password"
-                  placeholder="Enter SSH password"
-                  value={formData.ssh_password}
-                  onChange={(e) => setFormData({ ...formData, ssh_password: e.target.value })}
-                />
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="node-ssh-key">SSH Private Key</Label>
-                <textarea
-                  id="node-ssh-key"
-                  className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                  value={formData.ssh_key}
-                  onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Paste the full private key contents (PEM format).
-                </p>
-              </div>
-            )}
-          </div>
-
-          <Separator />
-
-          {/* TLS Security Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-blue-500" />
-                  Enable TLS
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Secure the Docker TCP connection with mutual TLS (port 2376).
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={formData.tls_enabled}
-                onClick={() => setFormData({ ...formData, tls_enabled: !formData.tls_enabled })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                  formData.tls_enabled ? 'bg-blue-600' : 'bg-input'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    formData.tls_enabled ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {formData.tls_enabled && (
-              <div className="space-y-3 rounded-md border p-3">
-                <div className="space-y-2">
-                  <Label htmlFor="node-tls-ca">CA Certificate</Label>
-                  <textarea
-                    id="node-tls-ca"
-                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
-                    placeholder="-----BEGIN CERTIFICATE-----"
-                    value={formData.tls_ca}
-                    onChange={(e) => setFormData({ ...formData, tls_ca: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="node-tls-cert">Client Certificate</Label>
-                  <textarea
-                    id="node-tls-cert"
-                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
-                    placeholder="-----BEGIN CERTIFICATE-----"
-                    value={formData.tls_cert}
-                    onChange={(e) => setFormData({ ...formData, tls_cert: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="node-tls-key">Client Private Key</Label>
-                  <textarea
-                    id="node-tls-key"
-                    className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
-                    placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                    value={formData.tls_key}
-                    onChange={(e) => setFormData({ ...formData, tls_key: e.target.value })}
-                  />
-                </div>
-              </div>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Generate this token on the <strong>remote</strong> Sencho instance using the "Generate Node Token" button in its Settings → Nodes panel.
+            </p>
           </div>
         </>
       )}
@@ -432,12 +247,12 @@ export function NodeManager() {
         <Label htmlFor="node-compose-dir">Compose Directory</Label>
         <Input
           id="node-compose-dir"
-          placeholder="/opt/docker"
+          placeholder="/app/compose"
           value={formData.compose_dir}
           onChange={(e) => setFormData({ ...formData, compose_dir: e.target.value })}
         />
         <p className="text-xs text-muted-foreground">
-          The root directory where compose stack folders live on this node. SSH credentials above are used to read and write compose files via SFTP.
+          The root directory where compose stack folders live on this node.
         </p>
       </div>
     </div>
@@ -445,7 +260,7 @@ export function NodeManager() {
 
   return (
     <div className="space-y-6">
-      {/* Header — pr-8 ensures the Add Node button clears any parent dialog's X close icon */}
+      {/* Header */}
       <div className="flex items-center justify-between pr-8">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -453,7 +268,7 @@ export function NodeManager() {
             Nodes
           </h2>
           <p className="text-sm text-muted-foreground">
-            Manage Docker daemon connections across local and remote hosts
+            Manage connections to local and remote Sencho instances
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -463,14 +278,17 @@ export function NodeManager() {
               Add Node
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-lg">
             <DialogHeader className="pr-8">
               <DialogTitle>Add Remote Node</DialogTitle>
             </DialogHeader>
             {renderFormFields()}
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={!formData.name || (formData.type === 'remote' && !formData.host)}>
+              <Button
+                onClick={handleCreate}
+                disabled={!formData.name || (formData.type === 'remote' && (!formData.api_url || !formData.api_token))}
+              >
                 Add Node
               </Button>
             </DialogFooter>
@@ -479,6 +297,39 @@ export function NodeManager() {
       </div>
 
       <Separator />
+
+      {/* Generate Node Token — for use on THIS instance as a remote target */}
+      <div className="rounded-md border p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-blue-500" />
+              Generate Node Token
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Create a long-lived token that allows another Sencho instance to use <strong>this</strong> instance as a remote node. Copy it and paste it into the main dashboard's "Add Node" form.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={generateNodeToken}
+            disabled={generatingToken}
+            className="shrink-0"
+          >
+            {generatingToken ? 'Generating...' : 'Generate Token'}
+          </Button>
+        </div>
+
+        {generatedToken && (
+          <div className="flex items-center gap-2 rounded-md bg-muted p-2">
+            <code className="flex-1 text-xs font-mono truncate text-muted-foreground">{generatedToken}</code>
+            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={copyToken}>
+              {tokenCopied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+        )}
+      </div>
 
       {/* Nodes Table */}
       <div className="rounded-md border overflow-x-auto w-full">
@@ -489,7 +340,6 @@ export function NodeManager() {
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Endpoint</TableHead>
-              <TableHead>Compose Dir</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -519,10 +369,7 @@ export function NodeManager() {
                   <Badge variant="outline">{node.type === 'local' ? 'Local' : 'Remote'}</Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm font-mono">
-                  {node.type === 'local' ? 'docker.sock' : `${node.host}:${node.port}`}
-                </TableCell>
-                <TableCell className="text-muted-foreground text-sm font-mono">
-                  {node.compose_dir}
+                  {node.type === 'local' ? 'docker.sock' : (node.api_url || '—')}
                 </TableCell>
                 <TableCell>{getStatusBadge(node.status)}</TableCell>
                 <TableCell className="text-right">
@@ -593,10 +440,10 @@ export function NodeManager() {
             Connection Details — {nodes.find(n => n.id === testResult.nodeId)?.name}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <div><span className="text-muted-foreground">Docker:</span> v{testResult.info.serverVersion}</div>
+            <div><span className="text-muted-foreground">Instance:</span> {testResult.info.serverVersion}</div>
             <div><span className="text-muted-foreground">OS:</span> {testResult.info.os}</div>
             <div><span className="text-muted-foreground">Arch:</span> {testResult.info.architecture}</div>
-            <div><span className="text-muted-foreground">Containers:</span> {testResult.info.containers} ({testResult.info.containersRunning} running)</div>
+            <div><span className="text-muted-foreground">Containers:</span> {testResult.info.containers}</div>
             <div><span className="text-muted-foreground">Images:</span> {testResult.info.images}</div>
             <div><span className="text-muted-foreground">CPUs:</span> {testResult.info.cpus}</div>
           </div>
@@ -605,14 +452,17 @@ export function NodeManager() {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-lg">
           <DialogHeader className="pr-8">
             <DialogTitle>Edit Node</DialogTitle>
           </DialogHeader>
           {renderFormFields()}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditOpen(false); setEditingNodeId(null); }}>Cancel</Button>
-            <Button onClick={handleEdit} disabled={!formData.name || (formData.type === 'remote' && !formData.host)}>
+            <Button
+              onClick={handleEdit}
+              disabled={!formData.name || (formData.type === 'remote' && !formData.api_url)}
+            >
               Save Changes
             </Button>
           </DialogFooter>
@@ -625,7 +475,7 @@ export function NodeManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Node</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove <strong>{deletingNode?.name}</strong>? This will only remove the node from Sencho — it will not affect the remote Docker daemon or any running containers.
+              Are you sure you want to remove <strong>{deletingNode?.name}</strong>? This will only remove the node from Sencho — it will not affect the remote instance or any running containers.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

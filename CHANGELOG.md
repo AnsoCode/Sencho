@@ -5,11 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- **Added:** TLS certificate support for secure remote Docker daemon connections.
-- **Added:** SSH Private Key authentication UI for the Smart Proxy file system.
-- **Fixed:** Fatal path.join crash in FileSystemService caused by malformed SSH directory reads.
-- **Fixed:** Home dashboard System Stats incorrectly showing local hardware metrics when a remote node was active.
-- **Fixed:** UI overlap between the 'Add Node' button and the Settings dialog close icon.
+- **Removed:** SSH/SFTP file adapters and remote Docker TCP connections (net negative ~500 lines of code).
+- **Added:** Distributed API proxying using http-proxy-middleware for HTTP and WebSockets.
+- **Added:** Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).
+- **Changed:** Node Manager UI vastly simplified — remote nodes now only require an API URL and Token.
 - **Fixed:** Critical port routing conflict — separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
 - **Fixed:** `FileSystemService` now reads the node's `compose_dir` from the database for remote nodes instead of always using the `COMPOSE_DIR` env var.
 - **Fixed:** SSH/SFTP connections in `SSHFileAdapter`, `ComposeService.executeRemote()`, and `ComposeService.streamLogs()` now use `ssh_port` (default 22) instead of Docker API `port`.
@@ -19,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added:** `IFileAdapter`, `LocalFileAdapter`, and `SSHFileAdapter` to abstract all filesystem interactions for remote node support.
 - **Changed:** `MonitorService` now evaluates limits, fetches metrics, and detects container crashes across all registered nodes concurrently.
 - **Added:** Node Context Middleware in Express API to dynamically extract `x-node-id` headers and parse WebSocket query parameters.
-- **Added:** Remote Nodes Foundation (Strategy B) — `nodes` table in SQLite with auto-seeded default local node.
+- **Added:** Remote Nodes Foundation - `nodes` table in SQLite with auto-seeded default local node.
 - **Added:** `NodeRegistry` service for managing multiple Docker daemon connections (local socket + TCP).
 - **Added:** Node management API endpoints: list, get, create, update, delete, and test connection.
 - **Added:** Settings Hub → Nodes tab with full CRUD UI, connection testing, and Docker info display.

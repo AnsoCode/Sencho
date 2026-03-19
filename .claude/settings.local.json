@@ -1,0 +1,21 @@
+{
+  "env": {
+    "includeCoAuthoredBy": "false"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(grep -c \"TODO\\\\|FIXME\" /c/Users/Boris/Documents/Projects/Sencho/backend/src/services/*.ts)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "mcp__github__create_pull_request",
+      "Bash(gh auth:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

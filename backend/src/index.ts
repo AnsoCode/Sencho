@@ -12,6 +12,8 @@ import crypto from 'crypto';
 import composerize from 'composerize';
 import si from 'systeminformation';
 import http from 'http';
+import httpProxy from 'http-proxy';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -92,9 +94,21 @@ declare global {
   }
 }
 
+// WebSocket proxy server for forwarding remote node WS connections
+const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
+wsProxyServer.on('error', (err, _req, socket: any) => {
+  console.error('[WS Proxy] Error:', err.message);
+  try { socket?.destroy(); } catch {}
+});
+
 // Authentication Middleware
+// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy)
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const token = req.cookies[COOKIE_NAME];
+  const cookieToken = req.cookies[COOKIE_NAME];
+  const bearerToken = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     res.status(401).json({ error: 'Authentication required' });
@@ -105,8 +119,9 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username: string };
-    req.user = { username: decoded.username };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
+    // Accept both user sessions and node proxy tokens
+    req.user = { username: decoded.username || 'node-proxy' };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
@@ -263,6 +278,23 @@ app.get('/api/auth/check', authMiddleware, (req: Request, res: Response): void =
   res.json({ authenticated: true, user: req.user });
 });
 
+// Generate a long-lived node proxy token for Sencho-to-Sencho authentication
+app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'No JWT secret configured on this instance.' });
+      return;
+    }
+    // No expiry — this token is managed by the admin who pastes it into the main dashboard
+    const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret);
+    res.json({ token });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to generate node token' });
+  }
+});
+
 // Apply authentication middleware to all /api/* routes except /api/auth/*
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   if (req.path.startsWith('/auth/')) {
@@ -270,6 +302,48 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
     return;
   }
   authMiddleware(req, res, next);
+});
+
+// Remote Node HTTP Proxy
+// Intercepts all /api/ requests for remote Distributed API nodes and forwards them
+// to the target Sencho instance. Node management and auth routes always execute locally.
+app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes')) {
+    next();
+    return;
+  }
+
+  const node = NodeRegistry.getInstance().getNode(req.nodeId);
+  if (!node || node.type !== 'remote') {
+    next();
+    return;
+  }
+
+  if (!node.api_url || !node.api_token) {
+    res.status(503).json({
+      error: `Remote node "${node.name}" has no API URL or token configured. Update it in Settings → Nodes.`
+    });
+    return;
+  }
+
+  createProxyMiddleware<Request, Response>({
+    target: node.api_url,
+    changeOrigin: true,
+    on: {
+      proxyReq: (proxyReq) => {
+        // Remote Sencho is always "local" to itself — strip node context
+        proxyReq.removeHeader('x-node-id');
+        proxyReq.setHeader('Authorization', `Bearer ${node.api_token!}`);
+      },
+      error: (_err, _req, proxyRes) => {
+        if (!(proxyRes as Response).headersSent) {
+          (proxyRes as Response).status(502).json({
+            error: `Remote node "${node.name}" is unreachable. Check the API URL and ensure Sencho is running on that host.`
+          });
+        }
+      },
+    },
+  })(req, res, next);
 });
 
 // Create HTTP server for WebSocket upgrade handling
@@ -302,11 +376,25 @@ server.on('upgrade', async (req, socket, head) => {
     if (!jwtSecret) throw new Error('No JWT secret');
     jwt.verify(token, jwtSecret);
 
-    // Check if this is a stack logs WebSocket request
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
 
+    // Resolve node context from query param
+    const nodeIdParam = parsedUrl.searchParams.get('nodeId');
+    const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+
+    // Remote Node WebSocket Proxy — forward the entire WS connection to the remote Sencho instance
+    if (node && node.type === 'remote' && node.api_url && node.api_token) {
+      const wsTarget = node.api_url.replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
+      req.headers['authorization'] = `Bearer ${node.api_token}`;
+      delete req.headers['x-node-id'];
+      wsProxyServer.ws(req, socket, head, { target: wsTarget });
+      return;
+    }
+
+    // Local node handling
     const logsMatch = pathname.match(/^\/api\/stacks\/([^/]+)\/logs$/);
     const hostConsoleMatch = pathname.match(/^\/api\/system\/host-console/);
 
@@ -315,9 +403,6 @@ server.on('upgrade', async (req, socket, head) => {
       const logsWss = new WebSocket.Server({ noServer: true });
       logsWss.handleUpgrade(req, socket, head, (ws) => {
         const stackName = decodeURIComponent(logsMatch[1]);
-        const nodeIdParam = parsedUrl.searchParams.get('nodeId');
-        const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-
         try {
           ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
         } catch (error) {
@@ -332,17 +417,12 @@ server.on('upgrade', async (req, socket, head) => {
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
         let targetDirectory = '';
         try {
-          const reqUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-          const nodeIdParam = reqUrl.searchParams.get('nodeId');
-          const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
           targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
-          
-          const stackParam = reqUrl.searchParams.get('stack');
+          const stackParam = parsedUrl.searchParams.get('stack');
           if (stackParam) {
             targetDirectory = path.join(targetDirectory, stackParam);
           }
         } catch (e) {
-          // ignore parsing error, fallback to base dir
           targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
         }
         try {
@@ -1432,7 +1512,7 @@ app.get('/api/nodes/:id', async (req: Request, res: Response) => {
 // Create a new node
 app.post('/api/nodes', async (req: Request, res: Response) => {
   try {
-    const { name, type, host, port, ssh_port, compose_dir, is_default, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key } = req.body;
+    const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Node name is required' });
@@ -1440,24 +1520,17 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     if (!type || !['local', 'remote'].includes(type)) {
       return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
     }
-    if (type === 'remote' && (!host || typeof host !== 'string')) {
-      return res.status(400).json({ error: 'Host is required for remote nodes' });
+    if (type === 'remote' && (!api_url || typeof api_url !== 'string')) {
+      return res.status(400).json({ error: 'API URL is required for remote nodes' });
     }
 
     const id = DatabaseService.getInstance().addNode({
       name,
       type,
-      host: host || '',
-      port: port || 2375,
-      ssh_port: ssh_port || 22,
-      compose_dir: compose_dir || '/opt/docker',
+      compose_dir: compose_dir || '/app/compose',
       is_default: is_default || false,
-      ssh_user: ssh_user || '',
-      ssh_password: ssh_password || '',
-      ssh_key: ssh_key || '',
-      tls_ca: tls_ca || '',
-      tls_cert: tls_cert || '',
-      tls_key: tls_key || '',
+      api_url: api_url || '',
+      api_token: api_token || '',
     });
 
     res.json({ success: true, id });

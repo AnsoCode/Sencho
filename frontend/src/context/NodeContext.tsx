@@ -5,19 +5,12 @@ export interface Node {
   id: number;
   name: string;
   type: 'local' | 'remote';
-  host: string;
-  port: number;
-  ssh_port: number;
   compose_dir: string;
   is_default: boolean;
   status: 'online' | 'offline' | 'unknown';
   created_at: number;
-  ssh_user?: string;
-  ssh_password?: string;
-  ssh_key?: string;
-  tls_ca?: string;
-  tls_cert?: string;
-  tls_key?: string;
+  api_url?: string;
+  api_token?: string;
 }
 
 interface NodeContextType {
@@ -42,7 +35,6 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         setNodes(data);
 
-        // If no active node is set, select the default node
         if (!activeNode) {
           const defaultNode = data.find((n: Node) => n.is_default);
           if (defaultNode) {
@@ -51,12 +43,10 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
             setActiveNodeState(data[0]);
           }
         } else {
-          // Refresh the active node's data in case its status changed
           const updatedActive = data.find((n: Node) => n.id === activeNode.id);
           if (updatedActive) {
             setActiveNodeState(updatedActive);
           } else {
-            // The active node was deleted! Fallback to default
             const defaultNode = data.find((n: Node) => n.is_default);
             if (defaultNode) {
               setActiveNodeState(defaultNode);
