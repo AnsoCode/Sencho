@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** A massive memory leak (browser Out of Memory crash) by throttling historical metrics polling down to 60s and downsampling SQLite metrics payload sizes by 12x.
 - **Fixed:** A bug where the active node UI dropdown would desync from the actual API requests on initial page load by properly hydrating state from localStorage.
 - **Fixed:** Remote node proxy forwarding the browser's `sencho_token` cookie to the remote Sencho instance — the remote's `authMiddleware` evaluates `cookieToken || bearerToken` and the cookie (signed with the local JWT secret) was validated before the valid Bearer token, causing 401 on all proxied API calls. Fixed by stripping the `cookie` header in `proxyReq` so only the Bearer token is used for remote authentication.
 - **Fixed:** `nodeContextMiddleware` blocking `/api/nodes` when `x-node-id` references a deleted/non-existent node — the nodes list endpoint must always succeed so the frontend can re-sync a stale node ID in localStorage; exempted alongside `/api/auth/`.
