@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Remote node authentication failures by updating middleware to support Bearer tokens in WebSocket upgrade handler (node-to-node WS proxy now authenticates correctly on the receiving instance).
+- **Fixed:** Node connection testing logic updated to normalize `api_url` trailing slashes before constructing the authenticated HTTP ping URL.
 - **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode — log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
 - **Fixed:** Infinite re-fetch loop in `NodeContext` — `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
 - **Fixed:** Infinite page reload loop — `apiFetch` was calling `window.location.href = '/'` on every 401, causing a full browser reload before auth could complete. Replaced with a `sencho-unauthorized` custom event that `AuthContext` handles by setting `appStatus` to `notAuthenticated`.
