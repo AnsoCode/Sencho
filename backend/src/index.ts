@@ -331,6 +331,10 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
     const node = NodeRegistry.getInstance().getNode(req.nodeId);
     return node?.api_url?.replace(/\/$/, '');
   },
+  // When mounted at app.use('/api/', ...), Express strips the '/api/' prefix from
+  // req.url before the middleware sees it. Re-add it so the remote Sencho instance
+  // receives the full path (e.g. '/stats' becomes '/api/stats').
+  pathRewrite: (path) => '/api' + path,
   on: {
     proxyReq: (proxyReq, req) => {
       const node = NodeRegistry.getInstance().getNode(req.nodeId);
