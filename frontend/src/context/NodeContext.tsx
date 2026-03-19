@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export interface Node {
@@ -27,6 +27,9 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [activeNode, setActiveNodeState] = useState<Node | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Ref lets refreshNodes read current activeNode without being a dep (breaks infinite loop)
+  const activeNodeRef = useRef<Node | null>(null);
+  activeNodeRef.current = activeNode;
 
   const refreshNodes = useCallback(async () => {
     try {
@@ -35,7 +38,8 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         setNodes(data);
 
-        if (!activeNode) {
+        const currentActive = activeNodeRef.current;
+        if (!currentActive) {
           const defaultNode = data.find((n: Node) => n.is_default);
           if (defaultNode) {
             setActiveNodeState(defaultNode);
@@ -43,7 +47,7 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
             setActiveNodeState(data[0]);
           }
         } else {
-          const updatedActive = data.find((n: Node) => n.id === activeNode.id);
+          const updatedActive = data.find((n: Node) => n.id === currentActive.id);
           if (updatedActive) {
             setActiveNodeState(updatedActive);
           } else {
@@ -63,7 +67,7 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [activeNode]);
+  }, []); // stable — reads activeNode via ref, not closure capture
 
   const setActiveNode = useCallback((node: Node) => {
     setActiveNodeState(node);
