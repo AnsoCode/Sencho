@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Backend memory leak caused by improper proxy middleware instantiation — `createProxyMiddleware` was called inside the request handler on every API call, spawning a new `http-proxy` instance (and registering new server listeners) per request. Refactored to a single globally-instantiated proxy using the `router` option for dynamic per-request target resolution.
+- **Fixed:** `[DEP0060] DeprecationWarning: util._extend` deprecation eliminated as a side-effect of the above fix (deprecation was triggered on every new `http-proxy` initialisation).
+- **Fixed:** Remote node authentication failures — `authMiddleware` and WebSocket upgrade handler both accept `Authorization: Bearer` tokens (Sencho-to-Sencho proxy auth).
+- **Fixed:** Node connection testing logic updated to perform authenticated HTTP pings to `/api/auth/check` on the remote instance.
+- **Fixed:** Node switcher dropdown failing to trigger data refreshes — `EditorLayout` now reacts to `activeNode` changes, re-fetching stacks and clearing stale editor/container state when the user switches nodes.
+- **Fixed:** API Token copy button failing silently on HTTP / non-localhost deployments where `navigator.clipboard` is unavailable — added `try/catch` with `document.execCommand('copy')` fallback.
 - **Fixed:** Remote node authentication failures by updating middleware to support Bearer tokens in WebSocket upgrade handler (node-to-node WS proxy now authenticates correctly on the receiving instance).
 - **Fixed:** Node connection testing logic updated to normalize `api_url` trailing slashes before constructing the authenticated HTTP ping URL.
 - **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode — log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
