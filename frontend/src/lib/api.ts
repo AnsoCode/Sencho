@@ -19,8 +19,8 @@ export async function apiFetch(
   const response = await fetch(url, { ...defaultOptions, ...options });
 
   if (response.status === 401) {
-    // Clear auth state and redirect to login
-    window.location.href = '/';
+    // Signal auth failure to AuthContext without a hard page reload
+    window.dispatchEvent(new Event('sencho-unauthorized'));
     throw new Error('Unauthorized');
   }
 

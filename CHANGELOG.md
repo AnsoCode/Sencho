@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode — log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
 - **Fixed:** Infinite re-fetch loop in `NodeContext` — `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
+- **Fixed:** Infinite page reload loop — `apiFetch` was calling `window.location.href = '/'` on every 401, causing a full browser reload before auth could complete. Replaced with a `sencho-unauthorized` custom event that `AuthContext` handles by setting `appStatus` to `notAuthenticated`.
+- **Fixed:** `NodeProvider` was mounted outside the auth gate in `App.tsx`, causing `refreshNodes` to fire before authentication was established (hitting 401 immediately on boot). Moved `NodeProvider` inside the authenticated branch so it only mounts after login.
 - **Removed:** SSH/SFTP file adapters and remote Docker TCP connections (net negative ~500 lines of code).
 - **Added:** Distributed API proxying using http-proxy-middleware for HTTP and WebSockets.
 - **Added:** Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).

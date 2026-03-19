@@ -47,6 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkAuth();
+    const handleUnauthorized = () => setAppStatus('notAuthenticated');
+    window.addEventListener('sencho-unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('sencho-unauthorized', handleUnauthorized);
   }, []);
 
   const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {

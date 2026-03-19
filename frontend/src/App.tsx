@@ -31,7 +31,11 @@ function AppContent() {
     );
   }
 
-  return <EditorLayout />;
+  return (
+    <NodeProvider>
+      <EditorLayout />
+    </NodeProvider>
+  );
 }
 
 import { Toaster } from 'sonner';
@@ -39,10 +43,8 @@ import { Toaster } from 'sonner';
 function App() {
   return (
     <AuthProvider>
-      <NodeProvider>
-        <AppContent />
-        <Toaster position="bottom-right" richColors />
-      </NodeProvider>
+      <AppContent />
+      <Toaster position="bottom-right" richColors />
     </AuthProvider>
   );
 }
