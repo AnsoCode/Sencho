@@ -48,6 +48,16 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
           const updatedActive = data.find((n: Node) => n.id === activeNode.id);
           if (updatedActive) {
             setActiveNodeState(updatedActive);
+          } else {
+            // The active node was deleted! Fallback to default
+            const defaultNode = data.find((n: Node) => n.is_default);
+            if (defaultNode) {
+              setActiveNodeState(defaultNode);
+            } else if (data.length > 0) {
+              setActiveNodeState(data[0]);
+            } else {
+              setActiveNodeState(null);
+            }
           }
         }
       }
@@ -65,7 +75,15 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshNodes();
-  }, []);
+
+    const handleNodeNotFound = () => {
+      console.warn('[NodeContext] Active node is unreachable or deleted. Forcing sync...');
+      refreshNodes();
+    };
+
+    window.addEventListener('node-not-found', handleNodeNotFound);
+    return () => window.removeEventListener('node-not-found', handleNodeNotFound);
+  }, [refreshNodes]);
 
   return (
     <NodeContext.Provider value={{ nodes, activeNode, setActiveNode, refreshNodes, isLoading }}>

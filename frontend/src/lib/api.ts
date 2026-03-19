@@ -24,6 +24,19 @@ export async function apiFetch(
     throw new Error('Unauthorized');
   }
 
+  // Intercept 404 Node Not Found responses and force context refresh
+  if (response.status === 404) {
+    try {
+      const clone = response.clone();
+      const errData = await clone.json();
+      if (errData.error && errData.error.includes('not found') && errData.error.includes('Node')) {
+        window.dispatchEvent(new Event('node-not-found'));
+      }
+    } catch (e) {
+      // Ignore JSON parse errors, caller handles standard 404s
+    }
+  }
+
   return response;
 }
 

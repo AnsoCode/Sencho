@@ -67,6 +67,16 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
   } else {
     req.nodeId = NodeRegistry.getInstance().getDefaultNodeId();
   }
+
+  // Intercept requests to deleted nodes to prevent downstream errors
+  if (req.path.startsWith('/api/') && !req.path.startsWith('/api/auth/')) {
+    const node = DatabaseService.getInstance().getNode(req.nodeId);
+    if (!node) {
+      res.status(404).json({ error: `Node with id ${req.nodeId} not found or was deleted.` });
+      return;
+    }
+  }
+
   next();
 };
 
