@@ -93,9 +93,8 @@ export function GlobalObservabilityView() {
                     const batch = bufferRef.current.splice(0);
                     setLogs(prev => {
                         const merged = [...prev, ...batch];
-                        // Infinite scroll: no slice limit in dev mode
                         merged.sort((a, b) => a.timestampMs - b.timestampMs);
-                        return merged;
+                        return merged.slice(-10000);
                     });
                 }
             }, 500);

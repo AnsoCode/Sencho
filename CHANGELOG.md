@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode — log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
+- **Fixed:** Infinite re-fetch loop in `NodeContext` — `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
 - **Removed:** SSH/SFTP file adapters and remote Docker TCP connections (net negative ~500 lines of code).
 - **Added:** Distributed API proxying using http-proxy-middleware for HTTP and WebSockets.
 - **Added:** Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).
