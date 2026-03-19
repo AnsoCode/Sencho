@@ -10,14 +10,15 @@ export class FileSystemService {
   private nodeId: number;
 
   constructor(nodeId?: number) {
-    this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
     this.nodeId = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
     
     const node = NodeRegistry.getInstance().getNode(this.nodeId);
 
     if (!node || node.type === 'local' || !node.host) {
+      this.baseDir = process.env.COMPOSE_DIR || '/app/compose';
       this.adapter = new LocalFileAdapter();
     } else {
+      this.baseDir = node.compose_dir || '/app/compose';
       this.adapter = new SSHFileAdapter(node);
     }
   }

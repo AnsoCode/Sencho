@@ -13,7 +13,7 @@ export class SSHFileAdapter implements IFileAdapter {
     const sftp = new Client();
     await sftp.connect({
       host: this.node.host,
-      port: this.node.port || 22,
+      port: this.node.ssh_port || 22,
       username: this.node.ssh_user!,
       password: this.node.ssh_password,
       privateKey: this.node.ssh_key,

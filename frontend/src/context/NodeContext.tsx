@@ -7,10 +7,14 @@ export interface Node {
   type: 'local' | 'remote';
   host: string;
   port: number;
+  ssh_port: number;
   compose_dir: string;
   is_default: boolean;
   status: 'online' | 'offline' | 'unknown';
   created_at: number;
+  ssh_user?: string;
+  ssh_password?: string;
+  ssh_key?: string;
 }
 
 interface NodeContextType {
