@@ -154,7 +154,8 @@ export class NodeRegistry {
         }
 
         try {
-            const response = await axios.get(`${node.api_url}/api/auth/check`, {
+            const baseUrl = node.api_url.replace(/\/$/, '');
+            const response = await axios.get(`${baseUrl}/api/auth/check`, {
                 headers: { Authorization: `Bearer ${node.api_token}` },
                 timeout: 8000,
             });

@@ -123,7 +123,8 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     // Accept both user sessions and node proxy tokens
     req.user = { username: decoded.username || 'node-proxy' };
     next();
-  } catch {
+  } catch (err) {
+    console.error('[Auth] Token validation failed:', (err as Error).message);
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
   }
@@ -327,7 +328,7 @@ app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
   }
 
   createProxyMiddleware<Request, Response>({
-    target: node.api_url,
+    target: node.api_url.replace(/\/$/, ''),
     changeOrigin: true,
     on: {
       proxyReq: (proxyReq) => {
@@ -362,7 +363,11 @@ server.on('upgrade', async (req, socket, head) => {
     cookieHeader.split(';').map(c => c.trim().split('=')).filter(([k, v]) => k && v)
   );
 
-  const token = cookies[COOKIE_NAME];
+  // Accept either cookie auth (browser sessions) or Bearer token auth (node-to-node WS proxy)
+  const cookieToken = cookies[COOKIE_NAME];
+  const authHeader = req.headers['authorization'] as string | undefined;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -387,7 +392,7 @@ server.on('upgrade', async (req, socket, head) => {
 
     // Remote Node WebSocket Proxy — forward the entire WS connection to the remote Sencho instance
     if (node && node.type === 'remote' && node.api_url && node.api_token) {
-      const wsTarget = node.api_url.replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
+      const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
       req.headers['authorization'] = `Bearer ${node.api_token}`;
       delete req.headers['x-node-id'];
       wsProxyServer.ws(req, socket, head, { target: wsTarget });
