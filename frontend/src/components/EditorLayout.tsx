@@ -123,12 +123,17 @@ export default function EditorLayout() {
     if (!background) setIsLoading(true);
     try {
       const res = await apiFetch('/stacks');
-      const stacks = await res.json();
-      setFiles(Array.isArray(stacks) ? stacks : []);
+      if (!res.ok) {
+        setFiles([]);
+        return;
+      }
+      const data = await res.json();
+      const fileList: string[] = Array.isArray(data) ? data : [];
+      setFiles(fileList);
 
       // Fetch status for each stack
       const statuses: StackStatus = {};
-      for (const file of stacks) {
+      for (const file of fileList) {
         try {
           const containersRes = await apiFetch(`/stacks/${file}/containers`);
           const containers = await containersRes.json();

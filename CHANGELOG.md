@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** Dashboard cards (Active Containers, Host CPU, Host RAM, Docker Network) showing stale local-node data after switching to a remote node — `HomeDashboard` polling effects now depend on `activeNode?.id` and clear state immediately on node change.
+- **Fixed:** `refreshStacks` crashing with `SyntaxError` or `TypeError` when the remote proxy returns a non-JSON response (e.g., connection refused to unreachable remote node) — now checks `res.ok` before calling `res.json()` and iterates a typed `fileList` instead of the raw parsed value.
 - **Fixed:** Restored Local/Remote type selector and fixed state resets in the Add Node modal — form now resets to defaults every time the dialog opens, and the title reflects the chosen type dynamically.
 - **Fixed:** Remote node connection details failing to display Containers, Images, and CPU metrics — `testRemoteConnection` now fires parallel requests to `/api/stats`, `/api/system/stats`, and `/api/system/images` after auth succeeds, mapping real values into the info panel.
 - **Fixed:** Suppressed `[DEP0060] DeprecationWarning: util._extend` from `http-proxy@1.18.1` — override is applied to `process.emitWarning` before the proxy instances are created, cleanly intercepting the warning at its call site without suppressing other warnings.
