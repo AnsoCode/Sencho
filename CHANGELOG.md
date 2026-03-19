@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **(Planned)** Port 2375 (TCP) fallback support; future releases may require SSH-only for Node config.
 
 ### Fixed
+- Fixed backend MonitorService crash (`Cannot read properties of undefined (reading 'cpu_usage')`) occurring when Docker containers lacked CPU telemetry during transition states.
+- Handled UI deleted nodes ghost API calls by intercepting 404 errors globally in API and forcing the UI to resync to the default Node context.
+- Hardened `nodeContextMiddleware` in Express to intercept queries to invalid or deleted Node IDs gracefully instead of bubbling to Docker API 500 crashes.
+- Hardened Remote Node connection testing (`docker.info()`) to explicitly validate expected Docker API daemon properties instead of merely checking string length.
+- Caught Unhandled SFTP Promise Rejections in Node registry gracefully returning empty arrays to prevent frontend loading UI stalls.
+- Fixed horizontal UI overflowing in Node Manager settings on smaller resolutions.
 - **Fixed:** Docker API parsing bug where HTML string responses from misconfigured ports were counted as containers.
 - **Fixed:** Stack list crashing when SFTP connections fail by gracefully catching SSH errors and returning empty arrays.
 

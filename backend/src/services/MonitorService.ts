@@ -311,8 +311,10 @@ export class MonitorService {
 
     private calculateCpuPercent(stats: any): number {
         let cpuPercent = 0.0;
+        if (!stats?.cpu_stats?.cpu_usage || !stats?.precpu_stats?.cpu_usage) return 0.0;
+
         const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
-        const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+        const systemDelta = (stats.cpu_stats.system_cpu_usage || 0) - (stats.precpu_stats.system_cpu_usage || 0);
         const numCpus = stats.cpu_stats.online_cpus || (stats.cpu_stats.cpu_usage.percpu_usage ? stats.cpu_stats.cpu_usage.percpu_usage.length : 1);
 
         if (systemDelta > 0.0 && cpuDelta > 0.0) {
@@ -322,6 +324,8 @@ export class MonitorService {
     }
 
     private calculateMemoryPercent(stats: any): number {
+        if (!stats?.memory_stats?.usage || !stats?.memory_stats?.limit) return 0.0;
+        
         const used_memory = stats.memory_stats.usage - (stats.memory_stats.stats?.cache || 0);
         const available_memory = stats.memory_stats.limit;
         if (available_memory > 0) {
