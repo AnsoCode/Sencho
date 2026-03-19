@@ -121,6 +121,8 @@ export class MonitorService {
                 const nodes = DatabaseService.getInstance().getNodes();
                 for (const node of nodes) {
                     if (!node.id) continue;
+                    // Remote nodes run their own MonitorService locally — skip direct Docker access
+                    if (node.type === 'remote') continue;
                     try {
                         const docker = DockerController.getInstance(node.id);
                         const containers = await docker.getAllContainers();
@@ -206,6 +208,8 @@ export class MonitorService {
 
         for (const node of nodes) {
             if (!node.id) continue;
+            // Remote nodes are self-monitoring — skip direct Docker access
+            if (node.type === 'remote') continue;
             try {
                 const docker = DockerController.getInstance(node.id);
                 const containers = await docker.getRunningContainers();
