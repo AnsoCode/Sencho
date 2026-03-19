@@ -29,19 +29,12 @@ export interface Node {
     id: number;
     name: string;
     type: 'local' | 'remote';
-    host: string;
-    port: number;
-    ssh_port: number;
     compose_dir: string;
     is_default: boolean;
     status: 'online' | 'offline' | 'unknown';
     created_at: number;
-    ssh_user?: string;
-    ssh_password?: string;
-    ssh_key?: string;
-    tls_ca?: string;
-    tls_cert?: string;
-    tls_key?: string;
+    api_url?: string;
+    api_token?: string;
 }
 
 export interface NotificationHistory {
@@ -59,14 +52,12 @@ export class DatabaseService {
     private constructor() {
         const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 
-        // Ensure data directory exists
         if (!fs.existsSync(dataDir)) {
             fs.mkdirSync(dataDir, { recursive: true });
         }
 
         const dbPath = path.join(dataDir, 'sencho.db');
         this.db = new Database(dbPath);
-        // Default journal mode is safer for arbitrary Docker volume mounts than WAL
 
         this.initSchema();
         this.migrateJsonConfig(dataDir);
@@ -126,7 +117,7 @@ export class DatabaseService {
         net_tx_mb REAL NOT NULL,
         timestamp INTEGER NOT NULL
       );
-      
+
       CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON container_metrics(timestamp);
       CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
 
@@ -134,8 +125,6 @@ export class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         type TEXT NOT NULL DEFAULT 'local',
-        host TEXT NOT NULL DEFAULT '',
-        port INTEGER NOT NULL DEFAULT 2375,
         compose_dir TEXT NOT NULL DEFAULT '/app/compose',
         is_default INTEGER DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'unknown',
@@ -147,6 +136,14 @@ export class DatabaseService {
         const maybeAddCol = (table: string, col: string, def: string) => {
             try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch (e) { /* ignore */ }
         };
+
+        // Distributed API model columns
+        maybeAddCol('nodes', 'api_url', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'api_token', "TEXT DEFAULT ''");
+
+        // Legacy SSH/TLS columns preserved for DB backward-compat (no longer read or written)
+        maybeAddCol('nodes', 'host', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'port', 'INTEGER DEFAULT 2375');
         maybeAddCol('nodes', 'ssh_port', 'INTEGER DEFAULT 22');
         maybeAddCol('nodes', 'ssh_user', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'ssh_password', "TEXT DEFAULT ''");
@@ -162,15 +159,15 @@ export class DatabaseService {
         stmt.run('host_disk_limit', '90');
         stmt.run('global_crash', '1');
         stmt.run('docker_janitor_gb', '5');
-        stmt.run('global_logs_refresh', '5'); // Default 5 seconds
-        stmt.run('developer_mode', '0'); // Default off
+        stmt.run('global_logs_refresh', '5');
+        stmt.run('developer_mode', '0');
 
         // Seed the default local node if none exists
         const nodeCount = (this.db.prepare('SELECT COUNT(*) as count FROM nodes').get() as any)?.count || 0;
         if (nodeCount === 0) {
             this.db.prepare(
-                'INSERT INTO nodes (name, type, host, port, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).run('Local', 'local', '', 0, process.env.COMPOSE_DIR || '/app/compose', 1, 'online', Date.now());
+                'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+            ).run('Local', 'local', process.env.COMPOSE_DIR || '/app/compose', 1, 'online', Date.now());
         }
     }
 
@@ -188,8 +185,6 @@ export class DatabaseService {
                     stmt.run('auth_jwt_secret', config.jwtSecret);
 
                     console.log('Successfully migrated sencho.json credentials to SQLite global_settings.');
-
-                    // Delete the file after migrating
                     fs.unlinkSync(configPath);
                 }
             } catch (err) {
@@ -295,9 +290,8 @@ export class DatabaseService {
         const stmt = this.db.prepare('INSERT INTO notification_history (level, message, timestamp, is_read) VALUES (?, ?, ?, 0)');
         stmt.run(notification.level, notification.message, notification.timestamp);
 
-        // Cleanup old notifications (keep last 100)
         this.db.exec(`
-      DELETE FROM notification_history 
+      DELETE FROM notification_history
       WHERE id NOT IN (
         SELECT id FROM notification_history ORDER BY timestamp DESC LIMIT 100
       )
@@ -343,7 +337,7 @@ export class DatabaseService {
     // --- Nodes ---
 
     public getNodes(): Node[] {
-        const stmt = this.db.prepare('SELECT * FROM nodes ORDER BY is_default DESC, name ASC');
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes ORDER BY is_default DESC, name ASC');
         return stmt.all().map((row: any) => ({
             ...row,
             is_default: row.is_default === 1
@@ -351,43 +345,35 @@ export class DatabaseService {
     }
 
     public getNode(id: number): Node | undefined {
-        const stmt = this.db.prepare('SELECT * FROM nodes WHERE id = ?');
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE id = ?');
         const row = stmt.get(id) as any;
         if (!row) return undefined;
         return { ...row, is_default: row.is_default === 1 };
     }
 
     public getDefaultNode(): Node | undefined {
-        const stmt = this.db.prepare('SELECT * FROM nodes WHERE is_default = 1 LIMIT 1');
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE is_default = 1 LIMIT 1');
         const row = stmt.get() as any;
         if (!row) return undefined;
         return { ...row, is_default: row.is_default === 1 };
     }
 
     public addNode(node: Omit<Node, 'id' | 'status' | 'created_at'>): number {
-        // If this node is set as default, clear other defaults first
         if (node.is_default) {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
         const stmt = this.db.prepare(
-            'INSERT INTO nodes (name, type, host, port, ssh_port, compose_dir, is_default, status, created_at, ssh_user, ssh_password, ssh_key, tls_ca, tls_cert, tls_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at, api_url, api_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
         const result = stmt.run(
             node.name,
             node.type,
-            node.host,
-            node.port,
-            node.ssh_port || 22,
-            node.compose_dir,
+            node.compose_dir || '/app/compose',
             node.is_default ? 1 : 0,
             'unknown',
             Date.now(),
-            node.ssh_user || '',
-            node.ssh_password || '',
-            node.ssh_key || '',
-            node.tls_ca || '',
-            node.tls_cert || '',
-            node.tls_key || ''
+            node.api_url || '',
+            node.api_token || ''
         );
         return result.lastInsertRowid as number;
     }
@@ -396,7 +382,6 @@ export class DatabaseService {
         const node = this.getNode(id);
         if (!node) throw new Error(`Node with id ${id} not found`);
 
-        // If setting as default, clear other defaults first
         if (updates.is_default) {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
@@ -406,18 +391,11 @@ export class DatabaseService {
 
         if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
         if (updates.type !== undefined) { fields.push('type = ?'); values.push(updates.type); }
-        if (updates.host !== undefined) { fields.push('host = ?'); values.push(updates.host); }
-        if (updates.port !== undefined) { fields.push('port = ?'); values.push(updates.port); }
-        if (updates.ssh_port !== undefined) { fields.push('ssh_port = ?'); values.push(updates.ssh_port); }
         if (updates.compose_dir !== undefined) { fields.push('compose_dir = ?'); values.push(updates.compose_dir); }
         if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
         if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
-        if (updates.ssh_user !== undefined) { fields.push('ssh_user = ?'); values.push(updates.ssh_user); }
-        if (updates.ssh_password !== undefined) { fields.push('ssh_password = ?'); values.push(updates.ssh_password); }
-        if (updates.ssh_key !== undefined) { fields.push('ssh_key = ?'); values.push(updates.ssh_key); }
-        if (updates.tls_ca !== undefined) { fields.push('tls_ca = ?'); values.push(updates.tls_ca); }
-        if (updates.tls_cert !== undefined) { fields.push('tls_cert = ?'); values.push(updates.tls_cert); }
-        if (updates.tls_key !== undefined) { fields.push('tls_key = ?'); values.push(updates.tls_key); }
+        if (updates.api_url !== undefined) { fields.push('api_url = ?'); values.push(updates.api_url); }
+        if (updates.api_token !== undefined) { fields.push('api_token = ?'); values.push(updates.api_token); }
 
         if (fields.length === 0) return;
 
