@@ -5,23 +5,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- **Fixed:** Backend memory leak caused by improper proxy middleware instantiation — `createProxyMiddleware` was called inside the request handler on every API call, spawning a new `http-proxy` instance (and registering new server listeners) per request. Refactored to a single globally-instantiated proxy using the `router` option for dynamic per-request target resolution.
+- **Fixed:** Restored Local/Remote type selector and fixed state resets in the Add Node modal — form now resets to defaults every time the dialog opens, and the title reflects the chosen type dynamically.
+- **Fixed:** Remote node connection details failing to display Containers, Images, and CPU metrics — `testRemoteConnection` now fires parallel requests to `/api/stats`, `/api/system/stats`, and `/api/system/images` after auth succeeds, mapping real values into the info panel.
+- **Fixed:** Suppressed `[DEP0060] DeprecationWarning: util._extend` from `http-proxy@1.18.1` — override is applied to `process.emitWarning` before the proxy instances are created, cleanly intercepting the warning at its call site without suppressing other warnings.
+- **Fixed:** Backend memory leak caused by improper proxy middleware instantiation - `createProxyMiddleware` was called inside the request handler on every API call, spawning a new `http-proxy` instance (and registering new server listeners) per request. Refactored to a single globally-instantiated proxy using the `router` option for dynamic per-request target resolution.
 - **Fixed:** `[DEP0060] DeprecationWarning: util._extend` deprecation eliminated as a side-effect of the above fix (deprecation was triggered on every new `http-proxy` initialisation).
-- **Fixed:** Remote node authentication failures — `authMiddleware` and WebSocket upgrade handler both accept `Authorization: Bearer` tokens (Sencho-to-Sencho proxy auth).
+- **Fixed:** Remote node authentication failures - `authMiddleware` and WebSocket upgrade handler both accept `Authorization: Bearer` tokens (Sencho-to-Sencho proxy auth).
 - **Fixed:** Node connection testing logic updated to perform authenticated HTTP pings to `/api/auth/check` on the remote instance.
-- **Fixed:** Node switcher dropdown failing to trigger data refreshes — `EditorLayout` now reacts to `activeNode` changes, re-fetching stacks and clearing stale editor/container state when the user switches nodes.
-- **Fixed:** API Token copy button failing silently on HTTP / non-localhost deployments where `navigator.clipboard` is unavailable — added `try/catch` with `document.execCommand('copy')` fallback.
+- **Fixed:** Node switcher dropdown failing to trigger data refreshes - `EditorLayout` now reacts to `activeNode` changes, re-fetching stacks and clearing stale editor/container state when the user switches nodes.
+- **Fixed:** API Token copy button failing silently on HTTP / non-localhost deployments where `navigator.clipboard` is unavailable - added `try/catch` with `document.execCommand('copy')` fallback.
 - **Fixed:** Remote node authentication failures by updating middleware to support Bearer tokens in WebSocket upgrade handler (node-to-node WS proxy now authenticates correctly on the receiving instance).
 - **Fixed:** Node connection testing logic updated to normalize `api_url` trailing slashes before constructing the authenticated HTTP ping URL.
-- **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode — log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
-- **Fixed:** Infinite re-fetch loop in `NodeContext` — `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
-- **Fixed:** Infinite page reload loop — `apiFetch` was calling `window.location.href = '/'` on every 401, causing a full browser reload before auth could complete. Replaced with a `sencho-unauthorized` custom event that `AuthContext` handles by setting `appStatus` to `notAuthenticated`.
+- **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode - log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
+- **Fixed:** Infinite re-fetch loop in `NodeContext` - `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
+- **Fixed:** Infinite page reload loop - `apiFetch` was calling `window.location.href = '/'` on every 401, causing a full browser reload before auth could complete. Replaced with a `sencho-unauthorized` custom event that `AuthContext` handles by setting `appStatus` to `notAuthenticated`.
 - **Fixed:** `NodeProvider` was mounted outside the auth gate in `App.tsx`, causing `refreshNodes` to fire before authentication was established (hitting 401 immediately on boot). Moved `NodeProvider` inside the authenticated branch so it only mounts after login.
 - **Removed:** SSH/SFTP file adapters and remote Docker TCP connections (net negative ~500 lines of code).
 - **Added:** Distributed API proxying using http-proxy-middleware for HTTP and WebSockets.
 - **Added:** Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).
-- **Changed:** Node Manager UI vastly simplified — remote nodes now only require an API URL and Token.
-- **Fixed:** Critical port routing conflict — separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
+- **Changed:** Node Manager UI vastly simplified - remote nodes now only require an API URL and Token.
+- **Fixed:** Critical port routing conflict - separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
 - **Fixed:** `FileSystemService` now reads the node's `compose_dir` from the database for remote nodes instead of always using the `COMPOSE_DIR` env var.
 - **Fixed:** SSH/SFTP connections in `SSHFileAdapter`, `ComposeService.executeRemote()`, and `ComposeService.streamLogs()` now use `ssh_port` (default 22) instead of Docker API `port`.
 - **Added:** Full SSH credential fields (SSH Port, Username, Password, Private Key) to the Node Manager Add/Edit forms.

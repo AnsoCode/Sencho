@@ -121,7 +121,7 @@ export class MonitorService {
                 const nodes = DatabaseService.getInstance().getNodes();
                 for (const node of nodes) {
                     if (!node.id) continue;
-                    // Remote nodes run their own MonitorService locally — skip direct Docker access
+                    // Remote nodes run their own MonitorService locally - skip direct Docker access
                     if (node.type === 'remote') continue;
                     try {
                         const docker = DockerController.getInstance(node.id);
@@ -208,7 +208,7 @@ export class MonitorService {
 
         for (const node of nodes) {
             if (!node.id) continue;
-            // Remote nodes are self-monitoring — skip direct Docker access
+            // Remote nodes are self-monitoring - skip direct Docker access
             if (node.type === 'remote') continue;
             try {
                 const docker = DockerController.getInstance(node.id);
@@ -329,7 +329,7 @@ export class MonitorService {
 
     private calculateMemoryPercent(stats: any): number {
         if (!stats?.memory_stats?.usage || !stats?.memory_stats?.limit) return 0.0;
-        
+
         const used_memory = stats.memory_stats.usage - (stats.memory_stats.stats?.cache || 0);
         const available_memory = stats.memory_stats.limit;
         if (available_memory > 0) {

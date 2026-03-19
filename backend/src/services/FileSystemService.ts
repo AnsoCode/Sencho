@@ -4,7 +4,7 @@ import { promises as fsPromises } from 'fs';
 import { NodeRegistry } from './NodeRegistry';
 
 /**
- * FileSystemService — local-only file I/O for compose stack management.
+ * FileSystemService - local-only file I/O for compose stack management.
  *
  * In the Distributed API model, remote node file operations are handled
  * by the remote Sencho instance itself. This service only operates on

@@ -12,6 +12,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check } from 'lucide-react';
 
 interface NodeFormData {
@@ -199,7 +200,7 @@ export function NodeManager() {
         toast.success('Token copied to clipboard');
         setTimeout(() => setTokenCopied(false), 2000);
       } catch {
-        toast.error('Could not copy automatically — please select and copy the token manually.');
+        toast.error('Could not copy automatically - please select and copy the token manually.');
       }
     }
   };
@@ -231,6 +232,32 @@ export function NodeManager() {
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="node-type">Type</Label>
+        <Select
+          value={formData.type}
+          onValueChange={(val) => setFormData({ ...formData, type: val as 'local' | 'remote', api_url: '', api_token: '' })}
+        >
+          <SelectTrigger id="node-type">
+            <SelectValue placeholder="Select type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="local">
+              <div className="flex items-center gap-2">
+                <Monitor className="w-4 h-4" />
+                Local — Docker socket on this machine
+              </div>
+            </SelectItem>
+            <SelectItem value="remote">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                Remote — another Sencho instance
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {formData.type === 'remote' && (
@@ -292,7 +319,14 @@ export function NodeManager() {
             Manage connections to local and remote Sencho instances
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog
+          open={createOpen}
+          onOpenChange={(open) => {
+            setCreateOpen(open);
+            // Reset form to defaults every time the dialog opens
+            if (open) setFormData(defaultFormData);
+          }}
+        >
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1 shrink-0">
               <Plus className="w-4 h-4" />
@@ -301,7 +335,7 @@ export function NodeManager() {
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader className="pr-8">
-              <DialogTitle>Add Remote Node</DialogTitle>
+              <DialogTitle>Add {formData.type === 'local' ? 'Local' : 'Remote'} Node</DialogTitle>
             </DialogHeader>
             {renderFormFields()}
             <DialogFooter>
@@ -319,7 +353,7 @@ export function NodeManager() {
 
       <Separator />
 
-      {/* Generate Node Token — for use on THIS instance as a remote target */}
+      {/* Generate Node Token - for use on THIS instance as a remote target */}
       <div className="rounded-md border p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -328,7 +362,7 @@ export function NodeManager() {
               Generate Node Token
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Create a long-lived token that allows another Sencho instance to use <strong>this</strong> instance as a remote node. Copy it and paste it into the main dashboard's "Add Node" form.
+              Create a long-lived token that allows another Sencho instance to use <strong>this</strong> instance as a remote node. Copy it and paste it into the other Sencho instance's "Add Node" form.
             </p>
           </div>
           <Button
@@ -390,7 +424,7 @@ export function NodeManager() {
                   <Badge variant="outline">{node.type === 'local' ? 'Local' : 'Remote'}</Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm font-mono">
-                  {node.type === 'local' ? 'docker.sock' : (node.api_url || '—')}
+                  {node.type === 'local' ? 'docker.sock' : (node.api_url || '-')}
                 </TableCell>
                 <TableCell>{getStatusBadge(node.status)}</TableCell>
                 <TableCell className="text-right">
@@ -458,7 +492,7 @@ export function NodeManager() {
         <div className="rounded-md border p-4 bg-muted/30 space-y-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Wifi className="w-4 h-4 text-green-500" />
-            Connection Details — {nodes.find(n => n.id === testResult.nodeId)?.name}
+            Connection Details - {nodes.find(n => n.id === testResult.nodeId)?.name}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div><span className="text-muted-foreground">Instance:</span> {testResult.info.serverVersion}</div>
@@ -496,7 +530,7 @@ export function NodeManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Node</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove <strong>{deletingNode?.name}</strong>? This will only remove the node from Sencho — it will not affect the remote instance or any running containers.
+              Are you sure you want to remove <strong>{deletingNode?.name}</strong>? This will only remove the node from Sencho - it will not affect the remote instance or any running containers.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

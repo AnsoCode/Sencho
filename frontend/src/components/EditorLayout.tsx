@@ -147,7 +147,7 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification polling — independent of active node, runs once on mount
+  // Notification polling - independent of active node, runs once on mount
   useEffect(() => {
     fetchNotifications();
     const notificationInterval = setInterval(fetchNotifications, 5000);
@@ -208,10 +208,10 @@ export default function EditorLayout() {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
         wsMap[container.Id] = ws;
-        ws.onopen = () => ws.send(JSON.stringify({ 
-          action: 'streamStats', 
-          containerId: container.Id, 
-          nodeId: localStorage.getItem('sencho-active-node') || undefined 
+        ws.onopen = () => ws.send(JSON.stringify({
+          action: 'streamStats',
+          containerId: container.Id,
+          nodeId: localStorage.getItem('sencho-active-node') || undefined
         }));
         ws.onmessage = (event) => {
           try {
@@ -688,10 +688,9 @@ export default function EditorLayout() {
                 {nodes.map(node => (
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${
-                        node.status === 'online' ? 'bg-green-500' :
-                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
-                      }`} />
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
+                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                        }`} />
                       {node.name}
                     </div>
                   </SelectItem>

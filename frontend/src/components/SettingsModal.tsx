@@ -476,7 +476,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                         </SelectContent>
                                     </Select>
                                     {settings.developer_mode === '1' && (
-                                        <p className="text-xs text-amber-500">SSE streaming is active — polling rate is overridden by real-time streaming.</p>
+                                        <p className="text-xs text-amber-500">SSE streaming is active - polling rate is overridden by real-time streaming.</p>
                                     )}
                                 </div>
                             </div>

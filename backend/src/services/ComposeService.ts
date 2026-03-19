@@ -6,7 +6,7 @@ import { LogFormatter } from './LogFormatter';
 import { NodeRegistry } from './NodeRegistry';
 
 /**
- * ComposeService — local docker compose CLI execution.
+ * ComposeService - local docker compose CLI execution.
  *
  * In the Distributed API model, remote node compose operations are handled
  * by the remote Sencho instance. This service only executes commands locally.
@@ -160,7 +160,7 @@ export class ComposeService {
         let localProcesses: ReturnType<typeof spawn>[] = [];
 
         const onWsClose = () => {
-          localProcesses.forEach(cp => { try { cp.kill(); } catch {} });
+          localProcesses.forEach(cp => { try { cp.kill(); } catch { } });
         };
 
         ws.on('close', onWsClose);

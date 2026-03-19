@@ -14,7 +14,7 @@ export class NodeRegistry {
     private static instance: NodeRegistry;
     private connections: Map<number, Docker> = new Map();
 
-    private constructor() {}
+    private constructor() { }
 
     public static getInstance(): NodeRegistry {
         if (!NodeRegistry.instance) {
@@ -25,7 +25,7 @@ export class NodeRegistry {
 
     /**
      * Get a Docker client for a LOCAL node only.
-     * Remote nodes are never accessed via Dockerode — use the HTTP proxy instead.
+     * Remote nodes are never accessed via Dockerode - use the HTTP proxy instead.
      */
     public getDocker(nodeId: number): Docker {
         if (this.connections.has(nodeId)) {
@@ -42,7 +42,7 @@ export class NodeRegistry {
         if (node.type === 'remote') {
             throw new Error(
                 `Node "${node.name}" is a remote Distributed API node. ` +
-                `Its Docker daemon is not directly accessible — all requests are proxied via HTTP.`
+                `Its Docker daemon is not directly accessible - all requests are proxied via HTTP.`
             );
         }
 
@@ -153,36 +153,46 @@ export class NodeRegistry {
             return { success: false, error: 'Remote node is missing an API URL or token. Configure it in Settings → Nodes.' };
         }
 
+        const baseUrl = node.api_url.replace(/\/$/, '');
+        const headers = { Authorization: `Bearer ${node.api_token}` };
+
         try {
-            const baseUrl = node.api_url.replace(/\/$/, '');
-            const response = await axios.get(`${baseUrl}/api/auth/check`, {
-                headers: { Authorization: `Bearer ${node.api_token}` },
-                timeout: 8000,
-            });
+            // Step 1: Verify auth. A 401 here means wrong token — surface that clearly.
+            const authRes = await axios.get(`${baseUrl}/api/auth/check`, { headers, timeout: 8000 });
+            if (authRes.status !== 200) throw new Error(`Unexpected status ${authRes.status}`);
 
-            if (response.status === 200) {
-                db.updateNodeStatus(node.id, 'online');
-                return {
-                    success: true,
-                    info: {
-                        name: node.name,
-                        serverVersion: 'Remote Sencho',
-                        os: 'Remote',
-                        architecture: 'Remote',
-                        containers: '—',
-                        containersRunning: '—',
-                        images: '—',
-                        memTotal: 0,
-                        cpus: '—',
-                    }
-                };
-            }
+            db.updateNodeStatus(node.id, 'online');
 
-            throw new Error(`Unexpected status ${response.status}`);
+            // Step 2: Fetch Docker stats in parallel. Use allSettled so a slow or missing
+            // endpoint doesn't fail the whole test — each field falls back to '-' gracefully.
+            const [statsResult, sysResult, imagesResult] = await Promise.allSettled([
+                axios.get(`${baseUrl}/api/stats`, { headers, timeout: 8000 }),
+                axios.get(`${baseUrl}/api/system/stats`, { headers, timeout: 8000 }),
+                axios.get(`${baseUrl}/api/system/images`, { headers, timeout: 8000 }),
+            ]);
+
+            const stats = statsResult.status === 'fulfilled' ? statsResult.value.data : null;
+            const sys = sysResult.status === 'fulfilled' ? sysResult.value.data : null;
+            const images = imagesResult.status === 'fulfilled' ? imagesResult.value.data : null;
+
+            return {
+                success: true,
+                info: {
+                    name: node.name,
+                    serverVersion: 'Remote Sencho',
+                    os: 'Remote',
+                    architecture: 'Remote',
+                    containers: stats?.total ?? '-',
+                    containersRunning: stats?.active ?? '-',
+                    images: Array.isArray(images) ? images.length : '-',
+                    memTotal: sys?.memory?.total ?? 0,
+                    cpus: sys?.cpu?.cores ?? '-',
+                }
+            };
         } catch (error: any) {
             db.updateNodeStatus(node.id, 'offline');
             const msg = error.response?.status === 401
-                ? 'Authentication failed — check the API token.'
+                ? 'Authentication failed - check the API token.'
                 : (error.message || 'Connection failed');
             return { success: false, error: msg };
         }
