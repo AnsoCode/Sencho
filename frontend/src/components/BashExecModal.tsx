@@ -75,7 +75,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
         return;
       }
 
-      // Node exists and has layout — safe to initialize xterm!
+      // Node exists and has layout - safe to initialize xterm!
       initTerminal(container);
     };
 
@@ -160,7 +160,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
         setIsConnected(false);
       };
 
-      // Handle user input — JSON up
+      // Handle user input - JSON up
       term.onData((data) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
@@ -224,9 +224,9 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
             Interactive bash terminal session for {containerName}
           </DialogDescription>
         </DialogHeader>
-        {/* Styling wrapper — padding and rounded corners go here */}
+        {/* Styling wrapper - padding and rounded corners go here */}
         <div className="flex-1 rounded-lg bg-[#1e1e1e] p-1 min-h-0" style={{ overflow: 'hidden' }}>
-          {/* Clean xterm container — NO padding, NO overflow-hidden, explicit dimensions */}
+          {/* Clean xterm container - NO padding, NO overflow-hidden, explicit dimensions */}
           <div
             ref={terminalRef}
             style={{ width: '100%', height: '100%' }}

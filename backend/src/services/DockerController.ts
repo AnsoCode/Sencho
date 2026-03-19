@@ -350,7 +350,7 @@ class DockerController {
       await container.start();
     } catch (error: any) {
       if (error?.statusCode === 304) {
-        // Container already running — not an error
+        // Container already running - not an error
         return;
       }
       throw error;
@@ -364,7 +364,7 @@ class DockerController {
       await container.stop();
     } catch (error: any) {
       if (error?.statusCode === 304) {
-        // Container already stopped — not an error
+        // Container already stopped - not an error
         return;
       }
       throw error;
@@ -445,7 +445,7 @@ class DockerController {
 
   /**
    * Exec into a container with full session isolation.
-   * All state (exec instance, stream) lives in this closure — no singleton traps.
+   * All state (exec instance, stream) lives in this closure - no singleton traps.
    * The WebSocket message handler is registered here to handle input, resize, and cleanup.
    */
   public async execContainer(containerId: string, ws: WebSocket) {
@@ -516,7 +516,7 @@ class DockerController {
               break;
           }
         } catch {
-          // Non-JSON or malformed message — ignore
+          // Non-JSON or malformed message - ignore
         }
       });
 

@@ -67,7 +67,7 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []); // stable — reads activeNode via ref, not closure capture
+  }, []); // stable - reads activeNode via ref, not closure capture
 
   const setActiveNode = useCallback((node: Node) => {
     setActiveNodeState(node);

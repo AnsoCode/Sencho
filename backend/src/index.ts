@@ -29,6 +29,18 @@ import fs, { promises as fsPromises } from 'fs';
 
 const execAsync = promisify(exec);
 
+// Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
+// util._extend internally. The warning fires at runtime when createProxyServer() is
+// first invoked (NOT at import time), so intercepting process.emitWarning here —
+// before the proxy instances are created below — fully prevents it.
+// http-proxy has no compatible update; this suppression is intentional and safe.
+const _origEmitWarning = process.emitWarning.bind(process);
+(process as any).emitWarning = (warning: any, ...args: any[]) => {
+  const code = typeof args[0] === 'object' ? args[0]?.code : args[1];
+  if (code === 'DEP0060') return;
+  _origEmitWarning(warning, ...args);
+};
+
 const app = express();
 const PORT = 3000;
 
@@ -98,7 +110,7 @@ declare global {
 const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
 wsProxyServer.on('error', (err, _req, socket: any) => {
   console.error('[WS Proxy] Error:', err.message);
-  try { socket?.destroy(); } catch {}
+  try { socket?.destroy(); } catch { }
 });
 
 // Authentication Middleware
@@ -288,7 +300,7 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
       res.status(500).json({ error: 'No JWT secret configured on this instance.' });
       return;
     }
-    // No expiry — this token is managed by the admin who pastes it into the main dashboard
+    // No expiry - this token is managed by the admin who pastes it into the main dashboard
     const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret);
     res.json({ token });
   } catch (error: any) {
@@ -305,7 +317,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
-// Remote Node HTTP Proxy — single global instance.
+// Remote Node HTTP Proxy - single global instance.
 // Previously, createProxyMiddleware was called inside the request handler on every API
 // call, spawning a new proxy instance (and http-proxy server) each time. This caused:
 //   - MaxListenersExceededWarning: repeated 'close' listeners added to [Server]
@@ -313,7 +325,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 // Fix: create ONE instance at startup; use the router option to resolve the
 // target URL dynamically per request without constructing new listeners.
 const remoteNodeProxy = createProxyMiddleware<Request, Response>({
-  target: 'http://localhost:0', // placeholder — overridden per-request by router
+  target: 'http://localhost:0', // placeholder - overridden per-request by router
   changeOrigin: true,
   router: (req) => {
     const node = NodeRegistry.getInstance().getNode(req.nodeId);
@@ -322,7 +334,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
   on: {
     proxyReq: (proxyReq, req) => {
       const node = NodeRegistry.getInstance().getNode(req.nodeId);
-      // Remote Sencho sees itself as local — strip node context and inject bearer auth
+      // Remote Sencho sees itself as local - strip node context and inject bearer auth
       proxyReq.removeHeader('x-node-id');
       if (node?.api_token) {
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
@@ -406,7 +418,7 @@ server.on('upgrade', async (req, socket, head) => {
     const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
     const node = NodeRegistry.getInstance().getNode(nodeId);
 
-    // Remote Node WebSocket Proxy — forward the entire WS connection to the remote Sencho instance
+    // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
     if (node && node.type === 'remote' && node.api_url && node.api_token) {
       const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
       req.headers['authorization'] = `Bearer ${node.api_token}`;
@@ -495,7 +507,7 @@ wss.on('connection', (ws) => {
         dockerController.execContainer(data.containerId, ws);
       }
     } catch (error) {
-      // Malformed JSON — ignore silently
+      // Malformed JSON - ignore silently
     }
   });
 });
@@ -1117,7 +1129,7 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
     const txSec = Math.max(0, globalDockerNetwork.txSec);
 
     if (node && node.type === 'remote') {
-      // Remote node: use Docker daemon info for CPU/RAM — disk is not available via Docker API
+      // Remote node: use Docker daemon info for CPU/RAM - disk is not available via Docker API
       const docker = NodeRegistry.getInstance().getDocker(nodeId);
       const info = await docker.info();
 
