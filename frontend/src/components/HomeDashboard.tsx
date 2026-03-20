@@ -82,24 +82,37 @@ export default function HomeDashboard() {
     return () => clearInterval(interval);
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch system stats and historical metrics - re-runs when active node changes
+  // Fetch system stats (CPU/RAM/Disk/Network) - 5s polling, re-runs on node switch
   useEffect(() => {
     setSystemStats(null);
-    setMetrics([]);
     const fetchSystemStats = async () => {
       try {
-        const [sysRes, metricsRes] = await Promise.all([
-          apiFetch('/system/stats'),
-          apiFetch('/metrics/historical')
-        ]);
-        if (sysRes.ok) setSystemStats(await sysRes.json());
-        if (metricsRes.ok) setMetrics(await metricsRes.json());
+        const res = await apiFetch('/system/stats');
+        if (res.ok) setSystemStats(await res.json());
       } catch (error) {
-        console.error('Failed to fetch system stats or metrics:', error);
+        console.error('Failed to fetch system stats:', error);
       }
     };
     fetchSystemStats();
     const interval = setInterval(fetchSystemStats, 5000);
+    return () => clearInterval(interval);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch historical metrics - intentionally slow 60s poll to prevent OOM.
+  // The backend now returns 1-minute buckets (down from raw 5s points), so
+  // re-fetching more often than 60s would return the same data anyway.
+  useEffect(() => {
+    setMetrics([]);
+    const fetchMetrics = async () => {
+      try {
+        const res = await apiFetch('/metrics/historical');
+        if (res.ok) setMetrics(await res.json());
+      } catch (error) {
+        console.error('Failed to fetch historical metrics:', error);
+      }
+    };
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 60000);
     return () => clearInterval(interval);
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -324,7 +324,20 @@ export class DatabaseService {
 
     public getContainerMetrics(hoursLookback = 24): any[] {
         const cutoff = Date.now() - (hoursLookback * 60 * 60 * 1000);
-        const stmt = this.db.prepare('SELECT * FROM container_metrics WHERE timestamp >= ? ORDER BY timestamp ASC');
+        const stmt = this.db.prepare(`
+            SELECT
+              container_id,
+              stack_name,
+              AVG(cpu_percent) as cpu_percent,
+              AVG(memory_mb) as memory_mb,
+              MAX(net_rx_mb) as net_rx_mb,
+              MAX(net_tx_mb) as net_tx_mb,
+              (timestamp / 60000) * 60000 as timestamp
+            FROM container_metrics
+            WHERE timestamp >= ?
+            GROUP BY container_id, stack_name, (timestamp / 60000)
+            ORDER BY timestamp ASC
+        `);
         return stmt.all(cutoff);
     }
 
