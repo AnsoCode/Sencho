@@ -8,6 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Search, Rocket, Loader2, Info, ExternalLink, Github, Star } from "lucide-react";
 import { toast } from "sonner";
+import { apiFetch } from '@/lib/api';
+import { useNodes } from '@/context/NodeContext';
 
 export interface TemplateEnv {
     name: string;
@@ -36,6 +38,7 @@ interface AppStoreViewProps {
 }
 
 export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
+    const { activeNode } = useNodes();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -59,7 +62,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
     const fetchTemplates = async () => {
         try {
-            const res = await fetch('/api/templates');
+            const res = await apiFetch('/templates');
             if (!res.ok) throw new Error('Failed to fetch templates');
             const data = await res.json();
             setTemplates(data || []);
@@ -156,9 +159,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         });
 
         try {
-            const res = await fetch('/api/templates/deploy', {
+            const res = await apiFetch('/templates/deploy', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     stackName: stackName.trim(),
                     template: modifiedTemplate,
@@ -255,6 +257,13 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                     {selectedTemplate && (
                         <div className="flex flex-col h-full">
                             <SheetHeader className="mb-6 text-left">
+                                {activeNode?.type === 'remote' && (
+                                    <div className="mb-2">
+                                        <Badge variant="secondary" className="text-xs font-normal">
+                                            Deploying to: {activeNode.name}
+                                        </Badge>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-4 mb-4">
                                     <div className="w-16 h-16 rounded bg-white p-1 flex-shrink-0 flex items-center justify-center overflow-hidden border">
                                         {!imgErrors[selectedTemplate.title] && selectedTemplate.logo ? (
