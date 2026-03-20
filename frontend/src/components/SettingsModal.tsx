@@ -12,7 +12,7 @@ import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server } from 'lucide-react';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server, Package, RefreshCw } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 
@@ -32,11 +32,11 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const isRemote = activeNode?.type === 'remote';
-    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes'>('account');
+    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes' | 'appstore'>('account');
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -63,6 +63,8 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
     });
 
     const [isLoading, setIsLoading] = useState(false);
+    const [registryUrl, setRegistryUrl] = useState('');
+    const [isSavingRegistry, setIsSavingRegistry] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -93,9 +95,29 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
             if (res.ok) {
                 const data = await res.json();
                 setSettings(prev => ({ ...prev, ...data }));
+                if (data.template_registry_url) {
+                    setRegistryUrl(data.template_registry_url);
+                }
             }
         } catch (e) {
             console.error('Failed to fetch settings', e);
+        }
+    };
+
+    const saveRegistrySettings = async () => {
+        setIsSavingRegistry(true);
+        try {
+            await apiFetch('/settings', {
+                method: 'POST',
+                body: JSON.stringify({ key: 'template_registry_url', value: registryUrl.trim() })
+            });
+            // Bust the template cache so the next App Store load uses the new URL
+            await apiFetch('/templates/refresh-cache', { method: 'POST' });
+            toast.success('Registry saved. App Store will reload from the new source.');
+        } catch (e) {
+            toast.error('Failed to save registry settings.');
+        } finally {
+            setIsSavingRegistry(false);
         }
     };
 
@@ -295,6 +317,16 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                             >
                                 <Server className="w-4 h-4 mr-2" />
                                 Nodes
+                            </Button>
+                        )}
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'appstore' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('appstore')}
+                            >
+                                <Package className="w-4 h-4 mr-2" />
+                                App Store
                             </Button>
                         )}
                     </nav>
@@ -511,6 +543,62 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
                     {activeSection === 'nodes' && (
                         <NodeManager />
+                    )}
+
+                    {activeSection === 'appstore' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">App Store Registry</h3>
+                                <p className="text-sm text-muted-foreground">Configure the template source used by the App Store.</p>
+                            </div>
+
+                            <div className="space-y-6 bg-muted/10 p-4 border border-border rounded-xl">
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-base">Default Registry</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            LinuxServer.io — <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">Used when no custom registry is set.</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 pt-4 border-t border-border">
+                                    <div className="space-y-1">
+                                        <Label className="text-base">Custom Registry URL</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Provide a URL pointing to a <span className="font-medium">Portainer v2</span> compatible template JSON file. Overrides the default registry.
+                                        </p>
+                                    </div>
+                                    <Input
+                                        placeholder="https://example.com/templates.json"
+                                        value={registryUrl}
+                                        onChange={(e) => setRegistryUrl(e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Leave empty to use the default LinuxServer.io registry.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setRegistryUrl('')}
+                                    disabled={isSavingRegistry || registryUrl === ''}
+                                >
+                                    Reset to Default
+                                </Button>
+                                <Button onClick={saveRegistrySettings} disabled={isSavingRegistry}>
+                                    {isSavingRegistry ? (
+                                        <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+                                    ) : (
+                                        'Save & Refresh'
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
                     )}
 
                 </div>

@@ -1482,6 +1482,11 @@ app.get('/api/templates', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/templates/refresh-cache', authMiddleware, (req: Request, res: Response) => {
+  templateService.clearCache();
+  res.json({ success: true });
+});
+
 app.post('/api/templates/deploy', async (req: Request, res: Response) => {
   try {
     const { stackName, template, envVars } = req.body;
