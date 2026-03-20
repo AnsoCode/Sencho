@@ -21,6 +21,9 @@ interface LogEntry {
     level: string;
     message: string;
     timestampMs: number;
+    // Assigned client-side at ingestion. Gives React a stable, collision-free
+    // key so the slice window can shift without touching existing DOM nodes.
+    _id: number;
 }
 
 export function GlobalObservabilityView() {
@@ -43,6 +46,9 @@ export function GlobalObservabilityView() {
 
     // SSE throttle buffer
     const bufferRef = useRef<LogEntry[]>([]);
+    // Monotonic counter for stable React keys. Incremented once per log entry
+    // at ingestion so duplicate-content lines never share a key.
+    const logIdRef = useRef(0);
 
     // Fetch settings on mount
     useEffect(() => {
@@ -87,6 +93,7 @@ export function GlobalObservabilityView() {
             eventSource.onmessage = (event) => {
                 try {
                     const entry: LogEntry = JSON.parse(event.data);
+                    entry._id = ++logIdRef.current;
                     bufferRef.current.push(entry);
                 } catch (e) { /* ignore parse errors */ }
             };
@@ -121,7 +128,11 @@ export function GlobalObservabilityView() {
                 try {
                     const logsRes = await apiFetch('/logs/global');
                     if (logsRes.ok) {
-                        setLogs(await logsRes.json());
+                        const data: LogEntry[] = await logsRes.json();
+                        // Stamp each entry with a monotonic _id at ingestion so React
+                        // has a stable, collision-free key for every log line.
+                        data.forEach(entry => { entry._id = ++logIdRef.current; });
+                        setLogs(data);
                     }
                 } catch (error) {
                     console.error('Failed to fetch global logs:', error);
@@ -271,8 +282,8 @@ export function GlobalObservabilityView() {
                                 Showing last {MAX_DISPLAY_ROWS} of {filteredLogs.length} matching entries. Use filters or clear logs to see earlier entries.
                             </div>
                         )}
-                        {filteredLogs.slice(-MAX_DISPLAY_ROWS).map((log, idx) => (
-                            <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
+                        {filteredLogs.slice(-MAX_DISPLAY_ROWS).map((log) => (
+                            <div key={log._id} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
                                 <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
                                 <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
                                 <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>{log.level}:</span>
