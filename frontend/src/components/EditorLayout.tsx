@@ -96,6 +96,9 @@ export default function EditorLayout() {
   const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
 
 
+  // Image update checker state
+  const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
+
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
@@ -172,6 +175,7 @@ export default function EditorLayout() {
     setIsEditing(false);
     setActiveView('dashboard');
     refreshStacks();
+    fetchImageUpdates();
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchNotifications = async () => {
@@ -180,6 +184,16 @@ export default function EditorLayout() {
       if (res.ok) {
         const data = await res.json();
         setNotifications(data);
+      }
+    } catch (e) { }
+  };
+
+  const fetchImageUpdates = async () => {
+    try {
+      const res = await apiFetch('/image-updates');
+      if (res.ok) {
+        const data = await res.json();
+        setStackUpdates(data);
       }
     } catch (e) { }
   };
@@ -768,6 +782,13 @@ export default function EditorLayout() {
                           }`}
                       />
                       <span className="flex-1 truncate">{getDisplayName(file)}</span>
+
+                      {stackUpdates[file] && (
+                        <span
+                          className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                          title="Update available"
+                        />
+                      )}
 
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>

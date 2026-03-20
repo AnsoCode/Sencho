@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Added:** Background image update checker — `ImageUpdateService` polls OCI-compliant registries (Docker Hub, GHCR, LSCR, etc.) every 6 hours using manifest digest comparison against local `RepoDigests`. Results cached in a new `stack_update_status` SQLite table. A pulsing blue dot badge appears in the stack list sidebar for stacks with available updates. Manual refresh available via `POST /api/image-updates/refresh` (rate-limited to once per 10 minutes).
 - **Fixed:** `AppStoreView` and `GlobalObservabilityView` using raw `fetch()` instead of `apiFetch()` — all calls now inject the `x-node-id` header so templates, deploys, stacks, and logs are correctly proxied to the active remote node.
 - **Fixed:** `HostConsole` WebSocket URL missing `?nodeId=` query parameter — the upgrade handler now receives the active node ID and routes the PTY session to the correct node.
 - **Added:** Two-tier Option A scoped navigation UX — a context pill in the top header bar always shows the active node name (pulsing blue for remote, green for local).

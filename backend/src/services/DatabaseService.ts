@@ -121,6 +121,12 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON container_metrics(timestamp);
       CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
 
+      CREATE TABLE IF NOT EXISTS stack_update_status (
+        stack_name TEXT PRIMARY KEY,
+        has_update INTEGER DEFAULT 0,
+        checked_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS nodes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
@@ -426,5 +432,22 @@ export class DatabaseService {
 
     public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
         this.db.prepare('UPDATE nodes SET status = ? WHERE id = ?').run(status, id);
+    }
+
+    // --- Stack Update Status ---
+
+    public upsertStackUpdateStatus(stackName: string, hasUpdate: boolean, checkedAt: number): void {
+        this.db.prepare(
+            'INSERT OR REPLACE INTO stack_update_status (stack_name, has_update, checked_at) VALUES (?, ?, ?)'
+        ).run(stackName, hasUpdate ? 1 : 0, checkedAt);
+    }
+
+    public getStackUpdateStatus(): Record<string, boolean> {
+        const rows = this.db.prepare('SELECT stack_name, has_update FROM stack_update_status').all() as any[];
+        const result: Record<string, boolean> = {};
+        for (const row of rows) {
+            result[row.stack_name] = row.has_update === 1;
+        }
+        return result;
     }
 }
