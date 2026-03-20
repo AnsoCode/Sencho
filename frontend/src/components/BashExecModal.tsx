@@ -114,7 +114,8 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
 
       // Connect to WebSocket for bash exec
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+      const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`);
       wsRef.current = ws;
 
       ws.onopen = () => {

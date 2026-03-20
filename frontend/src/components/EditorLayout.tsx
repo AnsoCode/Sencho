@@ -225,12 +225,13 @@ export default function EditorLayout() {
       if (!container?.Id) return;
       try {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`);
         wsMap[container.Id] = ws;
         ws.onopen = () => ws.send(JSON.stringify({
           action: 'streamStats',
           containerId: container.Id,
-          nodeId: localStorage.getItem('sencho-active-node') || undefined
+          nodeId: activeNodeId || undefined
         }));
         ws.onmessage = (event) => {
           try {
@@ -1099,7 +1100,12 @@ export default function EditorLayout() {
                                               size="sm"
                                               variant="ghost"
                                               className="rounded-lg h-8 w-8"
-                                              onClick={() => window.open(`http://${window.location.hostname}:${mainPort}`, '_blank')}
+                                              onClick={() => {
+                                                const host = activeNode?.type === 'remote' && activeNode?.api_url
+                                                  ? new URL(activeNode.api_url).hostname
+                                                  : window.location.hostname;
+                                                window.open(`http://${host}:${mainPort}`, '_blank');
+                                              }}
                                             >
                                               <ExternalLink className="w-4 h-4" />
                                             </Button>
