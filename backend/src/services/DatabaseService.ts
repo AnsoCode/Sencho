@@ -25,6 +25,18 @@ export interface StackAlert {
     last_fired_at?: number;
 }
 
+export interface Node {
+    id: number;
+    name: string;
+    type: 'local' | 'remote';
+    compose_dir: string;
+    is_default: boolean;
+    status: 'online' | 'offline' | 'unknown';
+    created_at: number;
+    api_url?: string;
+    api_token?: string;
+}
+
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
@@ -40,14 +52,12 @@ export class DatabaseService {
     private constructor() {
         const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 
-        // Ensure data directory exists
         if (!fs.existsSync(dataDir)) {
             fs.mkdirSync(dataDir, { recursive: true });
         }
 
         const dbPath = path.join(dataDir, 'sencho.db');
         this.db = new Database(dbPath);
-        // Default journal mode is safer for arbitrary Docker volume mounts than WAL
 
         this.initSchema();
         this.migrateJsonConfig(dataDir);
@@ -96,7 +106,57 @@ export class DatabaseService {
         timestamp INTEGER NOT NULL,
         is_read INTEGER DEFAULT 0
       );
+
+      CREATE TABLE IF NOT EXISTS container_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        container_id TEXT NOT NULL,
+        stack_name TEXT NOT NULL,
+        cpu_percent REAL NOT NULL,
+        memory_mb REAL NOT NULL,
+        net_rx_mb REAL NOT NULL,
+        net_tx_mb REAL NOT NULL,
+        timestamp INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON container_metrics(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
+
+      CREATE TABLE IF NOT EXISTS stack_update_status (
+        stack_name TEXT PRIMARY KEY,
+        has_update INTEGER DEFAULT 0,
+        checked_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        type TEXT NOT NULL DEFAULT 'local',
+        compose_dir TEXT NOT NULL DEFAULT '/app/compose',
+        is_default INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'unknown',
+        created_at INTEGER NOT NULL
+      );
     `);
+
+        // Apply migrations safely (ignore if columns already exist)
+        const maybeAddCol = (table: string, col: string, def: string) => {
+            try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch (e) { /* ignore */ }
+        };
+
+        // Distributed API model columns
+        maybeAddCol('nodes', 'api_url', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'api_token', "TEXT DEFAULT ''");
+
+        // Legacy SSH/TLS columns preserved for DB backward-compat (no longer read or written)
+        maybeAddCol('nodes', 'host', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'port', 'INTEGER DEFAULT 2375');
+        maybeAddCol('nodes', 'ssh_port', 'INTEGER DEFAULT 22');
+        maybeAddCol('nodes', 'ssh_user', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'ssh_password', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'ssh_key', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_ca', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_cert', "TEXT DEFAULT ''");
+        maybeAddCol('nodes', 'tls_key', "TEXT DEFAULT ''");
 
         // Initialize default global settings if they don't exist
         const stmt = this.db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
@@ -105,6 +165,16 @@ export class DatabaseService {
         stmt.run('host_disk_limit', '90');
         stmt.run('global_crash', '1');
         stmt.run('docker_janitor_gb', '5');
+        stmt.run('global_logs_refresh', '5');
+        stmt.run('developer_mode', '0');
+
+        // Seed the default local node if none exists
+        const nodeCount = (this.db.prepare('SELECT COUNT(*) as count FROM nodes').get() as any)?.count || 0;
+        if (nodeCount === 0) {
+            this.db.prepare(
+                'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+            ).run('Local', 'local', process.env.COMPOSE_DIR || '/app/compose', 1, 'online', Date.now());
+        }
     }
 
     private migrateJsonConfig(dataDir: string) {
@@ -121,8 +191,6 @@ export class DatabaseService {
                     stmt.run('auth_jwt_secret', config.jwtSecret);
 
                     console.log('Successfully migrated sencho.json credentials to SQLite global_settings.');
-
-                    // Delete the file after migrating
                     fs.unlinkSync(configPath);
                 }
             } catch (err) {
@@ -228,9 +296,8 @@ export class DatabaseService {
         const stmt = this.db.prepare('INSERT INTO notification_history (level, message, timestamp, is_read) VALUES (?, ?, ?, 0)');
         stmt.run(notification.level, notification.message, notification.timestamp);
 
-        // Cleanup old notifications (keep last 100)
         this.db.exec(`
-      DELETE FROM notification_history 
+      DELETE FROM notification_history
       WHERE id NOT IN (
         SELECT id FROM notification_history ORDER BY timestamp DESC LIMIT 100
       )
@@ -250,5 +317,137 @@ export class DatabaseService {
     public deleteAllNotifications(): void {
         const stmt = this.db.prepare('DELETE FROM notification_history');
         stmt.run();
+    }
+
+    // --- Container Metrics ---
+
+    public addContainerMetric(metric: Omit<any, 'id'>): void {
+        const stmt = this.db.prepare(
+            'INSERT INTO container_metrics (container_id, stack_name, cpu_percent, memory_mb, net_rx_mb, net_tx_mb, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        stmt.run(metric.container_id, metric.stack_name, metric.cpu_percent, metric.memory_mb, metric.net_rx_mb, metric.net_tx_mb, metric.timestamp);
+    }
+
+    public getContainerMetrics(hoursLookback = 24): any[] {
+        const cutoff = Date.now() - (hoursLookback * 60 * 60 * 1000);
+        const stmt = this.db.prepare(`
+            SELECT
+              container_id,
+              stack_name,
+              AVG(cpu_percent) as cpu_percent,
+              AVG(memory_mb) as memory_mb,
+              MAX(net_rx_mb) as net_rx_mb,
+              MAX(net_tx_mb) as net_tx_mb,
+              (timestamp / 60000) * 60000 as timestamp
+            FROM container_metrics
+            WHERE timestamp >= ?
+            GROUP BY container_id, stack_name, (timestamp / 60000)
+            ORDER BY timestamp ASC
+        `);
+        return stmt.all(cutoff);
+    }
+
+    public cleanupOldMetrics(hoursToKeep = 24): void {
+        const cutoff = Date.now() - (hoursToKeep * 60 * 60 * 1000);
+        const stmt = this.db.prepare('DELETE FROM container_metrics WHERE timestamp < ?');
+        stmt.run(cutoff);
+    }
+
+    // --- Nodes ---
+
+    public getNodes(): Node[] {
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes ORDER BY is_default DESC, name ASC');
+        return stmt.all().map((row: any) => ({
+            ...row,
+            is_default: row.is_default === 1
+        }));
+    }
+
+    public getNode(id: number): Node | undefined {
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE id = ?');
+        const row = stmt.get(id) as any;
+        if (!row) return undefined;
+        return { ...row, is_default: row.is_default === 1 };
+    }
+
+    public getDefaultNode(): Node | undefined {
+        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE is_default = 1 LIMIT 1');
+        const row = stmt.get() as any;
+        if (!row) return undefined;
+        return { ...row, is_default: row.is_default === 1 };
+    }
+
+    public addNode(node: Omit<Node, 'id' | 'status' | 'created_at'>): number {
+        if (node.is_default) {
+            this.db.prepare('UPDATE nodes SET is_default = 0').run();
+        }
+        const stmt = this.db.prepare(
+            'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at, api_url, api_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        const result = stmt.run(
+            node.name,
+            node.type,
+            node.compose_dir || '/app/compose',
+            node.is_default ? 1 : 0,
+            'unknown',
+            Date.now(),
+            node.api_url || '',
+            node.api_token || ''
+        );
+        return result.lastInsertRowid as number;
+    }
+
+    public updateNode(id: number, updates: Partial<Omit<Node, 'id' | 'created_at'>>): void {
+        const node = this.getNode(id);
+        if (!node) throw new Error(`Node with id ${id} not found`);
+
+        if (updates.is_default) {
+            this.db.prepare('UPDATE nodes SET is_default = 0').run();
+        }
+
+        const fields: string[] = [];
+        const values: any[] = [];
+
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.type !== undefined) { fields.push('type = ?'); values.push(updates.type); }
+        if (updates.compose_dir !== undefined) { fields.push('compose_dir = ?'); values.push(updates.compose_dir); }
+        if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
+        if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+        if (updates.api_url !== undefined) { fields.push('api_url = ?'); values.push(updates.api_url); }
+        if (updates.api_token !== undefined) { fields.push('api_token = ?'); values.push(updates.api_token); }
+
+        if (fields.length === 0) return;
+
+        values.push(id);
+        this.db.prepare(`UPDATE nodes SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteNode(id: number): void {
+        const node = this.getNode(id);
+        if (node?.is_default) {
+            throw new Error('Cannot delete the default node');
+        }
+        this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+    }
+
+    public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
+        this.db.prepare('UPDATE nodes SET status = ? WHERE id = ?').run(status, id);
+    }
+
+    // --- Stack Update Status ---
+
+    public upsertStackUpdateStatus(stackName: string, hasUpdate: boolean, checkedAt: number): void {
+        this.db.prepare(
+            'INSERT OR REPLACE INTO stack_update_status (stack_name, has_update, checked_at) VALUES (?, ?, ?)'
+        ).run(stackName, hasUpdate ? 1 : 0, checkedAt);
+    }
+
+    public getStackUpdateStatus(): Record<string, boolean> {
+        const rows = this.db.prepare('SELECT stack_name, has_update FROM stack_update_status').all() as any[];
+        const result: Record<string, boolean> = {};
+        for (const row of rows) {
+            result[row.stack_name] = row.has_update === 1;
+        }
+        return result;
     }
 }

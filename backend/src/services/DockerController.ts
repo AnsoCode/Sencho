@@ -6,22 +6,35 @@ import path from 'path';
 import fs from 'fs/promises';
 import * as yaml from 'yaml';
 
+import { NodeRegistry } from './NodeRegistry';
+
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
 class DockerController {
-  private static instance: DockerController;
   private docker: Docker;
+  private nodeId: number;
 
-  private constructor() {
-    this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
+  private constructor(nodeId: number) {
+    this.nodeId = nodeId;
+    this.docker = NodeRegistry.getInstance().getDocker(nodeId);
   }
 
-  public static getInstance(): DockerController {
-    if (!DockerController.instance) {
-      DockerController.instance = new DockerController();
+  public static getInstance(nodeId?: number): DockerController {
+    const id = nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
+    return new DockerController(id);
+  }
+
+  public getDocker(): Docker {
+    return this.docker;
+  }
+
+  private validateApiData<T>(data: any): T {
+    // If the daemon port points to a web server (like Sencho UI), Dockerode receives HTML
+    if (typeof data === 'string') {
+      throw new Error("Invalid response from Docker API. Did you provide a web port instead of the Docker daemon port?");
     }
-    return DockerController.instance;
+    return data as T;
   }
 
   public async getDiskUsage() {
@@ -84,16 +97,19 @@ class DockerController {
   }
 
   public async getImages() {
-    return await this.docker.listImages({ all: false });
+    const data = await this.docker.listImages({ all: false });
+    return this.validateApiData<any[]>(data);
   }
 
   public async getVolumes() {
     const data = await this.docker.listVolumes();
-    return data.Volumes || [];
+    const validated = this.validateApiData<any>(data);
+    return validated.Volumes || [];
   }
 
   public async getNetworks() {
-    return await this.docker.listNetworks();
+    const data = await this.docker.listNetworks();
+    return this.validateApiData<any[]>(data);
   }
 
   public async removeImage(id: string) {
@@ -113,12 +129,12 @@ class DockerController {
 
   public async getRunningContainers() {
     const containers = await this.docker.listContainers({ all: false });
-    return containers;
+    return this.validateApiData<any[]>(containers);
   }
 
   public async getAllContainers() {
     const containers = await this.docker.listContainers({ all: true });
-    return containers;
+    return this.validateApiData<any[]>(containers);
   }
 
   public async getContainersByStack(stackName: string) {
@@ -281,6 +297,52 @@ class DockerController {
     }
   }
 
+  public async streamContainerLogs(containerId: string, req: any, res: any): Promise<void> {
+    const container = this.docker.getContainer(containerId);
+
+    // 1. Set SSE Headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    try {
+      const logStream = await container.logs({
+        follow: true,
+        stdout: true,
+        stderr: true,
+        tail: 100 // Send the last 100 lines immediately for context
+      });
+
+      // 2. Process and forward the stream
+      logStream.on('data', (chunk: Buffer) => {
+        // Docker multiplexes stdout/stderr with an 8-byte header if TTY is false.
+        let data = chunk;
+        if (chunk.length > 8 && (chunk[0] === 1 || chunk[0] === 2)) {
+          data = chunk.slice(8);
+        }
+
+        const text = data.toString('utf-8');
+        const lines = text.split('\n');
+
+        lines.forEach(line => {
+          if (line.trim()) {
+            res.write(`data: ${JSON.stringify(line)}\n\n`);
+          }
+        });
+      });
+
+      // 3. Cleanup on disconnect
+      req.on('close', () => {
+        (logStream as any).destroy();
+      });
+
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify('[Sencho] Error fetching logs: ' + error.message)}\n\n`);
+      res.end();
+    }
+  }
+
   // State-safe: silently ignores 304 "already started" errors
   public async startContainer(containerId: string) {
     try {
@@ -288,7 +350,7 @@ class DockerController {
       await container.start();
     } catch (error: any) {
       if (error?.statusCode === 304) {
-        // Container already running — not an error
+        // Container already running - not an error
         return;
       }
       throw error;
@@ -302,7 +364,7 @@ class DockerController {
       await container.stop();
     } catch (error: any) {
       if (error?.statusCode === 304) {
-        // Container already stopped — not an error
+        // Container already stopped - not an error
         return;
       }
       throw error;
@@ -383,7 +445,7 @@ class DockerController {
 
   /**
    * Exec into a container with full session isolation.
-   * All state (exec instance, stream) lives in this closure — no singleton traps.
+   * All state (exec instance, stream) lives in this closure - no singleton traps.
    * The WebSocket message handler is registered here to handle input, resize, and cleanup.
    */
   public async execContainer(containerId: string, ws: WebSocket) {
@@ -454,7 +516,7 @@ class DockerController {
               break;
           }
         } catch {
-          // Non-JSON or malformed message — ignore
+          // Non-JSON or malformed message - ignore
         }
       });
 
@@ -482,7 +544,8 @@ let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
 
 export const updateGlobalDockerNetwork = async () => {
   try {
-    const dockerController = DockerController.getInstance();
+    const nodeId = NodeRegistry.getInstance().getDefaultNodeId();
+    const dockerController = DockerController.getInstance(nodeId);
     const containers = await dockerController.getRunningContainers();
 
     const statsResults = await Promise.allSettled(

@@ -25,4 +25,11 @@ Thumbs.db
 
 #PRD
 Product Requirements Document
+
+# Claude Code
+.claude/
+CLAUDE.md
 plans/
+
+# Playwright MCP
+.playwright-mcp/

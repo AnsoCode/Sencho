@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as TerminalIcon, X } from 'lucide-react';
 import { Button } from './ui/button';
 import '@xterm/xterm/css/xterm.css';
+import { useNodes } from '@/context/NodeContext';
 
 interface HostConsoleProps {
     stackName?: string | null;
@@ -11,6 +12,7 @@ interface HostConsoleProps {
 }
 
 export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
+    const { activeNode } = useNodes();
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
@@ -65,7 +67,11 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
         });
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/api/system/host-console${stackName ? `?stack=${encodeURIComponent(stackName)}` : ''}`;
+        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+        const nodeParam = activeNodeId ? `nodeId=${activeNodeId}` : '';
+        const stackParam = stackName ? `stack=${encodeURIComponent(stackName)}` : '';
+        const queryString = [nodeParam, stackParam].filter(Boolean).join('&');
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/system/host-console${queryString ? `?${queryString}` : ''}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -153,6 +159,11 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
                 <div className="flex items-center gap-2 font-medium">
                     <TerminalIcon className="w-4 h-4 text-muted-foreground" />
                     <span>Host Console</span>
+                    {activeNode && (
+                        <span className="text-muted-foreground font-normal text-sm">
+                            — {activeNode.name}
+                        </span>
+                    )}
                     {stackName && (
                         <span className="text-muted-foreground font-normal text-sm">
                             ({stackName})

@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { useState, useEffect, useMemo } from 'react';
+import { useNodes } from '@/context/NodeContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -51,6 +54,7 @@ const formatBytes = (bytes: number) => {
 };
 
 export default function HomeDashboard() {
+  const { activeNode } = useNodes();
   const [dockerRunInput, setDockerRunInput] = useState('');
   const [isConverting, setIsConverting] = useState(false);
   const [convertedYaml, setConvertedYaml] = useState('');
@@ -58,12 +62,15 @@ export default function HomeDashboard() {
   const [newStackName, setNewStackName] = useState('');
   const [stats, setStats] = useState<Stats>({ active: 0, exited: 0, total: 0, inactive: 0 });
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
+  const [metrics, setMetrics] = useState<any[]>([]);
 
-  // Fetch stats from backend
+  // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
+    setStats({ active: 0, exited: 0, total: 0, inactive: 0 });
     const fetchStats = async () => {
       try {
         const res = await apiFetch('/stats');
+        if (!res.ok) return;
         const data = await res.json();
         setStats(data);
       } catch (error) {
@@ -73,15 +80,15 @@ export default function HomeDashboard() {
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch system stats from backend
+  // Fetch system stats (CPU/RAM/Disk/Network) - 5s polling, re-runs on node switch
   useEffect(() => {
+    setSystemStats(null);
     const fetchSystemStats = async () => {
       try {
         const res = await apiFetch('/system/stats');
-        const data = await res.json();
-        setSystemStats(data);
+        if (res.ok) setSystemStats(await res.json());
       } catch (error) {
         console.error('Failed to fetch system stats:', error);
       }
@@ -89,7 +96,54 @@ export default function HomeDashboard() {
     fetchSystemStats();
     const interval = setInterval(fetchSystemStats, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch historical metrics - intentionally slow 60s poll to prevent OOM.
+  // The backend now returns 1-minute buckets (down from raw 5s points), so
+  // re-fetching more often than 60s would return the same data anyway.
+  useEffect(() => {
+    setMetrics([]);
+    const fetchMetrics = async () => {
+      try {
+        const res = await apiFetch('/metrics/historical');
+        if (res.ok) setMetrics(await res.json());
+      } catch (error) {
+        console.error('Failed to fetch historical metrics:', error);
+      }
+    };
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 60000);
+    return () => clearInterval(interval);
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chartData = useMemo(() => {
+    const buckets: Record<string, { time: string; timestamp: number; cpu: number; ram: number }> = {};
+    const cores = systemStats?.cpu.cores || 1;
+
+    metrics.forEach(m => {
+      const date = new Date(m.timestamp);
+      date.setSeconds(0, 0);
+      const key = date.getTime() + '';
+
+      if (!buckets[key]) {
+        buckets[key] = {
+          time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: date.getTime(),
+          cpu: 0,
+          ram: 0
+        };
+      }
+      buckets[key].cpu += (m.cpu_percent / cores);
+      buckets[key].ram += (m.memory_mb / 1024);
+    });
+
+    return Object.values(buckets).sort((a, b) => a.timestamp - b.timestamp);
+  }, [metrics, systemStats]);
+
+  const chartConfig = {
+    cpu: { label: 'CPU Usage (%)', color: 'var(--chart-1)' },
+    ram: { label: 'RAM Usage (GB)', color: 'var(--chart-2)' },
+  };
 
   const handleConvert = async () => {
     if (!dockerRunInput.trim()) return;
@@ -238,6 +292,63 @@ export default function HomeDashboard() {
                 ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}`
                 : 'Loading...'}
             </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Historical Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="rounded-xl border-muted bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-muted-foreground">
+              <Activity className="w-4 h-4 text-primary" />
+              <span>Normalized CPU Usage</span>
+            </CardTitle>
+            <CardDescription className="text-xs">Total CPU percentage over total host cores.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[250px]">
+            {chartData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="w-full h-full">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, 100]} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="cpu" stroke="var(--color-cpu)" fill="var(--color-cpu)" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No historical CPU data.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-xl border-muted bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-muted-foreground">
+              <Activity className="w-4 h-4 text-primary" />
+              <span>Normalized RAM Usage</span>
+            </CardTitle>
+            <CardDescription className="text-xs">Total RAM allocation in GB.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[250px]">
+            {chartData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="w-full h-full">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(1)} GB`} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="ram" stroke="var(--color-ram)" fill="var(--color-ram)" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No historical RAM data.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
@@ -28,6 +28,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
+import { AppStoreView } from './AppStoreView';
+import { LogViewer } from './LogViewer';
+import { GlobalObservabilityView } from './GlobalObservabilityView';
+import { useNodes } from '@/context/NodeContext';
+
 interface ContainerInfo {
   Id: string;
   Names: string[];
@@ -50,6 +55,7 @@ const formatBytes = (bytes: number) => {
 
 export default function EditorLayout() {
   const { logout } = useAuth();
+  const { nodes, activeNode, setActiveNode } = useNodes();
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -76,7 +82,7 @@ export default function EditorLayout() {
     }
     return true; // Default to dark mode
   });
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -85,6 +91,13 @@ export default function EditorLayout() {
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
 
+  // LogViewer state
+  const [logViewerOpen, setLogViewerOpen] = useState(false);
+  const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
+
+
+  // Image update checker state
+  const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
 
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -113,12 +126,17 @@ export default function EditorLayout() {
     if (!background) setIsLoading(true);
     try {
       const res = await apiFetch('/stacks');
-      const stacks = await res.json();
-      setFiles(Array.isArray(stacks) ? stacks : []);
+      if (!res.ok) {
+        setFiles([]);
+        return;
+      }
+      const data = await res.json();
+      const fileList: string[] = Array.isArray(data) ? data : [];
+      setFiles(fileList);
 
       // Fetch status for each stack
       const statuses: StackStatus = {};
-      for (const file of stacks) {
+      for (const file of fileList) {
         try {
           const containersRes = await apiFetch(`/stacks/${file}/containers`);
           const containers = await containersRes.json();
@@ -137,12 +155,28 @@ export default function EditorLayout() {
     }
   };
 
+  // Notification polling - independent of active node, runs once on mount
   useEffect(() => {
-    refreshStacks();
     fetchNotifications();
     const notificationInterval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(notificationInterval);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch stacks whenever the active node changes (or becomes available on mount).
+  // Also clears any stale editor/container state that belonged to the previous node.
+  useEffect(() => {
+    if (!activeNode) return;
+    setSelectedFile(null);
+    setContent('');
+    setOriginalContent('');
+    setEnvContent('');
+    setOriginalEnvContent('');
+    setContainers([]);
+    setIsEditing(false);
+    setActiveView('dashboard');
+    refreshStacks();
+    fetchImageUpdates();
+  }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchNotifications = async () => {
     try {
@@ -150,6 +184,16 @@ export default function EditorLayout() {
       if (res.ok) {
         const data = await res.json();
         setNotifications(data);
+      }
+    } catch (e) { }
+  };
+
+  const fetchImageUpdates = async () => {
+    try {
+      const res = await apiFetch('/image-updates');
+      if (res.ok) {
+        const data = await res.json();
+        setStackUpdates(data);
       }
     } catch (e) { }
   };
@@ -181,9 +225,14 @@ export default function EditorLayout() {
       if (!container?.Id) return;
       try {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`);
         wsMap[container.Id] = ws;
-        ws.onopen = () => ws.send(JSON.stringify({ action: 'streamStats', containerId: container.Id }));
+        ws.onopen = () => ws.send(JSON.stringify({
+          action: 'streamStats',
+          containerId: container.Id,
+          nodeId: activeNodeId || undefined
+        }));
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -567,6 +616,16 @@ export default function EditorLayout() {
     setSelectedContainer(null);
   };
 
+  const openLogViewer = (containerId: string, containerName: string) => {
+    setLogContainer({ id: containerId, name: containerName });
+    setLogViewerOpen(true);
+  };
+
+  const closeLogViewer = () => {
+    setLogViewerOpen(false);
+    setLogContainer(null);
+  };
+
   // Safe container list with fallback
   const safeContainers = containers || [];
   // Safe content strings with fallback
@@ -628,6 +687,38 @@ export default function EditorLayout() {
             </Tooltip>
           </TooltipProvider>
         </div>
+
+        {/* Node Switcher */}
+        {nodes.length > 1 && (
+          <div className="px-4 pt-2 pb-0">
+            <Select
+              value={activeNode?.id?.toString() || ''}
+              onValueChange={(val) => {
+                const node = nodes.find(n => n.id === parseInt(val));
+                if (node) setActiveNode(node);
+              }}
+            >
+              <SelectTrigger className="w-full h-9 text-sm">
+                <div className="flex items-center gap-2">
+                  <Server className="w-3.5 h-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="Select node" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {nodes.map(node => (
+                  <SelectItem key={node.id} value={node.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
+                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                        }`} />
+                      {node.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Create Stack Button */}
         <div className="p-4">
@@ -693,6 +784,13 @@ export default function EditorLayout() {
                       />
                       <span className="flex-1 truncate">{getDisplayName(file)}</span>
 
+                      {stackUpdates[file] && (
+                        <span
+                          className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                          title="Update available"
+                        />
+                      )}
+
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -720,7 +818,22 @@ export default function EditorLayout() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <div className="h-16 flex items-center justify-end px-6 border-b border-border gap-4">
+        <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
+          {/* Node Context Pill — visible only when a remote node is active */}
+          <div className="flex-shrink-0">
+            {activeNode?.type === 'remote' ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                {activeNode.name}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border text-muted-foreground text-sm">
+                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                {activeNode?.name ?? 'Local'}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
           {/* Home Button */}
           <Button
             variant="outline"
@@ -764,6 +877,28 @@ export default function EditorLayout() {
           >
             <HardDrive className="w-4 h-4 mr-2" />
             Resources
+          </Button>
+          {/* App Store Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setActiveView('templates')}
+            title="App Store"
+          >
+            <CloudDownload className="w-4 h-4 mr-2" />
+            App Store
+          </Button>
+          {/* Global Observability Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg"
+            onClick={() => setActiveView('global-observability')}
+            title="Global Logs"
+          >
+            <Activity className="w-4 h-4 mr-2" />
+            Logs
           </Button>
 
           {/* Settings Modal Toggle */}
@@ -844,11 +979,14 @@ export default function EditorLayout() {
               </ScrollArea>
             </PopoverContent>
           </Popover>
+          </div>{/* end right-side buttons */}
         </div>
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-y-auto p-6">
-          {activeView === 'resources' ? (
+          {activeView === 'templates' ? (
+            <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
+          ) : activeView === 'resources' ? (
             <ResourcesView />
           ) : activeView === 'host-console' ? (
             <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
@@ -962,7 +1100,12 @@ export default function EditorLayout() {
                                               size="sm"
                                               variant="ghost"
                                               className="rounded-lg h-8 w-8"
-                                              onClick={() => window.open(`http://${window.location.hostname}:${mainPort}`, '_blank')}
+                                              onClick={() => {
+                                                const host = activeNode?.type === 'remote' && activeNode?.api_url
+                                                  ? new URL(activeNode.api_url).hostname
+                                                  : window.location.hostname;
+                                                window.open(`http://${host}:${mainPort}`, '_blank');
+                                              }}
                                             >
                                               <ExternalLink className="w-4 h-4" />
                                             </Button>
@@ -971,6 +1114,22 @@ export default function EditorLayout() {
                                         </Tooltip>
                                       </TooltipProvider>
                                     )}
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="rounded-lg h-8 w-8"
+                                            onClick={() => openLogViewer(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
+                                            disabled={container?.State !== 'running'}
+                                          >
+                                            <ScrollText className="w-4 h-4" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>View Live Logs</TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -1100,6 +1259,8 @@ export default function EditorLayout() {
                 </Card>
               </div>
             </ErrorBoundary>
+          ) : activeView === 'global-observability' ? (
+            <GlobalObservabilityView />
           ) : (
             <HomeDashboard />
           )}
@@ -1129,6 +1290,16 @@ export default function EditorLayout() {
           onClose={closeBashModal}
           containerId={selectedContainer.id}
           containerName={selectedContainer.name}
+        />
+      )}
+
+      {/* LogViewer Modal */}
+      {logContainer && (
+        <LogViewer
+          isOpen={logViewerOpen}
+          onClose={closeLogViewer}
+          containerId={logContainer.id}
+          containerName={logContainer.name}
         />
       )}
 

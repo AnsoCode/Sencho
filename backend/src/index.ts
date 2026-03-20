@@ -12,6 +12,8 @@ import crypto from 'crypto';
 import composerize from 'composerize';
 import si from 'systeminformation';
 import http from 'http';
+import httpProxy from 'http-proxy';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -19,19 +21,31 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import { ImageUpdateService } from './services/ImageUpdateService';
+import { templateService } from './services/TemplateService';
+import { ErrorParser } from './utils/ErrorParser';
+import { NodeRegistry } from './services/NodeRegistry';
 import YAML from 'yaml';
-import { promises as fsPromises } from 'fs';
+import fs, { promises as fsPromises } from 'fs';
 
 const execAsync = promisify(exec);
+
+// Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
+// util._extend internally. The warning fires at runtime when createProxyServer() is
+// first invoked (NOT at import time), so intercepting process.emitWarning here —
+// before the proxy instances are created below — fully prevents it.
+// http-proxy has no compatible update; this suppression is intentional and safe.
+const _origEmitWarning = process.emitWarning.bind(process);
+(process as any).emitWarning = (warning: any, ...args: any[]) => {
+  const code = typeof args[0] === 'object' ? args[0]?.code : args[1];
+  if (code === 'DEP0060') return;
+  _origEmitWarning(warning, ...args);
+};
 
 const app = express();
 const PORT = 3000;
 
-// FileSystemService for stack management
-const fileSystemService = new FileSystemService();
-
-// ComposeService for stack operations
-const composeService = new ComposeService();
+// FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
 
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
@@ -57,16 +71,64 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Extend Express Request type for user
-declare module 'express' {
-  interface Request {
-    user?: { username: string };
+// Node Context Middleware
+const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const nodeIdHeader = req.headers['x-node-id'] as string;
+  const nodeIdQuery = req.query.nodeId as string;
+  if (nodeIdHeader) {
+    req.nodeId = parseInt(nodeIdHeader, 10);
+  } else if (nodeIdQuery) {
+    req.nodeId = parseInt(nodeIdQuery, 10);
+  } else {
+    req.nodeId = NodeRegistry.getInstance().getDefaultNodeId();
+  }
+
+  // Intercept requests to deleted nodes to prevent downstream errors.
+  // /api/nodes is intentionally exempt: it must always be reachable so the
+  // frontend can re-sync after a node is deleted (otherwise a stale x-node-id
+  // in localStorage causes an unrecoverable 404 loop).
+  if (
+    req.path.startsWith('/api/') &&
+    !req.path.startsWith('/api/auth/') &&
+    !req.path.startsWith('/api/nodes')
+  ) {
+    const node = DatabaseService.getInstance().getNode(req.nodeId);
+    if (!node) {
+      res.status(404).json({ error: `Node with id ${req.nodeId} not found or was deleted.` });
+      return;
+    }
+  }
+
+  next();
+};
+
+app.use(nodeContextMiddleware);
+
+// Extend Express Request type for user and node
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { username: string };
+      nodeId: number;
+    }
   }
 }
 
+// WebSocket proxy server for forwarding remote node WS connections
+const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
+wsProxyServer.on('error', (err, _req, socket: any) => {
+  console.error('[WS Proxy] Error:', err.message);
+  try { socket?.destroy(); } catch { }
+});
+
 // Authentication Middleware
+// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy)
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const token = req.cookies[COOKIE_NAME];
+  const cookieToken = req.cookies[COOKIE_NAME];
+  const bearerToken = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     res.status(401).json({ error: 'Authentication required' });
@@ -77,10 +139,12 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username: string };
-    req.user = { username: decoded.username };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
+    // Accept both user sessions and node proxy tokens
+    req.user = { username: decoded.username || 'node-proxy' };
     next();
-  } catch {
+  } catch (err) {
+    console.error('[Auth] Token validation failed:', (err as Error).message);
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
   }
@@ -235,6 +299,23 @@ app.get('/api/auth/check', authMiddleware, (req: Request, res: Response): void =
   res.json({ authenticated: true, user: req.user });
 });
 
+// Generate a long-lived node proxy token for Sencho-to-Sencho authentication
+app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'No JWT secret configured on this instance.' });
+      return;
+    }
+    // No expiry - this token is managed by the admin who pastes it into the main dashboard
+    const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret);
+    res.json({ token });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to generate node token' });
+  }
+});
+
 // Apply authentication middleware to all /api/* routes except /api/auth/*
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   if (req.path.startsWith('/auth/')) {
@@ -242,6 +323,85 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
     return;
   }
   authMiddleware(req, res, next);
+});
+
+// Remote Node HTTP Proxy - single global instance.
+// Previously, createProxyMiddleware was called inside the request handler on every API
+// call, spawning a new proxy instance (and http-proxy server) each time. This caused:
+//   - MaxListenersExceededWarning: repeated 'close' listeners added to [Server]
+//   - DEP0060: util._extend called on every http-proxy initialisation
+// Fix: create ONE instance at startup; use the router option to resolve the
+// target URL dynamically per request without constructing new listeners.
+const remoteNodeProxy = createProxyMiddleware<Request, Response>({
+  target: 'http://localhost:0', // placeholder - overridden per-request by router
+  changeOrigin: true,
+  router: (req) => {
+    const node = NodeRegistry.getInstance().getNode(req.nodeId);
+    return node?.api_url?.replace(/\/$/, '');
+  },
+  // When mounted at app.use('/api/', ...), Express strips the '/api/' prefix from
+  // req.url before the middleware sees it. Re-add it so the remote Sencho instance
+  // receives the full path (e.g. '/stats' becomes '/api/stats').
+  pathRewrite: (path) => '/api' + path,
+  on: {
+    proxyReq: (proxyReq, req) => {
+      const node = NodeRegistry.getInstance().getNode(req.nodeId);
+      // Strip headers that must not reach the remote instance:
+      // - x-node-id: remote Sencho treats all requests as local
+      // - cookie: the browser's sencho_token is signed with THIS instance's JWT secret;
+      //   the remote would try to verify it with its own secret and return 401.
+      //   Authentication is handled exclusively via the Bearer token below.
+      proxyReq.removeHeader('x-node-id');
+      proxyReq.removeHeader('cookie');
+      if (node?.api_token) {
+        proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
+      }
+      // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
+      // doesn't reject the request with 404 ("Node X not found") — the remote
+      // has no record of the gateway's node IDs and should treat the request
+      // as local. This affects endpoints like EventSource /api/containers/:id/logs
+      // that pass nodeId as a query param rather than the x-node-id header.
+      if (proxyReq.path.includes('nodeId=')) {
+        const [pathname, qs] = proxyReq.path.split('?');
+        const params = new URLSearchParams(qs || '');
+        params.delete('nodeId');
+        const newQs = params.toString();
+        proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
+      }
+    },
+    error: (err, _req, proxyRes) => {
+      console.error('[Proxy] Remote node error:', (err as Error).message);
+      if (!(proxyRes as Response).headersSent) {
+        (proxyRes as Response).status(502).json({
+          error: 'Remote node is unreachable. Check the API URL and ensure Sencho is running on that host.'
+        });
+      }
+    },
+  },
+});
+
+// Intercepts all /api/ requests for remote Distributed API nodes and forwards them
+// to the target Sencho instance. Node management and auth routes always execute locally.
+app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes')) {
+    next();
+    return;
+  }
+
+  const node = NodeRegistry.getInstance().getNode(req.nodeId);
+  if (!node || node.type !== 'remote') {
+    next();
+    return;
+  }
+
+  if (!node.api_url || !node.api_token) {
+    res.status(503).json({
+      error: `Remote node "${node.name}" has no API URL or token configured. Update it in Settings → Nodes.`
+    });
+    return;
+  }
+
+  remoteNodeProxy(req, res, next);
 });
 
 // Create HTTP server for WebSocket upgrade handling
@@ -260,7 +420,11 @@ server.on('upgrade', async (req, socket, head) => {
     cookieHeader.split(';').map(c => c.trim().split('=')).filter(([k, v]) => k && v)
   );
 
-  const token = cookies[COOKIE_NAME];
+  // Accept either cookie auth (browser sessions) or Bearer token auth (node-to-node WS proxy)
+  const cookieToken = cookies[COOKIE_NAME];
+  const authHeader = req.headers['authorization'] as string | undefined;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -274,10 +438,36 @@ server.on('upgrade', async (req, socket, head) => {
     if (!jwtSecret) throw new Error('No JWT secret');
     jwt.verify(token, jwtSecret);
 
-    // Check if this is a stack logs WebSocket request
     const url = req.url || '';
-    const logsMatch = url.match(/^\/api\/stacks\/([^/]+)\/logs$/);
-    const hostConsoleMatch = url.match(/^\/api\/system\/host-console/);
+    const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname;
+
+    // Resolve node context from query param
+    const nodeIdParam = parsedUrl.searchParams.get('nodeId');
+    const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+
+    // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
+    if (node && node.type === 'remote' && node.api_url && node.api_token) {
+      const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
+      req.headers['authorization'] = `Bearer ${node.api_token}`;
+      delete req.headers['x-node-id'];
+      // Strip the browser's session cookie — it is signed by this instance's JWT secret and
+      // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
+      delete req.headers['cookie'];
+      // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
+      // The remote has no record of the gateway's nodeId, so leaving it would cause unnecessary
+      // fallback logic. Removing it lets the remote default cleanly to its own local node.
+      const fwdUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+      fwdUrl.searchParams.delete('nodeId');
+      req.url = fwdUrl.pathname + (fwdUrl.searchParams.toString() ? `?${fwdUrl.searchParams.toString()}` : '');
+      wsProxyServer.ws(req, socket, head, { target: wsTarget });
+      return;
+    }
+
+    // Local node handling
+    const logsMatch = pathname.match(/^\/api\/stacks\/([^/]+)\/logs$/);
+    const hostConsoleMatch = pathname.match(/^\/api\/system\/host-console/);
 
     if (logsMatch) {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
@@ -285,7 +475,7 @@ server.on('upgrade', async (req, socket, head) => {
       logsWss.handleUpgrade(req, socket, head, (ws) => {
         const stackName = decodeURIComponent(logsMatch[1]);
         try {
-          composeService.streamLogs(stackName, ws);
+          ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
         } catch (error) {
           console.error('Failed to stream logs:', error);
           if (ws.readyState === WebSocket.OPEN) {
@@ -296,15 +486,15 @@ server.on('upgrade', async (req, socket, head) => {
     } else if (hostConsoleMatch) {
       const hostConsoleWss = new WebSocket.Server({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
-        let targetDirectory = fileSystemService.getBaseDir();
+        let targetDirectory = '';
         try {
-          const reqUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-          const stackParam = reqUrl.searchParams.get('stack');
+          targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
+          const stackParam = parsedUrl.searchParams.get('stack');
           if (stackParam) {
             targetDirectory = path.join(targetDirectory, stackParam);
           }
         } catch (e) {
-          // ignore parsing error, fallback to base dir
+          targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
         }
         try {
           HostTerminalService.spawnTerminal(ws, targetDirectory);
@@ -344,16 +534,22 @@ wss.on('connection', (ws) => {
       if (data.action === 'connectTerminal') {
         terminalWs = ws;
       } else if (data.action === 'streamStats') {
-        const dockerController = DockerController.getInstance();
-        dockerController.streamStats(data.containerId, ws);
+        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        // When a WS is proxied from a gateway to this remote instance, the nodeId in the
+        // message belongs to the gateway's DB and won't resolve locally. Fall back to local.
+        let nodeId = requestedId;
+        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
+        DockerController.getInstance(nodeId).streamStats(data.containerId, ws);
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
         // Input, resize, and cleanup are handled inside execContainer's closure
-        const dockerController = DockerController.getInstance();
-        dockerController.execContainer(data.containerId, ws);
+        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        let nodeId = requestedId;
+        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
+        DockerController.getInstance(nodeId).execContainer(data.containerId, ws);
       }
     } catch (error) {
-      // Malformed JSON — ignore silently
+      // Malformed JSON - ignore silently
     }
   });
 });
@@ -362,7 +558,7 @@ wss.on('connection', (ws) => {
 
 app.get('/api/containers', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
     res.json(containers);
   } catch (error) {
@@ -374,7 +570,7 @@ app.get('/api/containers', async (req: Request, res: Response) => {
 
 app.get('/api/stacks', async (req: Request, res: Response) => {
   try {
-    const stacks = await fileSystemService.getStacks();
+    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     res.json(stacks);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stacks' });
@@ -384,7 +580,7 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const content = await fileSystemService.getStackContent(stackName);
+    const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     res.send(content);
   } catch (error) {
     res.status(500).json({ error: 'Failed to read stack' });
@@ -403,7 +599,7 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
       console.error('Content is not a string:', content);
       return res.status(400).json({ error: 'Content must be a string' });
     }
-    await fileSystemService.saveStackContent(stackName, content);
+    await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
     console.log('Stack saved successfully:', stackName);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
@@ -413,8 +609,9 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
 });
 
 // Helper: resolve all env file paths dynamically from compose.yaml's env_file field
-async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
-  const stackDir = path.join(fileSystemService.getBaseDir(), stackName);
+async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
+  const fsService = FileSystemService.getInstance(nodeId);
+  const stackDir = path.join(fsService.getBaseDir(), stackName);
   const defaultEnvPath = path.join(stackDir, '.env');
 
   try {
@@ -424,7 +621,7 @@ async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
 
     for (const file of composeFiles) {
       try {
-        composeContent = await fsPromises.readFile(path.join(stackDir, file), 'utf-8');
+        composeContent = await fsService.readFile(path.join(stackDir, file), 'utf-8');
         break;
       } catch {
         // Try next file
@@ -476,7 +673,7 @@ async function resolveAllEnvFilePaths(stackName: string): Promise<string[]> {
 app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
     res.json({ envFiles: envPaths });
   } catch (error) {
     res.status(500).json({ error: 'Failed to resolve env files' });
@@ -487,7 +684,7 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
     const requestedFile = req.query.file as string | undefined;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
     let envPath = envPaths[0]; // Fallback to the first
 
@@ -500,13 +697,15 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
       }
     }
 
+    const fsService = FileSystemService.getInstance(req.nodeId);
+
     try {
-      await fsPromises.access(envPath);
+      await fsService.access(envPath);
     } catch {
       return res.status(404).json({ error: 'Env file not found' });
     }
 
-    const content = await fsPromises.readFile(envPath, 'utf-8');
+    const content = await fsService.readFile(envPath, 'utf-8');
     res.send(content);
   } catch (error) {
     console.error('Failed to read env file:', error);
@@ -526,7 +725,7 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
     }
 
     const requestedFile = req.query.file as string | undefined;
-    const envPaths = await resolveAllEnvFilePaths(stackName);
+    const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
     let envPath = envPaths[0]; // Fallback
 
@@ -538,7 +737,8 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
       }
     }
 
-    await fsPromises.writeFile(envPath, content, 'utf-8');
+    const fsService = FileSystemService.getInstance(req.nodeId);
+    await fsService.writeFile(envPath, content, 'utf-8');
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
     console.error('Failed to save env file:', error);
@@ -555,7 +755,7 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
     if (!/^[a-zA-Z0-9-]+$/.test(stackName)) {
       return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters and hyphens' });
     }
-    await fileSystemService.createStack(stackName);
+    await FileSystemService.getInstance(req.nodeId).createStack(stackName);
     res.json({ message: 'Stack created successfully', name: stackName });
   } catch (error: any) {
     if (error.message && error.message.includes('already exists')) {
@@ -566,31 +766,29 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
+app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
+  const stackName = req.params.name as string;
   try {
-    const stackName = req.params.stackName as string;
-
-    // Tear down the stack first to avoid ghost containers
+    // Stage 1: Tell Docker to clean up ghost networks/containers
     try {
-      console.log(`Tearing down stack: ${stackName}`);
-      // Send the down command synchronously before deleting the files
-      await composeService.runCommand(stackName, 'down', terminalWs || undefined);
-    } catch (downError) {
-      console.warn(`Failed to tear down stack ${stackName}, proceeding with file deletion.`, downError);
+      await ComposeService.getInstance(req.nodeId).downStack(stackName);
+    } catch (downErr) {
+      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }
 
-    await fileSystemService.deleteStack(stackName);
-    res.json({ message: 'Stack deleted successfully' });
-  } catch (error) {
-    console.error('Failed to delete stack:', error);
-    res.status(500).json({ error: 'Failed to delete stack' });
+    // Stage 2: Obliterate the files
+    await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to delete stack' });
   }
 });
 
 app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
     res.json(containers);
   } catch (error) {
@@ -598,10 +796,21 @@ app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response)
   }
 });
 
+app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const dockerController = DockerController.getInstance(req.nodeId);
+    // Pass both req and res so we can listen for the client disconnect
+    await dockerController.streamContainerLogs(id, req, res);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to initialize log stream' });
+  }
+});
+
 app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.startContainer(id);
     res.json({ message: 'Container started' });
   } catch (error) {
@@ -612,7 +821,7 @@ app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
 app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.stopContainer(id);
     res.json({ message: 'Container stopped' });
   } catch (error) {
@@ -623,7 +832,7 @@ app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
 app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.restartContainer(id);
     res.json({ message: 'Container restarted' });
   } catch (error) {
@@ -635,7 +844,7 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.deployStack(stackName, terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
     res.json({ message: 'Deployed successfully' });
   } catch (error: any) {
     console.error('Failed to deploy stack:', error);
@@ -646,7 +855,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    await composeService.runCommand(stackName, 'down', terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
@@ -656,7 +865,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -674,7 +883,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -692,7 +901,7 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
@@ -712,7 +921,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
   try {
     const stackName = req.params.stackName as string;
     // Await update completion
-    await composeService.updateStack(stackName, terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined);
     res.json({ status: 'Update completed' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update' });
@@ -737,7 +946,7 @@ app.post('/api/convert', async (req: Request, res: Response) => {
 // Get all containers stats for dashboard
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
     const allContainers = await dockerController.getAllContainers();
 
@@ -751,21 +960,221 @@ app.get('/api/stats', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/metrics/historical', async (req: Request, res: Response) => {
+  try {
+    const metrics = DatabaseService.getInstance().getContainerMetrics(24);
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch metrics' });
+  }
+});
+
+app.get('/api/logs/global', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const containers = await dockerController.getRunningContainers();
+    const allLogs: any[] = [];
+
+    await Promise.all(containers.map(async (c) => {
+      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
+      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+
+      // Standardize naming: Strip stack name prefix if it exists
+      let containerName = rawName;
+      if (rawName.startsWith(`${stackName}-`)) {
+        containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
+      } else if (rawName.startsWith(`${stackName}_`)) {
+        containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
+      }
+
+      try {
+        const container = dockerController.getDocker().getContainer(c.Id);
+        const inspect = await container.inspect();
+        const isTty = inspect.Config.Tty;
+        const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 100, timestamps: true }) as Buffer;
+
+        const parseAndPushLog = (line: string, source: string) => {
+          if (!line.trim()) return;
+          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+          let cleanMessage = line;
+          let timestampMs = Date.now();
+
+          if (timeMatch) {
+            timestampMs = new Date(timeMatch[1]).getTime();
+            cleanMessage = timeMatch[2];
+          }
+
+          // Default to INFO, or ERROR if coming from STDERR.
+          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
+
+          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
+          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
+            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'INFO';
+          }
+          // 2. Check for WARN indicators
+          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
+            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'WARN';
+          }
+          // 3. Check for ERROR indicators
+          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
+            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
+            /Exception:/i.test(cleanMessage)) {
+            level = 'ERROR';
+          }
+
+          allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
+        };
+
+        if (isTty) {
+          // No multiplex headers. Just split by newline.
+          const payload = logsBuffer.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+          payload.split('\n').forEach(line => parseAndPushLog(line, 'STDOUT'));
+        } else {
+          // Parse 8-byte Docker multiplex header
+          let offset = 0;
+          while (offset < logsBuffer.length) {
+            const streamType = logsBuffer[offset];
+            const length = logsBuffer.readUInt32BE(offset + 4);
+            offset += 8;
+            if (offset + length > logsBuffer.length) break;
+
+            const payload = logsBuffer.slice(offset, offset + length).toString('utf-8');
+            offset += length;
+            payload.split('\n').forEach(line => parseAndPushLog(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
+          }
+        }
+      } catch (err) {
+        console.warn(`[GlobalLogs] Failed to fetch/parse logs for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
+      }
+    }));
+
+    // Sort globally by timestamp ascending (newest bottom) and limit to 2000 lines
+    allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
+    res.json(allLogs.slice(-2000));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch global logs' });
+  }
+});
+
+app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const dockerController = DockerController.getInstance(req.nodeId);
+  const streams: NodeJS.ReadableStream[] = [];
+
+  try {
+    const containers = await dockerController.getRunningContainers();
+
+    await Promise.all(containers.map(async (c) => {
+      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
+      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      let containerName = rawName;
+      if (rawName.startsWith(`${stackName}-`)) containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
+      else if (rawName.startsWith(`${stackName}_`)) containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
+
+      try {
+        const container = dockerController.getDocker().getContainer(c.Id);
+        const inspect = await container.inspect();
+        const isTty = inspect.Config.Tty;
+
+        // Dev mode gets a larger tail
+        const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 500, timestamps: true });
+        streams.push(stream);
+
+        const processLine = (line: string, source: string) => {
+          if (!line.trim()) return;
+          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
+          let cleanMessage = line;
+          let timestampMs = Date.now();
+
+          if (timeMatch) {
+            timestampMs = new Date(timeMatch[1]).getTime();
+            cleanMessage = timeMatch[2];
+          }
+
+          // Default to INFO, or ERROR if coming from STDERR.
+          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
+
+          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
+          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
+            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'INFO';
+          }
+          // 2. Check for WARN indicators
+          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
+            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
+            level = 'WARN';
+          }
+          // 3. Check for ERROR indicators
+          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
+            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
+            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
+            /Exception:/i.test(cleanMessage)) {
+            level = 'ERROR';
+          }
+
+          res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
+        };
+
+        stream.on('data', (chunk: Buffer) => {
+          if (isTty) {
+            const payload = chunk.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+            payload.split('\n').forEach(line => processLine(line, 'STDOUT'));
+          } else {
+            let offset = 0;
+            while (offset < chunk.length) {
+              if (offset + 8 > chunk.length) break;
+              const streamType = chunk[offset];
+              const length = chunk.readUInt32BE(offset + 4);
+              offset += 8;
+              if (offset + length > chunk.length) break;
+
+              const payload = chunk.slice(offset, offset + length).toString('utf-8');
+              offset += length;
+              payload.split('\n').forEach(line => processLine(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
+            }
+          }
+        });
+      } catch (err) { /* ignore */ }
+    }));
+
+    // Cleanup when client closes the tab or switches views
+    req.on('close', () => {
+      streams.forEach(s => {
+        try { (s as any).destroy(); } catch (e) { }
+      });
+    });
+
+  } catch (error) {
+    res.write(`data: ${JSON.stringify({ level: 'ERROR', message: '[Sencho] Failed to attach global log stream.', timestampMs: Date.now(), stackName: 'system', containerName: 'backend', source: 'STDERR' })}\n\n`);
+    res.end();
+  }
+});
+
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
+    const rxSec = Math.max(0, globalDockerNetwork.rxSec);
+    const txSec = Math.max(0, globalDockerNetwork.txSec);
+
+    // Remote node requests are intercepted and proxied by remoteNodeProxy before reaching here.
+    // This handler only runs for local nodes.
     const [currentLoad, mem, fsSize] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize()
     ]);
 
-    let rxSec = Math.max(0, globalDockerNetwork.rxSec);
-    let txSec = Math.max(0, globalDockerNetwork.txSec);
-    let rxBytes = 0;
-    let txBytes = 0;
-
-    // Find the main mount (usually the largest or root mount)
     const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
 
     res.json({
@@ -787,12 +1196,7 @@ app.get('/api/system/stats', async (req: Request, res: Response) => {
         free: mainDisk.available,
         usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
       } : null,
-      network: {
-        rxBytes,
-        txBytes,
-        rxSec,
-        txSec
-      }
+      network: { rxBytes: 0, txBytes: 0, rxSec, txSec },
     });
   } catch (error) {
     console.error('Failed to fetch system stats:', error);
@@ -923,8 +1327,8 @@ app.post('/api/notifications/test', async (req: Request, res: Response) => {
 
 app.get('/api/system/orphans', async (req: Request, res: Response) => {
   try {
-    const knownStacks = await fileSystemService.getStacks();
-    const dockerController = DockerController.getInstance();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const orphans = await dockerController.getOrphanContainers(knownStacks);
     res.json(orphans);
   } catch (error) {
@@ -939,7 +1343,7 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
     if (!Array.isArray(containerIds)) {
       return res.status(400).json({ error: 'containerIds must be an array' });
     }
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const results = await dockerController.removeContainers(containerIds);
     res.json({ results });
   } catch (error) {
@@ -955,7 +1359,7 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const result = await dockerController.pruneSystem(target);
 
     res.json({ message: 'Prune completed', ...result });
@@ -967,7 +1371,7 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
 
 app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const df = await dockerController.getDiskUsage();
     res.json(df);
   } catch (error) {
@@ -978,7 +1382,7 @@ app.get('/api/system/docker-df', async (req: Request, res: Response) => {
 
 app.get('/api/system/images', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const images = await dockerController.getImages();
     res.json(images);
   } catch (error) {
@@ -989,7 +1393,7 @@ app.get('/api/system/images', async (req: Request, res: Response) => {
 
 app.get('/api/system/volumes', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const volumes = await dockerController.getVolumes();
     res.json(volumes);
   } catch (error) {
@@ -1000,7 +1404,7 @@ app.get('/api/system/volumes', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     const networks = await dockerController.getNetworks();
     res.json(networks);
   } catch (error) {
@@ -1013,7 +1417,7 @@ app.post('/api/system/images/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeImage(id);
     res.json({ success: true, message: 'Image deleted' });
   } catch (error: any) {
@@ -1026,7 +1430,7 @@ app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeVolume(id);
     res.json({ success: true, message: 'Volume deleted' });
   } catch (error: any) {
@@ -1039,12 +1443,224 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
-    const dockerController = DockerController.getInstance();
+    const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeNetwork(id);
     res.json({ success: true, message: 'Network deleted' });
   } catch (error: any) {
     console.error('Failed to delete network:', error);
     res.status(500).json({ error: error.message || 'Failed to delete network' });
+  }
+});
+
+// --- App Templates Routes ---
+
+app.get('/api/templates', async (req: Request, res: Response) => {
+  try {
+    const templates = await templateService.getTemplates();
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+app.post('/api/templates/deploy', async (req: Request, res: Response) => {
+  try {
+    const { stackName, template, envVars } = req.body;
+
+    if (!stackName || !template) {
+      return res.status(400).json({ error: 'stackName and template are required' });
+    }
+
+    const stackPath = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
+    if (fs.existsSync(stackPath)) {
+      return res.status(409).json({
+        error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
+        rolledBack: false
+      });
+    }
+
+    // 1. Create stack directory
+    await FileSystemService.getInstance(req.nodeId).createStack(stackName);
+
+    // 2. Generate compose YAML and save
+    const composeYaml = templateService.generateComposeFromTemplate(template);
+    await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, composeYaml);
+
+    // 3. Generate env string and save to default .env
+    if (envVars) {
+      const envString = templateService.generateEnvString(envVars);
+      const stackDir = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
+      const defaultEnvPath = path.join(stackDir, '.env');
+      await fsPromises.writeFile(defaultEnvPath, envString, 'utf-8');
+    }
+
+    // 4. Deploy the stack with atomic rollback
+    try {
+      await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
+      res.json({ success: true, message: 'Template deployed successfully' });
+    } catch (deployError: any) {
+      const rawError = deployError.message || String(deployError);
+      const parsed = ErrorParser.parse(rawError);
+
+      const shouldRollback = parsed.rule ? parsed.rule.canSilentlyRollback : true;
+
+      if (shouldRollback) {
+        try {
+          // Stage 1: Tell Docker to clean up ghost networks/containers
+          await ComposeService.getInstance(req.nodeId).downStack(stackName);
+        } catch (downErr) {
+          console.error("Rollback Stage 1 (Docker down) failed:", downErr);
+        }
+
+        try {
+          // Stage 2: Obliterate the files
+          await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
+        } catch (fsErr) {
+          console.error("Rollback Stage 2 (File deletion) failed:", fsErr);
+        }
+      }
+
+      res.status(500).json({
+        error: parsed.message,
+        rolledBack: shouldRollback,
+        ruleId: parsed.rule?.id || 'UNKNOWN'
+      });
+    }
+  } catch (error: any) {
+    console.error('Failed to deploy template:', error);
+    res.status(500).json({ error: error.message || 'Failed to deploy template' });
+  }
+});
+
+// =========================
+// Image Update Checker API
+// =========================
+
+app.get('/api/image-updates', authMiddleware, (_req: Request, res: Response) => {
+    try {
+        const updates = DatabaseService.getInstance().getStackUpdateStatus();
+        res.json(updates);
+    } catch (error) {
+        console.error('Failed to fetch image update status:', error);
+        res.status(500).json({ error: 'Failed to fetch image update status' });
+    }
+});
+
+app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Response) => {
+    try {
+        const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
+        if (!triggered) {
+            res.status(429).json({ error: 'Rate limited. Please wait at least 10 minutes between manual refreshes.' });
+            return;
+        }
+        res.json({ success: true, message: 'Image update check started in background.' });
+    } catch (error) {
+        console.error('Failed to trigger image update refresh:', error);
+        res.status(500).json({ error: 'Failed to trigger refresh' });
+    }
+});
+
+// =========================
+// Node Management API
+// =========================
+
+// List all nodes
+app.get('/api/nodes', async (req: Request, res: Response) => {
+  try {
+    const nodes = DatabaseService.getInstance().getNodes();
+    res.json(nodes);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch nodes' });
+  }
+});
+
+// Get a specific node
+app.get('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const node = DatabaseService.getInstance().getNode(id);
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    res.json(node);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch node' });
+  }
+});
+
+// Create a new node
+app.post('/api/nodes', async (req: Request, res: Response) => {
+  try {
+    const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Node name is required' });
+    }
+    if (!type || !['local', 'remote'].includes(type)) {
+      return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
+    }
+    if (type === 'remote' && (!api_url || typeof api_url !== 'string')) {
+      return res.status(400).json({ error: 'API URL is required for remote nodes' });
+    }
+
+    const id = DatabaseService.getInstance().addNode({
+      name,
+      type,
+      compose_dir: compose_dir || '/app/compose',
+      is_default: is_default || false,
+      api_url: api_url || '',
+      api_token: api_token || '',
+    });
+
+    res.json({ success: true, id });
+  } catch (error: any) {
+    if (error.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: 'A node with that name already exists' });
+    }
+    console.error('Failed to create node:', error);
+    res.status(500).json({ error: error.message || 'Failed to create node' });
+  }
+});
+
+// Update a node
+app.put('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const updates = req.body;
+
+    DatabaseService.getInstance().updateNode(id, updates);
+
+    // Evict cached Docker connection so it reconnects with new config
+    NodeRegistry.getInstance().evictConnection(id);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to update node:', error);
+    res.status(500).json({ error: error.message || 'Failed to update node' });
+  }
+});
+
+// Delete a node
+app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    DatabaseService.getInstance().deleteNode(id);
+    NodeRegistry.getInstance().evictConnection(id);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to delete node:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete node' });
+  }
+});
+
+// Test connection to a node
+app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const result = await NodeRegistry.getInstance().testConnection(id);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Connection test failed' });
   }
 });
 
@@ -1076,7 +1692,8 @@ async function startServer() {
   try {
     // Run migration before starting server
     console.log('Running stack migration check...');
-    await fileSystemService.migrateFlatToDirectory();
+    const defaultFsService = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId());
+    await defaultFsService.migrateFlatToDirectory();
     console.log('Migration check completed');
   } catch (error) {
     console.error('Migration failed:', error);
@@ -1085,6 +1702,9 @@ async function startServer() {
 
   // Start Background Watchdog
   MonitorService.getInstance().start();
+
+  // Start Background Image Update Checker
+  ImageUpdateService.getInstance().start();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

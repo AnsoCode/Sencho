@@ -118,31 +118,32 @@ export class MonitorService {
         // 2. Global Crash Detect
         if (settings['global_crash'] === '1') {
             try {
-                const docker = DockerController.getInstance();
-                const containers = await docker.getAllContainers();
-                for (const c of containers) {
-                    if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
-                        // Basic deduplication could be added, but for now we just dispatch.
-                        // Usually, users will restart or remove the container.
-                        // To prevent massive spam, we check if it exited in the last 30 secs
-                        if (c.State === 'exited') {
-                            // Check if it exited recently
-                            if (c.Status.includes('seconds ago')) {
-                                // Extract the exit code from the status string (e.g., "Exited (143) 5 seconds ago")
-                                const match = c.Status.match(/Exited \((\d+)\)/i);
-                                const exitCode = match ? parseInt(match[1], 10) : null;
-
-                                // 0: Success, 137: SIGKILL (Force Stop), 143: SIGTERM (Graceful Stop), 255: Docker Daemon Stop
-                                const intentionalExitCodes = [0, 137, 143, 255];
-
-                                // Only alert if we found a code AND it is not an intentional stop
-                                if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
-                                    await notifier.dispatchAlert('error', `Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                const nodes = DatabaseService.getInstance().getNodes();
+                for (const node of nodes) {
+                    if (!node.id) continue;
+                    // Remote nodes run their own MonitorService locally - skip direct Docker access
+                    if (node.type === 'remote') continue;
+                    try {
+                        const docker = DockerController.getInstance(node.id);
+                        const containers = await docker.getAllContainers();
+                        for (const c of containers) {
+                            if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
+                                if (c.State === 'exited') {
+                                    if (c.Status.includes('seconds ago')) {
+                                        const match = c.Status.match(/Exited \((\d+)\)/i);
+                                        const exitCode = match ? parseInt(match[1], 10) : null;
+                                        const intentionalExitCodes = [0, 137, 143, 255];
+                                        if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
+                                            await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                                        }
+                                    }
+                                } else if (String(c.Status).includes('unhealthy')) {
+                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
                                 }
                             }
-                        } else if (String(c.Status).includes('unhealthy')) {
-                            await notifier.dispatchAlert('error', `Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
                         }
+                    } catch (err) {
+                        console.error(`Error checking crashes on node ${node.name}`, err);
                     }
                 }
             } catch (e) {
@@ -203,24 +204,17 @@ export class MonitorService {
 
     private async evaluateStackAlerts(db: DatabaseService) {
         const alerts = db.getStackAlerts();
-        if (alerts.length === 0) return;
+        const nodes = db.getNodes();
 
-        // Group alerts by stack so we only fetch stats for stacks we care about
-        const stacksToMonitor = new Set(alerts.map(a => a.stack_name));
-
-        const docker = DockerController.getInstance();
-
-        for (const stackName of stacksToMonitor) {
-            const stackAlerts = alerts.filter(a => a.stack_name === stackName);
-            if (stackAlerts.length === 0) continue;
-
+        for (const node of nodes) {
+            if (!node.id) continue;
+            // Remote nodes are self-monitoring - skip direct Docker access
+            if (node.type === 'remote') continue;
             try {
-                const containers = await docker.getContainersByStack(stackName);
-                if (containers.length === 0) continue;
-
-                // Fetch stats for all containers in this stack
+                const docker = DockerController.getInstance(node.id);
+                const containers = await docker.getRunningContainers();
                 for (const container of containers) {
-                    if (container.State !== 'running') continue;
+                    const stackName = container.Labels?.['com.docker.compose.project'] || 'system';
 
                     try {
                         const rawStats = await docker.getContainerStatsStream(container.Id);
@@ -230,11 +224,22 @@ export class MonitorService {
                             cpu_percent: this.calculateCpuPercent(stats),
                             memory_percent: this.calculateMemoryPercent(stats),
                             memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
-                            net_rx: this.calculateNetwork(stats, 'rx'), // KB/s (naive sum for now, proper net_rx requires time delta but we can do total MB for simple alert or just use what fits)
+                            net_rx: this.calculateNetwork(stats, 'rx'),
                             net_tx: this.calculateNetwork(stats, 'tx'),
-                            restart_count: container.RestartCount || 0
+                            restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
                         };
 
+                        db.addContainerMetric({
+                            container_id: container.Id,
+                            stack_name: stackName,
+                            cpu_percent: metrics.cpu_percent || 0,
+                            memory_mb: metrics.memory_mb || 0,
+                            net_rx_mb: metrics.net_rx || 0,
+                            net_tx_mb: metrics.net_tx || 0,
+                            timestamp: Date.now()
+                        });
+
+                        const stackAlerts = alerts.filter(a => a.stack_name === stackName);
                         for (const rule of stackAlerts) {
                             const ruleId = rule.id!;
                             const currentValue = metrics[rule.metric as keyof typeof metrics];
@@ -265,7 +270,7 @@ export class MonitorService {
                                         const safeCurrent = typeof currentValue === 'number' ? Number(currentValue.toFixed(2)) : currentValue;
                                         const safeThreshold = typeof rule.threshold === 'number' ? Number(rule.threshold.toFixed(2)) : rule.threshold;
 
-                                        const message = `The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
+                                        const message = `[Node: ${node.name}] The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
 
                                         await NotificationService.getInstance().dispatchAlert(
                                             'warning',
@@ -284,11 +289,17 @@ export class MonitorService {
                             }
                         }
                     } catch (e) {
-                        console.error(`Error parsing stats for container ${container.Id}`, e);
+                        console.error(`Error parsing stats for container ${container.Id} on node ${node.name}`, e);
                     }
                 }
-            } catch (e) { }
+            } catch (err) {
+                console.error(`Error fetching containers for node ${node.name}`, err);
+            }
         }
+
+        try {
+            db.cleanupOldMetrics(24);
+        } catch (e) { }
     }
 
     private evaluateCondition(actual: number, operator: string, threshold: number): boolean {
@@ -304,8 +315,10 @@ export class MonitorService {
 
     private calculateCpuPercent(stats: any): number {
         let cpuPercent = 0.0;
+        if (!stats?.cpu_stats?.cpu_usage || !stats?.precpu_stats?.cpu_usage) return 0.0;
+
         const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
-        const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+        const systemDelta = (stats.cpu_stats.system_cpu_usage || 0) - (stats.precpu_stats.system_cpu_usage || 0);
         const numCpus = stats.cpu_stats.online_cpus || (stats.cpu_stats.cpu_usage.percpu_usage ? stats.cpu_stats.cpu_usage.percpu_usage.length : 1);
 
         if (systemDelta > 0.0 && cpuDelta > 0.0) {
@@ -315,6 +328,8 @@ export class MonitorService {
     }
 
     private calculateMemoryPercent(stats: any): number {
+        if (!stats?.memory_stats?.usage || !stats?.memory_stats?.limit) return 0.0;
+
         const used_memory = stats.memory_stats.usage - (stats.memory_stats.stats?.cache || 0);
         const available_memory = stats.memory_stats.limit;
         if (available_memory > 0) {

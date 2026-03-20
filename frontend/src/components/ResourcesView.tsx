@@ -8,6 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 import { Trash2, HardDrive, Network, PackageMinus, MonitorX, PieChart as ChartIcon } from 'lucide-react';
+import { useNodes } from '@/context/NodeContext';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatBytes } from '@/lib/utils';
 
@@ -42,6 +43,7 @@ interface OrphanContainer {
 }
 
 export default function ResourcesView() {
+    const { activeNode } = useNodes();
     const [usage, setUsage] = useState<UsageData | null>(null);
     const [images, setImages] = useState<DockerImage[]>([]);
     const [volumes, setVolumes] = useState<DockerVolume[]>([]);
@@ -188,6 +190,9 @@ export default function ResourcesView() {
             <div className="flex items-center gap-2">
                 <HardDrive className="w-6 h-6" />
                 <h1 className="text-2xl font-bold">Resources Hub</h1>
+                {activeNode?.type === 'remote' && (
+                    <span className="text-sm font-normal text-muted-foreground">— {activeNode.name}</span>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

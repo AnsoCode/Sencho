@@ -11,7 +11,10 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import { Shield, Activity, Bell, Palette, Moon, Sun } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server } from 'lucide-react';
+import { NodeManager } from './NodeManager';
+import { useNodes } from '@/context/NodeContext';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -27,7 +30,16 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
-    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance'>('account');
+    const { activeNode } = useNodes();
+    const isRemote = activeNode?.type === 'remote';
+    const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes'>('account');
+
+    // When switching to a remote node, reset to a node-scoped section if on a global-only one
+    useEffect(() => {
+        if (isRemote && (activeSection === 'account' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes')) {
+            setActiveSection('system');
+        }
+    }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auth State
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -45,7 +57,9 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         host_ram_limit: '90',
         host_disk_limit: '90',
         global_crash: '1',
-        docker_janitor_gb: '5'
+        docker_janitor_gb: '5',
+        global_logs_refresh: '5',
+        developer_mode: '0'
     });
 
     const [isLoading, setIsLoading] = useState(false);
@@ -218,19 +232,25 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="sm:max-w-[800px] h-[600px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
+            <DialogContent className="sm:max-w-[900px] h-[650px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
                 {/* Sidebar */}
                 <div className="w-[200px] bg-muted/20 border-r border-border flex flex-col p-4 shrink-0">
-                    <div className="font-semibold text-lg mb-6 text-foreground tracking-tight">Settings Hub</div>
+                    <div className="font-semibold text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
+                    {isRemote && (
+                        <div className="text-xs text-muted-foreground mb-5 truncate">{activeNode!.name}</div>
+                    )}
+                    {!isRemote && <div className="mb-5" />}
                     <nav className="space-y-1.5 flex flex-col">
-                        <Button
-                            variant={activeSection === 'account' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('account')}
-                        >
-                            <Shield className="w-4 h-4 mr-2" />
-                            Account
-                        </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'account' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('account')}
+                            >
+                                <Shield className="w-4 h-4 mr-2" />
+                                Account
+                            </Button>
+                        )}
                         <Button
                             variant={activeSection === 'system' ? 'secondary' : 'ghost'}
                             className="w-full justify-start font-medium"
@@ -239,22 +259,44 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                             <Activity className="w-4 h-4 mr-2" />
                             System Limits
                         </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'notifications' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('notifications')}
+                            >
+                                <Bell className="w-4 h-4 mr-2" />
+                                Notifications
+                            </Button>
+                        )}
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'appearance' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('appearance')}
+                            >
+                                <Palette className="w-4 h-4 mr-2" />
+                                Appearance
+                            </Button>
+                        )}
                         <Button
-                            variant={activeSection === 'notifications' ? 'secondary' : 'ghost'}
+                            variant={activeSection === 'developer' ? 'secondary' : 'ghost'}
                             className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('notifications')}
+                            onClick={() => setActiveSection('developer')}
                         >
-                            <Bell className="w-4 h-4 mr-2" />
-                            Notifications
+                            <Code className="w-4 h-4 mr-2" />
+                            Developer
                         </Button>
-                        <Button
-                            variant={activeSection === 'appearance' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('appearance')}
-                        >
-                            <Palette className="w-4 h-4 mr-2" />
-                            Appearance
-                        </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'nodes' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('nodes')}
+                            >
+                                <Server className="w-4 h-4 mr-2" />
+                                Nodes
+                            </Button>
+                        )}
                     </nav>
                 </div>
 
@@ -416,6 +458,59 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                 </Button>
                             </div>
                         </div>
+                    )}
+
+                    {activeSection === 'developer' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">Developer</h3>
+                                <p className="text-sm text-muted-foreground">Power user settings for real-time observability and extended diagnostics.</p>
+                            </div>
+
+                            <div className="space-y-6 bg-muted/10 p-4 border border-border rounded-xl">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
+                                        <p className="text-xs text-muted-foreground">Enable Real-Time Metrics & Extended Logs</p>
+                                    </div>
+                                    <Switch
+                                        id="developer_mode"
+                                        checked={settings.developer_mode === '1'}
+                                        onCheckedChange={(c) => handleSettingChange('developer_mode', c ? '1' : '0')}
+                                    />
+                                </div>
+
+                                <div className="space-y-2 pt-4 border-t border-border">
+                                    <Label className={`text-base ${settings.developer_mode === '1' ? 'text-muted-foreground' : ''}`}>Standard Log Polling Rate</Label>
+                                    <Select
+                                        value={settings.global_logs_refresh}
+                                        onValueChange={(val) => handleSettingChange('global_logs_refresh', val)}
+                                        disabled={settings.developer_mode === '1'}
+                                    >
+                                        <SelectTrigger className="max-w-[200px]">
+                                            <SelectValue placeholder="Select rate" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="1">1 second</SelectItem>
+                                            <SelectItem value="3">3 seconds</SelectItem>
+                                            <SelectItem value="5">5 seconds</SelectItem>
+                                            <SelectItem value="10">10 seconds</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    {settings.developer_mode === '1' && (
+                                        <p className="text-xs text-amber-500">SSE streaming is active - polling rate is overridden by real-time streaming.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end mt-4">
+                                <Button onClick={saveSettings} disabled={isLoading}>Save Developer Settings</Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeSection === 'nodes' && (
+                        <NodeManager />
                     )}
 
                 </div>
