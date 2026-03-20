@@ -796,7 +796,22 @@ export default function EditorLayout() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <div className="h-16 flex items-center justify-end px-6 border-b border-border gap-4">
+        <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
+          {/* Node Context Pill — visible only when a remote node is active */}
+          <div className="flex-shrink-0">
+            {activeNode?.type === 'remote' ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                {activeNode.name}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border text-muted-foreground text-sm">
+                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                {activeNode?.name ?? 'Local'}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
           {/* Home Button */}
           <Button
             variant="outline"
@@ -942,6 +957,7 @@ export default function EditorLayout() {
               </ScrollArea>
             </PopoverContent>
           </Popover>
+          </div>{/* end right-side buttons */}
         </div>
 
         {/* Main Workspace */}

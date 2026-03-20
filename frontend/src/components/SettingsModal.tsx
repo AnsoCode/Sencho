@@ -14,6 +14,7 @@ import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server } from 'lucide-react';
 import { NodeManager } from './NodeManager';
+import { useNodes } from '@/context/NodeContext';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -29,7 +30,16 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
+    const { activeNode } = useNodes();
+    const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes'>('account');
+
+    // When switching to a remote node, reset to a node-scoped section if on a global-only one
+    useEffect(() => {
+        if (isRemote && (activeSection === 'account' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes')) {
+            setActiveSection('system');
+        }
+    }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auth State
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -225,16 +235,22 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
             <DialogContent className="sm:max-w-[900px] h-[650px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
                 {/* Sidebar */}
                 <div className="w-[200px] bg-muted/20 border-r border-border flex flex-col p-4 shrink-0">
-                    <div className="font-semibold text-lg mb-6 text-foreground tracking-tight">Settings Hub</div>
+                    <div className="font-semibold text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
+                    {isRemote && (
+                        <div className="text-xs text-muted-foreground mb-5 truncate">{activeNode!.name}</div>
+                    )}
+                    {!isRemote && <div className="mb-5" />}
                     <nav className="space-y-1.5 flex flex-col">
-                        <Button
-                            variant={activeSection === 'account' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('account')}
-                        >
-                            <Shield className="w-4 h-4 mr-2" />
-                            Account
-                        </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'account' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('account')}
+                            >
+                                <Shield className="w-4 h-4 mr-2" />
+                                Account
+                            </Button>
+                        )}
                         <Button
                             variant={activeSection === 'system' ? 'secondary' : 'ghost'}
                             className="w-full justify-start font-medium"
@@ -243,22 +259,26 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                             <Activity className="w-4 h-4 mr-2" />
                             System Limits
                         </Button>
-                        <Button
-                            variant={activeSection === 'notifications' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('notifications')}
-                        >
-                            <Bell className="w-4 h-4 mr-2" />
-                            Notifications
-                        </Button>
-                        <Button
-                            variant={activeSection === 'appearance' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('appearance')}
-                        >
-                            <Palette className="w-4 h-4 mr-2" />
-                            Appearance
-                        </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'notifications' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('notifications')}
+                            >
+                                <Bell className="w-4 h-4 mr-2" />
+                                Notifications
+                            </Button>
+                        )}
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'appearance' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('appearance')}
+                            >
+                                <Palette className="w-4 h-4 mr-2" />
+                                Appearance
+                            </Button>
+                        )}
                         <Button
                             variant={activeSection === 'developer' ? 'secondary' : 'ghost'}
                             className="w-full justify-start font-medium"
@@ -267,14 +287,16 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                             <Code className="w-4 h-4 mr-2" />
                             Developer
                         </Button>
-                        <Button
-                            variant={activeSection === 'nodes' ? 'secondary' : 'ghost'}
-                            className="w-full justify-start font-medium"
-                            onClick={() => setActiveSection('nodes')}
-                        >
-                            <Server className="w-4 h-4 mr-2" />
-                            Nodes
-                        </Button>
+                        {!isRemote && (
+                            <Button
+                                variant={activeSection === 'nodes' ? 'secondary' : 'ghost'}
+                                className="w-full justify-start font-medium"
+                                onClick={() => setActiveSection('nodes')}
+                            >
+                                <Server className="w-4 h-4 mr-2" />
+                                Nodes
+                            </Button>
+                        )}
                     </nav>
                 </div>
 

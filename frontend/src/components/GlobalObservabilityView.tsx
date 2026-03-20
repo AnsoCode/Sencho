@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RefreshCw, Download, Trash2, Search, Filter } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { useNodes } from '@/context/NodeContext';
 
 
 interface LogEntry {
@@ -17,6 +18,7 @@ interface LogEntry {
 }
 
 export function GlobalObservabilityView() {
+    const { activeNode } = useNodes();
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [allStacks, setAllStacks] = useState<string[]>([]);
@@ -57,7 +59,7 @@ export function GlobalObservabilityView() {
     useEffect(() => {
         const fetchStacks = async () => {
             try {
-                const res = await fetch('/api/stacks');
+                const res = await apiFetch('/stacks');
                 if (res.ok) {
                     const stacks: string[] = await res.json();
                     setAllStacks(stacks.sort());
@@ -111,7 +113,7 @@ export function GlobalObservabilityView() {
             const fetchData = async () => {
                 setLoading(true);
                 try {
-                    const logsRes = await fetch('/api/logs/global');
+                    const logsRes = await apiFetch('/logs/global');
                     if (logsRes.ok) {
                         setLogs(await logsRes.json());
                     }
@@ -180,6 +182,13 @@ export function GlobalObservabilityView() {
 
     return (
         <div className="flex flex-col h-full w-full relative group bg-[#0A0A0A] text-gray-300">
+            {/* Node Context Indicator */}
+            {activeNode?.type === 'remote' && (
+                <div className="absolute top-2 left-4 z-10 flex items-center gap-1.5 bg-background/90 backdrop-blur-sm border border-border shadow-md rounded-md px-2.5 py-1 text-xs text-muted-foreground">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                    {activeNode.name}
+                </div>
+            )}
             {/* Floating Action Bar */}
             <div className="absolute top-2 right-6 z-10 flex gap-2 transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-within:opacity-100 bg-background/90 backdrop-blur-sm border border-border shadow-md rounded-md p-1 pr-1">
                 <div className="relative flex items-center">

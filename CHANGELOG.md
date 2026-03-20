@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Fixed:** `AppStoreView` and `GlobalObservabilityView` using raw `fetch()` instead of `apiFetch()` — all calls now inject the `x-node-id` header so templates, deploys, stacks, and logs are correctly proxied to the active remote node.
+- **Fixed:** `HostConsole` WebSocket URL missing `?nodeId=` query parameter — the upgrade handler now receives the active node ID and routes the PTY session to the correct node.
+- **Added:** Two-tier Option A scoped navigation UX — a context pill in the top header bar always shows the active node name (pulsing blue for remote, green for local).
+- **Added:** Remote-aware headers in `HostConsole` ("Host Console — [Node Name]"), `ResourcesView` ("Resources Hub — [Node Name]"), `GlobalObservabilityView` (floating node badge), and `AppStoreView` deploy sheet ("Deploying to: [Node Name]").
+- **Added:** `SettingsModal` now scopes its sidebar to the active node type — when a remote node is selected, global-only tabs (Account, Appearance, Notifications, Nodes) are hidden, and the header subtitle shows the remote node name.
 - **Fixed:** A massive memory leak (browser Out of Memory crash) by throttling historical metrics polling down to 60s and downsampling SQLite metrics payload sizes by 12x.
 - **Fixed:** A bug where the active node UI dropdown would desync from the actual API requests on initial page load by properly hydrating state from localStorage.
 - **Fixed:** Remote node proxy forwarding the browser's `sencho_token` cookie to the remote Sencho instance — the remote's `authMiddleware` evaluates `cookieToken || bearerToken` and the cookie (signed with the local JWT secret) was validated before the valid Bearer token, causing 401 on all proxied API calls. Fixed by stripping the `cookie` header in `proxyReq` so only the Bearer token is used for remote authentication.
