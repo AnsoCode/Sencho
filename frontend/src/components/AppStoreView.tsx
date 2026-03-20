@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ export interface Template {
     docs_url?: string;
     architectures?: string[];
     stars?: number;
+    source?: string;
 }
 
 interface AppStoreViewProps {
@@ -48,6 +49,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [isDeploying, setIsDeploying] = useState(false);
     const [loading, setLoading] = useState(true);
 
+    const [selectedCategory, setSelectedCategory] = useState<string>('All');
     const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
     const [portVars, setPortVars] = useState<Record<string, string>>({});
     const [isDescExpanded, setIsDescExpanded] = useState(false);
@@ -180,11 +182,21 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         }
     };
 
-    const filtered = templates.filter(t =>
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (t.categories && t.categories.join(' ').toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const categories = useMemo(() => {
+        const cats = new Set<string>();
+        templates.forEach(t => t.categories?.forEach(c => cats.add(c)));
+        return ['All', ...Array.from(cats).sort()];
+    }, [templates]);
+
+    const filtered = useMemo(() => templates.filter(t => {
+        const matchesCategory = selectedCategory === 'All' || t.categories?.includes(selectedCategory);
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = !q ||
+            t.title.toLowerCase().includes(q) ||
+            t.description?.toLowerCase().includes(q) ||
+            (t.categories && t.categories.join(' ').toLowerCase().includes(q));
+        return matchesCategory && matchesSearch;
+    }), [templates, selectedCategory, searchQuery]);
 
     return (
         <div className="flex flex-col h-full space-y-6">
@@ -196,10 +208,31 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                         placeholder="Search App Store..."
                         className="pl-8"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => { setSearchQuery(e.target.value); }}
                     />
                 </div>
             </div>
+
+            {!loading && categories.length > 1 && (
+                <div className="flex items-center gap-2">
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1 scrollbar-none">
+                        {categories.map(cat => (
+                            <Button
+                                key={cat}
+                                variant={selectedCategory === cat ? 'default' : 'outline'}
+                                size="sm"
+                                className="shrink-0 h-7 text-xs px-3 rounded-full"
+                                onClick={() => setSelectedCategory(cat)}
+                            >
+                                {cat}
+                            </Button>
+                        ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                        {filtered.length} app{filtered.length !== 1 ? 's' : ''}
+                    </span>
+                </div>
+            )}
 
             <div className="flex-1 overflow-auto">
                 {loading ? (
@@ -233,7 +266,12 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     <CardContent className="pt-0 mt-auto">
                                         <div className="flex flex-wrap gap-1 mt-2">
                                             {t.categories.slice(0, 3).map(c => (
-                                                <Badge variant="secondary" key={c} className="text-[10px] px-1.5 py-0 pb-0.5">
+                                                <Badge
+                                                    variant={selectedCategory === c ? 'default' : 'secondary'}
+                                                    key={c}
+                                                    className="text-[10px] px-1.5 py-0 pb-0.5 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedCategory(c); }}
+                                                >
                                                     {c}
                                                 </Badge>
                                             ))}
