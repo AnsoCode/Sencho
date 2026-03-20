@@ -122,13 +122,15 @@ wsProxyServer.on('error', (err, _req, socket: any) => {
 });
 
 // Authentication Middleware
-// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy)
+// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy).
+// Bearer token is evaluated first: node-to-node proxy calls always carry a Bearer token and
+// should never be shadowed by a stale or cross-instance cookie.
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const cookieToken = req.cookies[COOKIE_NAME];
   const bearerToken = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
     : null;
-  const token = cookieToken || bearerToken;
+  const token = bearerToken || cookieToken;
 
   if (!token) {
     res.status(401).json({ error: 'Authentication required' });
@@ -371,8 +373,12 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
-      if (!(proxyRes as Response).headersSent) {
-        (proxyRes as Response).status(502).json({
+      // proxyRes can be either a ServerResponse (HTTP) or a raw Socket (WS/TCP errors).
+      // Only attempt to send an HTTP 502 if it is a proper ServerResponse with a
+      // headersSent flag — otherwise silently drop (the socket will be destroyed).
+      const res = proxyRes as any;
+      if (typeof res?.headersSent === 'boolean' && !res.headersSent && typeof res.status === 'function') {
+        res.status(502).json({
           error: 'Remote node is unreachable. Check the API URL and ensure Sencho is running on that host.'
         });
       }
@@ -424,7 +430,9 @@ server.on('upgrade', async (req, socket, head) => {
   const cookieToken = cookies[COOKIE_NAME];
   const authHeader = req.headers['authorization'] as string | undefined;
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  const token = cookieToken || bearerToken;
+  // Prefer Bearer over cookie: node-to-node proxy upgrades carry a Bearer token and must
+  // not be shadowed by a browser cookie signed with a different instance's JWT secret.
+  const token = bearerToken || cookieToken;
 
   if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -473,6 +481,10 @@ server.on('upgrade', async (req, socket, head) => {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
       const logsWss = new WebSocket.Server({ noServer: true });
       logsWss.handleUpgrade(req, socket, head, (ws) => {
+        // Close the per-connection server immediately after the upgrade is complete.
+        // The wss instance is only needed to negotiate the handshake; keeping it open
+        // would accumulate listeners and allocate memory for every connection.
+        logsWss.close();
         const stackName = decodeURIComponent(logsMatch[1]);
         try {
           ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
@@ -486,6 +498,7 @@ server.on('upgrade', async (req, socket, head) => {
     } else if (hostConsoleMatch) {
       const hostConsoleWss = new WebSocket.Server({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
+        hostConsoleWss.close();
         let targetDirectory = '';
         try {
           targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
@@ -539,14 +552,20 @@ wss.on('connection', (ws) => {
         // message belongs to the gateway's DB and won't resolve locally. Fall back to local.
         let nodeId = requestedId;
         try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).streamStats(data.containerId, ws);
+        DockerController.getInstance(nodeId).streamStats(data.containerId, ws).catch((err: Error) => {
+          console.error('[WS] streamStats error:', err.message);
+          if (ws.readyState === WebSocket.OPEN) ws.close();
+        });
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
         // Input, resize, and cleanup are handled inside execContainer's closure
         const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
         let nodeId = requestedId;
         try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).execContainer(data.containerId, ws);
+        DockerController.getInstance(nodeId).execContainer(data.containerId, ws).catch((err: Error) => {
+          console.error('[WS] execContainer error:', err.message);
+          if (ws.readyState === WebSocket.OPEN) ws.close();
+        });
       }
     } catch (error) {
       // Malformed JSON - ignore silently

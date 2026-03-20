@@ -425,15 +425,27 @@ class DockerController {
     const stats = await container.stats({ stream: true });
 
     stats.on('data', (chunk: Buffer) => {
-      ws.send(chunk.toString());
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(chunk.toString());
+      }
     });
 
     stats.on('error', (err: Error) => {
-      ws.send(JSON.stringify({ error: err.message }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ error: err.message }));
+      }
     });
 
     stats.on('end', () => {
-      ws.send(JSON.stringify({ end: true }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ end: true }));
+      }
+    });
+
+    // Destroy the Docker stats stream when the WebSocket closes to prevent
+    // orphaned streams polling the daemon after client disconnect.
+    ws.on('close', () => {
+      try { (stats as any).destroy(); } catch { /* stream already ended */ }
     });
   }
 
