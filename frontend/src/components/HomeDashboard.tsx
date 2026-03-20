@@ -174,23 +174,29 @@ export default function HomeDashboard() {
         method: 'POST',
         body: JSON.stringify({ stackName }),
       });
-      if (!createResponse.ok) throw new Error('Failed to create stack');
+      if (!createResponse.ok) {
+        const err = await createResponse.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to create stack');
+      }
 
       // Save the converted YAML content
       const saveResponse = await apiFetch(`/stacks/${stackName}`, {
         method: 'PUT',
         body: JSON.stringify({ content: convertedYaml }),
       });
-      if (!saveResponse.ok) throw new Error('Failed to save stack content');
+      if (!saveResponse.ok) {
+        const err = await saveResponse.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to save stack content');
+      }
 
       setCreateDialogOpen(false);
       setNewStackName('');
       setConvertedYaml('');
       setDockerRunInput('');
       window.location.reload(); // Refresh to show new stack
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create stack:', error);
-      toast.error('Failed to create stack');
+      toast.error(error?.message || error?.error || 'Failed to create stack');
     }
   };
 
