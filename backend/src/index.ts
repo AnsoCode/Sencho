@@ -21,6 +21,7 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
@@ -1531,6 +1532,34 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 });
 
 // =========================
+// Image Update Checker API
+// =========================
+
+app.get('/api/image-updates', authMiddleware, (_req: Request, res: Response) => {
+    try {
+        const updates = DatabaseService.getInstance().getStackUpdateStatus();
+        res.json(updates);
+    } catch (error) {
+        console.error('Failed to fetch image update status:', error);
+        res.status(500).json({ error: 'Failed to fetch image update status' });
+    }
+});
+
+app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Response) => {
+    try {
+        const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
+        if (!triggered) {
+            res.status(429).json({ error: 'Rate limited. Please wait at least 10 minutes between manual refreshes.' });
+            return;
+        }
+        res.json({ success: true, message: 'Image update check started in background.' });
+    } catch (error) {
+        console.error('Failed to trigger image update refresh:', error);
+        res.status(500).json({ error: 'Failed to trigger refresh' });
+    }
+});
+
+// =========================
 // Node Management API
 // =========================
 
@@ -1672,6 +1701,9 @@ async function startServer() {
 
   // Start Background Watchdog
   MonitorService.getInstance().start();
+
+  // Start Background Image Update Checker
+  ImageUpdateService.getInstance().start();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
