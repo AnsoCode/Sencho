@@ -1139,35 +1139,11 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
 // Get host system stats
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
-    const nodeId = req.nodeId ?? NodeRegistry.getInstance().getDefaultNodeId();
-    const node = NodeRegistry.getInstance().getNode(nodeId);
-
     const rxSec = Math.max(0, globalDockerNetwork.rxSec);
     const txSec = Math.max(0, globalDockerNetwork.txSec);
 
-    if (node && node.type === 'remote') {
-      // Remote node: use Docker daemon info for CPU/RAM - disk is not available via Docker API
-      const docker = NodeRegistry.getInstance().getDocker(nodeId);
-      const info = await docker.info();
-
-      res.json({
-        cpu: {
-          usage: '0',
-          cores: info.NCPU ?? 0,
-        },
-        memory: {
-          total: info.MemTotal ?? 0,
-          used: 0,
-          free: info.MemTotal ?? 0,
-          usagePercent: '0',
-        },
-        disk: null,
-        network: { rxBytes: 0, txBytes: 0, rxSec, txSec },
-      });
-      return;
-    }
-
-    // Local node: use systeminformation for accurate host metrics
+    // Remote node requests are intercepted and proxied by remoteNodeProxy before reaching here.
+    // This handler only runs for local nodes.
     const [currentLoad, mem, fsSize] = await Promise.all([
       si.currentLoad(),
       si.mem(),
