@@ -513,15 +513,19 @@ wss.on('connection', (ws) => {
       if (data.action === 'connectTerminal') {
         terminalWs = ws;
       } else if (data.action === 'streamStats') {
-        const nodeId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-        const dockerController = DockerController.getInstance(nodeId);
-        dockerController.streamStats(data.containerId, ws);
+        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        // When a WS is proxied from a gateway to this remote instance, the nodeId in the
+        // message belongs to the gateway's DB and won't resolve locally. Fall back to local.
+        let nodeId = requestedId;
+        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
+        DockerController.getInstance(nodeId).streamStats(data.containerId, ws);
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
         // Input, resize, and cleanup are handled inside execContainer's closure
-        const nodeId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-        const dockerController = DockerController.getInstance(nodeId);
-        dockerController.execContainer(data.containerId, ws);
+        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+        let nodeId = requestedId;
+        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
+        DockerController.getInstance(nodeId).execContainer(data.containerId, ws);
       }
     } catch (error) {
       // Malformed JSON - ignore silently
