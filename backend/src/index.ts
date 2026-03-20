@@ -1072,9 +1072,11 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
       }
     }));
 
-    // Sort globally by timestamp ascending (newest bottom) and limit to 2000 lines
+    // Sort globally by timestamp ascending (newest bottom).
+    // Limit to 500 lines — the client renders at most 300 rows at once, so
+    // sending 2000 lines was wasting bandwidth and inflating JSON parse time.
     allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
-    res.json(allLogs.slice(-2000));
+    res.json(allLogs.slice(-500));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch global logs' });
   }

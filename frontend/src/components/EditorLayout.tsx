@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
@@ -67,6 +67,13 @@ export default function EditorLayout() {
   const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string, net: string, lastRx?: number, lastTx?: number }>>({});
+  // Incoming WebSocket stats are written here first (no re-render), then flushed
+  // to React state in one batched update every 1.5 s.
+  const pendingStatsRef = useRef<Record<string, { cpu: string; ram: string; net: string; lastRx: number; lastTx: number }>>({});
+  // Raw rx/tx byte totals used for rate calculation. Never cleared on flush so
+  // the delta is always computed against the most recent known value, avoiding
+  // the stale-closure bug that occurs when reading containerStats directly.
+  const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -221,6 +228,7 @@ export default function EditorLayout() {
 
   useEffect(() => {
     const wsMap: Record<string, WebSocket> = {};
+
     (containers || []).forEach(container => {
       if (!container?.Id) return;
       try {
@@ -238,6 +246,7 @@ export default function EditorLayout() {
             const data = JSON.parse(event.data);
             // Skip initial empty chunks where stats fields are missing
             if (!data.cpu_stats?.cpu_usage || !data.precpu_stats?.cpu_usage || !data.memory_stats?.usage) return;
+
             const cpuDelta = data.cpu_stats.cpu_usage.total_usage - data.precpu_stats.cpu_usage.total_usage;
             const systemDelta = (data.cpu_stats.system_cpu_usage || 0) - (data.precpu_stats.system_cpu_usage || 0);
             const onlineCpus = data.cpu_stats.online_cpus || 1;
@@ -253,31 +262,23 @@ export default function EditorLayout() {
               });
             }
 
-            setContainerStats(prev => {
-              const prevStat = prev[container.Id];
-              // Calculate rate if we have a previous value
-              const rxRate = prevStat?.lastRx !== undefined ? Math.max(0, currentRx - prevStat.lastRx) : 0;
-              const txRate = prevStat?.lastTx !== undefined ? Math.max(0, currentTx - prevStat.lastTx) : 0;
+            // Rate is derived from rawBytesRef which is never cleared on flush,
+            // so the delta is always accurate — no stale-closure risk.
+            const prevRaw = rawBytesRef.current[container.Id];
+            const rxRate = prevRaw ? Math.max(0, currentRx - prevRaw.lastRx) : 0;
+            const txRate = prevRaw ? Math.max(0, currentTx - prevRaw.lastTx) : 0;
+            rawBytesRef.current[container.Id] = { lastRx: currentRx, lastTx: currentTx };
 
-              const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
+            const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
 
-              // Check if values actually changed to prevent infinite re-renders
-              const newCpu = cpuPercent + '%';
-              if (prevStat && prevStat.cpu === newCpu && prevStat.ram === ramUsage && prevStat.lastRx === currentRx && prevStat.lastTx === currentTx) {
-                return prev;
-              }
-
-              return {
-                ...prev,
-                [container.Id]: {
-                  cpu: newCpu,
-                  ram: ramUsage,
-                  net: netIO,
-                  lastRx: currentRx,
-                  lastTx: currentTx
-                }
-              };
-            });
+            // Write into the buffer ref only — zero re-render cost.
+            pendingStatsRef.current[container.Id] = {
+              cpu: cpuPercent + '%',
+              ram: ramUsage,
+              net: netIO,
+              lastRx: currentRx,
+              lastTx: currentTx,
+            };
           } catch {
             // Ignore parse errors
           }
@@ -286,16 +287,39 @@ export default function EditorLayout() {
         // Ignore WebSocket errors
       }
     });
-    return () => {
-      Object.values(wsMap).forEach(ws => {
-        try {
-          ws.close();
-        } catch {
-          // Ignore close errors
+
+    // Flush buffered stats into React state once every 1.5 s.
+    // Snapshot + clear the buffer BEFORE calling setState so the updater
+    // function remains pure (no side-effects inside it).
+    const flushInterval = setInterval(() => {
+      const pending = pendingStatsRef.current;
+      if (Object.keys(pending).length === 0) return;
+      pendingStatsRef.current = {};
+
+      setContainerStats(prev => {
+        let hasChanges = false;
+        const next = { ...prev };
+        for (const [id, newStats] of Object.entries(pending)) {
+          const old = prev[id];
+          if (!old || old.cpu !== newStats.cpu || old.ram !== newStats.ram || old.net !== newStats.net) {
+            next[id] = newStats;
+            hasChanges = true;
+          }
         }
+        return hasChanges ? next : prev;
+      });
+    }, 1500);
+
+    return () => {
+      clearInterval(flushInterval);
+      // Discard buffered stats for the old stack so stale entries don't
+      // briefly appear when a new stack is selected.
+      pendingStatsRef.current = {};
+      Object.values(wsMap).forEach(ws => {
+        try { ws.close(); } catch { /* ignore */ }
       });
     };
-  }, [containers]);
+  }, [containers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadFile = async (filename: string) => {
     if (!filename) return;
