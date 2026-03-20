@@ -356,6 +356,18 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
       if (node?.api_token) {
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
       }
+      // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
+      // doesn't reject the request with 404 ("Node X not found") — the remote
+      // has no record of the gateway's node IDs and should treat the request
+      // as local. This affects endpoints like EventSource /api/containers/:id/logs
+      // that pass nodeId as a query param rather than the x-node-id header.
+      if (proxyReq.path.includes('nodeId=')) {
+        const [pathname, qs] = proxyReq.path.split('?');
+        const params = new URLSearchParams(qs || '');
+        params.delete('nodeId');
+        const newQs = params.toString();
+        proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
+      }
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
@@ -440,6 +452,15 @@ server.on('upgrade', async (req, socket, head) => {
       const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
       req.headers['authorization'] = `Bearer ${node.api_token}`;
       delete req.headers['x-node-id'];
+      // Strip the browser's session cookie — it is signed by this instance's JWT secret and
+      // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
+      delete req.headers['cookie'];
+      // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
+      // The remote has no record of the gateway's nodeId, so leaving it would cause unnecessary
+      // fallback logic. Removing it lets the remote default cleanly to its own local node.
+      const fwdUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+      fwdUrl.searchParams.delete('nodeId');
+      req.url = fwdUrl.pathname + (fwdUrl.searchParams.toString() ? `?${fwdUrl.searchParams.toString()}` : '');
       wsProxyServer.ws(req, socket, head, { target: wsTarget });
       return;
     }
