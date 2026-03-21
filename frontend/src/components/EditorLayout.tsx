@@ -194,9 +194,21 @@ export default function EditorLayout() {
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let isMounted = true;
+    let retryCount = 0;
+    const MAX_RETRY_DELAY_MS = 30000;
 
     const connect = () => {
+      if (!isMounted) return;
       ws = new WebSocket(`${wsBase}/ws/notifications`);
+
+      ws.onopen = () => {
+        if (!isMounted) {
+          // Component unmounted while the handshake was in-flight (React StrictMode double-mount)
+          ws?.close();
+          return;
+        }
+        retryCount = 0; // Reset backoff on successful connect
+      };
 
       ws.onmessage = (event) => {
         try {
@@ -209,14 +221,18 @@ export default function EditorLayout() {
         }
       };
 
-      ws.onclose = () => {
-        if (isMounted) {
-          reconnectTimer = setTimeout(connect, 5000);
-        }
+      ws.onclose = (event) => {
+        if (!isMounted) return;
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
+        const delay = Math.min(1000 * Math.pow(2, retryCount), MAX_RETRY_DELAY_MS);
+        retryCount++;
+        console.debug(`[WS notifications] closed (code=${event.code}), reconnecting in ${delay}ms (attempt ${retryCount})`);
+        reconnectTimer = setTimeout(connect, delay);
       };
 
-      ws.onerror = () => {
-        ws?.close();
+      ws.onerror = (event) => {
+        // onerror always fires before onclose - log it and let onclose handle reconnect
+        console.warn('[WS notifications] error event', event);
       };
     };
 
@@ -225,7 +241,12 @@ export default function EditorLayout() {
     return () => {
       isMounted = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
+      // Only close an already-open connection. If still CONNECTING, let onopen
+      // detect isMounted=false and close then — avoids the browser warning
+      // "WebSocket is closed before the connection is established".
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

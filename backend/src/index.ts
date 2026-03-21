@@ -68,7 +68,32 @@ app.use(cors({
   origin: true,
   credentials: true,
 }));
-app.use(express.json());
+// Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
+// consumed here: express.json() drains the IncomingMessage stream into req.body
+// and http-proxy then pipes an already-ended stream to the remote server.
+// When Node.js pipes an ended readable it calls process.nextTick(dest.end()),
+// which fires *before* the proxyReq socket event, so any attempt to write the
+// body inside the proxyReq handler results in "write after end" and the request
+// hangs. Solution: skip JSON parsing for remote-targeted /api/ requests so the
+// raw stream flows through the proxy intact.
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const nodeIdHeader = req.headers['x-node-id'];
+  if (nodeIdHeader) {
+    const nodeId = parseInt(nodeIdHeader as string, 10);
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+    if (
+      node?.type === 'remote' &&
+      req.path.startsWith('/api/') &&
+      !req.path.startsWith('/api/auth/') &&
+      !req.path.startsWith('/api/nodes')
+    ) {
+      // Preserve body stream for proxy piping
+      next();
+      return;
+    }
+  }
+  express.json()(req, res, next);
+});
 app.use(cookieParser());
 
 // Node Context Middleware
@@ -370,6 +395,10 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         const newQs = params.toString();
         proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
       }
+      // Body forwarding: the conditional json parser (see top of file) skips
+      // parsing for remote requests, so req's raw stream is intact and
+      // http-proxy's req.pipe(proxyReq) forwards the body automatically.
+      // No manual body rewriting needed here.
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
@@ -1392,12 +1421,26 @@ app.get('/api/alerts', async (req: Request, res: Response) => {
   }
 });
 
+const AlertCreateSchema = z.object({
+  stack_name: z.string().min(1).max(255),
+  metric: z.enum(['cpu_percent', 'memory_percent', 'memory_mb', 'net_rx', 'net_tx', 'restart_count']),
+  operator: z.enum(['>', '>=', '<', '<=', '==']),
+  threshold: z.number().min(0),
+  duration_mins: z.coerce.number().int().min(0).max(1440),
+  cooldown_mins: z.coerce.number().int().min(0).max(10080),
+});
+
 app.post('/api/alerts', async (req: Request, res: Response) => {
+  const parsed = AlertCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid alert data', details: parsed.error.flatten().fieldErrors });
+    return;
+  }
   try {
-    const alert = req.body;
-    DatabaseService.getInstance().addStackAlert(alert);
+    DatabaseService.getInstance().addStackAlert(parsed.data);
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to add alert:', error);
     res.status(500).json({ error: 'Failed to add alert' });
   }
 });
