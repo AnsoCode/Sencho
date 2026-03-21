@@ -162,7 +162,7 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification WS push — load history once on mount, then receive live updates
+  // Notification WS push - load history once on mount, then receive live updates
   useEffect(() => {
     fetchNotifications();
 
@@ -300,7 +300,7 @@ export default function EditorLayout() {
             }
 
             // Rate is derived from rawBytesRef which is never cleared on flush,
-            // so the delta is always accurate — no stale-closure risk.
+            // so the delta is always accurate - no stale-closure risk.
             const prevRaw = rawBytesRef.current[container.Id];
             const rxRate = prevRaw ? Math.max(0, currentRx - prevRaw.lastRx) : 0;
             const txRate = prevRaw ? Math.max(0, currentTx - prevRaw.lastTx) : 0;
@@ -308,7 +308,7 @@ export default function EditorLayout() {
 
             const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
 
-            // Write into the buffer ref only — zero re-render cost.
+            // Write into the buffer ref only - zero re-render cost.
             pendingStatsRef.current[container.Id] = {
               cpu: cpuPercent + '%',
               ram: ramUsage,
@@ -770,7 +770,7 @@ export default function EditorLayout() {
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
-                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                         }`} />
                       {node.name}
                     </div>
@@ -880,7 +880,7 @@ export default function EditorLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
-          {/* Node Context Pill — visible only when a remote node is active */}
+          {/* Node Context Pill - visible only when a remote node is active */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
@@ -895,156 +895,156 @@ export default function EditorLayout() {
             )}
           </div>
           <div className="flex items-center gap-4">
-          {/* Home Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => {
-              setSelectedFile(null);
-              setContent('');
-              setOriginalContent('');
-              setEnvContent('');
-              setOriginalEnvContent('');
-              setEnvFiles([]);
-              setSelectedEnvFile('');
-              setEnvExists(false);
-              setContainers([]);
-              setIsEditing(false);
-              setActiveView('dashboard');
-            }}
-            title="Go to Home Dashboard"
-          >
-            <Home className="w-4 h-4 mr-2" />
-            Home
-          </Button>
-          {/* Console Toggle */}
-          <Button
-            variant={activeView === 'host-console' ? 'default' : 'outline'}
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
-          >
-            <Terminal className="w-4 h-4 mr-2" />
-            Console
-          </Button>
-          {/* Resources Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('resources')}
-            title="System Resources"
-          >
-            <HardDrive className="w-4 h-4 mr-2" />
-            Resources
-          </Button>
-          {/* App Store Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('templates')}
-            title="App Store"
-          >
-            <CloudDownload className="w-4 h-4 mr-2" />
-            App Store
-          </Button>
-          {/* Global Observability Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('global-observability')}
-            title="Global Logs"
-          >
-            <Activity className="w-4 h-4 mr-2" />
-            Logs
-          </Button>
+            {/* Home Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => {
+                setSelectedFile(null);
+                setContent('');
+                setOriginalContent('');
+                setEnvContent('');
+                setOriginalEnvContent('');
+                setEnvFiles([]);
+                setSelectedEnvFile('');
+                setEnvExists(false);
+                setContainers([]);
+                setIsEditing(false);
+                setActiveView('dashboard');
+              }}
+              title="Go to Home Dashboard"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Home
+            </Button>
+            {/* Console Toggle */}
+            <Button
+              variant={activeView === 'host-console' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
+            >
+              <Terminal className="w-4 h-4 mr-2" />
+              Console
+            </Button>
+            {/* Resources Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView('resources')}
+              title="System Resources"
+            >
+              <HardDrive className="w-4 h-4 mr-2" />
+              Resources
+            </Button>
+            {/* App Store Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView('templates')}
+              title="App Store"
+            >
+              <CloudDownload className="w-4 h-4 mr-2" />
+              App Store
+            </Button>
+            {/* Global Observability Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView('global-observability')}
+              title="Global Logs"
+            >
+              <Activity className="w-4 h-4 mr-2" />
+              Logs
+            </Button>
 
-          {/* Settings Modal Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setSettingsModalOpen(true)}
-            title="Notification Settings"
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
+            {/* Settings Modal Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setSettingsModalOpen(true)}
+              title="Notification Settings"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
 
-          {/* Notifications Popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
-                <Bell className="w-4 h-4" />
-                {notifications.filter(n => !n.is_read).length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                  </span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
-              <div className="flex items-center justify-between p-4 border-b">
-                <h4 className="font-semibold">Notifications</h4>
-                <div className="flex gap-2">
+            {/* Notifications Popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
+                  <Bell className="w-4 h-4" />
                   {notifications.filter(n => !n.is_read).length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
-                      Mark all as read
-                    </Button>
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
                   )}
-                  {notifications.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="w-3 h-3 mr-1" />
-                      Clear all
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <ScrollArea className="h-80">
-                {notifications.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
-                ) : (
-                  <div className="flex flex-col">
-                    {notifications.map((notif: any) => (
-                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
-                        <div className="flex items-center gap-2 mb-1 pr-6">
-                          <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
-                            {notif.level}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            {new Date(notif.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="font-medium pr-6">{notif.message}</p>
-
-                        {/* Delete individual notification button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(notif.id);
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h4 className="font-semibold">Notifications</h4>
+                  <div className="flex gap-2">
+                    {notifications.filter(n => !n.is_read).length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
+                        Mark all as read
+                      </Button>
+                    )}
+                    {notifications.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Clear all
+                      </Button>
+                    )}
                   </div>
-                )}
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
+                </div>
+                <ScrollArea className="h-80">
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
+                  ) : (
+                    <div className="flex flex-col">
+                      {notifications.map((notif: any) => (
+                        <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
+                          <div className="flex items-center gap-2 mb-1 pr-6">
+                            <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
+                              {notif.level}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {new Date(notif.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="font-medium pr-6">{notif.message}</p>
+
+                          {/* Delete individual notification button */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
           </div>{/* end right-side buttons */}
         </div>
 
         {/* Main Workspace */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
           {activeView === 'templates' ? (
             <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
           ) : activeView === 'resources' ? (

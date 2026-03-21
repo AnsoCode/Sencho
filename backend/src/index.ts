@@ -32,8 +32,8 @@ const execAsync = promisify(exec);
 
 // Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
 // util._extend internally. The warning fires at runtime when createProxyServer() is
-// first invoked (NOT at import time), so intercepting process.emitWarning here —
-// before the proxy instances are created below — fully prevents it.
+// first invoked (NOT at import time), so intercepting process.emitWarning here -
+// before the proxy instances are created below - fully prevents it.
 // http-proxy has no compatible update; this suppression is intentional and safe.
 const _origEmitWarning = process.emitWarning.bind(process);
 (process as any).emitWarning = (warning: any, ...args: any[]) => {
@@ -359,7 +359,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
       }
       // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
-      // doesn't reject the request with 404 ("Node X not found") — the remote
+      // doesn't reject the request with 404 ("Node X not found") - the remote
       // has no record of the gateway's node IDs and should treat the request
       // as local. This affects endpoints like EventSource /api/containers/:id/logs
       // that pass nodeId as a query param rather than the x-node-id header.
@@ -375,7 +375,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
       console.error('[Proxy] Remote node error:', (err as Error).message);
       // proxyRes can be either a ServerResponse (HTTP) or a raw Socket (WS/TCP errors).
       // Only attempt to send an HTTP 502 if it is a proper ServerResponse with a
-      // headersSent flag — otherwise silently drop (the socket will be destroyed).
+      // headersSent flag - otherwise silently drop (the socket will be destroyed).
       const res = proxyRes as any;
       if (typeof res?.headersSent === 'boolean' && !res.headersSent && typeof res.status === 'function') {
         res.status(502).json({
@@ -418,9 +418,10 @@ const wss = new WebSocket.Server({ noServer: true });
 
 let terminalWs: WebSocket | null = null;
 
-// Notification push — set of authenticated browser clients subscribed to real-time alerts
+// Notification push - set of authenticated browser clients subscribed to real-time alerts
 const notificationSubscribers = new Set<WebSocket>();
 NotificationService.getInstance().setBroadcaster((notification) => {
+  if (notificationSubscribers.size === 0) return;
   const msg = JSON.stringify({ type: 'notification', payload: notification });
   for (const ws of notificationSubscribers) {
     if (ws.readyState === WebSocket.OPEN) {
@@ -461,7 +462,7 @@ server.on('upgrade', async (req, socket, head) => {
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
 
-    // Notification push channel — always local, never proxied to remote nodes
+    // Notification push channel - always local, never proxied to remote nodes
     if (pathname === '/ws/notifications') {
       const notifWss = new WebSocket.Server({ noServer: true });
       notifWss.handleUpgrade(req, socket, head, (ws) => {
@@ -483,7 +484,7 @@ server.on('upgrade', async (req, socket, head) => {
       const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
       req.headers['authorization'] = `Bearer ${node.api_token}`;
       delete req.headers['x-node-id'];
-      // Strip the browser's session cookie — it is signed by this instance's JWT secret and
+      // Strip the browser's session cookie - it is signed by this instance's JWT secret and
       // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
       delete req.headers['cookie'];
       // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
@@ -1096,7 +1097,7 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
     }));
 
     // Sort globally by timestamp ascending (newest bottom).
-    // Limit to 500 lines — the client renders at most 300 rows at once, so
+    // Limit to 500 lines - the client renders at most 300 rows at once, so
     // sending 2000 lines was wasting bandwidth and inflating JSON parse time.
     allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
     res.json(allLogs.slice(-500));
@@ -1269,7 +1270,7 @@ app.post('/api/agents', async (req: Request, res: Response) => {
   }
 });
 
-// Keys that contain auth credentials — never exposed to the frontend or writable via settings API
+// Keys that contain auth credentials - never exposed to the frontend or writable via settings API
 const PRIVATE_SETTINGS_KEYS = new Set(['auth_username', 'auth_password_hash', 'auth_jwt_secret']);
 
 // Strict allowlist of keys writable via the settings API (prevents overwriting auth credentials)
@@ -1286,7 +1287,7 @@ const ALLOWED_SETTING_KEYS = new Set([
   'log_retention_days',
 ]);
 
-// Zod schema for bulk PATCH — all keys optional, present keys fully validated
+// Zod schema for bulk PATCH - all keys optional, present keys fully validated
 import { z } from 'zod';
 const SettingsPatchSchema = z.object({
   host_cpu_limit:          z.coerce.number().int().min(1).max(100).transform(String),
@@ -1304,7 +1305,7 @@ const SettingsPatchSchema = z.object({
 app.get('/api/settings', async (req: Request, res: Response) => {
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
-    // Strip auth credentials — these are managed exclusively by /api/auth/* endpoints
+    // Strip auth credentials - these are managed exclusively by /api/auth/* endpoints
     for (const key of PRIVATE_SETTINGS_KEYS) {
       delete settings[key];
     }

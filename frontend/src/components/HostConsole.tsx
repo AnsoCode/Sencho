@@ -161,7 +161,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
                     <span>Host Console</span>
                     {activeNode && (
                         <span className="text-muted-foreground font-normal text-sm">
-                            — {activeNode.name}
+                            - {activeNode.name}
                         </span>
                     )}
                     {stackName && (

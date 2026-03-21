@@ -83,7 +83,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         webhook: { type: 'webhook', url: '', enabled: false },
     });
 
-    // Settings state — all user-configurable keys (no auth keys)
+    // Settings state - all user-configurable keys (no auth keys)
     const [settings, setSettings] = useState<PatchableSettings>({ ...DEFAULT_SETTINGS });
 
     // Track server state to detect unsaved changes without causing re-renders
@@ -100,17 +100,17 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     // Unsaved changes indicators per section (compared against server ref)
     const hasSystemChanges =
-        settings.host_cpu_limit   !== serverSettingsRef.current.host_cpu_limit   ||
-        settings.host_ram_limit   !== serverSettingsRef.current.host_ram_limit   ||
-        settings.host_disk_limit  !== serverSettingsRef.current.host_disk_limit  ||
+        settings.host_cpu_limit !== serverSettingsRef.current.host_cpu_limit ||
+        settings.host_ram_limit !== serverSettingsRef.current.host_ram_limit ||
+        settings.host_disk_limit !== serverSettingsRef.current.host_disk_limit ||
         settings.docker_janitor_gb !== serverSettingsRef.current.docker_janitor_gb ||
-        settings.global_crash     !== serverSettingsRef.current.global_crash;
+        settings.global_crash !== serverSettingsRef.current.global_crash;
 
     const hasDeveloperChanges =
-        settings.developer_mode          !== serverSettingsRef.current.developer_mode          ||
-        settings.global_logs_refresh     !== serverSettingsRef.current.global_logs_refresh     ||
+        settings.developer_mode !== serverSettingsRef.current.developer_mode ||
+        settings.global_logs_refresh !== serverSettingsRef.current.global_logs_refresh ||
         settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
-        settings.log_retention_days      !== serverSettingsRef.current.log_retention_days;
+        settings.log_retention_days !== serverSettingsRef.current.log_retention_days;
 
     useEffect(() => {
         if (isOpen) {
@@ -140,7 +140,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         try {
             // Fetch per-node settings from the active node (system limits etc.)
             const nodeRes = await apiFetch('/settings');
-            // Always fetch developer/UI preferences from local — these control
+            // Always fetch developer/UI preferences from local - these control
             // this Sencho instance's behaviour and must never be proxied to remote
             const localRes = isRemote ? await apiFetch('/settings', { localOnly: true }) : nodeRes;
 
@@ -151,17 +151,17 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
             const safe: PatchableSettings = {
                 // Per-node: read from active node
-                host_cpu_limit:          nodeData.host_cpu_limit          ?? DEFAULT_SETTINGS.host_cpu_limit,
-                host_ram_limit:          nodeData.host_ram_limit          ?? DEFAULT_SETTINGS.host_ram_limit,
-                host_disk_limit:         nodeData.host_disk_limit         ?? DEFAULT_SETTINGS.host_disk_limit,
-                docker_janitor_gb:       nodeData.docker_janitor_gb       ?? DEFAULT_SETTINGS.docker_janitor_gb,
-                global_crash:            (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
-                template_registry_url:   nodeData.template_registry_url   ?? '',
+                host_cpu_limit: nodeData.host_cpu_limit ?? DEFAULT_SETTINGS.host_cpu_limit,
+                host_ram_limit: nodeData.host_ram_limit ?? DEFAULT_SETTINGS.host_ram_limit,
+                host_disk_limit: nodeData.host_disk_limit ?? DEFAULT_SETTINGS.host_disk_limit,
+                docker_janitor_gb: nodeData.docker_janitor_gb ?? DEFAULT_SETTINGS.docker_janitor_gb,
+                global_crash: (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
+                template_registry_url: nodeData.template_registry_url ?? '',
                 // Local-only: always read from local node
-                global_logs_refresh:     (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
-                developer_mode:          (localData.developer_mode as '0' | '1')                   ?? DEFAULT_SETTINGS.developer_mode,
+                global_logs_refresh: (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
+                developer_mode: (localData.developer_mode as '0' | '1') ?? DEFAULT_SETTINGS.developer_mode,
                 metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
-                log_retention_days:      localData.log_retention_days      ?? DEFAULT_SETTINGS.log_retention_days,
+                log_retention_days: localData.log_retention_days ?? DEFAULT_SETTINGS.log_retention_days,
             };
             setSettings(safe);
             serverSettingsRef.current = { ...safe };
@@ -201,22 +201,22 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     const saveSystemSettings = async () => {
         const ok = await patchSettings({
-            host_cpu_limit:    settings.host_cpu_limit,
-            host_ram_limit:    settings.host_ram_limit,
-            host_disk_limit:   settings.host_disk_limit,
+            host_cpu_limit: settings.host_cpu_limit,
+            host_ram_limit: settings.host_ram_limit,
+            host_disk_limit: settings.host_disk_limit,
             docker_janitor_gb: settings.docker_janitor_gb,
-            global_crash:      settings.global_crash,
+            global_crash: settings.global_crash,
         }, setIsSavingSystem);
         if (ok) toast.success('System limits saved.');
     };
 
     const saveDeveloperSettings = async () => {
-        // Developer/UI preferences are local-only — never proxy to remote node
+        // Developer/UI preferences are local-only - never proxy to remote node
         const ok = await patchSettings({
-            developer_mode:          settings.developer_mode,
-            global_logs_refresh:     settings.global_logs_refresh,
+            developer_mode: settings.developer_mode,
+            global_logs_refresh: settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
-            log_retention_days:      settings.log_retention_days,
+            log_retention_days: settings.log_retention_days,
         }, setIsSavingDeveloper, true);
         if (ok) toast.success('Developer settings saved.');
     };
@@ -670,7 +670,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                                 </SelectContent>
                                             </Select>
                                             {settings.developer_mode === '1' && (
-                                                <p className="text-xs text-amber-500">SSE streaming is active — polling rate is overridden.</p>
+                                                <p className="text-xs text-amber-500">SSE streaming is active - polling rate is overridden.</p>
                                             )}
                                         </div>
                                     </div>
@@ -750,7 +750,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                         <div className="space-y-1">
                                             <Label className="text-base">Default Registry</Label>
                                             <p className="text-xs text-muted-foreground">
-                                                LinuxServer.io — <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
+                                                LinuxServer.io - <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
                                             </p>
                                             <p className="text-xs text-muted-foreground">Used when no custom registry is set.</p>
                                         </div>

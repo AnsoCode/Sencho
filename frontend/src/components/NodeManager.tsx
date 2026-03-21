@@ -247,13 +247,13 @@ export function NodeManager() {
             <SelectItem value="local">
               <div className="flex items-center gap-2">
                 <Monitor className="w-4 h-4" />
-                Local — Docker socket on this machine
+                Local - Docker socket on this machine
               </div>
             </SelectItem>
             <SelectItem value="remote">
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                Remote — another Sencho instance
+                Remote - another Sencho instance
               </div>
             </SelectItem>
           </SelectContent>

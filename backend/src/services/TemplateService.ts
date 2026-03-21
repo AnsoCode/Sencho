@@ -248,7 +248,7 @@ export class TemplateService {
                 });
             } else {
                 // Legacy Portainer v2 Format (Fallback for custom registries)
-                // The Portainer v2 spec includes a native `categories` field — pass it through.
+                // The Portainer v2 spec includes a native `categories` field - pass it through.
                 this.cachedTemplates = (response.data.templates || [])
                     .filter((t: Template) => !!t.image && t.type === 1)
                     .map((t: Template) => ({ ...t, source: 'custom' }));

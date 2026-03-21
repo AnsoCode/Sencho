@@ -191,7 +191,7 @@ export default function ResourcesView() {
                 <HardDrive className="w-6 h-6" />
                 <h1 className="text-2xl font-bold">Resources Hub</h1>
                 {activeNode?.type === 'remote' && (
-                    <span className="text-sm font-normal text-muted-foreground">— {activeNode.name}</span>
+                    <span className="text-sm font-normal text-muted-foreground">- {activeNode.name}</span>
                 )}
             </div>
 

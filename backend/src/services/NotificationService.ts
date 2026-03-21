@@ -34,7 +34,7 @@ export class NotificationService {
             this.broadcaster(notification);
         }
 
-        // 2. Fetch enabled agents
+        // 3. Fetch enabled agents
         const agents = this.dbService.getEnabledAgents();
         if (agents.length === 0) {
             console.log('No active notification agents found. Skipping external dispatch.');
