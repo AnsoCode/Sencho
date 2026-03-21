@@ -68,7 +68,32 @@ app.use(cors({
   origin: true,
   credentials: true,
 }));
-app.use(express.json());
+// Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
+// consumed here: express.json() drains the IncomingMessage stream into req.body
+// and http-proxy then pipes an already-ended stream to the remote server.
+// When Node.js pipes an ended readable it calls process.nextTick(dest.end()),
+// which fires *before* the proxyReq socket event, so any attempt to write the
+// body inside the proxyReq handler results in "write after end" and the request
+// hangs. Solution: skip JSON parsing for remote-targeted /api/ requests so the
+// raw stream flows through the proxy intact.
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const nodeIdHeader = req.headers['x-node-id'];
+  if (nodeIdHeader) {
+    const nodeId = parseInt(nodeIdHeader as string, 10);
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+    if (
+      node?.type === 'remote' &&
+      req.path.startsWith('/api/') &&
+      !req.path.startsWith('/api/auth/') &&
+      !req.path.startsWith('/api/nodes')
+    ) {
+      // Preserve body stream for proxy piping
+      next();
+      return;
+    }
+  }
+  express.json()(req, res, next);
+});
 app.use(cookieParser());
 
 // Node Context Middleware
@@ -370,18 +395,10 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         const newQs = params.toString();
         proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
       }
-      // Re-stream the request body for POST/PUT/PATCH requests.
-      // express.json() fully drains the incoming stream and stores the parsed
-      // object in req.body. http-proxy-middleware then pipes an already-consumed
-      // stream to the remote, which causes the remote server to stall waiting for
-      // body bytes that never arrive (the Content-Length header says N bytes but
-      // 0 are forwarded), hanging the request indefinitely.
-      if (req.body && Object.keys(req.body).length > 0) {
-        const bodyData = JSON.stringify(req.body);
-        proxyReq.setHeader('Content-Type', 'application/json');
-        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
-        proxyReq.write(bodyData);
-      }
+      // Body forwarding: the conditional json parser (see top of file) skips
+      // parsing for remote requests, so req's raw stream is intact and
+      // http-proxy's req.pipe(proxyReq) forwards the body automatically.
+      // No manual body rewriting needed here.
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
