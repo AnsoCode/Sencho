@@ -244,21 +244,21 @@ export default function ResourcesView() {
                     </CardHeader>
                     <CardContent className="flex-1 flex flex-col justify-center">
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors" onClick={() => setConfirmPruneType('images')}>
-                                <PackageMinus className="w-8 h-8 text-blue-500" />
-                                <span className="text-xs font-semibold">Prune Unused Images</span>
+                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors whitespace-normal" onClick={() => setConfirmPruneType('images')}>
+                                <PackageMinus className="w-8 h-8 text-blue-500 shrink-0" />
+                                <span className="text-xs font-semibold text-center leading-tight">Prune Unused Images</span>
                             </Button>
-                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors" onClick={() => setConfirmPruneType('volumes')}>
-                                <HardDrive className="w-8 h-8 text-purple-500" />
-                                <span className="text-xs font-semibold">Prune Unused Volumes</span>
+                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors whitespace-normal" onClick={() => setConfirmPruneType('volumes')}>
+                                <HardDrive className="w-8 h-8 text-purple-500 shrink-0" />
+                                <span className="text-xs font-semibold text-center leading-tight">Prune Unused Volumes</span>
                             </Button>
-                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors" onClick={() => setConfirmPruneType('networks')}>
-                                <Network className="w-8 h-8 text-green-500" />
-                                <span className="text-xs font-semibold">Prune Dead Networks</span>
+                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors whitespace-normal" onClick={() => setConfirmPruneType('networks')}>
+                                <Network className="w-8 h-8 text-green-500 shrink-0" />
+                                <span className="text-xs font-semibold text-center leading-tight">Prune Dead Networks</span>
                             </Button>
-                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors" onClick={() => setConfirmPruneType('containers')}>
-                                <MonitorX className="w-8 h-8 text-orange-500" />
-                                <span className="text-xs font-semibold">Purge Ghost Containers</span>
+                            <Button variant="outline" className="h-24 flex flex-col gap-2 hover:bg-muted/50 transition-colors whitespace-normal" onClick={() => setConfirmPruneType('containers')}>
+                                <MonitorX className="w-8 h-8 text-orange-500 shrink-0" />
+                                <span className="text-xs font-semibold text-center leading-tight">Purge Ghost Containers</span>
                             </Button>
                         </div>
                     </CardContent>

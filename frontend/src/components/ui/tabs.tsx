@@ -1,11 +1,13 @@
 import * as React from 'react';
+import { Tabs as RadixTabs } from 'radix-ui';
 import { cn } from '@/lib/utils';
 
 import {
   Tabs,
+  TabsHighlight,
+  TabsHighlightItem,
   TabsList as AnimateTabsList,
   TabsTrigger as AnimateTabsTrigger,
-  TabsContent as AnimateTabsContent,
 } from '@/components/animate-ui/primitives/radix/tabs';
 
 const TabsList = React.forwardRef<
@@ -38,20 +40,22 @@ const TabsTrigger = React.forwardRef<
 ));
 TabsTrigger.displayName = 'TabsTrigger';
 
+// Custom TabsContent: uses Radix directly (no Framer Motion `layout` prop)
+// to prevent unintended height expansion when switching tabs.
 const TabsContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof AnimateTabsContent>
+  React.ComponentProps<typeof RadixTabs.Content>
 >(({ className, ...props }, ref) => (
-  <AnimateTabsContent
+  <RadixTabs.Content
     ref={ref}
     className={cn(
       'mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+      'data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200',
       className
     )}
-    transition={{ duration: 0.2, ease: 'easeOut' }}
     {...props}
   />
 ));
 TabsContent.displayName = 'TabsContent';
 
-export { Tabs, TabsList, TabsTrigger, TabsContent };
+export { Tabs, TabsList, TabsTrigger, TabsContent, TabsHighlight, TabsHighlightItem };

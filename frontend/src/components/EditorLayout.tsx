@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+
+type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
@@ -75,6 +78,7 @@ export default function EditorLayout() {
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
@@ -82,13 +86,15 @@ export default function EditorLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('sencho-theme');
-    if (saved !== null) {
-      return saved === 'dark';
-    }
-    return true; // Default to dark mode
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('sencho-theme') as Theme | null;
+    if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
+    return 'dark'; // Default to dark mode
   });
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+  const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,17 +123,34 @@ export default function EditorLayout() {
     setAlertSheetOpen(true);
   };
 
-  // Theme toggle effect
+  // Listen for system dark mode changes (for 'auto' theme)
   useEffect(() => {
-    const html = document.documentElement;
-    if (isDarkMode) {
-      html.classList.add('dark');
-      localStorage.setItem('sencho-theme', 'dark');
-    } else {
-      html.classList.remove('dark');
-      localStorage.setItem('sencho-theme', 'light');
-    }
-  }, [isDarkMode]);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Apply dark class and persist theme preference
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('sencho-theme', theme);
+  }, [isDarkMode, theme]);
+
+  // Force Monaco to re-measure its container after the tab switch DOM settles.
+  // Monaco's internal child is position:static with an explicit pixel height that
+  // creates a circular CSS dependency (Monaco drives card height → grid height → Monaco).
+  // Fix: reset Monaco to 0×0 first (breaks the cycle), then trigger a forced synchronous
+  // reflow so the container has its CSS-correct size before Monaco re-measures.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const editor = monacoEditorRef.current;
+      if (!editor) return;
+      editor.layout({ width: 0, height: 0 }); // collapse → breaks CSS circular dependency
+      editor.layout();                          // forced reflow → measures correct container size
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeTab]);
 
   const refreshStacks = async (background = false) => {
     if (!background) setIsLoading(true);
@@ -930,10 +953,10 @@ export default function EditorLayout() {
             </Button>
             {/* Resources Toggle */}
             <Button
-              variant="outline"
+              variant={activeView === 'resources' ? 'default' : 'outline'}
               size="sm"
               className="rounded-lg"
-              onClick={() => setActiveView('resources')}
+              onClick={() => setActiveView(activeView === 'resources' ? (selectedFile ? 'editor' : 'dashboard') : 'resources')}
               title="System Resources"
             >
               <HardDrive className="w-4 h-4 mr-2" />
@@ -941,10 +964,10 @@ export default function EditorLayout() {
             </Button>
             {/* App Store Toggle */}
             <Button
-              variant="outline"
+              variant={activeView === 'templates' ? 'default' : 'outline'}
               size="sm"
               className="rounded-lg"
-              onClick={() => setActiveView('templates')}
+              onClick={() => setActiveView(activeView === 'templates' ? (selectedFile ? 'editor' : 'dashboard') : 'templates')}
               title="App Store"
             >
               <CloudDownload className="w-4 h-4 mr-2" />
@@ -952,10 +975,10 @@ export default function EditorLayout() {
             </Button>
             {/* Global Observability Toggle */}
             <Button
-              variant="outline"
+              variant={activeView === 'global-observability' ? 'default' : 'outline'}
               size="sm"
               className="rounded-lg"
-              onClick={() => setActiveView('global-observability')}
+              onClick={() => setActiveView(activeView === 'global-observability' ? (selectedFile ? 'editor' : 'dashboard') : 'global-observability')}
               title="Global Logs"
             >
               <Activity className="w-4 h-4 mr-2" />
@@ -1234,8 +1257,18 @@ export default function EditorLayout() {
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                         <TabsList className="bg-muted">
-                          <TabsTrigger value="compose" className="rounded-lg">compose.yaml</TabsTrigger>
-                          <TabsTrigger value="env" disabled={!envExists} className="rounded-lg">.env</TabsTrigger>
+                          <TabsTrigger value="compose" className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'compose' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">compose.yaml</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="env" disabled={!envExists} className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'env' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">.env</span>
+                          </TabsTrigger>
                         </TabsList>
                       </Tabs>
 
@@ -1286,13 +1319,14 @@ export default function EditorLayout() {
                         </span>
                       </div>
                     )}
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
                       {!isFileLoading && (
                         <Editor
                           height="100%"
                           language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
                           theme={isDarkMode ? 'vs-dark' : 'vs'}
                           value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                          onMount={(editor) => { monacoEditorRef.current = editor; }}
                           onChange={(value) => {
                             if (!isEditing) return; // Prevent changes in view mode
                             if (activeTab === 'compose') {
@@ -1369,8 +1403,8 @@ export default function EditorLayout() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Stack Alert Sheet */}

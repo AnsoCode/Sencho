@@ -12,7 +12,6 @@ import {
   DialogTrigger,
   DialogContent as AnimateDialogContent,
   DialogHeader,
-  DialogFooter,
   DialogTitle,
   DialogDescription,
 } from '@/components/animate-ui/primitives/radix/dialog';
@@ -50,6 +49,18 @@ const DialogOverlay = React.forwardRef<
   <AnimateDialogOverlay ref={ref} {...props} />
 ));
 DialogOverlay.displayName = 'DialogOverlay';
+
+// Override DialogFooter to add proper spacing (animate-ui's version has no classes)
+const DialogFooter = ({ className, ...props }: React.ComponentProps<'div'>) => (
+  <div
+    className={cn(
+      'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+      className
+    )}
+    {...props}
+  />
+);
+DialogFooter.displayName = 'DialogFooter';
 
 export {
   Dialog,
