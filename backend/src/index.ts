@@ -495,8 +495,15 @@ server.on('upgrade', async (req, socket, head) => {
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
 
-    // Notification push channel - always local, never proxied to remote nodes
-    if (pathname === '/ws/notifications') {
+    // Resolve node context from query param
+    const nodeIdParam = parsedUrl.searchParams.get('nodeId');
+    const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+
+    // Notification push channel - local only when no remote nodeId is specified.
+    // When a nodeId pointing to a remote node is provided, fall through to the
+    // proxy block below so the browser subscribes to that remote node's push stream.
+    if (pathname === '/ws/notifications' && (!node || node.type !== 'remote')) {
       const notifWss = new WebSocket.Server({ noServer: true });
       notifWss.handleUpgrade(req, socket, head, (ws) => {
         notifWss.close();
@@ -506,11 +513,6 @@ server.on('upgrade', async (req, socket, head) => {
       });
       return;
     }
-
-    // Resolve node context from query param
-    const nodeIdParam = parsedUrl.searchParams.get('nodeId');
-    const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-    const node = NodeRegistry.getInstance().getNode(nodeId);
 
     // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
     if (node && node.type === 'remote' && node.api_url && node.api_token) {

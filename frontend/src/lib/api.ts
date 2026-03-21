@@ -47,4 +47,30 @@ export async function apiFetch(
   return response;
 }
 
+/** Fetch against a specific node by ID without touching the localStorage active-node key.
+ *  Used by the notification panel to target individual remote nodes explicitly. */
+export async function fetchForNode(
+  endpoint: string,
+  nodeId: number,
+  options: RequestInit = {}
+): Promise<Response> {
+  const { headers: extraHeaders, ...rest } = options;
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-node-id': String(nodeId),
+      ...(extraHeaders as Record<string, string> | undefined),
+    },
+    ...rest,
+  });
+
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('sencho-unauthorized'));
+    throw new Error('Unauthorized');
+  }
+
+  return response;
+}
+
 export { API_BASE };

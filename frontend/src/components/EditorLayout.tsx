@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
@@ -34,7 +34,7 @@ import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
-import { useNodes } from '@/context/NodeContext';
+import { useNodes, Node } from '@/context/NodeContext';
 
 interface ContainerInfo {
   Id: string;
@@ -48,6 +48,16 @@ interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
 }
 
+interface Notification {
+  id: number;
+  level: 'info' | 'warning' | 'error';
+  message: string;
+  timestamp: number;
+  is_read: number; // 0 | 1 (SQLite boolean)
+  nodeId: number;
+  nodeName: string;
+}
+
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -59,6 +69,12 @@ const formatBytes = (bytes: number) => {
 export default function EditorLayout() {
   const { logout } = useAuth();
   const { nodes, activeNode, setActiveNode } = useNodes();
+  // Stable ref so notification callbacks always read the latest nodes list
+  // without needing nodes in their dependency arrays (which would cause loops).
+  const nodesRef = useRef<Node[]>([]);
+  nodesRef.current = nodes;
+  // Tracks cleanup functions for per-remote-node notification WebSocket connections.
+  const remoteNotifWsRef = useRef<Map<number, () => void>>(new Map());
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -113,7 +129,7 @@ export default function EditorLayout() {
   const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
 
   // Notifications & Settings state
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
@@ -185,10 +201,9 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification WS push - load history once on mount, then receive live updates
+  // Notification WS push - subscribe to local real-time alerts.
+  // Initial history load is handled by the [nodes] effect below.
   useEffect(() => {
-    fetchNotifications();
-
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsBase = `${wsProtocol}//${window.location.host}`;
     let ws: WebSocket | null = null;
@@ -212,9 +227,15 @@ export default function EditorLayout() {
 
       ws.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data);
+          const msg = JSON.parse(event.data as string);
           if (msg.type === 'notification' && msg.payload) {
-            setNotifications(prev => [msg.payload, ...prev]);
+            const localNode = nodesRef.current.find(n => n.type === 'local');
+            const tagged: Notification = {
+              ...(msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>),
+              nodeId: localNode?.id ?? -1,
+              nodeName: localNode?.name ?? 'Local',
+            };
+            setNotifications(prev => [tagged, ...prev].sort((a, b) => b.timestamp - a.timestamp));
           }
         } catch (e) {
           console.error('[WS notifications] parse error', e);
@@ -250,6 +271,87 @@ export default function EditorLayout() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-fetch all notifications when the nodes list changes (e.g. remote node added/removed).
+  // nodesRef ensures fetchNotifications always reads the latest nodes at call time.
+  useEffect(() => {
+    fetchNotifications();
+  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Open / close per-remote-node notification WebSocket connections as the nodes list changes.
+  // Uses remoteNotifWsRef to avoid tearing down existing connections on unrelated node updates.
+  useEffect(() => {
+    const remoteNodes = nodes.filter(n => n.type === 'remote');
+    const currentIds = new Set(remoteNotifWsRef.current.keys());
+    const newIds = new Set(remoteNodes.map(n => n.id));
+
+    // Close connections for nodes that are no longer registered as remote
+    for (const id of currentIds) {
+      if (!newIds.has(id)) {
+        remoteNotifWsRef.current.get(id)?.();
+        remoteNotifWsRef.current.delete(id);
+      }
+    }
+
+    // Open connections for newly-added remote nodes
+    for (const rn of remoteNodes) {
+      if (remoteNotifWsRef.current.has(rn.id)) continue;
+
+      let ws: WebSocket | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let active = true;
+      let retryCount = 0;
+
+      const connect = () => {
+        if (!active) return;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/notifications?nodeId=${rn.id}`);
+
+        ws.onopen = () => { if (!active) { ws?.close(); } else { retryCount = 0; } };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data as string);
+            if (msg.type === 'notification' && msg.payload) {
+              // Read node name from ref so it stays fresh even if the node was renamed
+              const current = nodesRef.current.find(n => n.id === rn.id);
+              setNotifications(prev =>
+                [{ ...msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
+                  .sort((a, b) => b.timestamp - a.timestamp)
+              );
+            }
+          } catch (e) {
+            console.error(`[WS notifications:${rn.name}] parse error`, e);
+          }
+        };
+
+        ws.onclose = () => {
+          if (!active) return;
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
+        };
+
+        ws.onerror = (e) => console.warn(`[WS notifications:${rn.name}] error`, e);
+      };
+
+      connect();
+
+      remoteNotifWsRef.current.set(rn.id, () => {
+        active = false;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      });
+    }
+  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup all remote notification WebSocket connections on unmount
+  useEffect(() => {
+    return () => {
+      for (const cleanup of remoteNotifWsRef.current.values()) cleanup();
+      remoteNotifWsRef.current.clear();
+    };
+  }, []);
+
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).
   // Also clears any stale editor/container state that belonged to the previous node.
   useEffect(() => {
@@ -268,12 +370,36 @@ export default function EditorLayout() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await apiFetch('/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data);
+      const currentNodes = nodesRef.current;
+      const localNode = currentNodes.find(n => n.type === 'local');
+      const remoteNodes = currentNodes.filter(n => n.type === 'remote');
+
+      const [localResult, ...remoteResults] = await Promise.allSettled([
+        apiFetch('/notifications', { localOnly: true }),
+        ...remoteNodes.map(n => fetchForNode('/notifications', n.id)),
+      ]);
+
+      const all: Notification[] = [];
+
+      if (localResult.status === 'fulfilled' && localResult.value.ok) {
+        const data = await localResult.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+        data.forEach(n => all.push({ ...n, nodeId: localNode?.id ?? -1, nodeName: localNode?.name ?? 'Local' }));
       }
-    } catch (e) { }
+
+      for (let i = 0; i < remoteNodes.length; i++) {
+        const result = remoteResults[i];
+        if (result?.status === 'fulfilled' && result.value.ok) {
+          const data = await result.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+          const rn = remoteNodes[i];
+          data.forEach(n => all.push({ ...n, nodeId: rn.id, nodeName: rn.name }));
+        }
+      }
+
+      all.sort((a, b) => b.timestamp - a.timestamp);
+      setNotifications(all);
+    } catch (e) {
+      console.error('[Notifications] fetch error:', e);
+    }
   };
 
   const fetchImageUpdates = async () => {
@@ -288,22 +414,39 @@ export default function EditorLayout() {
 
   const markAllRead = async () => {
     try {
-      await apiFetch('/notifications/read', { method: 'POST' });
-      fetchNotifications();
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      const unreadNodeIds = [...new Set(notifications.filter(n => !n.is_read).map(n => n.nodeId))];
+      await Promise.allSettled(unreadNodeIds.map(nodeId =>
+        nodeId === localNode?.id
+          ? apiFetch('/notifications/read', { method: 'POST', localOnly: true })
+          : fetchForNode('/notifications/read', nodeId, { method: 'POST' })
+      ));
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
     } catch (e) { }
   };
 
-  const deleteNotification = async (id: number) => {
+  const deleteNotification = async (notif: Notification) => {
     try {
-      await apiFetch(`/notifications/${id}`, { method: 'DELETE' });
-      fetchNotifications();
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      if (notif.nodeId === localNode?.id) {
+        await apiFetch(`/notifications/${notif.id}`, { method: 'DELETE', localOnly: true });
+      } else {
+        await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
+      }
+      setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
     } catch (e) { }
   };
 
   const clearAllNotifications = async () => {
     try {
-      await apiFetch('/notifications', { method: 'DELETE' });
-      fetchNotifications();
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      const uniqueNodeIds = [...new Set(notifications.map(n => n.nodeId))];
+      await Promise.allSettled(uniqueNodeIds.map(nodeId =>
+        nodeId === localNode?.id
+          ? apiFetch('/notifications', { method: 'DELETE', localOnly: true })
+          : fetchForNode('/notifications', nodeId, { method: 'DELETE' })
+      ));
+      setNotifications([]);
     } catch (e) { }
   };
 
@@ -1053,12 +1196,17 @@ export default function EditorLayout() {
                     <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
                   ) : (
                     <div className="flex flex-col">
-                      {notifications.map((notif: any) => (
-                        <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
+                      {notifications.map((notif) => (
+                        <div key={`${notif.nodeId}-${notif.id}`} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
                           <div className="flex items-center gap-2 mb-1 pr-6">
                             <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
                               {notif.level}
                             </Badge>
+                            {nodesRef.current.find(n => n.id === notif.nodeId)?.type === 'remote' && (
+                              <Badge variant="outline" className="text-[10px] font-normal">
+                                {notif.nodeName}
+                              </Badge>
+                            )}
                             <span className="text-xs text-muted-foreground ml-auto">
                               {new Date(notif.timestamp).toLocaleString()}
                             </span>
@@ -1072,7 +1220,7 @@ export default function EditorLayout() {
                             className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={(e) => {
                               e.stopPropagation();
-                              deleteNotification(notif.id);
+                              deleteNotification(notif);
                             }}
                           >
                             <X className="w-3 h-3" />
