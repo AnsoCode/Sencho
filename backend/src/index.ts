@@ -1246,11 +1246,48 @@ app.post('/api/agents', async (req: Request, res: Response) => {
   }
 });
 
+// Keys that contain auth credentials — never exposed to the frontend or writable via settings API
+const PRIVATE_SETTINGS_KEYS = new Set(['auth_username', 'auth_password_hash', 'auth_jwt_secret']);
+
+// Strict allowlist of keys writable via the settings API (prevents overwriting auth credentials)
+const ALLOWED_SETTING_KEYS = new Set([
+  'host_cpu_limit',
+  'host_ram_limit',
+  'host_disk_limit',
+  'docker_janitor_gb',
+  'global_crash',
+  'global_logs_refresh',
+  'developer_mode',
+  'template_registry_url',
+  'metrics_retention_hours',
+  'log_retention_days',
+]);
+
+// Zod schema for bulk PATCH — all keys optional, present keys fully validated
+import { z } from 'zod';
+const SettingsPatchSchema = z.object({
+  host_cpu_limit:          z.coerce.number().int().min(1).max(100).transform(String),
+  host_ram_limit:          z.coerce.number().int().min(1).max(100).transform(String),
+  host_disk_limit:         z.coerce.number().int().min(1).max(100).transform(String),
+  docker_janitor_gb:       z.coerce.number().min(0).transform(String),
+  global_crash:            z.enum(['0', '1']),
+  global_logs_refresh:     z.enum(['1', '3', '5', '10']),
+  developer_mode:          z.enum(['0', '1']),
+  template_registry_url:   z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
+  metrics_retention_hours: z.coerce.number().int().min(1).max(8760).transform(String),
+  log_retention_days:      z.coerce.number().int().min(1).max(365).transform(String),
+}).partial();
+
 app.get('/api/settings', async (req: Request, res: Response) => {
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
+    // Strip auth credentials — these are managed exclusively by /api/auth/* endpoints
+    for (const key of PRIVATE_SETTINGS_KEYS) {
+      delete settings[key];
+    }
     res.json(settings);
   } catch (error) {
+    console.error('Failed to fetch settings:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
   }
 });
@@ -1258,10 +1295,40 @@ app.get('/api/settings', async (req: Request, res: Response) => {
 app.post('/api/settings', async (req: Request, res: Response) => {
   try {
     const { key, value } = req.body;
-    DatabaseService.getInstance().updateGlobalSetting(key, value);
+    if (!key || typeof key !== 'string' || !ALLOWED_SETTING_KEYS.has(key)) {
+      res.status(400).json({ error: `Invalid or disallowed setting key: ${key}` });
+      return;
+    }
+    if (value === undefined || value === null) {
+      res.status(400).json({ error: 'Setting value is required' });
+      return;
+    }
+    DatabaseService.getInstance().updateGlobalSetting(key, String(value));
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to update setting:', error);
     res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
+
+app.patch('/api/settings', async (req: Request, res: Response) => {
+  try {
+    const parsed = SettingsPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const updateMany = db.getDb().transaction((entries: [string, string][]) => {
+      for (const [k, v] of entries) {
+        db.updateGlobalSetting(k, v);
+      }
+    });
+    updateMany(Object.entries(parsed.data) as [string, string][]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to bulk update settings:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
   }
 });
 

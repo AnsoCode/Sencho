@@ -187,13 +187,14 @@ export class MonitorService {
                 // Only trigger once every while? To avoid spamming, we just check if it's over limit
                 // Let's ensure we only spam once per limit breach. We can use a local static variable.
                 const LAST_JANITOR_ALERT_KEY = 'last_janitor_alert_timestamp';
-                const lastAlert = parseInt(settings[LAST_JANITOR_ALERT_KEY] || '0', 10);
+                const lastAlertRaw = DatabaseService.getInstance().getSystemState(LAST_JANITOR_ALERT_KEY);
+                const lastAlert = parseInt(lastAlertRaw || '0', 10);
                 const janitorCooldown = 24 * 60 * 60 * 1000; // 24 hours cooldown for janitor
 
                 if (reclaimGb >= janitorLimitGb) {
                     if (Date.now() - lastAlert > janitorCooldown) {
                         await notifier.dispatchAlert('info', `Your system has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
-                        DatabaseService.getInstance().updateGlobalSetting(LAST_JANITOR_ALERT_KEY, Date.now().toString());
+                        DatabaseService.getInstance().setSystemState(LAST_JANITOR_ALERT_KEY, Date.now().toString());
                     }
                 }
             }
@@ -298,8 +299,14 @@ export class MonitorService {
         }
 
         try {
-            db.cleanupOldMetrics(24);
-        } catch (e) { }
+            const settings = db.getGlobalSettings();
+            const retentionHours = parseInt(settings['metrics_retention_hours'] || '24', 10);
+            db.cleanupOldMetrics(isNaN(retentionHours) ? 24 : retentionHours);
+            const retentionDays = parseInt(settings['log_retention_days'] || '30', 10);
+            db.cleanupOldNotifications(isNaN(retentionDays) ? 30 : retentionDays);
+        } catch (e) {
+            console.error('MonitorService: failed to cleanup old data', e);
+        }
     }
 
     private evaluateCondition(actual: number, operator: string, threshold: number): boolean {
