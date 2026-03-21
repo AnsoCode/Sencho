@@ -1,22 +1,29 @@
 const API_BASE = '/api';
 
+export interface ApiFetchOptions extends RequestInit {
+  /** When true, omits the x-node-id header so the request always targets
+   *  the local node regardless of which node is currently active in the UI. */
+  localOnly?: boolean;
+}
+
 export async function apiFetch(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<Response> {
+  const { localOnly, ...fetchOptions } = options;
   const url = `${API_BASE}${endpoint}`;
-  const activeNodeId = localStorage.getItem('sencho-active-node');
-  
+  const activeNodeId = localOnly ? null : localStorage.getItem('sencho-active-node');
+
   const defaultOptions: RequestInit = {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(activeNodeId ? { 'x-node-id': activeNodeId } : {}),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
   };
 
-  const response = await fetch(url, { ...defaultOptions, ...options });
+  const response = await fetch(url, { ...defaultOptions, ...fetchOptions });
 
   if (response.status === 401) {
     // Signal auth failure to AuthContext without a hard page reload

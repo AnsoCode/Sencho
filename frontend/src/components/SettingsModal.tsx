@@ -137,25 +137,33 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
     const fetchSettings = async () => {
         setIsSettingsLoading(true);
         try {
-            const res = await apiFetch('/settings');
-            if (res.ok) {
-                const data: Record<string, string> = await res.json();
-                // Explicitly pick only known patchable keys — never allow auth keys into component state
-                const safe: PatchableSettings = {
-                    host_cpu_limit:          data.host_cpu_limit          ?? DEFAULT_SETTINGS.host_cpu_limit,
-                    host_ram_limit:          data.host_ram_limit          ?? DEFAULT_SETTINGS.host_ram_limit,
-                    host_disk_limit:         data.host_disk_limit         ?? DEFAULT_SETTINGS.host_disk_limit,
-                    docker_janitor_gb:       data.docker_janitor_gb       ?? DEFAULT_SETTINGS.docker_janitor_gb,
-                    global_crash:            (data.global_crash as '0' | '1')               ?? DEFAULT_SETTINGS.global_crash,
-                    global_logs_refresh:     (data.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
-                    developer_mode:          (data.developer_mode as '0' | '1')             ?? DEFAULT_SETTINGS.developer_mode,
-                    template_registry_url:   data.template_registry_url   ?? '',
-                    metrics_retention_hours: data.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
-                    log_retention_days:      data.log_retention_days      ?? DEFAULT_SETTINGS.log_retention_days,
-                };
-                setSettings(safe);
-                serverSettingsRef.current = { ...safe };
-            }
+            // Fetch per-node settings from the active node (system limits etc.)
+            const nodeRes = await apiFetch('/settings');
+            // Always fetch developer/UI preferences from local — these control
+            // this Sencho instance's behaviour and must never be proxied to remote
+            const localRes = isRemote ? await apiFetch('/settings', { localOnly: true }) : nodeRes;
+
+            const nodeData: Record<string, string> = nodeRes.ok ? await nodeRes.json() : {};
+            const localData: Record<string, string> = (isRemote && localRes.ok)
+                ? await localRes.json()
+                : nodeData;
+
+            const safe: PatchableSettings = {
+                // Per-node: read from active node
+                host_cpu_limit:          nodeData.host_cpu_limit          ?? DEFAULT_SETTINGS.host_cpu_limit,
+                host_ram_limit:          nodeData.host_ram_limit          ?? DEFAULT_SETTINGS.host_ram_limit,
+                host_disk_limit:         nodeData.host_disk_limit         ?? DEFAULT_SETTINGS.host_disk_limit,
+                docker_janitor_gb:       nodeData.docker_janitor_gb       ?? DEFAULT_SETTINGS.docker_janitor_gb,
+                global_crash:            (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
+                template_registry_url:   nodeData.template_registry_url   ?? '',
+                // Local-only: always read from local node
+                global_logs_refresh:     (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
+                developer_mode:          (localData.developer_mode as '0' | '1')                   ?? DEFAULT_SETTINGS.developer_mode,
+                metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
+                log_retention_days:      localData.log_retention_days      ?? DEFAULT_SETTINGS.log_retention_days,
+            };
+            setSettings(safe);
+            serverSettingsRef.current = { ...safe };
         } catch (e) {
             console.error('Failed to fetch settings', e);
         } finally {
@@ -167,12 +175,13 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
-    const patchSettings = async (payload: PatchableSettings, setLoading: (v: boolean) => void): Promise<boolean> => {
+    const patchSettings = async (payload: PatchableSettings, setLoading: (v: boolean) => void, localOnly = false): Promise<boolean> => {
         setLoading(true);
         try {
             const res = await apiFetch('/settings', {
                 method: 'PATCH',
                 body: JSON.stringify(payload),
+                localOnly,
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
@@ -201,12 +210,13 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
     };
 
     const saveDeveloperSettings = async () => {
+        // Developer/UI preferences are local-only — never proxy to remote node
         const ok = await patchSettings({
             developer_mode:          settings.developer_mode,
             global_logs_refresh:     settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
             log_retention_days:      settings.log_retention_days,
-        }, setIsSavingDeveloper);
+        }, setIsSavingDeveloper, true);
         if (ok) toast.success('Developer settings saved.');
     };
 
@@ -468,7 +478,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                 {isRemote && (
                                     <Badge variant="outline" className="text-xs shrink-0 ml-2 mt-0.5">
                                         <Info className="w-3 h-3 mr-1" />
-                                        {activeNode!.name}
+                                        Configuring: {activeNode!.name}
                                     </Badge>
                                 )}
                             </div>
@@ -608,9 +618,9 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                     <p className="text-sm text-muted-foreground">Power user settings for real-time observability and data retention.</p>
                                 </div>
                                 {isRemote && (
-                                    <Badge variant="outline" className="text-xs shrink-0 ml-2 mt-0.5">
+                                    <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5">
                                         <Info className="w-3 h-3 mr-1" />
-                                        {activeNode!.name}
+                                        Always Local
                                     </Badge>
                                 )}
                             </div>
