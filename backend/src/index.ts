@@ -418,6 +418,17 @@ const wss = new WebSocket.Server({ noServer: true });
 
 let terminalWs: WebSocket | null = null;
 
+// Notification push — set of authenticated browser clients subscribed to real-time alerts
+const notificationSubscribers = new Set<WebSocket>();
+NotificationService.getInstance().setBroadcaster((notification) => {
+  const msg = JSON.stringify({ type: 'notification', payload: notification });
+  for (const ws of notificationSubscribers) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  }
+});
+
 // Handle WebSocket upgrade with JWT authentication
 server.on('upgrade', async (req, socket, head) => {
   // Parse cookies from the upgrade request
@@ -449,6 +460,18 @@ server.on('upgrade', async (req, socket, head) => {
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
+
+    // Notification push channel — always local, never proxied to remote nodes
+    if (pathname === '/ws/notifications') {
+      const notifWss = new WebSocket.Server({ noServer: true });
+      notifWss.handleUpgrade(req, socket, head, (ws) => {
+        notifWss.close();
+        notificationSubscribers.add(ws);
+        ws.on('close', () => notificationSubscribers.delete(ws));
+        ws.on('error', () => { notificationSubscribers.delete(ws); ws.terminate(); });
+      });
+      return;
+    }
 
     // Resolve node context from query param
     const nodeIdParam = parsedUrl.searchParams.get('nodeId');

@@ -162,11 +162,48 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification polling - independent of active node, runs once on mount
+  // Notification WS push — load history once on mount, then receive live updates
   useEffect(() => {
     fetchNotifications();
-    const notificationInterval = setInterval(fetchNotifications, 5000);
-    return () => clearInterval(notificationInterval);
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsBase = `${wsProtocol}//${window.location.host}`;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
+
+    const connect = () => {
+      ws = new WebSocket(`${wsBase}/ws/notifications`);
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'notification' && msg.payload) {
+            setNotifications(prev => [msg.payload, ...prev]);
+          }
+        } catch (e) {
+          console.error('[WS notifications] parse error', e);
+        }
+      };
+
+      ws.onclose = () => {
+        if (isMounted) {
+          reconnectTimer = setTimeout(connect, 5000);
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).

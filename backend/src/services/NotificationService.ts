@@ -1,8 +1,9 @@
-import { DatabaseService } from './DatabaseService';
+import { DatabaseService, NotificationHistory } from './DatabaseService';
 
 export class NotificationService {
     private static instance: NotificationService;
     private dbService: DatabaseService;
+    private broadcaster: ((notification: NotificationHistory) => void) | null = null;
 
     private constructor() {
         this.dbService = DatabaseService.getInstance();
@@ -15,13 +16,23 @@ export class NotificationService {
         return NotificationService.instance;
     }
 
+    /** Wire up the WebSocket push function after the WS server is initialised. */
+    public setBroadcaster(fn: (notification: NotificationHistory) => void): void {
+        this.broadcaster = fn;
+    }
+
     public async dispatchAlert(level: 'info' | 'warning' | 'error', message: string) {
-        // 1. Log to history
-        this.dbService.addNotificationHistory({
+        // 1. Log to history and get the full inserted record (with id)
+        const notification = this.dbService.addNotificationHistory({
             level,
             message,
             timestamp: Date.now()
         });
+
+        // 2. Push to connected browser clients via WebSocket
+        if (this.broadcaster) {
+            this.broadcaster(notification);
+        }
 
         // 2. Fetch enabled agents
         const agents = this.dbService.getEnabledAgents();

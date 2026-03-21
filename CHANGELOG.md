@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- **Changed:** Notification delivery replaced polling with WebSocket push — `EditorLayout` no longer runs a `setInterval` to fetch `/api/notifications` every 5 seconds. A persistent `ws://host/ws/notifications` connection is opened on mount; the backend pushes each new alert in real-time as it is dispatched. Auto-reconnects with a 5-second back-off on close.
+- **Added:** `NotificationService.setBroadcaster()` — injectable callback wired to a `notificationSubscribers` Set in `index.ts`; every authenticated WS client subscribed to `/ws/notifications` receives a `{ type: 'notification', payload: NotificationHistory }` message the moment `dispatchAlert` fires.
+- **Changed:** `DatabaseService.addNotificationHistory` now returns the full inserted `NotificationHistory` record (including auto-generated `id` and `is_read: false`) instead of `void`, enabling the broadcaster to push the complete record to clients.
+- **Added:** `/ws/notifications` WebSocket upgrade path in `index.ts` — handled before the remote-node proxy path so it is always local. JWT auth verified manually (same pattern as all other WS paths per Directive 8).
 - **Security:** `GET /api/settings` no longer leaks `auth_username`, `auth_password_hash`, or `auth_jwt_secret` to the frontend — these keys are stripped from the response before sending.
 - **Security:** `POST /api/settings` now enforces a strict allowlist of writable keys — attempts to write auth credential keys (`auth_jwt_secret`, `auth_password_hash`, etc.) or arbitrary unknown keys are rejected with a 400 error.
 - **Added:** `PATCH /api/settings` bulk-update endpoint — accepts a partial settings object, validates all values via a Zod schema (type checking, range enforcement, URL format validation), and persists changes atomically in a single SQLite transaction. Replaces the N+1 per-key POST loop.
