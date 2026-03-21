@@ -310,9 +310,9 @@ export class DatabaseService {
         }));
     }
 
-    public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): void {
+    public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare('INSERT INTO notification_history (level, message, timestamp, is_read) VALUES (?, ?, ?, 0)');
-        stmt.run(notification.level, notification.message, notification.timestamp);
+        const result = stmt.run(notification.level, notification.message, notification.timestamp);
 
         this.db.exec(`
       DELETE FROM notification_history
@@ -320,6 +320,14 @@ export class DatabaseService {
         SELECT id FROM notification_history ORDER BY timestamp DESC LIMIT 100
       )
     `);
+
+        return {
+            id: result.lastInsertRowid as number,
+            level: notification.level,
+            message: notification.message,
+            timestamp: notification.timestamp,
+            is_read: false,
+        };
     }
 
     public markAllNotificationsRead(): void {
