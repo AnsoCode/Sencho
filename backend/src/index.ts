@@ -515,7 +515,37 @@ server.on('upgrade', async (req, socket, head) => {
     // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
     if (node && node.type === 'remote' && node.api_url && node.api_token) {
       const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
-      req.headers['authorization'] = `Bearer ${node.api_token}`;
+
+      // Interactive console paths (host console / container exec) are guarded on the remote by
+      // an isProxyToken check that rejects the long-lived api_token (scope: 'node_proxy').
+      // Exchange it for a short-lived console_session token before forwarding so the remote
+      // allows the connection while keeping the guard intact for direct api_token access.
+      const isInteractiveConsolePath = pathname === '/api/system/host-console' || pathname === '/ws';
+      let bearerTokenForProxy = node.api_token;
+      if (isInteractiveConsolePath) {
+        try {
+          const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${node.api_token}` },
+          });
+          if (tokenRes.ok) {
+            const data = await tokenRes.json() as { token?: string };
+            if (typeof data.token === 'string') bearerTokenForProxy = data.token;
+          } else {
+            console.error(`[WS Proxy] Remote console-token request failed: ${tokenRes.status}`);
+            socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+        } catch (e) {
+          console.error('[WS Proxy] Failed to fetch remote console token:', (e as Error).message);
+          socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
+
+      req.headers['authorization'] = `Bearer ${bearerTokenForProxy}`;
       delete req.headers['x-node-id'];
       // Strip the browser's session cookie - it is signed by this instance's JWT secret and
       // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
@@ -1499,6 +1529,27 @@ app.post('/api/notifications/test', async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
+// Issue a short-lived console session token for WebSocket proxy delegation.
+// When the gateway needs to proxy an interactive terminal (host console or container exec)
+// to a remote node, it calls this endpoint (authenticated with the long-lived api_token)
+// to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
+// tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
+app.post('/api/system/console-token', (req: Request, res: Response): void => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'No JWT secret configured' });
+      return;
+    }
+    const consoleToken = jwt.sign({ scope: 'console_session' }, jwtSecret, { expiresIn: '60s' });
+    res.json({ token: consoleToken });
+  } catch (error) {
+    console.error('Failed to issue console token:', error);
+    res.status(500).json({ error: 'Failed to issue console token' });
   }
 });
 
