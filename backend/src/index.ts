@@ -456,7 +456,11 @@ server.on('upgrade', async (req, socket, head) => {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    jwt.verify(token, jwtSecret);
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
+
+    // Node proxy tokens are machine-to-machine credentials and must never be granted
+    // interactive terminal access (host console or container exec).
+    const isProxyToken = decoded.scope === 'node_proxy';
 
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
@@ -520,15 +524,29 @@ server.on('upgrade', async (req, socket, head) => {
         }
       });
     } else if (hostConsoleMatch) {
+      // Node proxy tokens must not access interactive host terminals
+      if (isProxyToken) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       const hostConsoleWss = new WebSocket.Server({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
         hostConsoleWss.close();
         let targetDirectory = '';
         try {
-          targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
+          const baseDir = FileSystemService.getInstance(nodeId).getBaseDir();
           const stackParam = parsedUrl.searchParams.get('stack');
           if (stackParam) {
-            targetDirectory = path.join(targetDirectory, stackParam);
+            const resolved = path.resolve(baseDir, stackParam);
+            if (!resolved.startsWith(path.resolve(baseDir))) {
+              ws.send('Error: Invalid stack path\r\n');
+              ws.close();
+              return;
+            }
+            targetDirectory = resolved;
+          } else {
+            targetDirectory = baseDir;
           }
         } catch (e) {
           targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
@@ -544,7 +562,13 @@ server.on('upgrade', async (req, socket, head) => {
         }
       });
     } else {
-      // Generic terminal WebSocket
+      // Generic terminal WebSocket (container exec)
+      // Node proxy tokens must not access interactive container terminals
+      if (isProxyToken) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });
