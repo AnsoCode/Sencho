@@ -3,7 +3,10 @@ import { motion } from 'motion/react';
 import {
     Dialog,
     DialogContent,
+    DialogTitle,
+    DialogDescription,
 } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -123,7 +126,7 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
             fetchAgents();
             fetchSettings();
         }
-    }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isOpen, activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchAgents = async () => {
         try {
@@ -392,6 +395,8 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-[900px] h-[650px] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
+                <VisuallyHidden><DialogTitle>Settings Hub</DialogTitle></VisuallyHidden>
+                <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
                 {/* Sidebar */}
                 <div className="w-[200px] bg-muted/20 border-r border-border flex flex-col p-4 shrink-0">
                     <div className="font-semibold text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
@@ -410,9 +415,7 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
                             label="System Limits"
                             showDot={hasSystemChanges}
                         />
-                        {!isRemote && (
-                            <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
-                        )}
+                        <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
                         {!isRemote && (
                             <NavButton section="appearance" icon={<Palette className="w-4 h-4 mr-2" />} label="Appearance" />
                         )}
@@ -573,9 +576,31 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
 
                     {activeSection === 'notifications' && (
                         <div className="space-y-6">
-                            <div>
-                                <h3 className="text-lg font-semibold tracking-tight">Notifications & Alerts</h3>
-                                <p className="text-sm text-muted-foreground">Configure external integrations for crash alerts.</p>
+                            <div className="flex items-start justify-between pr-8">
+                                <div>
+                                    <h3 className="text-lg font-semibold tracking-tight">Notifications & Alerts</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {isRemote
+                                            ? <>Configuring notification channels on <span className="font-semibold text-foreground">{activeNode!.name}</span>. Alerts from this remote node will dispatch via these channels.</>
+                                            : 'Configure external integrations for crash alerts.'
+                                        }
+                                    </p>
+                                </div>
+                                {isRemote && (
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5 cursor-help">
+                                                    <Info className="w-3 h-3 mr-1" />
+                                                    Remote
+                                                </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="bottom" className="max-w-[240px] text-center">
+                                                These channels are saved on the remote Sencho instance and used when it dispatches alerts.
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                )}
                             </div>
                             <Tabs value={notifTab} onValueChange={(v) => setNotifTab(v as 'discord' | 'slack' | 'webhook')} className="w-full">
                                 <TabsList className="w-full mb-4 grid grid-cols-3">

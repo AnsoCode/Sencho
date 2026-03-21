@@ -1392,12 +1392,26 @@ app.get('/api/alerts', async (req: Request, res: Response) => {
   }
 });
 
+const AlertCreateSchema = z.object({
+  stack_name: z.string().min(1).max(255),
+  metric: z.enum(['cpu_percent', 'memory_percent', 'memory_mb', 'net_rx', 'net_tx', 'restart_count']),
+  operator: z.enum(['>', '>=', '<', '<=', '==']),
+  threshold: z.number().min(0),
+  duration_mins: z.coerce.number().int().min(0).max(1440),
+  cooldown_mins: z.coerce.number().int().min(0).max(10080),
+});
+
 app.post('/api/alerts', async (req: Request, res: Response) => {
+  const parsed = AlertCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid alert data', details: parsed.error.flatten().fieldErrors });
+    return;
+  }
   try {
-    const alert = req.body;
-    DatabaseService.getInstance().addStackAlert(alert);
+    DatabaseService.getInstance().addStackAlert(parsed.data);
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to add alert:', error);
     res.status(500).json({ error: 'Failed to add alert' });
   }
 });
