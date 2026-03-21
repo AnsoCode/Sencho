@@ -16,12 +16,19 @@ export class HostTerminalService {
     static spawnTerminal(ws: WebSocket, targetDirectory: string) {
         const shell = os.platform() === 'win32' ? 'powershell.exe' : getUnixShell();
 
+        // Strip sensitive backend secrets from the PTY environment so they are not
+        // visible to the console user via `env` / `printenv`.
+        const SENSITIVE_KEYS = ['JWT_SECRET', 'AUTH_PASSWORD', 'AUTH_PASSWORD_HASH', 'DATABASE_URL'];
+        const safeEnv = Object.fromEntries(
+            Object.entries(process.env as Record<string, string>).filter(([k]) => !SENSITIVE_KEYS.includes(k))
+        );
+
         const ptyProcess = pty.spawn(shell, [], {
             name: 'xterm-color',
             cols: 80,
             rows: 30,
             cwd: targetDirectory,
-            env: process.env as Record<string, string>,
+            env: safeEnv,
         });
 
         ptyProcess.onData((data) => {
