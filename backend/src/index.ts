@@ -370,6 +370,18 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         const newQs = params.toString();
         proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
       }
+      // Re-stream the request body for POST/PUT/PATCH requests.
+      // express.json() fully drains the incoming stream and stores the parsed
+      // object in req.body. http-proxy-middleware then pipes an already-consumed
+      // stream to the remote, which causes the remote server to stall waiting for
+      // body bytes that never arrive (the Content-Length header says N bytes but
+      // 0 are forwarded), hanging the request indefinitely.
+      if (req.body && Object.keys(req.body).length > 0) {
+        const bodyData = JSON.stringify(req.body);
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
+      }
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
