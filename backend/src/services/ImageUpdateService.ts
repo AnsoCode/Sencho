@@ -109,7 +109,7 @@ async function getAuthToken(registry: string, repo: string): Promise<string | nu
 // ─── Remote digest lookup ─────────────────────────────────────────────────────
 
 // Include manifest list types so we get the fat-manifest digest for multi-arch
-// images — this matches what Docker stores in local RepoDigests.
+// images - this matches what Docker stores in local RepoDigests.
 const MANIFEST_ACCEPT = [
     'application/vnd.docker.distribution.manifest.list.v2+json',
     'application/vnd.docker.distribution.manifest.v2+json',
@@ -145,7 +145,7 @@ export class ImageUpdateService {
     private static readonly MANUAL_COOLDOWN_MS = 10 * 60 * 1000; // 10 min between manual triggers
     private static readonly INTER_IMAGE_DELAY_MS = 300;           // be polite to registries
 
-    private constructor() {}
+    private constructor() { }
 
     public static getInstance(): ImageUpdateService {
         if (!ImageUpdateService.instance) {
@@ -195,7 +195,7 @@ export class ImageUpdateService {
 
         try {
             const db = DatabaseService.getInstance();
-            // Only check local nodes — remote nodes run their own instance
+            // Only check local nodes - remote nodes run their own instance
             for (const node of db.getNodes()) {
                 if (node.type !== 'local' || !node.id) continue;
                 try {
@@ -282,7 +282,7 @@ export class ImageUpdateService {
         if (!localDigest) return false; // Locally built or never pulled with a digest
 
         const remoteDigest = await getRemoteDigest(parsed.registry, parsed.repo, parsed.tag);
-        if (!remoteDigest) return false; // Registry unreachable — no false positives
+        if (!remoteDigest) return false; // Registry unreachable - no false positives
 
         const hasUpdate = localDigest !== remoteDigest;
         console.log(

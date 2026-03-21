@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+
+type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
@@ -75,6 +78,7 @@ export default function EditorLayout() {
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
@@ -82,13 +86,15 @@ export default function EditorLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('sencho-theme');
-    if (saved !== null) {
-      return saved === 'dark';
-    }
-    return true; // Default to dark mode
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('sencho-theme') as Theme | null;
+    if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
+    return 'dark'; // Default to dark mode
   });
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+  const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,17 +123,34 @@ export default function EditorLayout() {
     setAlertSheetOpen(true);
   };
 
-  // Theme toggle effect
+  // Listen for system dark mode changes (for 'auto' theme)
   useEffect(() => {
-    const html = document.documentElement;
-    if (isDarkMode) {
-      html.classList.add('dark');
-      localStorage.setItem('sencho-theme', 'dark');
-    } else {
-      html.classList.remove('dark');
-      localStorage.setItem('sencho-theme', 'light');
-    }
-  }, [isDarkMode]);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Apply dark class and persist theme preference
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('sencho-theme', theme);
+  }, [isDarkMode, theme]);
+
+  // Force Monaco to re-measure its container after the tab switch DOM settles.
+  // Monaco's internal child is position:static with an explicit pixel height that
+  // creates a circular CSS dependency (Monaco drives card height → grid height → Monaco).
+  // Fix: reset Monaco to 0×0 first (breaks the cycle), then trigger a forced synchronous
+  // reflow so the container has its CSS-correct size before Monaco re-measures.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const editor = monacoEditorRef.current;
+      if (!editor) return;
+      editor.layout({ width: 0, height: 0 }); // collapse → breaks CSS circular dependency
+      editor.layout();                          // forced reflow → measures correct container size
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeTab]);
 
   const refreshStacks = async (background = false) => {
     if (!background) setIsLoading(true);
@@ -162,7 +185,7 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification WS push — load history once on mount, then receive live updates
+  // Notification WS push - load history once on mount, then receive live updates
   useEffect(() => {
     fetchNotifications();
 
@@ -300,7 +323,7 @@ export default function EditorLayout() {
             }
 
             // Rate is derived from rawBytesRef which is never cleared on flush,
-            // so the delta is always accurate — no stale-closure risk.
+            // so the delta is always accurate - no stale-closure risk.
             const prevRaw = rawBytesRef.current[container.Id];
             const rxRate = prevRaw ? Math.max(0, currentRx - prevRaw.lastRx) : 0;
             const txRate = prevRaw ? Math.max(0, currentTx - prevRaw.lastTx) : 0;
@@ -308,7 +331,7 @@ export default function EditorLayout() {
 
             const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
 
-            // Write into the buffer ref only — zero re-render cost.
+            // Write into the buffer ref only - zero re-render cost.
             pendingStatsRef.current[container.Id] = {
               cpu: cpuPercent + '%',
               ram: ramUsage,
@@ -770,7 +793,7 @@ export default function EditorLayout() {
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
-                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                         }`} />
                       {node.name}
                     </div>
@@ -880,7 +903,7 @@ export default function EditorLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
-          {/* Node Context Pill — visible only when a remote node is active */}
+          {/* Node Context Pill - visible only when a remote node is active */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
@@ -895,156 +918,156 @@ export default function EditorLayout() {
             )}
           </div>
           <div className="flex items-center gap-4">
-          {/* Home Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => {
-              setSelectedFile(null);
-              setContent('');
-              setOriginalContent('');
-              setEnvContent('');
-              setOriginalEnvContent('');
-              setEnvFiles([]);
-              setSelectedEnvFile('');
-              setEnvExists(false);
-              setContainers([]);
-              setIsEditing(false);
-              setActiveView('dashboard');
-            }}
-            title="Go to Home Dashboard"
-          >
-            <Home className="w-4 h-4 mr-2" />
-            Home
-          </Button>
-          {/* Console Toggle */}
-          <Button
-            variant={activeView === 'host-console' ? 'default' : 'outline'}
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
-          >
-            <Terminal className="w-4 h-4 mr-2" />
-            Console
-          </Button>
-          {/* Resources Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('resources')}
-            title="System Resources"
-          >
-            <HardDrive className="w-4 h-4 mr-2" />
-            Resources
-          </Button>
-          {/* App Store Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('templates')}
-            title="App Store"
-          >
-            <CloudDownload className="w-4 h-4 mr-2" />
-            App Store
-          </Button>
-          {/* Global Observability Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('global-observability')}
-            title="Global Logs"
-          >
-            <Activity className="w-4 h-4 mr-2" />
-            Logs
-          </Button>
+            {/* Home Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => {
+                setSelectedFile(null);
+                setContent('');
+                setOriginalContent('');
+                setEnvContent('');
+                setOriginalEnvContent('');
+                setEnvFiles([]);
+                setSelectedEnvFile('');
+                setEnvExists(false);
+                setContainers([]);
+                setIsEditing(false);
+                setActiveView('dashboard');
+              }}
+              title="Go to Home Dashboard"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Home
+            </Button>
+            {/* Console Toggle */}
+            <Button
+              variant={activeView === 'host-console' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
+            >
+              <Terminal className="w-4 h-4 mr-2" />
+              Console
+            </Button>
+            {/* Resources Toggle */}
+            <Button
+              variant={activeView === 'resources' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'resources' ? (selectedFile ? 'editor' : 'dashboard') : 'resources')}
+              title="System Resources"
+            >
+              <HardDrive className="w-4 h-4 mr-2" />
+              Resources
+            </Button>
+            {/* App Store Toggle */}
+            <Button
+              variant={activeView === 'templates' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'templates' ? (selectedFile ? 'editor' : 'dashboard') : 'templates')}
+              title="App Store"
+            >
+              <CloudDownload className="w-4 h-4 mr-2" />
+              App Store
+            </Button>
+            {/* Global Observability Toggle */}
+            <Button
+              variant={activeView === 'global-observability' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'global-observability' ? (selectedFile ? 'editor' : 'dashboard') : 'global-observability')}
+              title="Global Logs"
+            >
+              <Activity className="w-4 h-4 mr-2" />
+              Logs
+            </Button>
 
-          {/* Settings Modal Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setSettingsModalOpen(true)}
-            title="Notification Settings"
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
+            {/* Settings Modal Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setSettingsModalOpen(true)}
+              title="Notification Settings"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
 
-          {/* Notifications Popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
-                <Bell className="w-4 h-4" />
-                {notifications.filter(n => !n.is_read).length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                  </span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
-              <div className="flex items-center justify-between p-4 border-b">
-                <h4 className="font-semibold">Notifications</h4>
-                <div className="flex gap-2">
+            {/* Notifications Popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
+                  <Bell className="w-4 h-4" />
                   {notifications.filter(n => !n.is_read).length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
-                      Mark all as read
-                    </Button>
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
                   )}
-                  {notifications.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="w-3 h-3 mr-1" />
-                      Clear all
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <ScrollArea className="h-80">
-                {notifications.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
-                ) : (
-                  <div className="flex flex-col">
-                    {notifications.map((notif: any) => (
-                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
-                        <div className="flex items-center gap-2 mb-1 pr-6">
-                          <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
-                            {notif.level}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            {new Date(notif.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="font-medium pr-6">{notif.message}</p>
-
-                        {/* Delete individual notification button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(notif.id);
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h4 className="font-semibold">Notifications</h4>
+                  <div className="flex gap-2">
+                    {notifications.filter(n => !n.is_read).length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
+                        Mark all as read
+                      </Button>
+                    )}
+                    {notifications.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Clear all
+                      </Button>
+                    )}
                   </div>
-                )}
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
+                </div>
+                <ScrollArea className="h-80">
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
+                  ) : (
+                    <div className="flex flex-col">
+                      {notifications.map((notif: any) => (
+                        <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
+                          <div className="flex items-center gap-2 mb-1 pr-6">
+                            <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
+                              {notif.level}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {new Date(notif.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="font-medium pr-6">{notif.message}</p>
+
+                          {/* Delete individual notification button */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif.id);
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
           </div>{/* end right-side buttons */}
         </div>
 
         {/* Main Workspace */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
           {activeView === 'templates' ? (
             <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
           ) : activeView === 'resources' ? (
@@ -1234,8 +1257,18 @@ export default function EditorLayout() {
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                         <TabsList className="bg-muted">
-                          <TabsTrigger value="compose" className="rounded-lg">compose.yaml</TabsTrigger>
-                          <TabsTrigger value="env" disabled={!envExists} className="rounded-lg">.env</TabsTrigger>
+                          <TabsTrigger value="compose" className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'compose' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">compose.yaml</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="env" disabled={!envExists} className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'env' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">.env</span>
+                          </TabsTrigger>
                         </TabsList>
                       </Tabs>
 
@@ -1286,13 +1319,14 @@ export default function EditorLayout() {
                         </span>
                       </div>
                     )}
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
                       {!isFileLoading && (
                         <Editor
                           height="100%"
                           language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
                           theme={isDarkMode ? 'vs-dark' : 'vs'}
                           value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                          onMount={(editor) => { monacoEditorRef.current = editor; }}
                           onChange={(value) => {
                             if (!isEditing) return; // Prevent changes in view mode
                             if (activeTab === 'compose') {
@@ -1369,8 +1403,8 @@ export default function EditorLayout() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Stack Alert Sheet */}

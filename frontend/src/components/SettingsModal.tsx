@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import {
     Dialog,
     DialogContent,
@@ -14,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server, Package, RefreshCw, Database, Info } from 'lucide-react';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Monitor, Code, Server, Package, RefreshCw, Database, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -41,11 +42,13 @@ interface PatchableSettings {
 
 type SectionId = 'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes' | 'appstore';
 
+type Theme = 'light' | 'dark' | 'auto';
+
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
-    isDarkMode: boolean;
-    setIsDarkMode: (mode: boolean) => void;
+    theme: Theme;
+    setTheme: (theme: Theme) => void;
 }
 
 const DEFAULT_SETTINGS: PatchableSettings = {
@@ -61,7 +64,7 @@ const DEFAULT_SETTINGS: PatchableSettings = {
     log_retention_days: '30',
 };
 
-export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
@@ -73,6 +76,9 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Notification tab state (controlled for sliding indicator)
+    const [notifTab, setNotifTab] = useState<'discord' | 'slack' | 'webhook'>('discord');
+
     // Auth State
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
@@ -83,7 +89,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         webhook: { type: 'webhook', url: '', enabled: false },
     });
 
-    // Settings state — all user-configurable keys (no auth keys)
+    // Settings state - all user-configurable keys (no auth keys)
     const [settings, setSettings] = useState<PatchableSettings>({ ...DEFAULT_SETTINGS });
 
     // Track server state to detect unsaved changes without causing re-renders
@@ -100,17 +106,17 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     // Unsaved changes indicators per section (compared against server ref)
     const hasSystemChanges =
-        settings.host_cpu_limit   !== serverSettingsRef.current.host_cpu_limit   ||
-        settings.host_ram_limit   !== serverSettingsRef.current.host_ram_limit   ||
-        settings.host_disk_limit  !== serverSettingsRef.current.host_disk_limit  ||
+        settings.host_cpu_limit !== serverSettingsRef.current.host_cpu_limit ||
+        settings.host_ram_limit !== serverSettingsRef.current.host_ram_limit ||
+        settings.host_disk_limit !== serverSettingsRef.current.host_disk_limit ||
         settings.docker_janitor_gb !== serverSettingsRef.current.docker_janitor_gb ||
-        settings.global_crash     !== serverSettingsRef.current.global_crash;
+        settings.global_crash !== serverSettingsRef.current.global_crash;
 
     const hasDeveloperChanges =
-        settings.developer_mode          !== serverSettingsRef.current.developer_mode          ||
-        settings.global_logs_refresh     !== serverSettingsRef.current.global_logs_refresh     ||
+        settings.developer_mode !== serverSettingsRef.current.developer_mode ||
+        settings.global_logs_refresh !== serverSettingsRef.current.global_logs_refresh ||
         settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
-        settings.log_retention_days      !== serverSettingsRef.current.log_retention_days;
+        settings.log_retention_days !== serverSettingsRef.current.log_retention_days;
 
     useEffect(() => {
         if (isOpen) {
@@ -140,7 +146,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
         try {
             // Fetch per-node settings from the active node (system limits etc.)
             const nodeRes = await apiFetch('/settings');
-            // Always fetch developer/UI preferences from local — these control
+            // Always fetch developer/UI preferences from local - these control
             // this Sencho instance's behaviour and must never be proxied to remote
             const localRes = isRemote ? await apiFetch('/settings', { localOnly: true }) : nodeRes;
 
@@ -151,17 +157,17 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
             const safe: PatchableSettings = {
                 // Per-node: read from active node
-                host_cpu_limit:          nodeData.host_cpu_limit          ?? DEFAULT_SETTINGS.host_cpu_limit,
-                host_ram_limit:          nodeData.host_ram_limit          ?? DEFAULT_SETTINGS.host_ram_limit,
-                host_disk_limit:         nodeData.host_disk_limit         ?? DEFAULT_SETTINGS.host_disk_limit,
-                docker_janitor_gb:       nodeData.docker_janitor_gb       ?? DEFAULT_SETTINGS.docker_janitor_gb,
-                global_crash:            (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
-                template_registry_url:   nodeData.template_registry_url   ?? '',
+                host_cpu_limit: nodeData.host_cpu_limit ?? DEFAULT_SETTINGS.host_cpu_limit,
+                host_ram_limit: nodeData.host_ram_limit ?? DEFAULT_SETTINGS.host_ram_limit,
+                host_disk_limit: nodeData.host_disk_limit ?? DEFAULT_SETTINGS.host_disk_limit,
+                docker_janitor_gb: nodeData.docker_janitor_gb ?? DEFAULT_SETTINGS.docker_janitor_gb,
+                global_crash: (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
+                template_registry_url: nodeData.template_registry_url ?? '',
                 // Local-only: always read from local node
-                global_logs_refresh:     (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
-                developer_mode:          (localData.developer_mode as '0' | '1')                   ?? DEFAULT_SETTINGS.developer_mode,
+                global_logs_refresh: (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
+                developer_mode: (localData.developer_mode as '0' | '1') ?? DEFAULT_SETTINGS.developer_mode,
                 metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
-                log_retention_days:      localData.log_retention_days      ?? DEFAULT_SETTINGS.log_retention_days,
+                log_retention_days: localData.log_retention_days ?? DEFAULT_SETTINGS.log_retention_days,
             };
             setSettings(safe);
             serverSettingsRef.current = { ...safe };
@@ -201,22 +207,22 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
     const saveSystemSettings = async () => {
         const ok = await patchSettings({
-            host_cpu_limit:    settings.host_cpu_limit,
-            host_ram_limit:    settings.host_ram_limit,
-            host_disk_limit:   settings.host_disk_limit,
+            host_cpu_limit: settings.host_cpu_limit,
+            host_ram_limit: settings.host_ram_limit,
+            host_disk_limit: settings.host_disk_limit,
             docker_janitor_gb: settings.docker_janitor_gb,
-            global_crash:      settings.global_crash,
+            global_crash: settings.global_crash,
         }, setIsSavingSystem);
         if (ok) toast.success('System limits saved.');
     };
 
     const saveDeveloperSettings = async () => {
-        // Developer/UI preferences are local-only — never proxy to remote node
+        // Developer/UI preferences are local-only - never proxy to remote node
         const ok = await patchSettings({
-            developer_mode:          settings.developer_mode,
-            global_logs_refresh:     settings.global_logs_refresh,
+            developer_mode: settings.developer_mode,
+            global_logs_refresh: settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
-            log_retention_days:      settings.log_retention_days,
+            log_retention_days: settings.log_retention_days,
         }, setIsSavingDeveloper, true);
         if (ok) toast.success('Developer settings saved.');
     };
@@ -571,11 +577,26 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                 <h3 className="text-lg font-semibold tracking-tight">Notifications & Alerts</h3>
                                 <p className="text-sm text-muted-foreground">Configure external integrations for crash alerts.</p>
                             </div>
-                            <Tabs defaultValue="discord" className="w-full">
-                                <TabsList className="grid w-full grid-cols-3 mb-4">
-                                    <TabsTrigger value="discord">Discord</TabsTrigger>
-                                    <TabsTrigger value="slack">Slack</TabsTrigger>
-                                    <TabsTrigger value="webhook">Webhook</TabsTrigger>
+                            <Tabs value={notifTab} onValueChange={(v) => setNotifTab(v as 'discord' | 'slack' | 'webhook')} className="w-full">
+                                <TabsList className="w-full mb-4 grid grid-cols-3">
+                                    <TabsTrigger value="discord" className="relative data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                                        {notifTab === 'discord' && (
+                                            <motion.div layoutId="notif-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 350, damping: 30 }} />
+                                        )}
+                                        <span className="relative z-10">Discord</span>
+                                    </TabsTrigger>
+                                    <TabsTrigger value="slack" className="relative data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                                        {notifTab === 'slack' && (
+                                            <motion.div layoutId="notif-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 350, damping: 30 }} />
+                                        )}
+                                        <span className="relative z-10">Slack</span>
+                                    </TabsTrigger>
+                                    <TabsTrigger value="webhook" className="relative data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                                        {notifTab === 'webhook' && (
+                                            <motion.div layoutId="notif-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 350, damping: 30 }} />
+                                        )}
+                                        <span className="relative z-10">Webhook</span>
+                                    </TabsTrigger>
                                 </TabsList>
                                 <TabsContent value="discord">{renderAgentTab('discord', 'Discord')}</TabsContent>
                                 <TabsContent value="slack">{renderAgentTab('slack', 'Slack')}</TabsContent>
@@ -590,22 +611,30 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                 <h3 className="text-lg font-semibold tracking-tight">Appearance</h3>
                                 <p className="text-sm text-muted-foreground">Customize Sencho's visual theme.</p>
                             </div>
-                            <div className="flex items-center space-x-4 mt-6">
+                            <div className="flex items-center gap-3 mt-6 flex-wrap">
                                 <Button
-                                    variant={!isDarkMode ? 'default' : 'outline'}
+                                    variant={theme === 'light' ? 'default' : 'outline'}
                                     className="w-32 h-20 flex flex-col gap-2 rounded-xl"
-                                    onClick={() => setIsDarkMode(false)}
+                                    onClick={() => setTheme('light')}
                                 >
                                     <Sun className="w-6 h-6" />
                                     Light
                                 </Button>
                                 <Button
-                                    variant={isDarkMode ? 'default' : 'outline'}
+                                    variant={theme === 'dark' ? 'default' : 'outline'}
                                     className="w-32 h-20 flex flex-col gap-2 rounded-xl"
-                                    onClick={() => setIsDarkMode(true)}
+                                    onClick={() => setTheme('dark')}
                                 >
                                     <Moon className="w-6 h-6" />
                                     Dark
+                                </Button>
+                                <Button
+                                    variant={theme === 'auto' ? 'default' : 'outline'}
+                                    className="w-32 h-20 flex flex-col gap-2 rounded-xl"
+                                    onClick={() => setTheme('auto')}
+                                >
+                                    <Monitor className="w-6 h-6" />
+                                    Auto
                                 </Button>
                             </div>
                         </div>
@@ -670,7 +699,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                                 </SelectContent>
                                             </Select>
                                             {settings.developer_mode === '1' && (
-                                                <p className="text-xs text-amber-500">SSE streaming is active — polling rate is overridden.</p>
+                                                <p className="text-xs text-amber-500">SSE streaming is active - polling rate is overridden.</p>
                                             )}
                                         </div>
                                     </div>
@@ -750,7 +779,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
                                         <div className="space-y-1">
                                             <Label className="text-base">Default Registry</Label>
                                             <p className="text-xs text-muted-foreground">
-                                                LinuxServer.io — <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
+                                                LinuxServer.io - <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
                                             </p>
                                             <p className="text-xs text-muted-foreground">Used when no custom registry is set.</p>
                                         </div>

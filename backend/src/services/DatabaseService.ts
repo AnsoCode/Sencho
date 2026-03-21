@@ -251,7 +251,7 @@ export class DatabaseService {
         stmt.run(key, value);
     }
 
-    // --- System State (operational/runtime values — not user-defined config) ---
+    // --- System State (operational/runtime values - not user-defined config) ---
 
     public getSystemState(key: string): string | null {
         const row = this.db.prepare('SELECT value FROM system_state WHERE key = ?').get(key) as { value: string } | undefined;
