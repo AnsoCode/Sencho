@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Shield, Activity, Bell, Palette, Moon, Sun, Code, Server, Package, RefreshCw, Database, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 
@@ -470,7 +471,7 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
                     {activeSection === 'system' && (
                         <div className="space-y-6">
-                            <div className="flex items-start justify-between">
+                            <div className="flex items-start justify-between pr-8">
                                 <div>
                                     <h3 className="text-lg font-semibold tracking-tight">System Limits & Watchdog</h3>
                                     <p className="text-sm text-muted-foreground">Configure alert thresholds and crash detection.</p>
@@ -612,16 +613,25 @@ export function SettingsModal({ isOpen, onClose, isDarkMode, setIsDarkMode }: Se
 
                     {activeSection === 'developer' && (
                         <div className="space-y-6">
-                            <div className="flex items-start justify-between">
+                            <div className="flex items-start justify-between pr-8">
                                 <div>
                                     <h3 className="text-lg font-semibold tracking-tight">Developer</h3>
                                     <p className="text-sm text-muted-foreground">Power user settings for real-time observability and data retention.</p>
                                 </div>
                                 {isRemote && (
-                                    <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5">
-                                        <Info className="w-3 h-3 mr-1" />
-                                        Always Local
-                                    </Badge>
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5 cursor-help">
+                                                    <Info className="w-3 h-3 mr-1" />
+                                                    Always Local
+                                                </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                                                These settings control this Sencho instance's UI behaviour and are never synced to remote nodes.
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
                                 )}
                             </div>
 
