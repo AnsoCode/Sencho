@@ -34,7 +34,8 @@ import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
-import { useNodes, Node } from '@/context/NodeContext';
+import { useNodes } from '@/context/NodeContext';
+import type { Node } from '@/context/NodeContext';
 
 interface ContainerInfo {
   Id: string;
