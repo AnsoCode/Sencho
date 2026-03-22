@@ -87,6 +87,12 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+      // connect-src: explicit 'self' covers same-origin fetch/XHR/WebSocket.
+      // ws: and wss: are included for WebSocket connections in any scheme context.
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+      // worker-src: Monaco editor creates Web Workers via blob: URLs for language
+      // services (syntax highlighting, intellisense). Without blob: they silently fail.
+      workerSrc: ["'self'", 'blob:'],
       // 'upgrade-insecure-requests' is intentionally absent — see comment above.
     },
   },
@@ -449,6 +455,15 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
       // parsing for remote requests, so req's raw stream is intact and
       // http-proxy's req.pipe(proxyReq) forwards the body automatically.
       // No manual body rewriting needed here.
+    },
+    proxyRes: (proxyRes) => {
+      // Mark every response forwarded from a remote node with a sentinel header.
+      // The frontend (apiFetch / fetchForNode) checks this before firing the
+      // global 'sencho-unauthorized' event: a 401 from a remote means the stored
+      // api_token for that node is invalid — not that the user's own session
+      // expired. Without this distinction, any node with a bad token causes an
+      // immediate logout loop.
+      proxyRes.headers['x-sencho-proxy'] = '1';
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
@@ -1559,7 +1574,7 @@ app.delete('/api/alerts/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/notifications', async (req: Request, res: Response) => {
+app.get('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
     const history = DatabaseService.getInstance().getNotificationHistory();
     res.json(history);
@@ -1568,7 +1583,7 @@ app.get('/api/notifications', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/notifications/read', async (req: Request, res: Response) => {
+app.post('/api/notifications/read', authMiddleware, async (req: Request, res: Response) => {
   try {
     DatabaseService.getInstance().markAllNotificationsRead();
     res.json({ success: true });
@@ -1577,7 +1592,7 @@ app.post('/api/notifications/read', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
+app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string, 10);
     DatabaseService.getInstance().deleteNotification(id);
@@ -1587,7 +1602,7 @@ app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/notifications', async (req: Request, res: Response) => {
+app.delete('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
     DatabaseService.getInstance().deleteAllNotifications();
     res.json({ success: true });
@@ -1596,7 +1611,7 @@ app.delete('/api/notifications', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/notifications/test', async (req: Request, res: Response) => {
+app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { type, url } = req.body;
     await NotificationService.getInstance().testDispatch(type, url);
