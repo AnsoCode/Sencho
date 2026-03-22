@@ -75,7 +75,11 @@ RUN addgroup -S sencho && adduser -S -G sencho sencho \
 # security scanners (Trivy, Clair) may flag "running as root" — this is a known
 # and accepted trade-off for self-hosted apps with user-supplied volume mounts.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Strip Windows CRLF line endings that can sneak in on Windows dev machines
+# even with .gitattributes eol=lf, then make executable. A shell script with
+# \r in tokens like "fi\r" will fail with "unexpected end of file" in Alpine.
+RUN sed -i 's/\r//' /usr/local/bin/docker-entrypoint.sh \
+  && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 3000
