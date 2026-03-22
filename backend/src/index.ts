@@ -76,6 +76,9 @@ const getCookieOptions = (req: Request) => ({
 //   Setting null is the Helmet 8 API to remove a default directive.
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
+  // COOP is only meaningful over HTTPS. Over HTTP the browser logs a warning
+  // and ignores it, creating noise in the console with no security benefit.
+  crossOriginOpenerPolicy: false,
   hsts: false,
   contentSecurityPolicy: {
     directives: {

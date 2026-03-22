@@ -11,6 +11,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Disable the module-preload polyfill inline script.
+    // Vite injects a small inline <script> for module preloading that violates
+    // our CSP (script-src 'self' blocks all inline scripts). All modern browsers
+    // support <link rel="modulepreload"> natively, so the polyfill is unnecessary.
+    modulePreload: { polyfill: false },
+  },
   server: {
     proxy: {
       '/api': {
