@@ -1,0 +1,3 @@
+# Force LF line endings for shell scripts regardless of the developer's OS.
+# Shell scripts with CRLF endings will fail with "exec format error" in Linux containers.
+*.sh text eol=lf
