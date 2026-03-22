@@ -13,9 +13,10 @@ import { Label } from './ui/label';
 
 interface Stats {
   active: number;
+  managed: number;
+  unmanaged: number;
   exited: number;
   total: number;
-  inactive: number;
 }
 
 interface MetricPoint {
@@ -66,7 +67,7 @@ export default function HomeDashboard() {
   const [convertedYaml, setConvertedYaml] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
-  const [stats, setStats] = useState<Stats>({ active: 0, exited: 0, total: 0, inactive: 0 });
+  const [stats, setStats] = useState<Stats>({ active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 });
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [metrics, setMetrics] = useState<MetricPoint[]>([]);
 
@@ -221,7 +222,9 @@ export default function HomeDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-500">{stats.active}</div>
-            <p className="text-xs text-muted-foreground mt-1">Currently running</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.managed} managed · {stats.unmanaged} external
+            </p>
           </CardContent>
         </Card>
 
