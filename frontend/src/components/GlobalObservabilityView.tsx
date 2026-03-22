@@ -95,7 +95,7 @@ export function GlobalObservabilityView() {
                     const entry: LogEntry = JSON.parse(event.data);
                     entry._id = ++logIdRef.current;
                     bufferRef.current.push(entry);
-                } catch (e) { /* ignore parse errors */ }
+                } catch { /* ignore parse errors */ }
             };
 
             eventSource.onerror = () => {
@@ -243,7 +243,7 @@ export function GlobalObservabilityView() {
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Select value={streamFilter} onValueChange={(val: any) => setStreamFilter(val)}>
+                <Select value={streamFilter} onValueChange={(val) => setStreamFilter(val as 'ALL' | 'STDOUT' | 'STDERR')}>
                     <SelectTrigger className="w-[110px] h-8 text-sm">
                         <SelectValue placeholder="Stream" />
                     </SelectTrigger>

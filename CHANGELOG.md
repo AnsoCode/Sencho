@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added:** `isValidStackName`, `isValidRemoteUrl`, `isPathWithinBase` extracted to `backend/src/utils/validation.ts` for reuse and testability.
 
 ### Fixed
+- **Fixed:** ESLint CI step now passes with zero errors — replaced all `any` type annotations with proper types or `unknown` casts, fixed unused catch variables, suppressed `react-refresh/only-export-components` on files that intentionally export both a component and a hook/constant (contexts, badge, button), added file-level `eslint-disable` on animate-ui third-party primitives, and added `eslint-disable-next-line react-hooks/set-state-in-effect` for the LogViewer state reset pattern.
 - **Fixed:** Four empty `catch {}` blocks in `EditorLayout` (mark-all-read, delete notification, clear-all notifications, image update fetch) now surface errors via `toast.error()` instead of silently swallowing them.
 - **Fixed:** `ErrorBoundary` component existed but was not connected — it now wraps the root `<App />` in `main.tsx`, catching crashes in any context provider or route component.
 - **Fixed:** `AlertDialogContent` used `asChild` on `AlertDialogPrimitive.Content` with a `motion.div` wrapper — Radix internally injects a second child (`DescriptionWarning`), causing `React.Children.only` to throw and the ErrorBoundary to trigger whenever the delete-stack confirmation dialog opened. Replaced with CSS keyframe animations (`data-[state=open]:animate-in` / `data-[state=closed]:animate-out`) which don't require `asChild`.

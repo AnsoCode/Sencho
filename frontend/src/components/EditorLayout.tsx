@@ -492,7 +492,7 @@ export default function EditorLayout() {
             let currentRx = 0;
             let currentTx = 0;
             if (data.networks) {
-              Object.values(data.networks).forEach((net: any) => {
+              Object.values(data.networks as Record<string, { rx_bytes?: number; tx_bytes?: number }>).forEach((net) => {
                 currentRx += net.rx_bytes || 0;
                 currentTx += net.tx_bytes || 0;
               });
@@ -713,9 +713,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to deploy:', error);
-      toast.error(error.message || 'Failed to deploy stack');
+      toast.error((error as Error).message || 'Failed to deploy stack');
     } finally {
       setLoadingAction(null);
     }
@@ -741,9 +741,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to stop:', error);
-      toast.error(error.message || 'Failed to stop stack');
+      toast.error((error as Error).message || 'Failed to stop stack');
     } finally {
       setLoadingAction(null);
     }
@@ -769,9 +769,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to restart:', error);
-      toast.error(error.message || 'Failed to restart stack');
+      toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
       setLoadingAction(null);
     }
@@ -797,9 +797,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update:', error);
-      toast.error(error.message || 'Failed to update stack');
+      toast.error((error as Error).message || 'Failed to update stack');
     } finally {
       setLoadingAction(null);
     }
@@ -830,9 +830,9 @@ export default function EditorLayout() {
         setIsEditing(false);
       }
       await refreshStacks();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to delete stack:', error);
-      toast.error(error.message || 'Failed to delete stack');
+      toast.error((error as Error).message || 'Failed to delete stack');
     } finally {
       setLoadingAction(null);
     }
@@ -860,9 +860,9 @@ export default function EditorLayout() {
       await refreshStacks();
       // Auto-load the new stack in the editor pane
       await loadFile(stackName);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to create stack:', error);
-      toast.error(error.message || 'Failed to create stack');
+      toast.error((error as Error).message || 'Failed to create stack');
     }
   };
 

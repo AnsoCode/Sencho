@@ -147,7 +147,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                 const err = await res.json().catch(() => ({}));
                 toast.error(err?.error || 'Failed to delete alert rule.');
             }
-        } catch (e) {
+        } catch {
             toast.error('Network error. Could not reach the node.');
         } finally {
             setIsLoading(false);

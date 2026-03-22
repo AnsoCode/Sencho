@@ -51,4 +51,5 @@ function useDataState<T extends HTMLElement = HTMLElement>(
   return [value, localRef];
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export { useDataState, type DataStateValue };

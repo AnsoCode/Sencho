@@ -18,6 +18,12 @@ interface Stats {
   inactive: number;
 }
 
+interface MetricPoint {
+  timestamp: number;
+  cpu_percent: number;
+  memory_mb: number;
+}
+
 interface SystemStats {
   cpu: {
     usage: string;
@@ -62,7 +68,7 @@ export default function HomeDashboard() {
   const [newStackName, setNewStackName] = useState('');
   const [stats, setStats] = useState<Stats>({ active: 0, exited: 0, total: 0, inactive: 0 });
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
-  const [metrics, setMetrics] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<MetricPoint[]>([]);
 
   // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
@@ -194,9 +200,9 @@ export default function HomeDashboard() {
       setConvertedYaml('');
       setDockerRunInput('');
       window.location.reload(); // Refresh to show new stack
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to create stack:', error);
-      toast.error(error?.message || error?.error || 'Failed to create stack');
+      toast.error((error as Error).message || 'Failed to create stack');
     }
   };
 
