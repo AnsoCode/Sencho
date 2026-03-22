@@ -1159,24 +1159,25 @@ app.post('/api/convert', async (req: Request, res: Response) => {
 // Get all containers stats for dashboard
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
-    const [dockerController, knownStacks] = [
-      DockerController.getInstance(req.nodeId),
-      await FileSystemService.getInstance(req.nodeId).getStacks(),
-    ];
-    const allContainers = await dockerController.getAllContainers();
-    const knownSet = new Set(knownStacks);
+    const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(req.nodeId));
+    const allContainers = await DockerController.getInstance(req.nodeId).getAllContainers();
+
+    // A container is "managed" if Docker started it from within COMPOSE_DIR.
+    // We use com.docker.compose.project.working_dir rather than project name because
+    // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
+    // project name of the root folder — causing false "external" classification.
+    const isManagedByComposeDir = (c: any): boolean => {
+      const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+      if (!workingDir) return false;
+      const resolved = path.resolve(workingDir);
+      return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
+    };
 
     const active = allContainers.filter((c: any) => c.State === 'running').length;
     const exited = allContainers.filter((c: any) => c.State === 'exited').length;
     const total = allContainers.length;
-    const managed = allContainers.filter((c: any) => {
-      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
-      return project && knownSet.has(project) && c.State === 'running';
-    }).length;
-    const unmanaged = allContainers.filter((c: any) => {
-      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
-      return project && !knownSet.has(project) && c.State === 'running';
-    }).length;
+    const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
+    const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
 
     res.json({ active, managed, unmanaged, exited, total });
   } catch (error) {
