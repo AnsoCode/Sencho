@@ -5,6 +5,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Security
+- **Fixed:** `POST /api/system/console-token` was missing `authMiddleware` — any unauthenticated client could generate console session tokens. Fixed by adding `authMiddleware` to the route.
+- **Fixed:** Remote node `api_url` was accepted without validation — an attacker could set it to `http://localhost:6379` to SSRF into internal services. Now validates: must be a well-formed `http://` or `https://` URL, and the hostname may not be `localhost`, `127.x.x.x`, `[::1]`, or `0.0.0.0`.
+- **Fixed:** `env_file` paths in compose.yaml were accepted without boundary checking — absolute paths like `/etc/passwd` could be read/written. All resolved env file paths are now validated to stay within the stack directory.
+- **Fixed:** Stack name was validated in write routes but not in GET routes (`/api/stacks/:stackName`, `/api/stacks/:stackName/env`, `/api/stacks/:stackName/envs`) — path-traversal names now return 400 on all routes.
+- **Added:** Rate limiting on `/api/auth/login` and `/api/auth/setup` — 5 attempts per 15-minute window per IP, using `express-rate-limit`.
+- **Added:** `helmet` middleware for security response headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.).
+- **Changed:** CORS is now restricted to `FRONTEND_URL` env var in production; development continues to allow any origin.
+
+### Added
+- **Added:** `GET /api/health` public endpoint — returns `{ status: "ok", uptime }`. Used by Docker `HEALTHCHECK` directive and external uptime monitors.
+- **Added:** `HEALTHCHECK` directive in `Dockerfile` — Docker now polls `/api/health` every 30 s and restarts an unhealthy container.
+- **Added:** Graceful shutdown — backend now listens for `SIGTERM`/`SIGINT`, drains HTTP connections, stops `MonitorService` and `ImageUpdateService`, and closes the SQLite connection before exiting. Prevents data loss when the container is stopped.
+- **Added:** Automated backend test suite with Vitest — 38 tests covering validation utilities, health endpoint, authentication flows, auth middleware enforcement, console-token security fix, and SSRF validation on node URLs. Run with `cd backend && npm test`.
+- **Added:** Playwright E2E test scaffolding (`e2e/`) — auth, stack management, and node management spec files with shared login helper. Run with `npm run test:e2e` from the repo root.
+- **Added:** CI workflow now runs Vitest unit tests and ESLint on every PR.
+- **Added:** Dockerfile now creates a non-root `sencho` system user and runs the process as that user instead of root.
+- **Added:** `isValidStackName`, `isValidRemoteUrl`, `isPathWithinBase` extracted to `backend/src/utils/validation.ts` for reuse and testability.
+
+### Fixed
+- **Fixed:** Four empty `catch {}` blocks in `EditorLayout` (mark-all-read, delete notification, clear-all notifications, image update fetch) now surface errors via `toast.error()` instead of silently swallowing them.
+- **Fixed:** `ErrorBoundary` component existed but was not connected — it now wraps the root `<App />` in `main.tsx`, catching crashes in any context provider or route component.
+- **Fixed:** `WebSocket.Server` replaced with named import `WebSocketServer` from `ws` to fix ESM/CJS interop in test environments.
 - **Added:** Cross-node notification aggregation — the notification bell now surfaces alerts from all connected remote nodes, not just the local instance. On mount and whenever the node list changes, `EditorLayout` fetches notification history from every registered node in parallel (using `fetchForNode` with targeted `x-node-id` headers). Each remote node also gets a dedicated real-time WebSocket connection (`/ws/notifications?nodeId=`) so alerts push instantly as they fire. Remote-sourced notifications display a node-name badge for quick identification. Mark-as-read, delete, and clear-all actions are routed to the correct node. The backend WS upgrade handler was updated to allow `/ws/notifications?nodeId=<remoteId>` to fall through to the existing proxy path (bare `/ws/notifications` with no nodeId continues to connect locally as before).
 - **Fixed:** Remote node host console and container exec WebSocket connections now succeed — the gateway exchanges the long-lived `node_proxy` api_token for a short-lived `console_session` JWT (60 s TTL) via a new `POST /api/system/console-token` endpoint before forwarding the WS upgrade to the remote. Previously the remote's `isProxyToken` guard correctly blocked `node_proxy` tokens from interactive terminals, which also blocked legitimate user-initiated console sessions routed through the gateway.
 - **Fixed:** `StackAlertSheet` now fetches notification agent status from the active node on open and displays a contextual banner: green checkmark with active channel names when agents are enabled, amber warning with a link to Settings → Notifications when none are configured, and a blue info callout on remote nodes explaining that alerts are evaluated and dispatched by that remote Sencho instance.

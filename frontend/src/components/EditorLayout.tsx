@@ -410,7 +410,9 @@ export default function EditorLayout() {
         const data = await res.json();
         setStackUpdates(data);
       }
-    } catch (e) { }
+    } catch (e: unknown) {
+      console.error('[ImageUpdates] fetch failed:', e);
+    }
   };
 
   const markAllRead = async () => {
@@ -423,7 +425,10 @@ export default function EditorLayout() {
           : fetchForNode('/notifications/read', nodeId, { method: 'POST' })
       ));
       setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to mark notifications as read');
+    }
   };
 
   const deleteNotification = async (notif: Notification) => {
@@ -435,7 +440,10 @@ export default function EditorLayout() {
         await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
       }
       setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to delete notification');
+    }
   };
 
   const clearAllNotifications = async () => {
@@ -448,7 +456,10 @@ export default function EditorLayout() {
           : fetchForNode('/notifications', nodeId, { method: 'DELETE' })
       ));
       setNotifications([]);
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to clear notifications');
+    }
   };
 
   useEffect(() => {

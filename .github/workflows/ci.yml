@@ -37,3 +37,11 @@ jobs:
       - name: Build Frontend (Vite/React)
         working-directory: ./frontend
         run: npm run build
+
+      - name: Run Backend Unit Tests (Vitest)
+        working-directory: ./backend
+        run: npm test
+
+      - name: Lint Frontend (ESLint)
+        working-directory: ./frontend
+        run: npm run lint

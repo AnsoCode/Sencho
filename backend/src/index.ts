@@ -1,7 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import WebSocket from 'ws';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
@@ -25,6 +27,7 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
 
@@ -64,8 +67,20 @@ const getCookieOptions = (req: Request) => ({
 });
 
 // Middleware
+
+// Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+// crossOriginEmbedderPolicy is disabled because the Monaco editor uses workers
+// that don't set the required COEP headers.
+app.use(helmet({ crossOriginEmbedderPolicy: false }));
+
+// CORS — in production restrict to the configured frontend origin.
+// In development, mirror the request origin so Vite's dev server works.
+const corsOrigin = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL
+  : true;
+
 app.use(cors({
-  origin: true,
+  origin: corsOrigin,
   credentials: true,
 }));
 // Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
@@ -177,6 +192,22 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
   }
 };
 
+// Rate limiter for auth endpoints — prevents brute-force attacks.
+// 5 attempts per 15-minute window per IP. Applies to login and setup only;
+// password-change is already protected by authMiddleware + old-password verification.
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+});
+
+// Public health endpoint - no auth required (used by Docker HEALTHCHECK and uptime monitors)
+app.get('/api/health', (_req: Request, res: Response): void => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
 // Auth Routes (no authentication required)
 
 // Check if setup is needed
@@ -192,7 +223,7 @@ app.get('/api/auth/status', async (req: Request, res: Response): Promise<void> =
 });
 
 // Initial setup endpoint
-app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const dbSvc = DatabaseService.getInstance();
     const settings = dbSvc.getGlobalSettings();
@@ -243,7 +274,7 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
 });
 
 // Login endpoint
-app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -443,7 +474,7 @@ app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
 const server = http.createServer(app);
 
 // WebSocket server with authentication
-const wss = new WebSocket.Server({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
 let terminalWs: WebSocket | null = null;
 
@@ -504,7 +535,7 @@ server.on('upgrade', async (req, socket, head) => {
     // When a nodeId pointing to a remote node is provided, fall through to the
     // proxy block below so the browser subscribes to that remote node's push stream.
     if (pathname === '/ws/notifications' && (!node || node.type !== 'remote')) {
-      const notifWss = new WebSocket.Server({ noServer: true });
+      const notifWss = new WebSocketServer({ noServer: true });
       notifWss.handleUpgrade(req, socket, head, (ws) => {
         notifWss.close();
         notificationSubscribers.add(ws);
@@ -568,7 +599,7 @@ server.on('upgrade', async (req, socket, head) => {
 
     if (logsMatch) {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
-      const logsWss = new WebSocket.Server({ noServer: true });
+      const logsWss = new WebSocketServer({ noServer: true });
       logsWss.handleUpgrade(req, socket, head, (ws) => {
         // Close the per-connection server immediately after the upgrade is complete.
         // The wss instance is only needed to negotiate the handshake; keeping it open
@@ -591,7 +622,7 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
-      const hostConsoleWss = new WebSocket.Server({ noServer: true });
+      const hostConsoleWss = new WebSocketServer({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
         hostConsoleWss.close();
         let targetDirectory = '';
@@ -708,6 +739,9 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     res.send(content);
   } catch (error) {
@@ -768,20 +802,22 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
       const service = parsed.services[serviceName];
       if (!service?.env_file) continue;
 
+      const addEnvPath = (rawPath: string) => {
+        const resolved = path.resolve(stackDir, rawPath);
+        // Reject paths that escape the stack directory
+        if (!resolved.startsWith(path.resolve(stackDir) + path.sep) && resolved !== path.resolve(stackDir)) {
+          console.warn(`[Security] env_file path "${rawPath}" escapes stack directory — skipping`);
+          return;
+        }
+        envFiles.add(resolved);
+      };
+
       if (typeof service.env_file === 'string') {
-        const resolvedPath = path.isAbsolute(service.env_file)
-          ? service.env_file
-          : path.resolve(stackDir, service.env_file);
-        envFiles.add(resolvedPath);
+        addEnvPath(service.env_file);
       } else if (Array.isArray(service.env_file)) {
         for (const entry of service.env_file) {
           const entryPath = typeof entry === 'string' ? entry : (entry?.path || '');
-          if (entryPath) {
-            const resolvedPath = path.isAbsolute(entryPath)
-              ? entryPath
-              : path.resolve(stackDir, entryPath);
-            envFiles.add(resolvedPath);
-          }
+          if (entryPath) addEnvPath(entryPath);
         }
       }
     }
@@ -801,6 +837,9 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
 app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
     res.json({ envFiles: envPaths });
   } catch (error) {
@@ -811,6 +850,9 @@ app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const requestedFile = req.query.file as string | undefined;
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
@@ -1539,7 +1581,7 @@ app.post('/api/notifications/test', async (req: Request, res: Response) => {
 // to a remote node, it calls this endpoint (authenticated with the long-lived api_token)
 // to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
 // tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
-app.post('/api/system/console-token', (req: Request, res: Response): void => {
+app.post('/api/system/console-token', authMiddleware, (req: Request, res: Response): void => {
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
@@ -1801,6 +1843,7 @@ app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Resp
 // Node Management API
 // =========================
 
+
 // List all nodes
 app.get('/api/nodes', async (req: Request, res: Response) => {
   try {
@@ -1836,8 +1879,14 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     if (!type || !['local', 'remote'].includes(type)) {
       return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
     }
-    if (type === 'remote' && (!api_url || typeof api_url !== 'string')) {
-      return res.status(400).json({ error: 'API URL is required for remote nodes' });
+    if (type === 'remote') {
+      if (!api_url || typeof api_url !== 'string') {
+        return res.status(400).json({ error: 'API URL is required for remote nodes' });
+      }
+      const urlCheck = isValidRemoteUrl(api_url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ error: urlCheck.reason });
+      }
     }
 
     const id = DatabaseService.getInstance().addNode({
@@ -1864,6 +1913,13 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string);
     const updates = req.body;
+
+    if (updates.api_url !== undefined && updates.api_url !== '') {
+      const urlCheck = isValidRemoteUrl(updates.api_url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ error: urlCheck.reason });
+      }
+    }
 
     DatabaseService.getInstance().updateNode(id, updates);
 
@@ -1948,4 +2004,35 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server when this file is the entry point (not when imported by tests).
+if (require.main === module) {
+  startServer();
+}
+
+// Exports used by tests (supertest requires the http.Server instance).
+export { app, server };
+
+// Graceful shutdown — allows in-flight requests to finish, then cleanly stops
+// background services and closes the SQLite connection before the process exits.
+// Docker sends SIGTERM when the container stops; Ctrl-C sends SIGINT in dev.
+const gracefulShutdown = (signal: string) => {
+  console.log(`[Shutdown] ${signal} received — shutting down gracefully…`);
+
+  server.close(() => {
+    console.log('[Shutdown] HTTP server closed');
+    try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
+    try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
+    try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
+    console.log('[Shutdown] Done — exiting');
+    process.exit(0);
+  });
+
+  // Force-exit after 10 s if connections refuse to drain
+  setTimeout(() => {
+    console.error('[Shutdown] Timed out waiting for connections — forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
