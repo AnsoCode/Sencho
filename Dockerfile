@@ -43,7 +43,7 @@ RUN npm run build
 FROM node:20-alpine
 
 # Install Docker CLI, Docker Compose CLI, and Bash for Host Console
-RUN apk add --no-cache docker-cli docker-cli-compose bash
+RUN apk add --no-cache docker-cli docker-cli-compose bash su-exec
 
 WORKDIR /app
 
@@ -65,7 +65,17 @@ RUN addgroup -S sencho && adduser -S -G sencho sencho \
   && mkdir -p /app/data \
   && chown -R sencho:sencho /app
 
-USER sencho
+# Copy the entrypoint script that fixes data-volume ownership at startup and
+# then drops privileges to the sencho user via su-exec (the idiomatic Alpine
+# equivalent of gosu). This mirrors the pattern used by official Docker images
+# such as PostgreSQL, Redis, and MariaDB.
+#
+# NOTE: USER directive is intentionally absent here. The entrypoint starts as
+# root so it can chown the mounted data volume, then exec's as sencho. Static
+# security scanners (Trivy, Clair) may flag "running as root" — this is a known
+# and accepted trade-off for self-hosted apps with user-supplied volume mounts.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 3000
@@ -74,5 +84,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
-# Start the server
+# Entrypoint fixes volume ownership as root then drops to sencho via su-exec.
+# CMD provides the default arguments passed through to the entrypoint.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]

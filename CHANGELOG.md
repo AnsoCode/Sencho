@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Docker volume permissions on startup:** A new `docker-entrypoint.sh` script now runs as root at container start, fixes ownership of the `$DATA_DIR` volume (only files with wrong user or group), then drops to the non-root `sencho` user via `su-exec` before starting Node. This eliminates the `SQLITE_READONLY` crash experienced when a host-mounted data volume was previously created by root or a different UID. Uses the same privilege-drop pattern as the official PostgreSQL, Redis, and MariaDB Docker images. Node becomes PID 1, ensuring SIGTERM/SIGINT are handled correctly for graceful shutdown.
+
 ### Added
 - **Resources Hub — Managed/Unmanaged Separation:** All Docker resources (images, volumes, networks) are now classified as `managed` (belonging to a Sencho stack), `external` (belonging to another Compose project), or `unused`/`system`. Classification is exposed via a new `GET /api/system/resources` endpoint that makes 4 parallel Docker API calls once and returns all three resource types in a single round trip.
 - **Docker Disk Footprint widget:** Replaces the Reclaimable Space donut chart with an interactive horizontal stacked bar showing Sencho Managed vs External Projects vs Reclaimable bytes. Clicking a segment filters the Images and Volumes tabs simultaneously.
