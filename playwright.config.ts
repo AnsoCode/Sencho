@@ -11,8 +11,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
-  // Stop on first failure to save time during development
-  maxFailures: 1,
+  // Don't stop on first failure — show all results
+  maxFailures: 0,
   // How long to wait for a single test
   timeout: 30_000,
   // How long to wait for an expect() assertion

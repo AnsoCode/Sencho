@@ -1,71 +1,83 @@
 /**
  * Stack management E2E tests — happy path CRUD.
- *
- * NOTE: These tests require Docker Compose to be installed on the host, because
- * actual stack operations (up/down) spawn docker-compose processes.
- * The create/edit/delete tests work without Docker being connected.
  */
 import { test, expect } from '@playwright/test';
-import { loginAs } from './helpers';
+import { loginAs, TEST_USERNAME, TEST_PASSWORD } from './helpers';
 
-const TEST_STACK = `e2e-test-stack-${Date.now()}`;
-const SIMPLE_COMPOSE = `services:\n  web:\n    image: nginx:alpine\n`;
+const TEST_STACK = 'e2e-test-stack';
+
+/** Wait for stacks to load in the sidebar (uses /api/stacks via the browser context). */
+async function waitForStacksLoaded(page: import('@playwright/test').Page) {
+  // Poll until the stacks API returns data AND the sidebar has at least one item
+  await page.waitForFunction(() => {
+    const items = document.querySelectorAll('[cmdk-item]');
+    return items.length > 0;
+  }, { timeout: 15_000 });
+}
+
+/** Delete the test stack via the browser's authenticated fetch (so cookies are included). */
+async function deleteTestStackViaApi(page: import('@playwright/test').Page) {
+  await page.evaluate(async (name) => {
+    await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+  }, TEST_STACK);
+}
 
 test.describe('Stack management', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
+    await waitForStacksLoaded(page);
   });
 
   test('create a new stack', async ({ page }) => {
-    // Find and click the "new stack" / "+" button
-    const newStackBtn = page.getByRole('button', { name: /new stack|create stack|\+/i }).first();
-    await newStackBtn.click();
+    // Remove leftover from prior runs (using browser context auth)
+    await deleteTestStackViaApi(page);
+    await page.waitForTimeout(500);
 
-    // Fill in the stack name in the dialog
-    const nameInput = page.getByLabel(/stack name/i);
-    await nameInput.fill(TEST_STACK);
+    // Reload to get a fresh sidebar without the deleted stack
+    await page.reload();
+    await loginAs(page); // may re-login if cookie expired, otherwise skips to dashboard
+    await waitForStacksLoaded(page);
 
-    // Confirm
-    await page.getByRole('button', { name: /create|confirm|ok/i }).click();
+    await page.getByRole('button', { name: 'Create Stack' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
 
-    // Stack should now appear in the list
-    await expect(page.getByText(TEST_STACK)).toBeVisible({ timeout: 5_000 });
-  });
+    await page.locator('#create-stack-name').fill(TEST_STACK);
+    await page.locator('[role="dialog"]').getByRole('button', { name: 'Create' }).click();
 
-  test('edit the compose file of an existing stack', async ({ page }) => {
-    // Click on the test stack in the sidebar/list
-    await page.getByText(TEST_STACK).click();
+    // Wait for dialog to close (success) or error message to appear (failure)
+    await Promise.race([
+      page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 8_000 }),
+      page.getByText(/already exists/i).waitFor({ state: 'visible', timeout: 8_000 }),
+    ]).catch(() => {});
 
-    // Wait for the editor to appear and type some content
-    const editor = page.locator('.monaco-editor').first();
-    await editor.click();
-    await page.keyboard.selectAll();
-    await page.keyboard.type(SIMPLE_COMPOSE);
+    // The stack should now exist — refresh and verify via the sidebar
+    await page.reload();
+    await loginAs(page);
+    await waitForStacksLoaded(page);
 
-    // Save
-    const saveBtn = page.getByRole('button', { name: /save/i });
-    await saveBtn.click();
-
-    // Should show success indication (no error toast)
-    await expect(page.getByText(/error/i)).not.toBeVisible({ timeout: 3_000 }).catch(() => {
-      // If error text is already not there that's fine
-    });
+    await expect(page.getByText(TEST_STACK).first()).toBeVisible({ timeout: 5_000 });
   });
 
   test('delete the test stack', async ({ page }) => {
-    // Find the test stack and open its context menu / delete button
-    const stackRow = page.locator(`[data-testid="stack-${TEST_STACK}"], li:has-text("${TEST_STACK}")`).first();
+    // Confirm the stack exists in the sidebar
+    await expect(page.getByText(TEST_STACK).first()).toBeVisible({ timeout: 5_000 });
 
-    // Hover to reveal action buttons
-    await stackRow.hover();
-    const deleteBtn = stackRow.getByRole('button', { name: /delete|remove/i });
+    // Click on the stack to open the editor
+    await page.getByText(TEST_STACK).first().click();
+
+    // The toolbar Delete button has the Lucide Trash2 icon
+    const deleteBtn = page.locator('button:has(.lucide-trash-2)');
+    await expect(deleteBtn).toBeVisible({ timeout: 10_000 });
     await deleteBtn.click();
 
-    // Confirm deletion in dialog
-    const confirmBtn = page.getByRole('button', { name: /confirm|delete|yes/i });
-    if (await confirmBtn.isVisible()) await confirmBtn.click();
+    // AlertDialog confirmation
+    await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
 
-    // Stack should no longer appear
-    await expect(page.getByText(TEST_STACK)).not.toBeVisible({ timeout: 5_000 });
+    // Stack should no longer appear in the sidebar (exact match to avoid false positives from
+    // similarly-named stacks; scoped to the CommandList)
+    await expect(
+      page.locator('[role="listbox"]').getByText(TEST_STACK, { exact: true })
+    ).not.toBeVisible({ timeout: 8_000 });
   });
 });

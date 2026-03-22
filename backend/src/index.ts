@@ -193,11 +193,11 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
 };
 
 // Rate limiter for auth endpoints — prevents brute-force attacks.
-// 5 attempts per 15-minute window per IP. Applies to login and setup only;
-// password-change is already protected by authMiddleware + old-password verification.
+// Production: 5 attempts per 15-minute window per IP.
+// Development: 100 attempts (so E2E tests and local tooling are not blocked).
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: process.env.NODE_ENV === 'production' ? 5 : 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
