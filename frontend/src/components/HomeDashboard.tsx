@@ -73,7 +73,7 @@ export default function HomeDashboard() {
 
   // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
-    setStats({ active: 0, exited: 0, total: 0, inactive: 0 });
+    setStats({ active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 });
     const fetchStats = async () => {
       try {
         const res = await apiFetch('/stats');
