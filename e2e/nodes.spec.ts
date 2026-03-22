@@ -8,48 +8,51 @@ import { loginAs } from './helpers';
 test.describe('Node management', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
-    // Open Settings modal
+    // Open Settings modal then navigate to the Nodes section
     await page.getByRole('button', { name: /settings/i }).click();
-    // Navigate to the Nodes section inside the modal
     await page.getByRole('button', { name: /^nodes$/i }).click();
   });
 
-  test('adding a node with localhost api_url shows a validation error', async ({ page }) => {
-    // Open "add node" dialog
-    const addBtn = page.getByRole('button', { name: /add node|new node|\+/i });
+  /**
+   * Open the Add Node dialog and switch the type to Remote so the API URL
+   * field becomes visible. Returns false (and skips) if the button isn't found.
+   */
+  async function openAddNodeAsRemote(page: import('@playwright/test').Page): Promise<boolean> {
+    const addBtn = page.getByRole('button', { name: /add node/i }).first();
     if (!await addBtn.isVisible()) {
       test.skip();
-      return;
+      return false;
     }
     await addBtn.click();
+    // Wait for the dialog form to be ready
+    await expect(page.locator('#node-name')).toBeVisible({ timeout: 5_000 });
+    // The API URL field only renders when type === 'remote'.
+    // #node-type is a Radix UI combobox — click to open, then pick the option.
+    await page.locator('#node-type').click();
+    await page.getByRole('option', { name: /remote/i }).click();
+    // Confirm the API URL field is now visible before proceeding
+    await expect(page.locator('#node-api-url')).toBeVisible({ timeout: 3_000 });
+    return true;
+  }
+
+  test('adding a node with localhost api_url shows a validation error', async ({ page }) => {
+    if (!await openAddNodeAsRemote(page)) return;
 
     await page.locator('#node-name').fill('bad-node');
-    // Select "remote" type if there's a type selector
-    const typeSelect = page.getByLabel(/type/i);
-    if (await typeSelect.isVisible()) await typeSelect.selectOption('remote');
+    await page.locator('#node-api-url').fill('http://localhost:6379');
+    // Use .last() to target the dialog submit button, not the trigger
+    await page.getByRole('button', { name: /add node/i }).last().click();
 
-    await page.getByLabel(/api url/i).fill('http://localhost:6379');
-    await page.getByRole('button', { name: /add|save|create/i }).click();
-
-    // Should see an error about loopback/localhost
-    await expect(page.getByText(/loopback|localhost/i)).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText(/loopback|localhost/i)).toBeVisible({ timeout: 5_000 });
   });
 
   test('adding a node with an invalid URL shows an error', async ({ page }) => {
-    const addBtn = page.getByRole('button', { name: /add node|new node|\+/i });
-    if (!await addBtn.isVisible()) {
-      test.skip();
-      return;
-    }
-    await addBtn.click();
+    if (!await openAddNodeAsRemote(page)) return;
 
-    await page.getByLabel(/node name/i).fill('bad-url-node');
-    const typeSelect = page.getByLabel(/type/i);
-    if (await typeSelect.isVisible()) await typeSelect.selectOption('remote');
+    await page.locator('#node-name').fill('bad-url-node');
+    await page.locator('#node-api-url').fill('not-a-url-at-all');
+    await page.getByRole('button', { name: /add node/i }).last().click();
 
-    await page.getByLabel(/api url/i).fill('not-a-url-at-all');
-    await page.getByRole('button', { name: /add|save|create/i }).click();
-
-    await expect(page.getByText(/valid url|invalid url|url/i)).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText(/valid url|invalid url/i)).toBeVisible({ timeout: 5_000 });
   });
 });
