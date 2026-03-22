@@ -2,17 +2,13 @@
  * Stack management E2E tests — happy path CRUD.
  */
 import { test, expect } from '@playwright/test';
-import { loginAs, TEST_USERNAME, TEST_PASSWORD } from './helpers';
+import { loginAs } from './helpers';
 
 const TEST_STACK = 'e2e-test-stack';
 
-/** Wait for stacks to load in the sidebar (uses /api/stacks via the browser context). */
+/** Wait for the stacks sidebar to be ready (Create Stack button is always rendered). */
 async function waitForStacksLoaded(page: import('@playwright/test').Page) {
-  // Poll until the stacks API returns data AND the sidebar has at least one item
-  await page.waitForFunction(() => {
-    const items = document.querySelectorAll('[cmdk-item]');
-    return items.length > 0;
-  }, { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
 }
 
 /** Delete the test stack via the browser's authenticated fetch (so cookies are included). */

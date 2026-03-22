@@ -16,8 +16,6 @@ import si from 'systeminformation';
 import http from 'http';
 import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
@@ -30,8 +28,6 @@ import { NodeRegistry } from './services/NodeRegistry';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
-
-const execAsync = promisify(exec);
 
 // Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
 // util._extend internally. The warning fires at runtime when createProxyServer() is
@@ -1147,7 +1143,7 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
 
       // Standardize naming: Strip stack name prefix if it exists
       let containerName = rawName;
@@ -1247,7 +1243,7 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
       let containerName = rawName;
       if (rawName.startsWith(`${stackName}-`)) containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
       else if (rawName.startsWith(`${stackName}_`)) containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');

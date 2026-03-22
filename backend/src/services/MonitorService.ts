@@ -164,7 +164,7 @@ export class MonitorService {
                     try {
                         const parsed = JSON.parse(line);
                         // RECLAIMABLE might be something like "1.2GB" or "400MB" Let's parse it manually or just use raw sizes from docker api. Actually docker system df JSON format gives Reclaimable field as string e.g. "1.196GB" (or "0B").
-                        let reclaimStr = parsed.Reclaimable;
+                        const reclaimStr = parsed.Reclaimable;
                         if (reclaimStr) {
                             // Extract the number and the unit. e.g "1.196GB" (92%) -> 1.196
                             const match = reclaimStr.match(/^([0-9.]+)([a-zA-Z]+)/);

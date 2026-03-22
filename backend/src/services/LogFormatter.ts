@@ -51,7 +51,7 @@ export class LogFormatter {
         // Fast JSON Check (Starts with { and ends with })
         if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
             try {
-                const parsed = JSON.parse(trimmedLine);
+                JSON.parse(trimmedLine);
                 // If valid, lightly highlight it (e.g., colorize string representation slightly)
                 // We re-stringify it to ensure it's on one line, but maybe just highlight properties
                 processedLine = LogFormatter.highlightJson(trimmedLine);

@@ -1,5 +1,4 @@
 import path from 'path';
-import fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import { NodeRegistry } from './NodeRegistry';
 
