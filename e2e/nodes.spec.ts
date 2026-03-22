@@ -8,9 +8,10 @@ import { loginAs } from './helpers';
 test.describe('Node management', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
-    // Navigate to the nodes section (Settings / Node Manager)
-    const nodesBtn = page.getByRole('button', { name: /nodes|manage nodes|settings/i }).first();
-    if (await nodesBtn.isVisible()) await nodesBtn.click();
+    // Open Settings modal
+    await page.getByRole('button', { name: /settings/i }).click();
+    // Navigate to the Nodes section inside the modal
+    await page.getByRole('button', { name: /^nodes$/i }).click();
   });
 
   test('adding a node with localhost api_url shows a validation error', async ({ page }) => {
