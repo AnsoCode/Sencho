@@ -22,4 +22,5 @@ function useIsInView<T extends HTMLElement = HTMLElement>(
   return { ref: localRef, isInView };
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export { useIsInView, type UseIsInViewOptions };

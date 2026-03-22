@@ -78,8 +78,8 @@ export default function ResourcesView() {
             setNetworks(await networksRes.json());
             setOrphans(await orphansRes.json());
             setSelectedOrphans([]);
-        } catch (error) {
-            console.error('Failed to fetch data', error);
+        } catch (err) {
+            console.error('Failed to fetch data', err);
             toast.error('Failed to load resources data');
         } finally {
             setIsLoading(false);
@@ -105,7 +105,7 @@ export default function ResourcesView() {
                 toast.success(`Pruned ${confirmPruneType}.`);
             }
             await fetchAllData();
-        } catch (error) {
+        } catch {
             toast.error(`Failed to prune ${confirmPruneType}`);
         } finally {
             setIsActioning(false);
@@ -124,7 +124,7 @@ export default function ResourcesView() {
             if (!res.ok) throw new Error();
             toast.success(`Deleted ${confirmDelete.type.slice(0, -1)}`);
             await fetchAllData();
-        } catch (error) {
+        } catch {
             toast.error(`Failed to delete ${confirmDelete.type.slice(0, -1)}`);
         } finally {
             setIsActioning(false);
@@ -154,7 +154,7 @@ export default function ResourcesView() {
             toast.success(`Purged ${selectedOrphans.length} ghost container(s)`);
             setBulkPurgeConfirm(false);
             await fetchAllData();
-        } catch (error) {
+        } catch {
             toast.error('Failed to purge selected containers.');
         } finally {
             setIsActioning(false);
@@ -169,7 +169,7 @@ export default function ResourcesView() {
 
     const totalReclaimable = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
-    const CustomTooltip = ({ active, payload }: any) => {
+    const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number }> }) => {
         if (active && payload && payload.length) {
             return (
                 <div className="bg-popover text-popover-foreground border rounded-lg shadow-md p-3 text-sm">

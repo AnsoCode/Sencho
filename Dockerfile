@@ -58,8 +58,21 @@ COPY --from=frontend-builder /app/frontend/dist ./public
 # Set environment to production
 ENV NODE_ENV=production
 
+# Create a non-root user and ensure the data/compose directories are writable.
+# The actual volume paths are mounted at runtime, so we only pre-create the
+# default data dir here; the compose dir is user-supplied via COMPOSE_DIR.
+RUN addgroup -S sencho && adduser -S -G sencho sencho \
+  && mkdir -p /app/data \
+  && chown -R sencho:sencho /app
+
+USER sencho
+
 # Expose port
 EXPOSE 3000
+
+# Health check — polls the public /api/health endpoint every 30s
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
 # Start the server
 CMD ["node", "dist/index.js"]

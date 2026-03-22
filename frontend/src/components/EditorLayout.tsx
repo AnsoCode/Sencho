@@ -410,7 +410,9 @@ export default function EditorLayout() {
         const data = await res.json();
         setStackUpdates(data);
       }
-    } catch (e) { }
+    } catch (e: unknown) {
+      console.error('[ImageUpdates] fetch failed:', e);
+    }
   };
 
   const markAllRead = async () => {
@@ -423,7 +425,10 @@ export default function EditorLayout() {
           : fetchForNode('/notifications/read', nodeId, { method: 'POST' })
       ));
       setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to mark notifications as read');
+    }
   };
 
   const deleteNotification = async (notif: Notification) => {
@@ -435,7 +440,10 @@ export default function EditorLayout() {
         await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
       }
       setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to delete notification');
+    }
   };
 
   const clearAllNotifications = async () => {
@@ -448,7 +456,10 @@ export default function EditorLayout() {
           : fetchForNode('/notifications', nodeId, { method: 'DELETE' })
       ));
       setNotifications([]);
-    } catch (e) { }
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to clear notifications');
+    }
   };
 
   useEffect(() => {
@@ -481,7 +492,7 @@ export default function EditorLayout() {
             let currentRx = 0;
             let currentTx = 0;
             if (data.networks) {
-              Object.values(data.networks).forEach((net: any) => {
+              Object.values(data.networks as Record<string, { rx_bytes?: number; tx_bytes?: number }>).forEach((net) => {
                 currentRx += net.rx_bytes || 0;
                 currentTx += net.tx_bytes || 0;
               });
@@ -702,9 +713,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to deploy:', error);
-      toast.error(error.message || 'Failed to deploy stack');
+      toast.error((error as Error).message || 'Failed to deploy stack');
     } finally {
       setLoadingAction(null);
     }
@@ -730,9 +741,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to stop:', error);
-      toast.error(error.message || 'Failed to stop stack');
+      toast.error((error as Error).message || 'Failed to stop stack');
     } finally {
       setLoadingAction(null);
     }
@@ -758,9 +769,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to restart:', error);
-      toast.error(error.message || 'Failed to restart stack');
+      toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
       setLoadingAction(null);
     }
@@ -786,9 +797,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update:', error);
-      toast.error(error.message || 'Failed to update stack');
+      toast.error((error as Error).message || 'Failed to update stack');
     } finally {
       setLoadingAction(null);
     }
@@ -819,9 +830,9 @@ export default function EditorLayout() {
         setIsEditing(false);
       }
       await refreshStacks();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to delete stack:', error);
-      toast.error(error.message || 'Failed to delete stack');
+      toast.error((error as Error).message || 'Failed to delete stack');
     } finally {
       setLoadingAction(null);
     }
@@ -849,9 +860,9 @@ export default function EditorLayout() {
       await refreshStacks();
       // Auto-load the new stack in the editor pane
       await loadFile(stackName);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to create stack:', error);
-      toast.error(error.message || 'Failed to create stack');
+      toast.error((error as Error).message || 'Failed to create stack');
     }
   };
 

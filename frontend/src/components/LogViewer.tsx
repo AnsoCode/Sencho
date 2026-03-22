@@ -24,6 +24,7 @@ export function LogViewer({ containerId, containerName, isOpen, onClose }: LogVi
     useEffect(() => {
         if (!isOpen || !containerId) return;
 
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLogs([]);
         setIsConnected(false);
 

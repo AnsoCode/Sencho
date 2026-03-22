@@ -5,6 +5,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+type TerminalContainer = HTMLDivElement & { __resizeObserver?: ResizeObserver };
+
 interface BashExecModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -191,14 +193,15 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       resizeObserver.observe(containerEl);
 
       // Store observer cleanup on the container element for later
-      (containerEl as any).__resizeObserver = resizeObserver;
+      (containerEl as TerminalContainer).__resizeObserver = resizeObserver;
     }
 
     return () => {
       // Clean up ResizeObserver
-      if (terminalRef.current && (terminalRef.current as any).__resizeObserver) {
-        (terminalRef.current as any).__resizeObserver.disconnect();
-        delete (terminalRef.current as any).__resizeObserver;
+      const el = terminalRef.current as TerminalContainer | null;
+      if (el?.__resizeObserver) {
+        el.__resizeObserver.disconnect();
+        delete el.__resizeObserver;
       }
     };
   }, [isOpen, containerId, cleanup]);

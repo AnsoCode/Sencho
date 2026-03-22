@@ -17,6 +17,11 @@ export interface TemplateEnv {
     default?: string;
 }
 
+interface TemplateVolume {
+    container?: string;
+    bind?: string;
+}
+
 export interface Template {
     type?: number;
     title: string;
@@ -24,7 +29,7 @@ export interface Template {
     logo?: string;
     image?: string;
     ports?: string[];
-    volumes?: any[];
+    volumes?: TemplateVolume[];
     env?: TemplateEnv[];
     categories?: string[];
     github_url?: string;
@@ -68,8 +73,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             if (!res.ok) throw new Error('Failed to fetch templates');
             const data = await res.json();
             setTemplates(data || []);
-        } catch (err: any) {
-            toast.error(err.message || "Failed to load App Shop");
+        } catch (err) {
+            toast.error((err as Error).message || "Failed to load App Shop");
         } finally {
             setLoading(false);
         }
@@ -95,7 +100,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
         // Initialize Volumes
         const initVols: Record<string, string> = {};
-        t.volumes?.forEach((v: any) => {
+        t.volumes?.forEach((v) => {
             if (v.container) {
                 initVols[v.container] = v.bind || `./${v.container.split('/').filter(Boolean).pop() || 'data'}`;
             }
@@ -146,7 +151,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
         // Process Volumes
         if (modifiedTemplate.volumes) {
-            modifiedTemplate.volumes = modifiedTemplate.volumes.map((v: any) => {
+            modifiedTemplate.volumes = modifiedTemplate.volumes.map((v) => {
                 if (v.container && volVars[v.container] !== undefined) {
                     return { ...v, bind: volVars[v.container] };
                 }
@@ -175,8 +180,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             toast.success(`${selectedTemplate?.title} deployed successfully!`);
             setIsSheetOpen(false);
             onDeploySuccess(stackName.trim());
-        } catch (err: any) {
-            toast.error(err.message || 'Deployment failed');
+        } catch (err) {
+            toast.error((err as Error).message || 'Deployment failed');
         } finally {
             setIsDeploying(false);
         }
@@ -399,14 +404,15 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     {selectedTemplate.volumes && selectedTemplate.volumes.length > 0 && (
                                         <div className="space-y-4 pt-4 border-t">
                                             <h4 className="font-semibold">Volumes (Host : Container)</h4>
-                                            {selectedTemplate.volumes.map((v: any, idx: number) => {
-                                                if (!v.container) return null;
+                                            {selectedTemplate.volumes.map((v, idx: number) => {
+                                                const containerPath = v.container;
+                                                if (!containerPath) return null;
                                                 return (
                                                     <div key={idx} className="space-y-1.5">
-                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {v.container}</Label>
+                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {containerPath}</Label>
                                                         <Input
-                                                            value={volVars[v.container] !== undefined ? volVars[v.container] : ''}
-                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [v.container]: e.target.value }))}
+                                                            value={volVars[containerPath] !== undefined ? volVars[containerPath] : ''}
+                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [containerPath]: e.target.value }))}
                                                             placeholder={`/path/to/host/dir`}
                                                         />
                                                     </div>

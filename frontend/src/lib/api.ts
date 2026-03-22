@@ -39,7 +39,7 @@ export async function apiFetch(
       if (errData.error && errData.error.includes('not found') && errData.error.includes('Node')) {
         window.dispatchEvent(new Event('node-not-found'));
       }
-    } catch (e) {
+    } catch {
       // Ignore JSON parse errors, caller handles standard 404s
     }
   }
