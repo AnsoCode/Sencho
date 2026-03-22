@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Resources Hub — Managed/Unmanaged Separation:** All Docker resources (images, volumes, networks) are now classified as `managed` (belonging to a Sencho stack), `external` (belonging to another Compose project), or `unused`/`system`. Classification is exposed via a new `GET /api/system/resources` endpoint that makes 4 parallel Docker API calls once and returns all three resource types in a single round trip.
+- **Docker Disk Footprint widget:** Replaces the Reclaimable Space donut chart with an interactive horizontal stacked bar showing Sencho Managed vs External Projects vs Reclaimable bytes. Clicking a segment filters the Images and Volumes tabs simultaneously.
+- **Scoped prune operations:** Quick Clean buttons now target Sencho-managed resources only by default ("Sencho only" label). An "All Docker" option is hidden in a `⋮` dropdown per prune target, with a distinct destructive confirmation dialog. The `POST /api/system/prune/system` endpoint accepts an optional `scope: 'managed' | 'all'` body parameter; a new `pruneManagedOnly()` method on `DockerController` filters by `com.docker.compose.project` label before removing resources.
+- **Managed/External filter toggles:** Each resource tab (Images, Volumes, Networks) has a segmented pill control to show All / Managed / External resources with live counts.
+- **Classification badges:** Each resource row displays a green "stack-name" badge for managed resources, an orange "External" badge for external, and a muted "System" badge for Docker-native networks (`bridge`, `host`, `none`). System networks have their delete button disabled.
+- **Active Containers split stat:** `GET /api/stats` now returns `managed` and `unmanaged` container counts in addition to `active`/`exited`/`total`. The Home Dashboard "Active Containers" card subtitle shows "N managed · N external".
+- **Renamed "Ghost Containers" → "Unmanaged Containers":** Tab label, dialog titles, toast messages, and empty-state copy updated throughout `ResourcesView`.
+
 ### Security
 - **Fixed:** `POST /api/system/console-token` was missing `authMiddleware` — any unauthenticated client could generate console session tokens. Fixed by adding `authMiddleware` to the route.
 - **Fixed:** Remote node `api_url` was accepted without validation — an attacker could set it to `http://localhost:6379` to SSRF into internal services. Now validates: must be a well-formed `http://` or `https://` URL, and the hostname may not be `localhost`, `127.x.x.x`, `[::1]`, or `0.0.0.0`.

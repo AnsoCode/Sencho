@@ -1112,15 +1112,26 @@ app.post('/api/convert', async (req: Request, res: Response) => {
 // Get all containers stats for dashboard
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getRunningContainers();
+    const [dockerController, knownStacks] = [
+      DockerController.getInstance(req.nodeId),
+      await FileSystemService.getInstance(req.nodeId).getStacks(),
+    ];
     const allContainers = await dockerController.getAllContainers();
+    const knownSet = new Set(knownStacks);
 
-    const active = containers.length;
-    const exited = allContainers.filter((c: { State: string }) => c.State === 'exited').length;
+    const active = allContainers.filter((c: any) => c.State === 'running').length;
+    const exited = allContainers.filter((c: any) => c.State === 'exited').length;
     const total = allContainers.length;
+    const managed = allContainers.filter((c: any) => {
+      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
+      return project && knownSet.has(project) && c.State === 'running';
+    }).length;
+    const unmanaged = allContainers.filter((c: any) => {
+      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
+      return project && !knownSet.has(project) && c.State === 'running';
+    }).length;
 
-    res.json({ active, exited, total, inactive: total - active - exited });
+    res.json({ active, managed, unmanaged, exited, total });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
@@ -1624,13 +1635,24 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
 
 app.post('/api/system/prune/system', async (req: Request, res: Response) => {
   try {
-    const { target } = req.body; // 'containers', 'images', 'networks', 'volumes'
+    const { target, scope } = req.body as { target: string; scope?: string };
     if (!['containers', 'images', 'networks', 'volumes'].includes(target)) {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
     const dockerController = DockerController.getInstance(req.nodeId);
-    const result = await dockerController.pruneSystem(target);
+    const pruneScope = scope === 'managed' ? 'managed' : 'all';
+
+    let result: { success: boolean; reclaimedBytes: number };
+    if (pruneScope === 'managed' && target !== 'containers') {
+      const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+      result = await dockerController.pruneManagedOnly(
+        target as 'images' | 'volumes' | 'networks',
+        knownStacks
+      );
+    } else {
+      result = await dockerController.pruneSystem(target as 'containers' | 'images' | 'networks' | 'volumes');
+    }
 
     res.json({ message: 'Prune completed', ...result });
   } catch (error: any) {
@@ -1641,8 +1663,8 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
 
 app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const df = await dockerController.getDiskUsage();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const df = await DockerController.getInstance(req.nodeId).getDiskUsageClassified(knownStacks);
     res.json(df);
   } catch (error) {
     console.error('Failed to fetch docker disk usage:', error);
@@ -1650,10 +1672,23 @@ app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   }
 });
 
+// Single endpoint returning classified images, volumes, and networks in one call
+app.get('/api/system/resources', async (req: Request, res: Response) => {
+  try {
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const result = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to fetch classified resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// Keep legacy endpoints for backward compat with remote proxy routing
 app.get('/api/system/images', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const images = await dockerController.getImages();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { images } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(images);
   } catch (error) {
     console.error('Failed to fetch images:', error);
@@ -1663,8 +1698,8 @@ app.get('/api/system/images', async (req: Request, res: Response) => {
 
 app.get('/api/system/volumes', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const volumes = await dockerController.getVolumes();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { volumes } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(volumes);
   } catch (error) {
     console.error('Failed to fetch volumes:', error);
@@ -1674,8 +1709,8 @@ app.get('/api/system/volumes', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const networks = await dockerController.getNetworks();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { networks } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(networks);
   } catch (error) {
     console.error('Failed to fetch networks:', error);
