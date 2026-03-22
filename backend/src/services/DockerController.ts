@@ -65,7 +65,7 @@ class DockerController {
     const calculateReclaimableVolumes = (items: any[]) => {
       if (!items || !Array.isArray(items)) return 0;
       return items.filter(i => i.UsageData?.RefCount === 0).reduce((acc, item) => {
-        let size = item.UsageData?.Size || 0;
+        const size = item.UsageData?.Size || 0;
         return acc + size;
       }, 0);
     };
@@ -551,7 +551,7 @@ class DockerController {
   }
 }
 
-export let globalDockerNetwork = { rxSec: 0, txSec: 0 };
+export const globalDockerNetwork = { rxSec: 0, txSec: 0 };
 let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
 
 export const updateGlobalDockerNetwork = async () => {

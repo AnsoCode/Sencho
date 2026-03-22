@@ -110,7 +110,7 @@ export class ComposeService {
 
         if (exitCode !== 0) {
           const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
-          let logStr = logs.toString('utf-8');
+          const logStr = logs.toString('utf-8');
           throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
         }
       }
@@ -157,7 +157,7 @@ export class ComposeService {
 
         let activeProcesses = 0;
         let streamEndedHandled = false;
-        let localProcesses: ReturnType<typeof spawn>[] = [];
+        const localProcesses: ReturnType<typeof spawn>[] = [];
 
         const onWsClose = () => {
           localProcesses.forEach(cp => { try { cp.kill(); } catch { } });
