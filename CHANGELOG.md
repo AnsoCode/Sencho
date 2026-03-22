@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Blank page on HTTP deployments (CSP `upgrade-insecure-requests`):** Helmet's default CSP included `upgrade-insecure-requests`, which causes browsers to silently upgrade all HTTP sub-resource fetches (JS, CSS, images) to HTTPS. On a plain-HTTP self-hosted deployment this produces a completely blank page with `ERR_SSL_PROTOCOL_ERROR`. The directive is now explicitly omitted from the CSP.
+- **HSTS permanently breaking HTTP access:** Helmet's default `Strict-Transport-Security` header was being sent over HTTP, instructing browsers to refuse non-HTTPS connections for 1 year. HSTS is now disabled and must only be re-enabled by users who terminate HTTPS at a reverse proxy in front of Sencho.
+- **Docker socket EACCES root:root edge case:** Entrypoint now handles the case where the Docker socket is owned by root:root (GID 0) in addition to the standard root:docker case. Diagnostic `[entrypoint]` log lines are emitted at startup to make group detection visible in `docker logs`.
+
 ### Added
 - **Resources Hub — Managed/Unmanaged Separation:** All Docker resources (images, volumes, networks) are now classified as `managed` (belonging to a Sencho stack), `external` (belonging to another Compose project), or `unused`/`system`. Classification is exposed via a new `GET /api/system/resources` endpoint that makes 4 parallel Docker API calls once and returns all three resource types in a single round trip.
 - **Docker Disk Footprint widget:** Replaces the Reclaimable Space donut chart with an interactive horizontal stacked bar showing Sencho Managed vs External Projects vs Reclaimable bytes. Clicking a segment filters the Images and Volumes tabs simultaneously.
