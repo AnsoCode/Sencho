@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Login loop caused by remote node auth failure:** When a configured remote node had an expired or invalid API token, every proxied request to that node returned 401. Both `apiFetch` and `fetchForNode` treated any 401 as a user session failure and dispatched `sencho-unauthorized`, immediately logging the user out and sending them back to the login page — even after a successful login. Fixed by adding a `proxyRes` handler that stamps all remote-proxied responses with `x-sencho-proxy: 1`; the frontend now only fires `sencho-unauthorized` when this header is absent (i.e., it's a genuine local session failure).
+- **Missing `authMiddleware` on notifications endpoints:** `GET /api/notifications`, `POST /api/notifications/read`, `DELETE /api/notifications/:id`, `DELETE /api/notifications`, and `POST /api/notifications/test` were all missing `authMiddleware`, violating the default-deny policy. Added to all five.
+- **CSP `workerSrc` missing (Monaco editor workers):** The Content Security Policy had no explicit `worker-src` directive, which in practice relied on `default-src 'self'`. Monaco editor creates Web Workers via `blob:` URLs for language services; these were silently failing. Added `worker-src 'self' blob:`.
+- **CSP `connectSrc` implicit (WebSocket):** Added explicit `connect-src 'self' ws: wss:` to clearly permit same-origin WebSocket connections in both HTTP and HTTPS contexts.
+
+### Fixed
 - **Blank page on HTTP deployments (CSP `upgrade-insecure-requests`):** Helmet's default CSP included `upgrade-insecure-requests`, which causes browsers to silently upgrade all HTTP sub-resource fetches (JS, CSS, images) to HTTPS. On a plain-HTTP self-hosted deployment this produces a completely blank page with `ERR_SSL_PROTOCOL_ERROR`. The directive is now explicitly omitted from the CSP.
 - **HSTS permanently breaking HTTP access:** Helmet's default `Strict-Transport-Security` header was being sent over HTTP, instructing browsers to refuse non-HTTPS connections for 1 year. HSTS is now disabled and must only be re-enabled by users who terminate HTTPS at a reverse proxy in front of Sencho.
 - **Docker socket EACCES root:root edge case:** Entrypoint now handles the case where the Docker socket is owned by root:root (GID 0) in addition to the standard root:docker case. Diagnostic `[entrypoint]` log lines are emitted at startup to make group detection visible in `docker logs`.

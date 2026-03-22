@@ -26,8 +26,13 @@ export async function apiFetch(
   const response = await fetch(url, { ...defaultOptions, ...fetchOptions });
 
   if (response.status === 401) {
-    // Signal auth failure to AuthContext without a hard page reload
-    window.dispatchEvent(new Event('sencho-unauthorized'));
+    // Only fire the global logout event for local auth failures.
+    // When the response carries x-sencho-proxy, the 401 came from a remote
+    // Sencho node (expired/invalid api_token) — not from the user's own session.
+    // Logging out in that case creates an unrecoverable loop.
+    if (!response.headers.get('x-sencho-proxy')) {
+      window.dispatchEvent(new Event('sencho-unauthorized'));
+    }
     throw new Error('Unauthorized');
   }
 
@@ -66,7 +71,10 @@ export async function fetchForNode(
   });
 
   if (response.status === 401) {
-    window.dispatchEvent(new Event('sencho-unauthorized'));
+    // Same logic as apiFetch: only log out for local auth failures.
+    if (!response.headers.get('x-sencho-proxy')) {
+      window.dispatchEvent(new Event('sencho-unauthorized'));
+    }
     throw new Error('Unauthorized');
   }
 
