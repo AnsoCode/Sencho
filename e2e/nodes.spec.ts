@@ -23,7 +23,7 @@ test.describe('Node management', () => {
     }
     await addBtn.click();
 
-    await page.getByLabel(/node name/i).fill('bad-node');
+    await page.locator('#node-name').fill('bad-node');
     // Select "remote" type if there's a type selector
     const typeSelect = page.getByLabel(/type/i);
     if (await typeSelect.isVisible()) await typeSelect.selectOption('remote');
