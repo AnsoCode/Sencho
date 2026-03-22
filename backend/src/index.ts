@@ -68,10 +68,12 @@ const getCookieOptions = (req: Request) => ({
 // crossOriginEmbedderPolicy: disabled — Monaco editor workers lack COEP headers.
 // hsts: disabled — HSTS must only be set when the app is served over HTTPS.
 //   Enabling it over HTTP permanently breaks browser access for 1 year.
-// contentSecurityPolicy.upgrade-insecure-requests: removed — this directive
-//   tells browsers to silently upgrade all HTTP sub-resource fetches to HTTPS.
-//   On a plain-HTTP self-hosted deployment (the common case) this causes every
-//   JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR, producing a blank page.
+// contentSecurityPolicy.upgradeInsecureRequests: explicitly set to null.
+//   Helmet 8 merges custom directives with its defaults, which include this
+//   directive. It tells browsers to silently upgrade all HTTP sub-resource fetches
+//   to HTTPS. On a plain-HTTP self-hosted deployment (the common case) this causes
+//   every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR, producing a blank page.
+//   Setting null is the Helmet 8 API to remove a default directive.
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   hsts: false,
@@ -93,7 +95,11 @@ app.use(helmet({
       // worker-src: Monaco editor creates Web Workers via blob: URLs for language
       // services (syntax highlighting, intellisense). Without blob: they silently fail.
       workerSrc: ["'self'", 'blob:'],
-      // 'upgrade-insecure-requests' is intentionally absent — see comment above.
+      // Helmet 8 merges custom directives with its defaults, which include
+      // upgrade-insecure-requests. Setting it to null explicitly removes it.
+      // On plain-HTTP self-hosted deployments (the common case) this directive
+      // causes every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR → blank page.
+      upgradeInsecureRequests: null,
     },
   },
 }));
