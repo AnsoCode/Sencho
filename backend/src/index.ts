@@ -65,9 +65,32 @@ const getCookieOptions = (req: Request) => ({
 // Middleware
 
 // Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
-// crossOriginEmbedderPolicy is disabled because the Monaco editor uses workers
-// that don't set the required COEP headers.
-app.use(helmet({ crossOriginEmbedderPolicy: false }));
+// crossOriginEmbedderPolicy: disabled — Monaco editor workers lack COEP headers.
+// hsts: disabled — HSTS must only be set when the app is served over HTTPS.
+//   Enabling it over HTTP permanently breaks browser access for 1 year.
+// contentSecurityPolicy.upgrade-insecure-requests: removed — this directive
+//   tells browsers to silently upgrade all HTTP sub-resource fetches to HTTPS.
+//   On a plain-HTTP self-hosted deployment (the common case) this causes every
+//   JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR, producing a blank page.
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  hsts: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      fontSrc: ["'self'", 'https:', 'data:'],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+      // 'upgrade-insecure-requests' is intentionally absent — see comment above.
+    },
+  },
+}));
 
 // CORS — in production restrict to the configured frontend origin.
 // In development, mirror the request origin so Vite's dev server works.

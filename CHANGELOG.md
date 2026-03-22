@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Blank page on HTTP deployments (CSP `upgrade-insecure-requests`):** Helmet's default CSP included `upgrade-insecure-requests`, which causes browsers to silently upgrade all HTTP sub-resource fetches (JS, CSS, images) to HTTPS. On a plain-HTTP self-hosted deployment this produces a completely blank page with `ERR_SSL_PROTOCOL_ERROR`. The directive is now explicitly omitted from the CSP.
+- **HSTS permanently breaking HTTP access:** Helmet's default `Strict-Transport-Security` header was being sent over HTTP, instructing browsers to refuse non-HTTPS connections for 1 year. HSTS is now disabled and must only be re-enabled by users who terminate HTTPS at a reverse proxy in front of Sencho.
+- **Docker socket EACCES root:root edge case:** Entrypoint now handles the case where the Docker socket is owned by root:root (GID 0) in addition to the standard root:docker case. Diagnostic `[entrypoint]` log lines are emitted at startup to make group detection visible in `docker logs`.
 - **Docker volume permissions on startup:** A new `docker-entrypoint.sh` script now runs as root at container start, fixes ownership of the `$DATA_DIR` volume (only files with wrong user or group), then drops to the non-root `sencho` user via `su-exec` before starting Node. This eliminates the `SQLITE_READONLY` crash experienced when a host-mounted data volume was previously created by root or a different UID. Uses the same privilege-drop pattern as the official PostgreSQL, Redis, and MariaDB Docker images. Node becomes PID 1, ensuring SIGTERM/SIGINT are handled correctly for graceful shutdown.
 
 ### Added
