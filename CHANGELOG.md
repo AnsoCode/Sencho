@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- fix(ci): `update-screenshots` — add `pull-requests: write` permission and switch both `actions/checkout` and `peter-evans/create-pull-request` from `GITHUB_TOKEN` to `DOCS_REPO_TOKEN` (PAT with `repo` scope); `GITHUB_TOKEN` is blocked from creating PRs against protected branches
+- fix(ci): `sync-docs` — replace `actions/checkout` + init fallback with a single controlled `git clone || git init` bash step; `actions/checkout@v4` leaves a `.git` in a broken state on empty repos, which the `[ ! -d .git ]` guard missed, causing `fatal: not in a git directory` in the commit step; also drop now-unnecessary `--global safe.directory` config
+
+### Fixed
 - fix(ci): `update-screenshots` was pushing directly to the protected `develop` branch; replaced the `git push` step with `peter-evans/create-pull-request@v6` which opens/updates a `chore/refresh-screenshots` PR instead
 - fix(ci): `sync-docs` failed with `fatal: not in a git directory` when `sencho-docs` is empty (no commits); added `continue-on-error: true` on the checkout step plus a fallback `git init -b main` with remote re-add, then pushes with `git push origin HEAD:main` to create the branch on first run
 

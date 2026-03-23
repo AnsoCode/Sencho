@@ -169,11 +169,14 @@ jobs:
     needs: [ backend, frontend ]
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # PAT required — GITHUB_TOKEN cannot create PRs against a protected
+          # branch. DOCS_REPO_TOKEN is a classic PAT with repo scope.
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -226,7 +229,7 @@ jobs:
       - name: Open / update screenshots PR
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
           branch: chore/refresh-screenshots
           commit-message: "docs: refresh screenshots"
           title: "docs: refresh screenshots"
@@ -243,23 +246,25 @@ jobs:
         with:
           path: sencho
 
-      - name: Checkout sencho-docs repo
-        uses: actions/checkout@v4
-        with:
-          repository: AnsoCode/sencho-docs
-          token: ${{ secrets.DOCS_REPO_TOKEN }}
-          path: sencho-docs
-        # An empty repo (no commits yet) will fail the checkout — handled below
-        continue-on-error: true
-
-      - name: Initialize sencho-docs if repo is empty
+      - name: Clone or init sencho-docs
+        env:
+          DOCS_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
         run: |
-          if [ ! -d "sencho-docs/.git" ]; then
-            echo "sencho-docs has no .git — initializing fresh repo"
+          # Always start clean so a previous partial/broken checkout can't cause
+          # "not in a git directory" on subsequent steps.
+          rm -rf sencho-docs
+
+          REMOTE="https://x-access-token:${DOCS_TOKEN}@github.com/AnsoCode/sencho-docs.git"
+
+          if git clone "${REMOTE}" sencho-docs 2>/dev/null; then
+            echo "Cloned existing sencho-docs."
+          else
+            echo "Clone failed (repo is empty or has no default branch) — initializing."
             mkdir -p sencho-docs
             cd sencho-docs
-            git init -b main
-            git remote add origin "https://x-access-token:${{ secrets.DOCS_REPO_TOKEN }}@github.com/AnsoCode/sencho-docs.git"
+            git init
+            git checkout -b main
+            git remote add origin "${REMOTE}"
           fi
 
       - name: Copy /docs into sencho-docs root
@@ -268,7 +273,6 @@ jobs:
       - name: Commit and push to sencho-docs
         working-directory: sencho-docs
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/sencho-docs"
           git config user.email "docs-bot@sencho.io"
           git config user.name "Sencho Docs Bot"
           git add -A
