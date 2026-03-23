@@ -5,15 +5,23 @@ description: A high-level tour of everything Sencho can do.
 
 ## Stack management
 
-Deploy, start, stop, restart, and remove Docker Compose stacks through a point-and-click interface. Edit `docker-compose.yml` files directly in the built-in Monaco editor.
+Deploy, start, stop, restart, and remove Docker Compose stacks through a point-and-click interface. Edit `compose.yaml` and `.env` files directly in the built-in Monaco editor with syntax highlighting. [Learn more →](/features/stack-management)
+
+## Editor
+
+Full in-browser code editor for your Compose and environment files. Toggle edit mode, save to disk, or save and deploy in one step. Per-container live stats and an interactive bash exec terminal live alongside the editor. [Learn more →](/features/editor)
 
 ## Multi-node support
 
-Add remote Sencho instances as nodes. All dashboard operations — stack management, logs, stats — work identically whether you're targeting your local machine or a server on the other side of the world.
+Add remote Sencho instances as nodes. All dashboard operations — stack management, logs, stats — work identically whether you're targeting your local machine or a server on the other side of the world. Uses a transparent HTTP proxy model; no SSH or shared Docker sockets required. [Learn more →](/features/multi-node)
 
 ## Real-time logs & stats
 
-Stream container logs and resource metrics (CPU, memory, network I/O) live in the browser via WebSocket connections.
+Stream container logs and resource metrics (CPU, memory, network I/O) live in the browser via WebSocket and Server-Sent Events connections. The Home dashboard shows historical CPU and RAM charts over the last 24 hours.
+
+## Global observability
+
+The **Logs** view aggregates output from all containers across all stacks into a single scrollable stream. Filter by stack, log level (stdout/stderr), or search for keywords. Switch to developer mode for real-time SSE streaming.
 
 ## Resources hub
 
@@ -23,10 +31,18 @@ View and manage all Docker images, volumes, and networks. Resources are classifi
 |-------|---------|
 | **Managed** | Owned by a Sencho stack |
 | **External** | Part of another Compose project |
-| **Unused / System** | Reclaimable or Docker-internal |
+| **Unused / Reclaimable** | Safe to prune |
 
 Run scoped prune operations to clean up Sencho-managed resources only, or target all Docker resources when needed.
 
-## Notifications & alerts
+## App Store
 
-Configure threshold-based alerts for CPU and memory usage. Notifications surface in the dashboard and can be dismissed or cleared in bulk.
+Browse 190+ pre-configured application templates. Filter by category (Media, Automation, Development, etc.), configure environment variables, volumes, and ports, and deploy with a single click.
+
+## Host console
+
+Open an interactive terminal on the host OS directly in the browser — full xterm.js emulation with color support. No SSH client required.
+
+## Alerts & notifications
+
+Configure threshold-based alerts (CPU, memory, network, restart count) per stack. Route notifications to Discord, Slack, or any generic webhook endpoint. [Learn more →](/features/alerts-notifications)

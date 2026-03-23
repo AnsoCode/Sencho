@@ -16,14 +16,27 @@
       "group": "Getting Started",
       "pages": [
         "getting-started/introduction",
-        "getting-started/quickstart"
+        "getting-started/quickstart",
+        "getting-started/configuration"
       ]
     },
     {
       "group": "Features",
       "pages": [
-        "features/overview"
+        "features/overview",
+        "features/stack-management",
+        "features/editor",
+        "features/multi-node",
+        "features/alerts-notifications"
       ]
+    },
+    {
+      "group": "Reference",
+      "pages": []
+    },
+    {
+      "group": "Operations",
+      "pages": []
     }
   ]
 }
