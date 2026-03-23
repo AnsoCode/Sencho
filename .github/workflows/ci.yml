@@ -268,7 +268,9 @@ jobs:
           fi
 
       - name: Copy /docs into sencho-docs root
-        run: rsync -av --delete sencho/docs/ sencho-docs/
+        # --exclude='.git' prevents rsync --delete from wiping the .git
+        # directory that was just cloned/initialized in the previous step.
+        run: rsync -av --delete --exclude='.git' sencho/docs/ sencho-docs/
 
       - name: Commit and push to sencho-docs
         working-directory: sencho-docs
