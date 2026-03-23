@@ -163,7 +163,7 @@ jobs:
 
   sync-docs:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     steps:
       - name: Checkout Sencho repo
         uses: actions/checkout@v4
@@ -186,5 +186,5 @@ jobs:
           git config user.email "docs-bot@sencho.io"
           git config user.name "Sencho Docs Bot"
           git add -A
-          git commit -m "docs: sync from main@${{ github.sha }}" || echo "No changes to commit"
+          git commit -m "docs: sync from develop@${{ github.sha }}" || echo "No changes to commit"
           git push
