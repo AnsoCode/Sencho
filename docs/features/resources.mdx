@@ -1,0 +1,75 @@
+---
+title: Resources Hub
+description: Browse, filter, and clean up Docker images, volumes, networks, and unmanaged containers.
+---
+
+The **Resources** tab gives you a full view of everything Docker is storing on your host, broken down by type and ownership.
+
+<Frame>
+  <img src="/images/resources/resources-overview.png" alt="Resources Hub showing disk footprint, quick clean panel, and images table" />
+</Frame>
+
+## Docker disk footprint
+
+The stacked bar at the top visualises how your Docker disk usage is distributed:
+
+| Segment | Meaning |
+|---------|---------|
+| **Sencho Managed** (green) | Images used by stacks in your `COMPOSE_DIR` |
+| **External Projects** (orange) | Images used by Docker projects outside Sencho |
+| **Reclaimable** (gray) | Unused images and dangling layers safe to delete |
+
+Click any segment to automatically filter the tabs below to that category.
+
+## Quick Clean panel
+
+Four prune buttons let you reclaim disk space immediately. By default they operate on **Sencho-managed resources only** — they will not touch external Docker projects.
+
+| Button | What it removes |
+|--------|----------------|
+| **Prune Unused Images** | Images with no running containers in Sencho stacks |
+| **Prune Unused Volumes** | Volumes not attached to any Sencho container |
+| **Prune Dead Networks** | Networks not connected to any Sencho container |
+| **Purge Unmanaged Containers** | Containers Sencho doesn't recognise (started outside it) |
+
+Each button has a **⋮ More options** menu that lets you target **all Docker resources** instead of Sencho-only. Use this carefully — it can affect other Compose projects running on the same host.
+
+A confirmation dialog appears before any destructive operation, showing a summary of what will be removed.
+
+## Resource tabs
+
+### Images
+
+Lists all Docker images on the host with their ID, repository tag, size, and status.
+
+**Filter buttons:** `All` · `Managed` · `External`
+
+**Status badges:**
+- `In Use` + stack name — image is actively used by a running container
+- `Unused` — image has no running containers; safe to delete
+
+Click the trash icon on any row to delete an individual image. Sencho will warn you if the image is in use.
+
+### Volumes
+
+Lists all Docker volumes. Columns: name, driver, mount point, size, and managed status.
+
+**Filter buttons:** `All` · `Managed` · `External`
+
+<Warning>
+  Deleting a volume is permanent. Any data stored in it will be lost. Always back up important volume data before pruning.
+</Warning>
+
+### Networks
+
+Lists all Docker networks. Columns: name, driver, scope (`local`, `global`, `swarm`), and managed status.
+
+**Filter buttons:** `All` · `Managed` · `External` · `System`
+
+System networks (like `bridge`, `host`, `none`) are shown but cannot be deleted.
+
+### Unmanaged
+
+Lists containers running on the host that are not part of any Sencho-managed stack. This includes containers started with `docker run`, or Compose projects outside your `COMPOSE_DIR`.
+
+This view is useful for identifying orphaned containers after a failed deployment or after moving stacks in and out of `COMPOSE_DIR`.

@@ -27,7 +27,12 @@ Open `http://localhost:3000` in your browser. On first boot you'll be prompted t
   Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho.
 </Note>
 
+## Important: the 1:1 path rule
+
+The `-v /opt/compose:/app/compose` mount above uses a simplified path for illustration. In practice, you must mount your compose directory at the **same path** inside and outside the container. See the [Configuration guide](/getting-started/configuration#compose-directory-the-11-path-rule) for details — this is the most common setup mistake.
+
 ## Next steps
 
-- [Add a remote node](/features/overview) to manage another server from the same dashboard
-- Browse your stacks, start/stop services, and tail logs from the dashboard
+- [Configuration](/getting-started/configuration) — full environment variable reference, reverse proxy setup
+- [Stack Management](/features/stack-management) — create and deploy your first stack
+- [Multi-Node](/features/multi-node) — add a remote server to manage from this dashboard

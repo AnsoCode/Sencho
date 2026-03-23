@@ -1,0 +1,161 @@
+---
+title: Configuration
+description: Environment variables, volume mounts, and the 1:1 path rule.
+---
+
+Sencho is configured entirely through environment variables and Docker volume mounts. There is no config file to edit inside the container.
+
+## Required environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `JWT_SECRET` | Secret key used to sign session tokens. Use a long, random string (32+ characters). Changing this invalidates all active sessions. |
+| `COMPOSE_DIR` | Absolute path to the directory that contains your Compose stacks. Every subdirectory inside becomes a stack in Sencho. |
+
+## Optional environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Port the Sencho HTTP server listens on. |
+| `DATA_DIR` | `/app/data` | Directory where Sencho stores its SQLite database, node registry, and cached metrics. |
+| `NODE_ENV` | `production` | Set automatically in the Docker image. Only change this for local development. |
+
+## Required volume mounts
+
+### Docker socket
+
+Sencho needs access to the Docker daemon to manage containers:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+```
+
+### Data directory
+
+Sencho's database persists all your settings, nodes, alerts, and metrics history. Mount a named volume or host path so it survives container restarts:
+
+```yaml
+volumes:
+  - ./sencho-data:/app/data
+```
+
+<Warning>
+  Without a persistent data mount, Sencho will lose all configuration — including registered nodes, alerts, and settings — every time the container restarts.
+</Warning>
+
+### Compose directory — the 1:1 path rule
+
+<Warning>
+  This is the most common source of deployment problems. Read carefully.
+</Warning>
+
+When Sencho runs `docker compose up`, it does so on your **host machine**. Docker resolves relative volume paths in your Compose files relative to the **host** path of the stack directory — not the path inside the Sencho container.
+
+**The rule:** Mount your Compose directory at the **exact same path** inside the container as it exists on your host.
+
+```yaml
+# ✅ Correct — host path matches container path
+volumes:
+  - /home/boris/docker:/home/boris/docker
+environment:
+  - COMPOSE_DIR=/home/boris/docker
+```
+
+```yaml
+# ❌ Wrong — paths differ, relative volumes will break
+volumes:
+  - /home/boris/docker:/app/compose
+environment:
+  - COMPOSE_DIR=/app/compose
+```
+
+If you use a simple path like `/opt/compose` on your host, mount it at `/opt/compose` in the container:
+
+```yaml
+volumes:
+  - /opt/compose:/opt/compose
+environment:
+  - COMPOSE_DIR=/opt/compose
+```
+
+## Full docker-compose.yml example
+
+```yaml
+services:
+  sencho:
+    image: saelix/sencho:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sencho-data:/app/data
+      - /opt/compose:/opt/compose          # 1:1 path rule
+    environment:
+      - JWT_SECRET=your-long-random-secret-here
+      - COMPOSE_DIR=/opt/compose
+      - DATA_DIR=/app/data
+```
+
+## Optional: global environment file
+
+If your Compose stacks share common variables (e.g. `PUID`, `PGID`, `TZ`), you can pass an `env_file` to the Sencho container so those variables are available in the host environment when `docker compose` runs:
+
+```yaml
+services:
+  sencho:
+    image: saelix/sencho:latest
+    env_file:
+      - /opt/compose/globals.env          # shared vars for all stacks
+    environment:
+      - JWT_SECRET=your-secret
+      - COMPOSE_DIR=/opt/compose
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/compose:/opt/compose
+      - ./sencho-data:/app/data
+```
+
+## Reverse proxy setup
+
+Sencho works behind any reverse proxy. The only requirement is that WebSocket connections are forwarded correctly (used for live logs, container terminals, and the host console).
+
+### Nginx
+
+```nginx
+server {
+    listen 80;
+    server_name sencho.yourdomain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+### Traefik (Docker labels)
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.sencho.rule=Host(`sencho.yourdomain.com`)"
+  - "traefik.http.services.sencho.loadbalancer.server.port=3000"
+```
+
+<Note>
+  Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends. No extra configuration needed.
+</Note>
+
+## First boot
+
+After starting Sencho, open it in your browser. If no admin account exists yet, you'll be taken to a setup screen to create one. This only appears once — subsequent visits go directly to the login page.

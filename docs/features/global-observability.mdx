@@ -1,0 +1,58 @@
+---
+title: Global Observability
+description: A unified, searchable log stream from every container across all your stacks.
+---
+
+The **Logs** tab aggregates output from all running containers into a single scrollable view. Instead of tailing logs one container at a time, you see everything in one place — with filtering to focus on what matters.
+
+<Frame>
+  <img src="/images/global-observability/global-observability-overview.png" alt="Global Observability view showing real-time log lines from multiple containers" />
+</Frame>
+
+## Log format
+
+Each line shows:
+
+- **Timestamp** — when the log line was emitted
+- **Stack name** — the Compose stack the container belongs to (colour-coded)
+- **Container name** — the specific container
+- **Level** — `INFO`, `WARN`, or `ERROR` (where detectable)
+- **Message** — the raw log output
+
+## Streaming modes
+
+Sencho supports two modes for fetching logs, switchable via the **Developer mode** toggle:
+
+| Mode | How it works | Best for |
+|------|-------------|----------|
+| **Standard** (default) | Polls all containers every N seconds (configurable in Settings → Developer) | General use; lower overhead |
+| **Developer mode** | Server-Sent Events stream; logs arrive as they are emitted | Debugging; watching a specific event in real-time |
+
+The default polling interval is 5 seconds. You can change it to 1, 3, 5, or 10 seconds in **Settings → Developer → Global Logs Refresh Rate**.
+
+## Filtering logs
+
+Use the controls above the log panel to narrow what you see:
+
+| Control | What it does |
+|---------|-------------|
+| **Stack filter** | Multi-select dropdown — show only logs from chosen stacks |
+| **Stream** | `ALL` / `STDOUT` / `STDERR` — filter by output stream |
+| **Search** | Full-text filter on the message field (case-insensitive) |
+
+Filters combine — you can show only `STDERR` from a specific stack while searching for a keyword.
+
+## Controls
+
+| Button | What it does |
+|--------|-------------|
+| **Clear** | Clears the current log buffer in the UI (does not delete logs from Docker) |
+| **Auto-scroll** toggle | When enabled, the view scrolls to the bottom as new lines arrive |
+
+## Capacity limits
+
+To avoid browser memory issues, the log view keeps a maximum of **2,000 entries** in memory at a time. Older entries are dropped as new ones arrive. For deeper investigation, use the [per-container log viewer](/features/editor#log-viewer) in the Editor tab, or `docker compose logs` directly from the [Host Console](/features/host-console).
+
+<Note>
+  Log retention on the backend is controlled by **Settings → Developer → Log Retention Days** (default: 30 days). This affects historical logs stored in Sencho's database, not the live stream.
+</Note>

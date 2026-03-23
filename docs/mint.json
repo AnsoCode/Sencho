@@ -16,13 +16,36 @@
       "group": "Getting Started",
       "pages": [
         "getting-started/introduction",
-        "getting-started/quickstart"
+        "getting-started/quickstart",
+        "getting-started/configuration"
       ]
     },
     {
       "group": "Features",
       "pages": [
-        "features/overview"
+        "features/overview",
+        "features/dashboard",
+        "features/stack-management",
+        "features/editor",
+        "features/resources",
+        "features/app-store",
+        "features/global-observability",
+        "features/host-console",
+        "features/multi-node",
+        "features/alerts-notifications"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "reference/settings"
+      ]
+    },
+    {
+      "group": "Operations",
+      "pages": [
+        "operations/troubleshooting",
+        "operations/backup"
       ]
     }
   ]

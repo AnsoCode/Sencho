@@ -1,0 +1,71 @@
+---
+title: App Store
+description: Browse and deploy pre-configured application templates in one click.
+---
+
+The **App Store** tab lets you browse a curated catalogue of Docker Compose templates and deploy any of them as a new stack with environment-specific configuration — no YAML required.
+
+<Frame>
+  <img src="/images/app-store/app-store-overview.png" alt="App Store showing a grid of application templates with category filters" />
+</Frame>
+
+## Browsing templates
+
+Templates are loaded from a remote registry (configurable in **Settings → App Store**). The default registry provides 190+ self-hosted application templates.
+
+**Search:** Type in the search bar to filter templates by name or description in real-time.
+
+**Categories:** Click any category pill to narrow the list:
+`Automation` · `Books` · `Development` · `Documentation` · `Downloaders` · `Media` · `Monitoring` · `Networking` · `Other` · `Product`
+
+Each template card shows:
+- Application logo
+- Name and short description
+- Category tags
+- Links to the GitHub repo and documentation (where available)
+
+## Deploying a template
+
+Click any template card to open the **deployment sheet** on the right side of the screen. Fill in the fields and click **Deploy**.
+
+### Stack name
+
+Pre-filled with the template name in lowercase. You can change it — the same [naming rules](/features/stack-management#creating-a-stack) apply (lowercase, hyphens, no spaces).
+
+### Environment variables
+
+Each template declares the variables it needs. Sencho pre-fills sensible defaults where available (e.g. `PUID=1000`, `PGID=1000`, `TZ` from your browser locale).
+
+Edit any value before deploying. You can also click **Custom Env** to add arbitrary key-value pairs not defined by the template.
+
+### Volumes
+
+For each container mount point, enter the **host path** where that data should be stored. Suggested defaults (e.g. `./config`, `./data`) are shown as placeholders.
+
+<Note>
+  Relative paths like `./config` are resolved relative to the stack directory inside your `COMPOSE_DIR`. Absolute paths map directly to the host filesystem.
+</Note>
+
+### Ports
+
+For each exposed port, edit the **host port** (left side). The container port (right side) is fixed by the template and cannot be changed here — edit the compose file after deployment if needed.
+
+### What happens on Deploy
+
+1. Sencho creates a new stack directory in `COMPOSE_DIR`
+2. Writes the generated `compose.yaml` and `.env` file
+3. Runs `docker compose up -d`
+4. On success: switches you to the Editor view for that stack
+5. On failure: rolls back by running `docker compose down` and deleting the stack directory
+
+A toast notification confirms success or shows the error message.
+
+## Custom template registry
+
+By default Sencho uses the LinuxServer.io template registry. To use your own:
+
+1. Open **Settings → App Store**
+2. Enter your registry URL (must serve a JSON array of template objects in Portainer v2 format)
+3. Click **Save**
+
+To force a refresh of the cached templates, click **Refresh Cache** in the same settings panel.

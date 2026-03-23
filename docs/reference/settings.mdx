@@ -1,0 +1,126 @@
+---
+title: Settings Reference
+description: Complete reference for every option in the Sencho Settings Hub.
+---
+
+Open the Settings Hub by clicking **Settings** in the top navigation bar. The left sidebar lists all available sections.
+
+<Frame>
+  <img src="/images/settings/settings-overview.png" alt="Settings Hub showing the Account tab and the full section sidebar" />
+</Frame>
+
+---
+
+## Account
+
+**Scope:** Global (applies to this Sencho instance, not per-node)
+
+Change the admin account password. All three fields are required.
+
+| Field | Description |
+|-------|-------------|
+| **Current Password** | Your existing password for verification |
+| **New Password** | Must be at least 6 characters |
+| **Confirm New Password** | Must match New Password |
+
+Click **Update Password** to apply. The change takes effect immediately; existing sessions remain valid.
+
+---
+
+## System Limits
+
+**Scope:** Per-node (applies to the currently selected node)
+
+Configure resource thresholds that trigger visual warnings on the dashboard stat cards. These are display thresholds only — Sencho does not throttle or kill containers when limits are reached.
+
+| Setting | Range | Description |
+|---------|-------|-------------|
+| **Host CPU Limit** | 1–100% | CPU percentage above which the CPU card turns orange/red |
+| **Host RAM Limit** | 1–100% | RAM percentage above which the RAM card turns orange/red |
+| **Host Disk Limit** | 1–100% | Disk percentage above which the Disk card turns orange/red |
+| **Docker Janitor Threshold** | ≥ 0 GB | Minimum free disk space to maintain. When free space falls below this value, a warning is shown. Set to `0` to disable. |
+| **Global Crash Alerts** | On / Off | When enabled, Sencho sends a notification whenever any managed container exits unexpectedly |
+
+Click **Save** to apply. An unsaved-changes indicator appears when you have edits pending.
+
+---
+
+## Notifications
+
+**Scope:** Global
+
+Configure external destinations for alert notifications. Three agent types are supported, each on its own sub-tab: **Discord**, **Slack**, and **Webhook**.
+
+For each agent:
+
+| Field | Description |
+|-------|-------------|
+| **Enable toggle** | Activates or deactivates this agent. Disabled agents receive no messages even if a URL is saved. |
+| **Webhook URL** | The endpoint Sencho will POST to when an alert fires |
+
+Click **Save** to persist changes. Click **Test** to send a test payload immediately and verify delivery.
+
+At least one agent must be enabled for stack alerts to deliver notifications. See [Alerts & Notifications](/features/alerts-notifications) for how to create alert rules.
+
+---
+
+## Appearance
+
+**Scope:** Global (stored in the browser, not the server)
+
+| Setting | Options | Description |
+|---------|---------|-------------|
+| **Theme** | Light / Dark / Auto | `Auto` follows the OS system preference. Changes apply immediately without a page reload. |
+
+---
+
+## Developer
+
+**Scope:** Per-node (applies to the currently selected node)
+
+Advanced settings for log streaming behaviour and data retention. Most users can leave these at their defaults.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Developer Mode** | Off | When on, the [Global Observability](/features/global-observability) view switches from polling to real-time Server-Sent Events streaming |
+| **Global Logs Refresh Rate** | 5s | Polling interval in standard mode. Options: `1s`, `3s`, `5s`, `10s` |
+| **Metrics Retention Hours** | 24 | How many hours of CPU/RAM history to keep for dashboard charts. Max: 8,760 (1 year) |
+| **Log Retention Days** | 30 | How many days of notification history to keep in the database. Max: 365 |
+
+Click **Save** to apply.
+
+<Note>
+  Lower refresh rates (1s) increase backend CPU usage as Sencho polls Docker more frequently. Use only when actively debugging.
+</Note>
+
+---
+
+## Nodes
+
+**Scope:** Global
+
+Manage connections to local and remote Sencho instances. This is the same interface as the [Multi-Node](/features/multi-node) feature — see that page for the full walkthrough.
+
+Quick reference:
+
+| Action | How |
+|--------|-----|
+| Add a remote node | Click **+ Add Node** |
+| Generate a token for this instance | Click **Generate Token** |
+| Test an existing node's connectivity | Click the wifi icon on any row |
+| Edit a node | Click the pencil icon |
+| Delete a node | Click the trash icon (remote nodes only) |
+
+---
+
+## App Store
+
+**Scope:** Global
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Template Registry URL** | LinuxServer.io registry | The URL Sencho fetches templates from. Must return a JSON array in Portainer v2 template format. Leave blank to restore the default. |
+
+Click **Save** to update the URL. Click **Refresh Cache** to clear the cached template list and fetch fresh data from the registry immediately.
+
+See [App Store](/features/app-store#custom-template-registry) for more on custom registries.

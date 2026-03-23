@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - feat: automated documentation pipeline with Mintlify sync
 - feat: CI job to auto-refresh doc screenshots on every develop push
+- docs: bootstrap user-facing documentation from codebase audit — added configuration, stack management, editor, multi-node, and alerts & notifications pages; updated introduction, quickstart, and features overview; restructured mint.json navigation with Getting Started / Features / Reference / Operations groups
+- docs: add Tier 2 feature pages — dashboard, resources hub, app store, global observability, and host console
+- docs: add Tier 3 reference and operations pages — settings reference, troubleshooting, and backup & restore
 
 ### Fixed
 - fix(ci): YAML syntax error in update-screenshots `if:` condition (`!` tag and `: ` in plain scalar); wrapped in `${{ }}`
