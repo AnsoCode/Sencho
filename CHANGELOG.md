@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - feat: automated documentation pipeline with Mintlify sync
+- feat: CI job to auto-refresh doc screenshots on every develop push
 
 ### Fixed
 - **COOP header console warning on HTTP deployments:** Helmet sends `Cross-Origin-Opener-Policy: same-origin` by default, which browsers silently ignore over HTTP but log as a console error. Disabled via `crossOriginOpenerPolicy: false` — same rationale as the existing HSTS and COEP disables.

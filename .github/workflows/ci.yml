@@ -161,6 +161,75 @@ jobs:
             test-results/
           retention-days: 7
 
+  update-screenshots:
+    runs-on: ubuntu-latest
+    # Only on develop pushes; skip bot commits to avoid an infinite loop
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && !contains(github.event.head_commit.message, 'docs: refresh screenshots')
+    needs: [ backend, frontend ]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies (Playwright)
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Create compose directory
+        run: mkdir -p /tmp/compose
+
+      - name: Start backend
+        working-directory: ./backend
+        run: node dist/index.js &
+        env:
+          JWT_SECRET: ci-test-secret-key-not-for-production
+          COMPOSE_DIR: /tmp/compose
+          PORT: 3000
+          NODE_ENV: test
+
+      - name: Start frontend dev server
+        working-directory: ./frontend
+        run: npm run dev &
+
+      - name: Wait for services to be ready
+        run: npx wait-on http://localhost:3000/api/health http://localhost:5173 --timeout 30000
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        run: npx playwright test e2e/screenshots.spec.ts --project=chromium
+        env:
+          E2E_USERNAME: admin
+          E2E_PASSWORD: password123
+
+      - name: Commit updated screenshots
+        run: |
+          git config user.email "docs-bot@sencho.io"
+          git config user.name "Sencho Docs Bot"
+          git add docs/images/
+          git commit -m "docs: refresh screenshots" || echo "No changes to commit"
+          git push
+
   sync-docs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
