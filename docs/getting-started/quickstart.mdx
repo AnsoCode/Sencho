@@ -1,0 +1,33 @@
+---
+title: Quickstart
+description: Get Sencho running in under five minutes.
+---
+
+## Prerequisites
+
+- Docker and Docker Compose installed on the host
+- A directory where your Compose projects live (e.g. `/opt/compose`)
+
+## Run with Docker
+
+```bash
+docker run -d \
+  --name sencho \
+  -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /opt/compose:/app/compose \
+  -v sencho_data:/app/data \
+  -e JWT_SECRET=change-me \
+  ghcr.io/ansоcode/sencho:latest
+```
+
+Open `http://localhost:3000` in your browser. On first boot you'll be prompted to create an admin account.
+
+<Note>
+  Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho.
+</Note>
+
+## Next steps
+
+- [Add a remote node](/features/overview) to manage another server from the same dashboard
+- Browse your stacks, start/stop services, and tail logs from the dashboard

@@ -160,3 +160,31 @@ jobs:
             e2e/report/
             test-results/
           retention-days: 7
+
+  sync-docs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Sencho repo
+        uses: actions/checkout@v4
+        with:
+          path: sencho
+
+      - name: Checkout sencho-docs repo
+        uses: actions/checkout@v4
+        with:
+          repository: AnsoCode/sencho-docs
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+          path: sencho-docs
+
+      - name: Copy /docs into sencho-docs root
+        run: rsync -av --delete sencho/docs/ sencho-docs/
+
+      - name: Commit and push to sencho-docs
+        working-directory: sencho-docs
+        run: |
+          git config user.email "docs-bot@sencho.io"
+          git config user.name "Sencho Docs Bot"
+          git add -A
+          git commit -m "docs: sync from main@${{ github.sha }}" || echo "No changes to commit"
+          git push

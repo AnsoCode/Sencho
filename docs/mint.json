@@ -1,0 +1,29 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Sencho",
+  "logo": {
+    "light": "",
+    "dark": ""
+  },
+  "favicon": "",
+  "colors": {
+    "primary": "#0F172A",
+    "light": "#3B82F6",
+    "dark": "#0F172A"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "getting-started/introduction",
+        "getting-started/quickstart"
+      ]
+    },
+    {
+      "group": "Features",
+      "pages": [
+        "features/overview"
+      ]
+    }
+  ]
+}
