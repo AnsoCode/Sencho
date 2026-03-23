@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- fix(ci): `update-screenshots` was pushing directly to the protected `develop` branch; replaced the `git push` step with `peter-evans/create-pull-request@v6` which opens/updates a `chore/refresh-screenshots` PR instead
+- fix(ci): `sync-docs` failed with `fatal: not in a git directory` when `sencho-docs` is empty (no commits); added `continue-on-error: true` on the checkout step plus a fallback `git init -b main` with remote re-add, then pushes with `git push origin HEAD:main` to create the branch on first run
+
 ### Added
 - feat: automated documentation pipeline with Mintlify sync
 - feat: CI job to auto-refresh doc screenshots on every develop push
