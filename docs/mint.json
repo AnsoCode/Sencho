@@ -24,8 +24,13 @@
       "group": "Features",
       "pages": [
         "features/overview",
+        "features/dashboard",
         "features/stack-management",
         "features/editor",
+        "features/resources",
+        "features/app-store",
+        "features/global-observability",
+        "features/host-console",
         "features/multi-node",
         "features/alerts-notifications"
       ]

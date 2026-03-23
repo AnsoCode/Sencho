@@ -1,0 +1,54 @@
+---
+title: Host Console
+description: An interactive terminal on your host OS, directly in the browser — no SSH required.
+---
+
+The **Console** tab opens a full interactive terminal session on the machine running Sencho. It behaves exactly like an SSH session, but without needing an SSH server, client, or key management.
+
+<Frame>
+  <img src="/images/host-console/host-console-overview.png" alt="Host Console showing a PowerShell prompt inside the Sencho container working directory" />
+</Frame>
+
+## What it is
+
+The host console spawns a real PTY (pseudo-terminal) process on the Sencho host using `node-pty`. Your keystrokes are sent over a WebSocket and the terminal output is streamed back in real-time. The terminal emulator is [xterm.js](https://xtermjs.org/), the same engine used by VS Code's built-in terminal.
+
+Features:
+- Full colour and cursor support
+- Tab completion (via the host shell)
+- Scrollback buffer (10,000 lines)
+- Automatic terminal resizing when you resize the browser window
+- Copy and paste
+
+## Opening the console
+
+Click **Console** in the top navigation bar. The session starts immediately in the stack's working directory if a stack is selected, otherwise in the `COMPOSE_DIR` root.
+
+The header shows the connection status (**Connected** in green) and which node the console is attached to.
+
+Click **Close Console** to end the session and terminate the shell process on the host.
+
+## Shell type
+
+The shell depends on the host OS:
+- **Linux/macOS hosts:** `bash` or `sh`
+- **Windows hosts (Docker Desktop):** PowerShell (as shown in the screenshot — the console opens inside the Sencho container's Windows environment)
+
+## Security model
+
+The host console has a stricter authentication requirement than other features:
+
+- Requires a valid **browser session** (httpOnly cookie). Node-proxy tokens used for multi-node communication are explicitly blocked.
+- Each session is issued a short-lived **console token** (60-second TTL) before the WebSocket is established.
+- Because the console gives full shell access to the host, you should secure your Sencho instance with HTTPS and a strong password if it is exposed to a network.
+
+<Warning>
+  The host console provides unrestricted shell access to the machine running Sencho. Do not expose Sencho on a public network without HTTPS and strong authentication.
+</Warning>
+
+## Common uses
+
+- Inspecting files in your `COMPOSE_DIR` without leaving the browser
+- Running `docker compose logs --follow` or `docker ps` directly
+- Editing files with `nano` or `vim` for quick fixes
+- Running maintenance scripts or one-off commands on the host
