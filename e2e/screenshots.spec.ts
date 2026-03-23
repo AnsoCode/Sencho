@@ -46,7 +46,7 @@ test('stacks', async ({ page }) => {
 
 test('resources', async ({ page }) => {
   await loginAs(page);
-  await page.getByRole('link', { name: /resources/i }).click();
+  await page.getByRole('button', { name: /resources/i }).click();
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(DOCS_IMAGES, 'resources.png'), fullPage: true });
 });
