@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat: CI job to auto-refresh doc screenshots on every develop push
 
 ### Fixed
+- fix(ci): YAML syntax error in update-screenshots `if:` condition (`!` tag and `: ` in plain scalar); wrapped in `${{ }}`
+- fix(ci): `sync-docs` job failing with "fatal: not in a git directory"; added `safe.directory` config for the sencho-docs checkout path
+
+### Fixed
 - **COOP header console warning on HTTP deployments:** Helmet sends `Cross-Origin-Opener-Policy: same-origin` by default, which browsers silently ignore over HTTP but log as a console error. Disabled via `crossOriginOpenerPolicy: false` — same rationale as the existing HSTS and COEP disables.
 - **Inline script CSP violation from Vite module-preload polyfill:** Vite's production build injects a small inline `<script>` for the module-preload polyfill that was blocked by `script-src 'self'`. Disabled via `build.modulePreload.polyfill: false` in `vite.config.ts` — all modern browsers support `<link rel="modulepreload">` natively.
 - **Managed container count wrong when stacks launched from COMPOSE_DIR root:** The `GET /api/stats` endpoint classified containers as managed by matching `com.docker.compose.project` against known stack directory names. When stacks are launched from the COMPOSE_DIR root (rather than each subdirectory), Docker assigns the root folder name as the project name for all of them — causing every such container to appear as "external". Fixed by classifying via `com.docker.compose.project.working_dir`: a container is managed if its working directory falls within COMPOSE_DIR, regardless of the project name.
