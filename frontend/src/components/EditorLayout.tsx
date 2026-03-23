@@ -928,7 +928,7 @@ export default function EditorLayout() {
         {/* Branding Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <img src="/sencho-logo.png" alt="Sencho Logo" className="w-12 h-12" />
+            <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-12 h-12" />
             <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
           </div>
           <TooltipProvider>

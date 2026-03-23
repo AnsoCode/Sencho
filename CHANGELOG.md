@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- feat(ui): theme-aware sidebar logo — dark and light variants auto-switch based on active theme (dark/light/auto)
+
 ### Changed
 - docs: migrate Mintlify config from deprecated `mint.json` to `docs.json` v2 format; update navigation to use `{ "groups": [...] }` object structure; add logo, favicon, and theme fields
 
