@@ -1,0 +1,32 @@
+---
+title: Features Overview
+description: A high-level tour of everything Sencho can do.
+---
+
+## Stack management
+
+Deploy, start, stop, restart, and remove Docker Compose stacks through a point-and-click interface. Edit `docker-compose.yml` files directly in the built-in Monaco editor.
+
+## Multi-node support
+
+Add remote Sencho instances as nodes. All dashboard operations — stack management, logs, stats — work identically whether you're targeting your local machine or a server on the other side of the world.
+
+## Real-time logs & stats
+
+Stream container logs and resource metrics (CPU, memory, network I/O) live in the browser via WebSocket connections.
+
+## Resources hub
+
+View and manage all Docker images, volumes, and networks. Resources are classified as:
+
+| Label | Meaning |
+|-------|---------|
+| **Managed** | Owned by a Sencho stack |
+| **External** | Part of another Compose project |
+| **Unused / System** | Reclaimable or Docker-internal |
+
+Run scoped prune operations to clean up Sencho-managed resources only, or target all Docker resources when needed.
+
+## Notifications & alerts
+
+Configure threshold-based alerts for CPU and memory usage. Notifications surface in the dashboard and can be dismissed or cleared in bulk.

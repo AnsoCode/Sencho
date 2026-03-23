@@ -1,0 +1,16 @@
+---
+title: Introduction
+description: What Sencho is and why you might want it.
+---
+
+Sencho is a self-hosted Docker Compose management dashboard. It gives you a clean web UI to deploy, manage, and monitor your Docker Compose stacks — locally or across multiple remote servers — without touching a terminal.
+
+## Key concepts
+
+- **Stacks** — a Docker Compose project living in your `COMPOSE_DIR`. Sencho treats each subdirectory as a stack.
+- **Nodes** — a Sencho instance. Your local machine is always the default node. Add remote nodes by pointing Sencho at another Sencho instance's API URL.
+- **Resources** — images, volumes, and networks that belong to your stacks (managed) or exist outside them (external/unused).
+
+<Note>
+  Sencho never accesses remote servers directly via SSH or Docker TCP. Remote management works by proxying API requests to another running Sencho instance.
+</Note>

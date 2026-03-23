@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- feat: automated documentation pipeline with Mintlify sync
+
 ### Fixed
 - **COOP header console warning on HTTP deployments:** Helmet sends `Cross-Origin-Opener-Policy: same-origin` by default, which browsers silently ignore over HTTP but log as a console error. Disabled via `crossOriginOpenerPolicy: false` — same rationale as the existing HSTS and COEP disables.
 - **Inline script CSP violation from Vite module-preload polyfill:** Vite's production build injects a small inline `<script>` for the module-preload polyfill that was blocked by `script-src 'self'`. Disabled via `build.modulePreload.polyfill: false` in `vite.config.ts` — all modern browsers support `<link rel="modulepreload">` natively.
