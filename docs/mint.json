@@ -37,11 +37,16 @@
     },
     {
       "group": "Reference",
-      "pages": []
+      "pages": [
+        "reference/settings"
+      ]
     },
     {
       "group": "Operations",
-      "pages": []
+      "pages": [
+        "operations/troubleshooting",
+        "operations/backup"
+      ]
     }
   ]
 }

@@ -1,0 +1,139 @@
+---
+title: Backup & Restore
+description: What to back up, how to restore it, and how to migrate Sencho to a new host.
+---
+
+Sencho stores all its state in two places: the **data directory** (SQLite database) and your **compose directory** (your actual stack files). Both need to be backed up for a complete recovery.
+
+---
+
+## What to back up
+
+### 1. Data directory (`DATA_DIR`)
+
+Default path: `/app/data` inside the container, mapped to wherever you mounted it on the host (e.g. `./sencho-data`).
+
+Contains:
+- `sencho.db` — SQLite database with all settings, nodes, alerts, metrics history, and notification history
+
+This single file is everything Sencho knows about itself. Back it up and you can fully restore any Sencho installation.
+
+### 2. Compose directory (`COMPOSE_DIR`)
+
+The directory containing your stack subdirectories — your `compose.yaml` files, `.env` files, and any bind-mounted config files stored there.
+
+This is your actual application data. It lives entirely outside Sencho and you almost certainly already have it on a schedule, but include it in any Sencho backup plan.
+
+---
+
+## Backing up
+
+### Simple file copy
+
+```bash
+# Stop Sencho to ensure the SQLite WAL is flushed (recommended but not strictly required)
+docker stop sencho
+
+# Copy the data directory
+cp -r /path/to/sencho-data /path/to/backup/sencho-data-$(date +%Y%m%d)
+
+# Copy compose stacks
+cp -r /opt/compose /path/to/backup/compose-$(date +%Y%m%d)
+
+# Restart
+docker start sencho
+```
+
+### SQLite online backup (without stopping)
+
+SQLite supports hot backups via its `.backup` command. This is safe to run while Sencho is running:
+
+```bash
+sqlite3 /path/to/sencho-data/sencho.db ".backup '/path/to/backup/sencho.db'"
+```
+
+### Automated daily backup (cron example)
+
+```cron
+0 3 * * * sqlite3 /path/to/sencho-data/sencho.db ".backup '/backups/sencho-$(date +\%Y\%m\%d).db'" && find /backups -name "sencho-*.db" -mtime +30 -delete
+```
+
+This backs up the database at 3 AM daily and deletes backups older than 30 days.
+
+---
+
+## Restoring
+
+### Restore from backup
+
+1. Stop Sencho:
+   ```bash
+   docker stop sencho
+   ```
+
+2. Replace the data directory with your backup:
+   ```bash
+   rm -rf /path/to/sencho-data/*
+   cp /path/to/backup/sencho.db /path/to/sencho-data/sencho.db
+   ```
+
+3. Restore your compose directory if needed:
+   ```bash
+   cp -r /path/to/backup/compose /opt/compose
+   ```
+
+4. Start Sencho:
+   ```bash
+   docker start sencho
+   ```
+
+Sencho will read the restored database and resume with all your previous settings, nodes, and alert rules intact.
+
+---
+
+## Migrating to a new host
+
+### Step 1: Prepare the new host
+
+Install Docker and Docker Compose on the new machine. Create the same directory structure you use for your compose files, following the [1:1 path rule](/getting-started/configuration#compose-directory-the-11-path-rule).
+
+### Step 2: Copy data
+
+Transfer your backup files to the new host:
+
+```bash
+scp -r /path/to/sencho-data newhost:/path/to/sencho-data
+scp -r /opt/compose newhost:/opt/compose
+```
+
+### Step 3: Deploy Sencho on the new host
+
+Use the same `docker-compose.yml` you used on the old host (with the same `COMPOSE_DIR` and `DATA_DIR` paths):
+
+```bash
+docker compose up -d
+```
+
+### Step 4: Update remote node references
+
+If other Sencho instances were pointing to your old host as a remote node, update their node config to use the new host's IP or hostname. Generate a new API token on the restored instance and distribute it.
+
+### Step 5: Verify
+
+- Log in and confirm your stacks, nodes, and alerts are all present
+- Check that at least one stack deploys correctly
+- Verify the node switcher shows the expected nodes with green status
+
+---
+
+## What is NOT backed up by this process
+
+| Item | Location | Notes |
+|------|----------|-------|
+| Container data volumes | Wherever each stack's volumes are mounted on the host | Back these up separately per-application |
+| Actual container images | Docker image cache | These are re-pulled on next deploy — no backup needed |
+| Sencho logs (docker logs) | Container stdout | Not persisted beyond container lifetime |
+
+<Note>
+  Sencho does not currently have a built-in backup scheduler or export function. The approaches above use standard OS tools and SQLite's own backup mechanism.
+</Note>
