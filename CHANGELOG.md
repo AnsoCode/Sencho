@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- docs: migrate Mintlify config from deprecated `mint.json` to `docs.json` v2 format; update navigation to use `{ "groups": [...] }` object structure; add logo, favicon, and theme fields
+
 ### Fixed
 - fix(ci): `update-screenshots` — add `pull-requests: write` permission and switch both `actions/checkout` and `peter-evans/create-pull-request` from `GITHUB_TOKEN` to `DOCS_REPO_TOKEN` (PAT with `repo` scope); `GITHUB_TOKEN` is blocked from creating PRs against protected branches
 - fix(ci): `sync-docs` — add `--exclude='.git'` to the rsync step; `rsync --delete` was deleting the `.git` directory cloned in the previous step because it doesn't exist in the source (`sencho/docs/`), causing `fatal: not in a git directory` in the commit step
