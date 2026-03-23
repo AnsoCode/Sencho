@@ -164,7 +164,7 @@ jobs:
   update-screenshots:
     runs-on: ubuntu-latest
     # Only on develop pushes; skip bot commits to avoid an infinite loop
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && !contains(github.event.head_commit.message, 'docs: refresh screenshots')
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && !contains(github.event.head_commit.message, 'docs: refresh screenshots') }}
     needs: [ backend, frontend ]
     permissions:
       contents: write
@@ -252,6 +252,7 @@ jobs:
       - name: Commit and push to sencho-docs
         working-directory: sencho-docs
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/sencho-docs"
           git config user.email "docs-bot@sencho.io"
           git config user.name "Sencho Docs Bot"
           git add -A
