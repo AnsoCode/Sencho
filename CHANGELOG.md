@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/AnsoCode/Sencho/compare/v0.1.0...v0.2.0) (2026-03-24)
+
+
+### Added
+
+* **ci:** add release-please automated versioning workflow ([c2d5d37](https://github.com/AnsoCode/Sencho/commit/c2d5d37be41267e71bb8515010b049fcd31f5d6b))
+* **ci:** add release-please automated versioning workflow ([c2d5d37](https://github.com/AnsoCode/Sencho/commit/c2d5d37be41267e71bb8515010b049fcd31f5d6b))
+* **ci:** add release-please automated versioning workflow ([c294def](https://github.com/AnsoCode/Sencho/commit/c294def7ccce1705be55e38e19c7da4f7341c3f4))
+* **ci:** automated versioning with release-please ([c991b81](https://github.com/AnsoCode/Sencho/commit/c991b8121edcd30bd6806e959d0dcd14711f439f))
+* **ci:** automated versioning with release-please ([c991b81](https://github.com/AnsoCode/Sencho/commit/c991b8121edcd30bd6806e959d0dcd14711f439f))
+
+
+### Fixed
+
+* **ci:** correct release-please changelog section names and tag format ([ea57cbe](https://github.com/AnsoCode/Sencho/commit/ea57cbe97f7f4166c747f3e3710f85e57ab476a1))
+* **ci:** correct release-please changelog section names and tag format ([ea57cbe](https://github.com/AnsoCode/Sencho/commit/ea57cbe97f7f4166c747f3e3710f85e57ab476a1))
+* **ci:** correct release-please changelog section names and tag format ([e653bc2](https://github.com/AnsoCode/Sencho/commit/e653bc2210f07d83fcf16ca97e3c2863a40e2cdf))
+* **ci:** release-please config corrections ([b6391b9](https://github.com/AnsoCode/Sencho/commit/b6391b96ffd4edf7a303350f7416ab1945136e1b))
+* **ci:** release-please config corrections ([b6391b9](https://github.com/AnsoCode/Sencho/commit/b6391b96ffd4edf7a303350f7416ab1945136e1b))
+
 ## [Unreleased]
 
 ### Fixed
