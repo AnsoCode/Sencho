@@ -12,7 +12,7 @@ import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 // that entirely. Sencho only needs YAML/plaintext so the base editorWorker
 // covers all language modes — no additional language workers required.
 window.MonacoEnvironment = {
-  getWorker(_workerId: string, _label: string): Worker {
+  getWorker(): Worker {
     return new editorWorker()
   },
 }
