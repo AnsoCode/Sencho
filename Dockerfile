@@ -44,34 +44,46 @@ FROM --platform=$BUILDPLATFORM node:20-alpine AS prod-deps
 # Copy xx cross-compilation tools into this stage
 COPY --from=xx / /
 
-ARG TARGETPLATFORM
 ARG TARGETARCH
+ARG BUILDARCH
 
 WORKDIR /app
 
-# Host tools (run natively on amd64):
-#   clang lld  — LLVM cross-compiler + linker used by xx-clang/xx-clang++
-#   python3 make g++  — required by node-gyp to drive the native build system
+# Two paths depending on whether we are cross-compiling:
 #
-# Target sysroot (installed for the TARGET arch by xx-apk):
-#   g++          — libstdc++ headers/libs; all three native modules use C++
-#   musl-dev     — musl libc headers needed for any C/C++ target compilation
-#   linux-headers — <pty.h> / <termios.h> required by node-pty
-RUN apk add --no-cache clang lld python3 make g++ && \
-    xx-apk add --no-cache g++ musl-dev linux-headers
+# Native (TARGETARCH == BUILDARCH, e.g. amd64 → amd64):
+#   Standard g++ is used. xx-clang introduces sysroot flags that conflict with
+#   node-gyp's header resolution on Alpine for same-platform builds, so we
+#   bypass it entirely and let npm ci use the host compiler directly.
+#
+# Cross (TARGETARCH != BUILDARCH, e.g. amd64 → arm64):
+#   xx-clang targets the foreign architecture without QEMU. The target sysroot
+#   is populated via xx-apk:
+#     g++           — libstdc++ headers/libs (all three native modules use C++)
+#     musl-dev      — musl libc headers for the target arch
+#     linux-headers — <pty.h> / <termios.h> required by node-pty
+RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+      apk add --no-cache python3 make g++; \
+    else \
+      apk add --no-cache clang lld python3 make g++ && \
+      xx-apk add --no-cache g++ musl-dev linux-headers; \
+    fi
 
 COPY backend/package*.json ./
 
-# npm_config_arch=$TARGETARCH → tells prebuild-install / node-pre-gyp which
-#   pre-built binary to attempt (arm64 vs amd64). Falls back to source build.
-# CC/CXX=xx-clang(++) → LLVM cross-compiler targeting $TARGETPLATFORM.
-# AR=xx-ar → cross-archiver; without it node-gyp uses the host ar (amd64)
-#   and produces wrong-arch static libraries that fail to link.
-RUN npm_config_arch=$TARGETARCH \
-    CC=xx-clang \
-    CXX=xx-clang++ \
-    AR=xx-ar \
-    npm ci --omit=dev
+# Native: plain npm ci — g++ compiles native modules for the host arch.
+# Cross:  npm_config_arch tells prebuild-install/node-pre-gyp which pre-built
+#         binary to attempt; CC/CXX/AR route compilation through xx-clang so
+#         the output targets the foreign arch without any QEMU emulation.
+RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+      npm ci --omit=dev; \
+    else \
+      npm_config_arch=$TARGETARCH \
+        CC=xx-clang \
+        CXX=xx-clang++ \
+        AR=xx-ar \
+        npm ci --omit=dev; \
+    fi
 
 # Stage 4: Production runtime
 # Runs on the TARGET platform — no compilation happens here.
