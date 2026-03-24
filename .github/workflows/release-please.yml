@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN cannot trigger other workflows (GitHub security restriction).
+          # Using DOCS_REPO_TOKEN (PAT) ensures the tag push from release-please
+          # cascades to docker-publish.yml and publishes to Docker Hub.
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
