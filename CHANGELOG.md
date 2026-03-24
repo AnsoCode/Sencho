@@ -6,247 +6,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- feat(ci): add `linux/arm64` platform to Docker Hub publish workflow for ARM server support (e.g. Raspberry Pi 4/5, Oracle ARM VMs)
+---
 
-### Fixed
-- fix(ci): add missing `docker/setup-qemu-action@v3` step to `docker-publish.yml` — without it multi-platform builds hang indefinitely and consume all available runner minutes
-- fix(docker): eliminate QEMU execution of Node.js entirely using `tonistiigi/xx` cross-compilation; a dedicated `prod-deps` stage runs on the amd64 BUILD platform and compiles native modules (bcrypt, better-sqlite3, node-pty) for the TARGET architecture via `xx-clang` — fixes the `SIGILL` crash caused by Node.js v20 using ARMv8.1 LSE atomic instructions that the GitHub Actions QEMU version does not support
-
-### Added
-- feat(ui): theme-aware sidebar logo — dark and light variants auto-switch based on active theme (dark/light/auto)
-
-### Changed
-- docs: migrate Mintlify config from deprecated `mint.json` to `docs.json` v2 format; update navigation to use `{ "groups": [...] }` object structure; add logo, favicon, and theme fields
-
-### Fixed
-- fix(ci): `update-screenshots` — add `pull-requests: write` permission and switch both `actions/checkout` and `peter-evans/create-pull-request` from `GITHUB_TOKEN` to `DOCS_REPO_TOKEN` (PAT with `repo` scope); `GITHUB_TOKEN` is blocked from creating PRs against protected branches
-- fix(ci): `sync-docs` — add `--exclude='.git'` to the rsync step; `rsync --delete` was deleting the `.git` directory cloned in the previous step because it doesn't exist in the source (`sencho/docs/`), causing `fatal: not in a git directory` in the commit step
-- fix(ci): `sync-docs` — replace `actions/checkout` + init fallback with a single controlled `git clone || git init` bash step; `actions/checkout@v4` leaves a `.git` in a broken state on empty repos, which the `[ ! -d .git ]` guard missed, causing `fatal: not in a git directory` in the commit step; also drop now-unnecessary `--global safe.directory` config
-
-### Fixed
-- fix(ci): `update-screenshots` was pushing directly to the protected `develop` branch; replaced the `git push` step with `peter-evans/create-pull-request@v6` which opens/updates a `chore/refresh-screenshots` PR instead
-- fix(ci): `sync-docs` failed with `fatal: not in a git directory` when `sencho-docs` is empty (no commits); added `continue-on-error: true` on the checkout step plus a fallback `git init -b main` with remote re-add, then pushes with `git push origin HEAD:main` to create the branch on first run
-
-### Added
-- feat: automated documentation pipeline with Mintlify sync
-- feat: CI job to auto-refresh doc screenshots on every develop push
-- docs: bootstrap user-facing documentation from codebase audit — added configuration, stack management, editor, multi-node, and alerts & notifications pages; updated introduction, quickstart, and features overview; restructured mint.json navigation with Getting Started / Features / Reference / Operations groups
-- docs: add Tier 2 feature pages — dashboard, resources hub, app store, global observability, and host console
-- docs: add Tier 3 reference and operations pages — settings reference, troubleshooting, and backup & restore
-
-### Fixed
-- fix(ci): YAML syntax error in update-screenshots `if:` condition (`!` tag and `: ` in plain scalar); wrapped in `${{ }}`
-- fix(ci): `sync-docs` job failing with "fatal: not in a git directory"; added `safe.directory` config for the sencho-docs checkout path
-
-### Fixed
-- **COOP header console warning on HTTP deployments:** Helmet sends `Cross-Origin-Opener-Policy: same-origin` by default, which browsers silently ignore over HTTP but log as a console error. Disabled via `crossOriginOpenerPolicy: false` — same rationale as the existing HSTS and COEP disables.
-- **Inline script CSP violation from Vite module-preload polyfill:** Vite's production build injects a small inline `<script>` for the module-preload polyfill that was blocked by `script-src 'self'`. Disabled via `build.modulePreload.polyfill: false` in `vite.config.ts` — all modern browsers support `<link rel="modulepreload">` natively.
-- **Managed container count wrong when stacks launched from COMPOSE_DIR root:** The `GET /api/stats` endpoint classified containers as managed by matching `com.docker.compose.project` against known stack directory names. When stacks are launched from the COMPOSE_DIR root (rather than each subdirectory), Docker assigns the root folder name as the project name for all of them — causing every such container to appear as "external". Fixed by classifying via `com.docker.compose.project.working_dir`: a container is managed if its working directory falls within COMPOSE_DIR, regardless of the project name.
-- **Blank page on HTTP deployments (root cause — Helmet 8 default CSP):** Helmet 8 merges custom `directives` with its built-in defaults, which include `upgrade-insecure-requests`. The previous fix (PR #59) omitted the directive from the custom object, but Helmet silently re-added it from defaults. The correct fix is `upgradeInsecureRequests: null`, which is the Helmet 8 API for explicitly removing a default directive.
-- **Login loop caused by remote node auth failure:** When a configured remote node had an expired or invalid API token, every proxied request to that node returned 401. Both `apiFetch` and `fetchForNode` treated any 401 as a user session failure and dispatched `sencho-unauthorized`, immediately logging the user out and sending them back to the login page — even after a successful login. Fixed by adding a `proxyRes` handler that stamps all remote-proxied responses with `x-sencho-proxy: 1`; the frontend now only fires `sencho-unauthorized` when this header is absent (i.e., it's a genuine local session failure).
-- **Missing `authMiddleware` on notifications endpoints:** `GET /api/notifications`, `POST /api/notifications/read`, `DELETE /api/notifications/:id`, `DELETE /api/notifications`, and `POST /api/notifications/test` were all missing `authMiddleware`, violating the default-deny policy. Added to all five.
-- **CSP `workerSrc` missing (Monaco editor workers):** The Content Security Policy had no explicit `worker-src` directive, which in practice relied on `default-src 'self'`. Monaco editor creates Web Workers via `blob:` URLs for language services; these were silently failing. Added `worker-src 'self' blob:`.
-- **CSP `connectSrc` implicit (WebSocket):** Added explicit `connect-src 'self' ws: wss:` to clearly permit same-origin WebSocket connections in both HTTP and HTTPS contexts.
-
-### Fixed
-- **Blank page on HTTP deployments (CSP `upgrade-insecure-requests`):** Helmet's default CSP included `upgrade-insecure-requests`, which causes browsers to silently upgrade all HTTP sub-resource fetches (JS, CSS, images) to HTTPS. On a plain-HTTP self-hosted deployment this produces a completely blank page with `ERR_SSL_PROTOCOL_ERROR`. The directive is now explicitly omitted from the CSP.
-- **HSTS permanently breaking HTTP access:** Helmet's default `Strict-Transport-Security` header was being sent over HTTP, instructing browsers to refuse non-HTTPS connections for 1 year. HSTS is now disabled and must only be re-enabled by users who terminate HTTPS at a reverse proxy in front of Sencho.
-- **Docker socket EACCES root:root edge case:** Entrypoint now handles the case where the Docker socket is owned by root:root (GID 0) in addition to the standard root:docker case. Diagnostic `[entrypoint]` log lines are emitted at startup to make group detection visible in `docker logs`.
-- **Docker volume permissions on startup:** A new `docker-entrypoint.sh` script now runs as root at container start, fixes ownership of the `$DATA_DIR` volume (only files with wrong user or group), then drops to the non-root `sencho` user via `su-exec` before starting Node. This eliminates the `SQLITE_READONLY` crash experienced when a host-mounted data volume was previously created by root or a different UID. Uses the same privilege-drop pattern as the official PostgreSQL, Redis, and MariaDB Docker images. Node becomes PID 1, ensuring SIGTERM/SIGINT are handled correctly for graceful shutdown.
-
-### Added
-- **Resources Hub — Managed/Unmanaged Separation:** All Docker resources (images, volumes, networks) are now classified as `managed` (belonging to a Sencho stack), `external` (belonging to another Compose project), or `unused`/`system`. Classification is exposed via a new `GET /api/system/resources` endpoint that makes 4 parallel Docker API calls once and returns all three resource types in a single round trip.
-- **Docker Disk Footprint widget:** Replaces the Reclaimable Space donut chart with an interactive horizontal stacked bar showing Sencho Managed vs External Projects vs Reclaimable bytes. Clicking a segment filters the Images and Volumes tabs simultaneously.
-- **Scoped prune operations:** Quick Clean buttons now target Sencho-managed resources only by default ("Sencho only" label). An "All Docker" option is hidden in a `⋮` dropdown per prune target, with a distinct destructive confirmation dialog. The `POST /api/system/prune/system` endpoint accepts an optional `scope: 'managed' | 'all'` body parameter; a new `pruneManagedOnly()` method on `DockerController` filters by `com.docker.compose.project` label before removing resources.
-- **Managed/External filter toggles:** Each resource tab (Images, Volumes, Networks) has a segmented pill control to show All / Managed / External resources with live counts.
-- **Classification badges:** Each resource row displays a green "stack-name" badge for managed resources, an orange "External" badge for external, and a muted "System" badge for Docker-native networks (`bridge`, `host`, `none`). System networks have their delete button disabled.
-- **Active Containers split stat:** `GET /api/stats` now returns `managed` and `unmanaged` container counts in addition to `active`/`exited`/`total`. The Home Dashboard "Active Containers" card subtitle shows "N managed · N external".
-- **Renamed "Ghost Containers" → "Unmanaged Containers":** Tab label, dialog titles, toast messages, and empty-state copy updated throughout `ResourcesView`.
+## [0.1.0] - 2026-03-24
 
 ### Security
-- **Fixed:** `POST /api/system/console-token` was missing `authMiddleware` — any unauthenticated client could generate console session tokens. Fixed by adding `authMiddleware` to the route.
-- **Fixed:** Remote node `api_url` was accepted without validation — an attacker could set it to `http://localhost:6379` to SSRF into internal services. Now validates: must be a well-formed `http://` or `https://` URL, and the hostname may not be `localhost`, `127.x.x.x`, `[::1]`, or `0.0.0.0`.
-- **Fixed:** `env_file` paths in compose.yaml were accepted without boundary checking — absolute paths like `/etc/passwd` could be read/written. All resolved env file paths are now validated to stay within the stack directory.
-- **Fixed:** Stack name was validated in write routes but not in GET routes (`/api/stacks/:stackName`, `/api/stacks/:stackName/env`, `/api/stacks/:stackName/envs`) — path-traversal names now return 400 on all routes.
+
+- **Fixed:** Missing `authMiddleware` on `GET /api/notifications`, `POST /api/notifications/read`, `DELETE /api/notifications/:id`, `DELETE /api/notifications`, `POST /api/notifications/test`, and `POST /api/system/console-token` — any unauthenticated client could reach these endpoints.
+- **Fixed:** Remote node `api_url` accepted without validation — an attacker could set it to `http://localhost:6379` to SSRF into internal services. Now validates: must be a well-formed `http://` or `https://` URL and the hostname may not be `localhost`, `127.x.x.x`, `[::1]`, or `0.0.0.0`.
+- **Fixed:** `env_file` paths in `compose.yaml` were accepted without boundary checking — absolute paths like `/etc/passwd` could be read or written. All resolved env file paths are now validated to stay within the stack directory.
+- **Fixed:** Stack name validated in write routes but not GET routes — path-traversal names now return 400 on all routes.
+- **Fixed:** `stackParam` query parameter on `/api/system/host-console` now validated against `path.resolve` + `startsWith(baseDir)` to prevent directory traversal when setting the PTY working directory.
+- **Fixed:** `HostTerminalService` no longer forwards full `process.env` to spawned PTY shells — `JWT_SECRET`, `AUTH_PASSWORD`, `AUTH_PASSWORD_HASH`, and `DATABASE_URL` are stripped before the shell is spawned.
+- **Fixed:** Host Console and container exec WebSocket endpoints now reject `node_proxy` scoped JWT tokens with HTTP 403.
+- **Fixed:** `GET /api/settings` no longer leaks `auth_username`, `auth_password_hash`, or `auth_jwt_secret` to the frontend.
+- **Fixed:** `POST /api/settings` enforces a strict allowlist of writable keys — auth credential keys and unknown keys are rejected with a 400 error.
 - **Added:** Rate limiting on `/api/auth/login` and `/api/auth/setup` — 5 attempts per 15-minute window per IP, using `express-rate-limit`.
 - **Added:** `helmet` middleware for security response headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.).
 - **Changed:** CORS is now restricted to `FRONTEND_URL` env var in production; development continues to allow any origin.
 
 ### Added
-- **Added:** `GET /api/health` public endpoint — returns `{ status: "ok", uptime }`. Used by Docker `HEALTHCHECK` directive and external uptime monitors.
-- **Added:** `HEALTHCHECK` directive in `Dockerfile` — Docker now polls `/api/health` every 30 s and restarts an unhealthy container.
-- **Added:** Graceful shutdown — backend now listens for `SIGTERM`/`SIGINT`, drains HTTP connections, stops `MonitorService` and `ImageUpdateService`, and closes the SQLite connection before exiting. Prevents data loss when the container is stopped.
-- **Added:** Automated backend test suite with Vitest — 38 tests covering validation utilities, health endpoint, authentication flows, auth middleware enforcement, console-token security fix, and SSRF validation on node URLs. Run with `cd backend && npm test`.
-- **Added:** Playwright E2E test scaffolding (`e2e/`) — auth, stack management, and node management spec files with shared login helper. Run with `npm run test:e2e` from the repo root.
-- **Added:** CI workflow now runs Vitest unit tests and ESLint on every PR.
-- **Added:** Dockerfile now creates a non-root `sencho` system user and runs the process as that user instead of root.
-- **Added:** `isValidStackName`, `isValidRemoteUrl`, `isPathWithinBase` extracted to `backend/src/utils/validation.ts` for reuse and testability.
+
+#### Infrastructure & CI
+- `linux/arm64` platform support in the Docker Hub publish workflow (Raspberry Pi 4/5, Oracle ARM VMs) — native modules (`bcrypt`, `better-sqlite3`, `node-pty`) cross-compiled via `tonistiigi/xx` to eliminate the `SIGILL` crash caused by Node.js v20 using ARMv8.1 LSE atomic instructions unsupported by GitHub Actions QEMU.
+- `docker/setup-qemu-action@v3` step to `docker-publish.yml` — without it multi-platform builds hung indefinitely.
+- Automated Docker Hub CI/CD pipeline publishing `dev` and `latest` tags.
+- Automated documentation pipeline with Mintlify sync and screenshot refresh CI job.
+- `HEALTHCHECK` directive in `Dockerfile` — Docker polls `/api/health` every 30 s and restarts an unhealthy container.
+- `GET /api/health` public endpoint returning `{ status: "ok", uptime }`.
+- `docker-entrypoint.sh` — runs as root, fixes `$DATA_DIR` volume ownership, then drops to the non-root `sencho` user via `su-exec` before starting Node. Eliminates `SQLITE_READONLY` crashes on host-mounted volumes.
+- Non-root `sencho` system user in `Dockerfile`; process no longer runs as root.
+- Graceful shutdown — backend listens for `SIGTERM`/`SIGINT`, drains HTTP connections, stops `MonitorService` and `ImageUpdateService`, and closes the SQLite connection before exiting.
+- Vitest backend test suite — 38 tests covering validation utilities, health endpoint, authentication flows, auth middleware enforcement, console-token security, and SSRF validation. Run with `cd backend && npm test`.
+- Playwright E2E test scaffolding (`e2e/`) — auth, stack management, and node management specs with shared login helper. Run with `npm run test:e2e`.
+- CI workflow runs Vitest unit tests and ESLint on every PR.
+- `isValidStackName`, `isValidRemoteUrl`, `isPathWithinBase` extracted to `backend/src/utils/validation.ts` for reuse and testability.
+
+#### Multi-Node & Distributed API
+- Distributed API proxying using `http-proxy-middleware` for HTTP and WebSockets — replaces the SSH/SFTP architecture entirely (~500 lines removed).
+- Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).
+- `nodeContextMiddleware` in Express to dynamically extract `x-node-id` headers and `?nodeId=` query parameters for WebSocket upgrades.
+- `NodeRegistry` service managing multiple Docker daemon connections.
+- Node management API endpoints: list, get, create, update, delete, and test connection.
+- Two-tier scoped navigation UX — context pill in the top header always shows the active node name (pulsing blue for remote, green for local).
+- Remote-aware headers in `HostConsole`, `ResourcesView`, `GlobalObservabilityView`, and `AppStoreView`.
+- `SettingsModal` scopes its sidebar to the active node type — global-only tabs hidden when a remote node is active.
+- Cross-node notification aggregation — notification bell surfaces alerts from all connected remote nodes with dedicated real-time WebSocket connections per remote node.
+- Remote node host console and container exec WebSocket proxy — gateway exchanges `node_proxy` token for a short-lived `console_session` JWT (60 s TTL) before forwarding.
+- `localOnly` option on `apiFetch` — omits `x-node-id` so requests always route to the local node.
+
+#### Application Features
+- **App Store** — LinuxServer.io API integration as default template registry with rich metadata (architectures, docs links, GitHub links), category filter, one-click deployment, atomic rollback on failure, custom Portainer v2 registry URL support, editable ports/volumes/environment variables, post-deploy health probe.
+- **Resources Hub** — Images, Volumes, and Networks tabs with Managed/External/Unused classification, Docker Disk Footprint stacked-bar widget, scoped prune operations (Sencho-only vs All Docker), managed/external filter toggles, and classification badges.
+- **Global Observability** — centralized dashboard tracking 24-hour historical metrics and aggregating global tail logs across all containers. Dozzle-style Action Bar with multi-select stack filtering, search, STDOUT/STDERR toggles, and Developer Mode SSE real-time streaming.
+- **Background image update checker** — polls OCI-compliant registries every 6 hours using manifest digest comparison; results cached in `stack_update_status` table; pulsing blue dot badge on stacks with available updates.
+- **Real-time WebSocket notifications** — replaces 5-second polling; `NotificationService.setBroadcaster()` pushes each new alert to all authenticated subscribers the moment it fires.
+- **Live Container Logs** viewer using SSE for real-time terminal output.
+- **Animated design system** — `motion` package and `animate-ui` library; new brand cyan token; spring-based dialog/tooltip/tab animations; `prefers-reduced-motion` respected globally; Geist font via Google Fonts CDN.
+- Theme-aware sidebar logo — dark and light variants auto-switch based on active theme.
+- Auto theme option (light/dark/auto) with `window.matchMedia` listener.
+- `PATCH /api/settings` bulk-update endpoint — validates all values via Zod schema, persists atomically in a single SQLite transaction.
+- `system_state` SQLite table — separates runtime operational state from user-defined config in `global_settings`.
+- Configurable `metrics_retention_hours` (default: 24 h) and `log_retention_days` (default: 30 d) — `MonitorService` reads these dynamically each cycle.
+- Managed/unmanaged container count split in `GET /api/stats` — Home Dashboard "Active Containers" card shows "N managed · N external".
+- Two-Stage Teardown for stack deletion — `docker compose down` sweeps ghost networks before deployment files are deleted.
+- Custom Environment Variable injection tool in deployment UI.
+- `ErrorBoundary` component now wraps root `<App />` in `main.tsx`.
+- Git Flow branching strategy and branch protection.
 
 ### Fixed
-- **Fixed:** E2E nodes tests (`nodes.spec.ts`) were permanently timing out because the "Add Node" submit button requires both `api_url` and `api_token` to be non-empty before it enables. The tests filled the URL fields but not `api_token`, leaving the button disabled for the full 30 s timeout. Fixed by filling `#node-api-token` with a dummy value in both validation tests so the button enables and the form can be submitted — the backend then correctly rejects the invalid URL and surfaces the expected error toast.
-- **Fixed:** ESLint CI step now passes with zero errors — replaced all `any` type annotations with proper types or `unknown` casts, fixed unused catch variables, suppressed `react-refresh/only-export-components` on files that intentionally export both a component and a hook/constant (contexts, badge, button), added file-level `eslint-disable` on animate-ui third-party primitives, and added `eslint-disable-next-line react-hooks/set-state-in-effect` for the LogViewer state reset pattern.
-- **Fixed:** Four empty `catch {}` blocks in `EditorLayout` (mark-all-read, delete notification, clear-all notifications, image update fetch) now surface errors via `toast.error()` instead of silently swallowing them.
-- **Fixed:** `ErrorBoundary` component existed but was not connected — it now wraps the root `<App />` in `main.tsx`, catching crashes in any context provider or route component.
-- **Fixed:** `AlertDialogContent` used `asChild` on `AlertDialogPrimitive.Content` with a `motion.div` wrapper — Radix internally injects a second child (`DescriptionWarning`), causing `React.Children.only` to throw and the ErrorBoundary to trigger whenever the delete-stack confirmation dialog opened. Replaced with CSS keyframe animations (`data-[state=open]:animate-in` / `data-[state=closed]:animate-out`) which don't require `asChild`.
-- **Fixed:** `WebSocket.Server` replaced with named import `WebSocketServer` from `ws` to fix ESM/CJS interop in test environments.
-- **Added:** Cross-node notification aggregation — the notification bell now surfaces alerts from all connected remote nodes, not just the local instance. On mount and whenever the node list changes, `EditorLayout` fetches notification history from every registered node in parallel (using `fetchForNode` with targeted `x-node-id` headers). Each remote node also gets a dedicated real-time WebSocket connection (`/ws/notifications?nodeId=`) so alerts push instantly as they fire. Remote-sourced notifications display a node-name badge for quick identification. Mark-as-read, delete, and clear-all actions are routed to the correct node. The backend WS upgrade handler was updated to allow `/ws/notifications?nodeId=<remoteId>` to fall through to the existing proxy path (bare `/ws/notifications` with no nodeId continues to connect locally as before).
-- **Fixed:** Remote node host console and container exec WebSocket connections now succeed — the gateway exchanges the long-lived `node_proxy` api_token for a short-lived `console_session` JWT (60 s TTL) via a new `POST /api/system/console-token` endpoint before forwarding the WS upgrade to the remote. Previously the remote's `isProxyToken` guard correctly blocked `node_proxy` tokens from interactive terminals, which also blocked legitimate user-initiated console sessions routed through the gateway.
-- **Fixed:** `StackAlertSheet` now fetches notification agent status from the active node on open and displays a contextual banner: green checkmark with active channel names when agents are enabled, amber warning with a link to Settings → Notifications when none are configured, and a blue info callout on remote nodes explaining that alerts are evaluated and dispatched by that remote Sencho instance.
-- **Fixed:** `SettingsModal` Notifications tab is no longer hidden when a remote node is active — users can now configure Discord/Slack/Webhook channels directly on any remote node. The section header shows the remote node name and a "Remote" badge with a tooltip explaining that channels are saved on the remote instance.
-- **Fixed:** `StackAlertSheet` form error handling now surfaces the actual server error message (`err.error`) instead of a generic "Failed to add alert rule." string; console error logging added for all failure paths to aid debugging.
-- **Fixed:** `POST /api/alerts` now validates the request body with a Zod schema — rejects unknown metric/operator values, negative thresholds, and missing required fields with a structured 400 response instead of passing raw input to SQLite.
-- **Fixed:** Remote node HTTP proxy body forwarding — replaced the manual `proxyReq.write(JSON.stringify(req.body))` approach (which raced against `http-proxy`'s `process.nextTick(proxyReq.end)` and lost, causing "write after end" and the request to hang) with a conditional JSON body parser that skips `express.json()` entirely for remote-targeted `/api/` requests. The raw `IncomingMessage` stream is left unconsumed so `http-proxy`'s `req.pipe(proxyReq)` can forward it intact. This fixes the "Add Rule spins forever on remote nodes" bug.
-- **Fixed:** WebSocket notification reconnect in `EditorLayout` upgraded to exponential backoff (1 s → 2 s → 4 s → 8 s → 16 s → 30 s max) instead of a flat 5-second retry; `ws.onerror` now logs the event rather than silently calling `close()`; cleanup correctly guards against closing a WebSocket that is already in CLOSING/CLOSED state, eliminating the "WebSocket is closed before the connection is established" console error on React StrictMode double-mount.
-- **Security:** Host Console and container exec WebSocket endpoints now reject `node_proxy` scoped JWT tokens with HTTP 403 — machine-to-machine proxy credentials can no longer be used to open interactive terminals.
-- **Security:** `stackParam` query parameter on `/api/system/host-console` is now validated against `path.resolve` + `startsWith(baseDir)` to prevent directory traversal when setting the PTY working directory.
-- **Security:** `HostTerminalService` no longer forwards the full `process.env` to spawned PTY shells; `JWT_SECRET`, `AUTH_PASSWORD`, `AUTH_PASSWORD_HASH`, and `DATABASE_URL` are stripped before the shell is spawned.
-- **Fixed:** Animated design system overhaul — 9 UI bugs resolved: (1) compose.yaml ↔ .env tab switching no longer accumulates height (Monaco's internal `position:static` child created a circular CSS dependency with the grid; fixed by resetting Monaco to 0×0 then forcing a synchronous reflow before re-measuring); (2) sliding tab indicator on compose/env tabs; (3) sliding tab indicator on Notification tabs (Discord/Slack/Webhook); (4) switch thumb now animates position (added Radix data-attribute CSS translation); (5) "Always Local" badge tooltip no longer crashes the page (replaced animate-ui tooltip that called `getStrictContext` with pure Radix primitives); (6) Auto theme option added to Appearance settings (light/dark/auto with `window.matchMedia` listener); (7) Cancel/Add Node buttons in NodeManager dialogs no longer stuck together (added custom `DialogFooter` with proper gap classes); (8) AlertDialog now uses spring animation (`stiffness: 380, damping: 32`) and Quick Clean button text wraps correctly; (9) Resources/App Store/Logs menu buttons now toggle off on second click. Monaco container received `overflow-hidden` to prevent height escape.
-- **Added:** `motion` package and `animate-ui` animated component library as the animation foundation for the design system.
-- **Changed:** Design system overhauled — new brand cyan token (`--brand`, `oklch(0.72 0.14 200)` dark / `oklch(0.50 0.14 200)` light) applied to focus rings across both themes. CSS custom properties added for motion easing curves (`--ease-spring`, `--ease-out-expo`), animation durations, and stagger delay utilities. `prefers-reduced-motion` respected globally.
-- **Changed:** Geist font loaded via Google Fonts CDN (was declared but never imported — no visual change, now actually resolved).
-- **Changed:** Dark mode shadow system strengthened (opacity 0.18 → 0.35) for better depth on dark backgrounds. Scrollbar thumb uses correct `oklch()` values (was using `hsl(var(--muted))` which broke with OKLCH token format).
-- **Changed:** `ui/dialog.tsx` — replaced CSS keyframe animations with animate-ui's spring-based 3D perspective flip (open: `rotateX(-20deg) scale(0.8)` → `scale(1)`, overlays fade + blur).
-- **Changed:** `ui/tabs.tsx` — tab content transitions now use motion blur-fade (`filter: blur(4px)` → `blur(0px)`) instead of static CSS `animate-in`.
-- **Changed:** `ui/switch.tsx` — thumb movement animated via spring physics (`stiffness: 300, damping: 25`); press gesture scales thumb by 1.15 for tactile feedback.
-- **Changed:** `ui/tooltip.tsx` — tooltips pop in with spring scale animation (`stiffness: 350, damping: 28`) instead of CSS zoom-in.
-- **Changed:** `EditorLayout` main workspace container keyed to `activeView` so every view switch triggers a `fade-up` entrance animation.
-- **Fixed:** animate-ui `auto-height.tsx` imported `WithAsChild` without the `type` keyword, causing Vite to include a runtime import for a TypeScript-only type, crashing the browser module loader.
-- **Fixed:** animate-ui `switch.tsx` double-spread all props (including Radix-only `onCheckedChange`) onto the underlying `motion.button` DOM element, triggering React `Unknown event handler property` warnings. Radix props are now explicitly destructured and passed only to `SwitchPrimitives.Root`.
-- **Changed:** Notification delivery replaced polling with WebSocket push - `EditorLayout` no longer runs a `setInterval` to fetch `/api/notifications` every 5 seconds. A persistent `ws://host/ws/notifications` connection is opened on mount; the backend pushes each new alert in real-time as it is dispatched. Auto-reconnects with a 5-second back-off on close.
-- **Added:** `NotificationService.setBroadcaster()` - injectable callback wired to a `notificationSubscribers` Set in `index.ts`; every authenticated WS client subscribed to `/ws/notifications` receives a `{ type: 'notification', payload: NotificationHistory }` message the moment `dispatchAlert` fires.
-- **Changed:** `DatabaseService.addNotificationHistory` now returns the full inserted `NotificationHistory` record (including auto-generated `id` and `is_read: false`) instead of `void`, enabling the broadcaster to push the complete record to clients.
-- **Added:** `/ws/notifications` WebSocket upgrade path in `index.ts` - handled before the remote-node proxy path so it is always local. JWT auth verified manually (same pattern as all other WS paths per Directive 8).
-- **Security:** `GET /api/settings` no longer leaks `auth_username`, `auth_password_hash`, or `auth_jwt_secret` to the frontend - these keys are stripped from the response before sending.
-- **Security:** `POST /api/settings` now enforces a strict allowlist of writable keys - attempts to write auth credential keys (`auth_jwt_secret`, `auth_password_hash`, etc.) or arbitrary unknown keys are rejected with a 400 error.
-- **Added:** `PATCH /api/settings` bulk-update endpoint - accepts a partial settings object, validates all values via a Zod schema (type checking, range enforcement, URL format validation), and persists changes atomically in a single SQLite transaction. Replaces the N+1 per-key POST loop.
-- **Added:** `system_state` SQLite table - separates runtime operational state (e.g. janitor alert cooldown timestamp) from user-defined configuration in `global_settings`. `MonitorService` now writes `last_janitor_alert_timestamp` to `system_state` instead of `global_settings`, eliminating false positives in future audit logging.
-- **Added:** `metrics_retention_hours` (default: 24h) and `log_retention_days` (default: 30d) configurable settings - `MonitorService` now reads these dynamically each cycle instead of using hardcoded values. Notification history is pruned on the same cycle as container metrics.
-- **Fixed:** Developer settings (`developer_mode`, `global_logs_refresh`, `metrics_retention_hours`, `log_retention_days`) are now correctly scoped to the local Sencho instance - when a remote node is active, `fetchSettings` performs a secondary `localOnly` fetch for these keys and `saveDeveloperSettings` always writes to local via the new `apiFetch({ localOnly: true })` option, preventing UI preferences from being proxied into remote nodes' databases.
-- **Added:** `localOnly` option on `apiFetch` - omits the `x-node-id` header so requests always route to the local node regardless of the active node context.
-- **UI:** System Limits badge on remote nodes now reads "Configuring: [node name]"; Developer tab badge reads "Always Local" to make scope explicit to the user.
-- **Refactor:** `SettingsModal` frontend overhauled - per-operation loading states replace the single shared `isLoading` flag (saving system settings no longer disables notification test buttons). Settings are fetched before UI is interactive (skeleton loader blocks premature saves). Only known patchable keys are hydrated into component state (auth keys can never enter React state). Unsaved-changes dot indicator on sidebar nav items. All saves use the new `PATCH /api/settings` endpoint. Developer tab gains a "Data Retention" section for metrics and log retention controls.
-- **Added:** App Store category filter - LSIO templates are now grouped into categories (Automation, Downloaders, Media, Monitoring, Networking, Security, Development, Productivity, Utilities, Other) via a static lookup map in `TemplateService`. A horizontal pill bar below the search field lets users filter by category; clicking a category badge on a template card also activates the filter. Category badges highlight when their category is the active filter. App count updates reactively.
-- **Added:** App Store registry settings - new "App Store" section in Settings lets users supply a custom Portainer v2 JSON template URL to override the default LinuxServer.io registry. "Save & Refresh" persists the URL and immediately busts the 24-hour template cache via `POST /api/templates/refresh-cache`. Portainer v2 registries pass their native `categories` field through unchanged.
-- **Added:** `source` field on the `Template` interface - set to `'linuxserver'` for LSIO apps and `'custom'` for Portainer v2 registries, enabling future per-source filtering.
-- **Fixed:** Container stats WebSocket flooding React with up to 20+ `setState` calls per second in `EditorLayout` - each container's `onmessage` handler called `setContainerStats` independently, causing React to schedule a separate reconciliation pass per container per second. Replaced with a ref-buffer + 1.5 s flush interval pattern: incoming stats are written to `pendingStatsRef` (no re-render cost), snapshotted and cleared before a single batched `setContainerStats` call every 1.5 s. A separate `rawBytesRef` (never cleared) tracks raw rx/tx bytes for accurate rate calculation, avoiding the stale-closure bug that would have produced 0 B/s net I/O after every flush cycle. Buffer is also cleared on cleanup so stale entries from the previous stack don't flash in on stack switch.
-- **Fixed:** Browser Out of Memory crash in `GlobalObservabilityView` (Logs view) - the component rendered all log entries (up to 1,859+) as real DOM nodes with no virtualization, causing ~9,600 DOM nodes and ~25 MB of GC pressure every 5-second poll cycle. On RAM-constrained hosts (host system was at 97% usage) the browser renderer process OOMed within minutes. Fixed by capping DOM rendering to the last 300 entries (`MAX_DISPLAY_ROWS`), reducing the in-memory SSE log cap from 10,000 to 2,000 entries (`MAX_LOG_ENTRIES`), switching auto-scroll from `behavior: 'smooth'` (stacked layout animations) to `behavior: 'instant'`, and reducing the backend polling response limit from 2,000 to 500 lines. Also replaced `key={idx}` (array index) with a monotonic `_id` counter stamped at ingestion time so the slice window shifting no longer forces O(n) DOM mutations per new log line - React now only reconciles the one entry that actually changed.
-- **Fixed:** `HomeDashboard` create-stack error handling - HTTP error responses were thrown as hardcoded strings, discarding the server's actual error message (e.g. "Stack already exists", "Invalid stack name"). Now reads the JSON error body before throwing, and uses the defensive `error?.message || error?.error || fallback` toast pattern.
-- **Fixed:** LogViewer (container SSE log stream) returning 404 on remote nodes - the `?nodeId=` query param was forwarded by `remoteNodeProxy` to the remote server, where `nodeContextMiddleware` rejected it with `Node X not found` because the gateway's node IDs don't exist on the remote instance. Fixed by stripping `nodeId` from `proxyReq.path` in `onProxyReq`, mirroring the existing `x-node-id` header removal.
-- **Fixed:** Terminal logs and container stats WebSockets failing with "HTTP Authentication failed" on remote nodes - the WebSocket upgrade proxy was forwarding the browser's `cookie` header to the remote Sencho instance. The remote's `authMiddleware` picks `cookieToken` before `bearerToken`, and the cookie (signed with the local JWT secret) fails verification on the remote, returning 401. Fixed by deleting the `cookie` header before `wsProxyServer.ws()`, mirroring the `proxyReq.removeHeader('cookie')` already present in the HTTP proxy. Also strips the gateway's `nodeId` query param from the forwarded URL so the remote defaults cleanly to its own local node.
-- **Fixed:** `streamStats` Docker stats stream leaking after WebSocket client disconnect - the Docker daemon stream was never destroyed when the WS closed, causing orphaned streams to poll the daemon indefinitely. Fixed by adding a `ws.on('close')` handler that calls `stats.destroy()`. Also guards all `ws.send()` calls with a `readyState === OPEN` check to prevent silent errors on a closed socket.
-- **Fixed:** `streamStats` and `execContainer` called unawaited in the WS `connection` handler - unhandled promise rejections (e.g., invalid container ID, Docker daemon unavailable) would terminate the Node.js process in production (Node ≥ 15). Fixed by chaining `.catch()` on both calls, logging the error, and closing the WebSocket cleanly.
-- **Fixed:** Per-connection `WebSocket.Server` instances for stack logs and host console never closed after upgrade - each WS connection allocated a persistent `ws.Server` object accumulating listeners. Fixed by calling `wss.close()` immediately after `handleUpgrade` completes.
-- **Fixed:** `authMiddleware` and WS upgrade handler evaluated `cookieToken || bearerToken` - a browser cookie present alongside a valid Bearer token would shadow it, risking 401 on node-to-node proxy calls. Fixed by inverting precedence to `bearerToken || cookieToken` in both places.
-- **Fixed:** `remoteNodeProxy` error handler unsafely cast `proxyRes` to `Response` - on WebSocket or TCP-level proxy errors `proxyRes` is a raw `Socket`, so calling `.status()` would throw. Fixed by type-narrowing before sending the 502 response.
-- **Fixed:** Container stats (CPU/RAM/NET), bash exec terminal, and "Open App" button all broken for remote nodes - stats and exec WebSockets connected to the bare root (`ws://host`) with no `?nodeId=` query param, so the upgrade handler couldn't detect the remote node and skipped the WS proxy. Moved all generic WebSockets to `/ws?nodeId=` path; upgrade handler now correctly proxies them to the remote Sencho instance.
-- **Fixed:** Bash exec and stats WebSockets not reaching the backend in `npm run dev` - Vite proxy config now includes `ws: true` on `/api` and a new `/ws` proxy entry so all WebSocket upgrades are forwarded to `localhost:3000`.
-- **Fixed:** Backend WS message handler crashing when a proxied WebSocket arrives from a gateway and the forwarded `nodeId` doesn't exist in the remote instance's DB - now falls back to the default local node instead of throwing.
-- **Fixed:** "Open App" button opening `http://localhost:{port}` for remote node containers - now resolves the hostname from the remote node's `api_url` so the correct remote host is used.
-- **Fixed:** Remote node system stats, container stats, logs, and exec returning errors - `remoteNodeProxy` middleware was already positioned before API route definitions, but `/api/system/stats` contained a dead remote branch that called `NodeRegistry.getDocker()` for remote nodes, which throws since remote nodes have no direct Docker socket access. Removed the broken branch; remote requests are correctly intercepted by the proxy middleware before reaching any route handler.
-- **Added:** Background image update checker - `ImageUpdateService` polls OCI-compliant registries (Docker Hub, GHCR, LSCR, etc.) every 6 hours using manifest digest comparison against local `RepoDigests`. Results cached in a new `stack_update_status` SQLite table. A pulsing blue dot badge appears in the stack list sidebar for stacks with available updates. Manual refresh available via `POST /api/image-updates/refresh` (rate-limited to once per 10 minutes).
-- **Fixed:** `AppStoreView` and `GlobalObservabilityView` using raw `fetch()` instead of `apiFetch()` - all calls now inject the `x-node-id` header so templates, deploys, stacks, and logs are correctly proxied to the active remote node.
-- **Fixed:** `HostConsole` WebSocket URL missing `?nodeId=` query parameter - the upgrade handler now receives the active node ID and routes the PTY session to the correct node.
-- **Added:** Two-tier Option A scoped navigation UX - a context pill in the top header bar always shows the active node name (pulsing blue for remote, green for local).
-- **Added:** Remote-aware headers in `HostConsole` ("Host Console - [Node Name]"), `ResourcesView` ("Resources Hub - [Node Name]"), `GlobalObservabilityView` (floating node badge), and `AppStoreView` deploy sheet ("Deploying to: [Node Name]").
-- **Added:** `SettingsModal` now scopes its sidebar to the active node type - when a remote node is selected, global-only tabs (Account, Appearance, Notifications, Nodes) are hidden, and the header subtitle shows the remote node name.
-- **Fixed:** A massive memory leak (browser Out of Memory crash) by throttling historical metrics polling down to 60s and downsampling SQLite metrics payload sizes by 12x.
-- **Fixed:** A bug where the active node UI dropdown would desync from the actual API requests on initial page load by properly hydrating state from localStorage.
-- **Fixed:** Remote node proxy forwarding the browser's `sencho_token` cookie to the remote Sencho instance - the remote's `authMiddleware` evaluates `cookieToken || bearerToken` and the cookie (signed with the local JWT secret) was validated before the valid Bearer token, causing 401 on all proxied API calls. Fixed by stripping the `cookie` header in `proxyReq` so only the Bearer token is used for remote authentication.
-- **Fixed:** `nodeContextMiddleware` blocking `/api/nodes` when `x-node-id` references a deleted/non-existent node - the nodes list endpoint must always succeed so the frontend can re-sync a stale node ID in localStorage; exempted alongside `/api/auth/`.
-- **Fixed:** Remote node proxy stripping the `/api` path prefix - `remoteNodeProxy` is mounted at `app.use('/api/', ...)` so Express strips that prefix from `req.url` before `http-proxy-middleware` sees it; added `pathRewrite: (path) => '/api' + path` to restore the full path when forwarding to the remote Sencho instance (e.g. `/stats` → `/api/stats`). This was the root cause of all remote API calls returning the remote's SPA HTML instead of JSON.
-- **Fixed:** Dashboard cards (Active Containers, Host CPU, Host RAM, Docker Network) showing stale local-node data after switching to a remote node - `HomeDashboard` polling effects now depend on `activeNode?.id` and clear state immediately on node change.
-- **Fixed:** `refreshStacks` crashing with `SyntaxError` or `TypeError` when the remote proxy returns a non-JSON response (e.g., connection refused to unreachable remote node) - now checks `res.ok` before calling `res.json()` and iterates a typed `fileList` instead of the raw parsed value.
-- **Fixed:** Restored Local/Remote type selector and fixed state resets in the Add Node modal - form now resets to defaults every time the dialog opens, and the title reflects the chosen type dynamically.
-- **Fixed:** Remote node connection details failing to display Containers, Images, and CPU metrics - `testRemoteConnection` now fires parallel requests to `/api/stats`, `/api/system/stats`, and `/api/system/images` after auth succeeds, mapping real values into the info panel.
-- **Fixed:** Suppressed `[DEP0060] DeprecationWarning: util._extend` from `http-proxy@1.18.1` - override is applied to `process.emitWarning` before the proxy instances are created, cleanly intercepting the warning at its call site without suppressing other warnings.
-- **Fixed:** Backend memory leak caused by improper proxy middleware instantiation - `createProxyMiddleware` was called inside the request handler on every API call, spawning a new `http-proxy` instance (and registering new server listeners) per request. Refactored to a single globally-instantiated proxy using the `router` option for dynamic per-request target resolution.
-- **Fixed:** `[DEP0060] DeprecationWarning: util._extend` deprecation eliminated as a side-effect of the above fix (deprecation was triggered on every new `http-proxy` initialisation).
-- **Fixed:** Remote node authentication failures - `authMiddleware` and WebSocket upgrade handler both accept `Authorization: Bearer` tokens (Sencho-to-Sencho proxy auth).
-- **Fixed:** Node connection testing logic updated to perform authenticated HTTP pings to `/api/auth/check` on the remote instance.
-- **Fixed:** Node switcher dropdown failing to trigger data refreshes - `EditorLayout` now reacts to `activeNode` changes, re-fetching stacks and clearing stale editor/container state when the user switches nodes.
-- **Fixed:** API Token copy button failing silently on HTTP / non-localhost deployments where `navigator.clipboard` is unavailable - added `try/catch` with `document.execCommand('copy')` fallback.
-- **Fixed:** Remote node authentication failures by updating middleware to support Bearer tokens in WebSocket upgrade handler (node-to-node WS proxy now authenticates correctly on the receiving instance).
-- **Fixed:** Node connection testing logic updated to normalize `api_url` trailing slashes before constructing the authenticated HTTP ping URL.
-- **Fixed:** Memory leak in `GlobalObservabilityView` SSE mode - log array now capped at 10,000 entries (`.slice(-10000)`) to prevent unbounded accumulation across long sessions.
-- **Fixed:** Infinite re-fetch loop in `NodeContext` - `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with a `useRef` to read current node inside the callback without being a reactive dependency.
-- **Fixed:** Infinite page reload loop - `apiFetch` was calling `window.location.href = '/'` on every 401, causing a full browser reload before auth could complete. Replaced with a `sencho-unauthorized` custom event that `AuthContext` handles by setting `appStatus` to `notAuthenticated`.
-- **Fixed:** `NodeProvider` was mounted outside the auth gate in `App.tsx`, causing `refreshNodes` to fire before authentication was established (hitting 401 immediately on boot). Moved `NodeProvider` inside the authenticated branch so it only mounts after login.
-- **Removed:** SSH/SFTP file adapters and remote Docker TCP connections (net negative ~500 lines of code).
-- **Added:** Distributed API proxying using http-proxy-middleware for HTTP and WebSockets.
-- **Added:** Long-lived JWT generation for Sencho-to-Sencho API authentication (`POST /api/auth/generate-node-token`).
-- **Changed:** Node Manager UI vastly simplified - remote nodes now only require an API URL and Token.
-- **Fixed:** Critical port routing conflict - separated Docker API port (`port`) from SSH/SFTP port (`ssh_port`) in the `nodes` schema. Previously, a single `port` field served both protocols, causing ECONNREFUSED.
-- **Fixed:** `FileSystemService` now reads the node's `compose_dir` from the database for remote nodes instead of always using the `COMPOSE_DIR` env var.
-- **Fixed:** SSH/SFTP connections in `SSHFileAdapter`, `ComposeService.executeRemote()`, and `ComposeService.streamLogs()` now use `ssh_port` (default 22) instead of Docker API `port`.
-- **Added:** Full SSH credential fields (SSH Port, Username, Password, Private Key) to the Node Manager Add/Edit forms.
-- **Added:** `ssh_port` column to the `nodes` database table with migration support (default: 22).
-- **Changed:** Global `FileSystemService` and `ComposeService` singletons refactored into node-aware instances.
-- **Added:** `IFileAdapter`, `LocalFileAdapter`, and `SSHFileAdapter` to abstract all filesystem interactions for remote node support.
-- **Changed:** `MonitorService` now evaluates limits, fetches metrics, and detects container crashes across all registered nodes concurrently.
-- **Added:** Node Context Middleware in Express API to dynamically extract `x-node-id` headers and parse WebSocket query parameters.
-- **Added:** Remote Nodes Foundation - `nodes` table in SQLite with auto-seeded default local node.
-- **Added:** `NodeRegistry` service for managing multiple Docker daemon connections (local socket + TCP).
-- **Added:** Node management API endpoints: list, get, create, update, delete, and test connection.
-- **Added:** Settings Hub → Nodes tab with full CRUD UI, connection testing, and Docker info display.
-- **Added:** Node switcher dropdown in sidebar (auto-visible when multiple nodes are configured).
-- **Added:** `NodeContext` for frontend-wide active node state management.
-- **Fixed:** Global logs false-positive error misclassifications caused by Docker containers writing INFO logs to STDERR. Replaced naive regex with a robust 3-tier classification engine supporting `level=info`, `[INFO]`, and ` INFO ` format standards.
-- **Added:** Developer Mode setting to enable true Real-Time (SSE) global log streaming and infinite scroll.
-- **Added:** Configurable polling rates for standard global logs monitoring.
-- **Added:** React Throttle Buffer to prevent UI freezing during heavy real-time log ingestion.
-- **Fixed:** Global Logs aggressive auto-scrolling preventing users from reading log history.
-- **Fixed:** Quiet stacks missing from the Global Logs filter dropdown by fetching the definitive stack list independently.
-- **Fixed:** Global logs misclassifying INFO messages as errors due to naive string matching.
-- **Changed:** Global logs now display chronologically (newest at bottom) with smooth auto-scrolling.
-- **Changed:** Renamed Observability navigation tab to Logs.
-- **Fixed:** TTY container log streams failing to parse globally.
-- **Fixed:** Global logs displaying in UTC instead of local browser timezone.
-- **Changed:** Global Logs UI revamped to use a floating, hover-based action bar to maximize terminal space.
-- **Fixed:** Docker raw byte multiplex headers leaking into global logs stream.
-- **Changed:** Relocated historical CPU/RAM charts to the Home Dashboard and normalized data values (CPU relative to host cores, RAM to GB).
-- **Added:** Dozzle-style Action Bar to Global Logs with multi-select stack filtering, search, and STDOUT/STDERR toggles.
-- **Added:** Centralized observability dashboard tracking 24-hour historical metrics and aggregating global tail logs across all running containers.
-- **Added:** Live Container Logs viewer using Server-Sent Events (SSE) for real-time terminal output.
-- **Added:** Pre-deploy folder collision check to prevent silent configuration overwrites in the App Store.
-- **Added:** UI subtitle during deployment to reassure users during long image downloads.
-- **Changed:** Standardized manual stack deletion to use the Two-Stage Teardown (Compose Down -> File Wipe) to prevent ghost networks.
-- **Fixed:** Atomic Rollback failure where non-empty directories caused silent file system errors.
-- **Added:** Two-Stage Teardown mechanism to ensure `docker compose down` sweeps up ghost networks before deployment files are deleted.
-### Deprecated
-- **(Planned)** Port 2375 (TCP) fallback support; future releases may require SSH-only for Node config.
 
-### Fixed
-- Fixed backend MonitorService crash (`Cannot read properties of undefined (reading 'cpu_usage')`) occurring when Docker containers lacked CPU telemetry during transition states.
-- Handled UI deleted nodes ghost API calls by intercepting 404 errors globally in API and forcing the UI to resync to the default Node context.
-- Hardened `nodeContextMiddleware` in Express to intercept queries to invalid or deleted Node IDs gracefully instead of bubbling to Docker API 500 crashes.
-- Hardened Remote Node connection testing (`docker.info()`) to explicitly validate expected Docker API daemon properties instead of merely checking string length.
-- Caught Unhandled SFTP Promise Rejections in Node registry gracefully returning empty arrays to prevent frontend loading UI stalls.
-- Fixed horizontal UI overflowing in Node Manager settings on smaller resolutions.
-- **Fixed:** Docker API parsing bug where HTML string responses from misconfigured ports were counted as containers.
-- **Fixed:** Stack list crashing when SFTP connections fail by gracefully catching SSH errors and returning empty arrays.
+#### Authentication & Proxy
+- Login loop caused by remote node auth failure — `apiFetch` now only fires `sencho-unauthorized` when the `x-sencho-proxy: 1` header is absent (i.e., a genuine local session failure, not a remote node auth error).
+- `authMiddleware` and WS upgrade handler now evaluate `bearerToken || cookieToken` (Bearer first) — cookie no longer shadows a valid Bearer token on node-to-node proxy calls.
+- Remote node proxy stripping the `/api` path prefix — added `pathRewrite: (path) => '/api' + path` to restore the full path when forwarding to remote instances.
+- Remote node HTTP proxy body forwarding — replaced `proxyReq.write(JSON.stringify(req.body))` (raced against `http-proxy`'s `process.nextTick(proxyReq.end)`) with a conditional JSON body parser that skips `express.json()` for remote-targeted requests; the raw `IncomingMessage` stream is left unconsumed so `http-proxy`'s `req.pipe(proxyReq)` forwards it intact.
+- Remote node proxy forwarding the browser's `sencho_token` cookie to the remote instance — stripped in `proxyReq` so only the Bearer token is used.
+- Remote WebSocket upgrades forwarding the browser `cookie` header — stripped before `wsProxyServer.ws()` so the remote's `authMiddleware` uses the Bearer token exclusively.
+- `nodeContextMiddleware` blocking `/api/nodes` when `x-node-id` references a deleted node — exempted alongside `/api/auth/` so the frontend can re-sync a stale node ID.
+- Backend memory leak from `createProxyMiddleware` called inside the request handler on every API call — refactored to a single globally-instantiated proxy using the `router` option.
+- `remoteNodeProxy` error handler unsafely cast `proxyRes` to `Response` on WebSocket/TCP-level errors — type-narrowed before sending 502.
+
+#### WebSocket & Streaming
+- Container stats WebSocket flooding React with up to 20+ `setState` calls per second — replaced with a ref-buffer + 1.5 s flush interval pattern.
+- `streamStats` Docker stats stream leaking after WebSocket client disconnect — `ws.on('close')` handler calls `stats.destroy()`; all `ws.send()` calls guarded with `readyState === OPEN`.
+- `streamStats` and `execContainer` called unawaited — unhandled promise rejections now chain `.catch()`, log the error, and close the WebSocket cleanly.
+- Per-connection `WebSocket.Server` instances for stack logs and host console never closed after upgrade — `wss.close()` called immediately after `handleUpgrade`.
+- WebSocket notification reconnect upgraded to exponential backoff (1 s → 30 s max) instead of flat 5-second retry; `ws.onerror` logs the event; cleanup guards against closing an already-closing socket.
+- Terminal logs and container stats WebSockets failing with "HTTP Authentication failed" on remote nodes — gateway's `cookie` header stripped before forwarding to remote; `nodeId` query param stripped from forwarded URL.
+- LogViewer returning 404 on remote nodes — `nodeId` query param stripped from `proxyReq.path` in `onProxyReq`.
+
+#### UI & Frontend
+- Blank page on HTTP deployments (root cause — Helmet 8 default CSP `upgrade-insecure-requests` and HSTS) — `upgradeInsecureRequests: null` and `strictTransportSecurity: false` set explicitly.
+- COOP header console warning on HTTP deployments — `crossOriginOpenerPolicy: false`.
+- Inline script CSP violation from Vite module-preload polyfill — disabled via `build.modulePreload.polyfill: false`.
+- CSP `workerSrc` missing (Monaco editor workers) — added `worker-src 'self' blob:`.
+- CSP `connectSrc` implicit — added explicit `connect-src 'self' ws: wss:`.
+- Docker socket `EACCES` root:root edge case — entrypoint handles GID 0 in addition to the standard root:docker case.
+- Managed container count wrong when stacks launched from COMPOSE_DIR root — classification now uses `com.docker.compose.project.working_dir`.
+- Browser Out of Memory crash in `GlobalObservabilityView` — capped DOM rendering to last 300 entries, reduced SSE log cap to 2,000 entries, replaced `key={idx}` with monotonic `_id` counter.
+- `HomeDashboard` create-stack error handling — reads JSON error body before throwing; uses defensive toast pattern.
+- `AlertDialogContent` using `asChild` with `motion.div` wrapper crashing on delete-stack confirmation — replaced with CSS keyframe animations.
+- animate-ui `auto-height.tsx` importing `WithAsChild` without `type` keyword — crashed browser module loader.
+- animate-ui `switch.tsx` double-spreading Radix props onto `motion.button` DOM element.
+- "Always Local" badge tooltip crashing (`getStrictContext`) — replaced animate-ui tooltip with pure Radix primitives.
+- Cancel/Add Node buttons in NodeManager dialogs stuck together.
+- Resources/App Store/Logs menu buttons not toggling off on second click.
+- Monaco container height accumulation on tab switching — reset to 0×0 and force synchronous reflow before re-measuring.
+- `AppStoreView` and `GlobalObservabilityView` using raw `fetch()` instead of `apiFetch()` — all calls now inject `x-node-id`.
+- `HostConsole` WebSocket URL missing `?nodeId=` query parameter.
+- "Open App" button opening `http://localhost:{port}` for remote node containers — resolves hostname from remote node's `api_url`.
+- Dashboard cards showing stale local-node data after switching to a remote node — polling effects now depend on `activeNode?.id` and clear state immediately on node change.
+- `refreshStacks` crashing with `SyntaxError` or `TypeError` when the remote proxy returns a non-JSON response — checks `res.ok` before calling `res.json()`.
+- Four empty `catch {}` blocks in `EditorLayout` — now surface errors via `toast.error()`.
+- `StackAlertSheet` not fetching notification agent status from the active node on open.
+- `SettingsModal` Notifications tab hidden when a remote node is active — now visible and configurable on remote nodes.
+- `POST /api/alerts` now validates the request body with a Zod schema — rejects unknown metric/operator values, negative thresholds, and missing fields with a structured 400.
+- `WebSocket.Server` replaced with named import `WebSocketServer` from `ws` to fix ESM/CJS interop.
+- `NodeProvider` mounted outside the auth gate — moved inside the authenticated branch so `refreshNodes` no longer fires before authentication.
+- Infinite re-fetch loop in `NodeContext` — `refreshNodes` useCallback no longer depends on `activeNode` state; replaced with `useRef`.
+- Infinite page reload loop — `apiFetch` replaced `window.location.href = '/'` with a `sencho-unauthorized` custom event.
+- API Token copy button failing silently on HTTP/non-localhost — added `execCommand('copy')` fallback.
+- E2E nodes tests permanently timing out because the Add Node submit button requires `api_token` to be non-empty.
+- ESLint CI step — replaced all `any` annotations with proper types, fixed unused catch variables.
+- `[DEP0060] DeprecationWarning: util._extend` from `http-proxy@1.18.1` — suppressed at call site.
+- Global Logs false-positive error misclassifications — replaced naive regex with a robust 3-tier classification engine.
+- Memory leak in `GlobalObservabilityView` SSE mode — log array capped at 2,000 entries.
+- Historical metrics memory leak — polling throttled to 60 s; SQLite payload downsampled by 12×.
+- Active node UI dropdown desyncing from API requests on initial page load — state hydrated from localStorage.
+- `MonitorService` crash (`Cannot read properties of undefined (reading 'cpu_usage')`) during Docker container transition states.
+- Deleted node ghost API calls — 404 errors intercepted globally, forcing UI to resync to default node.
+- Horizontal UI overflow in Node Manager settings on smaller resolutions.
+- Docker API parsing bug where HTML string responses from misconfigured ports were counted as containers.
 
 ### Changed
-- **Changed:** Expanded Node Manager UI width and added horizontal scrollbars for better data visibility.
-- **Added:** Smart Error Parser with telemetry-ready rule IDs to translate cryptic Docker output.
-- **Added:** Post-Deploy Health Probe to catch immediate container crashes that slip past Compose.
-- **Changed:** Rollback engine respects a `canSilentlyRollback` flag to protect user-authored configurations.
-- **Changed:** Removed rigid volume sanitization, allowing full user control over bind paths.
-- **Added:** Editable Host Volumes in the deployment UI.
-- **Added:** Custom Environment Variable injection tool.
-- **Fixed:** ScrollArea UI height rendering and dynamic browser timezone detection.
-- **Changed:** Rebranded "Templates" to "App Store" across the UI.
-- **Added:** Advanced deployment configuration panel (Editable Ports and Environment Variables) with smart defaults.
-- **Fixed:** Implemented smart image fallbacks for broken registry logos and added expandable descriptions.
-- **Added:** Atomic Deployments: Failed App Store deployments now automatically roll back and delete their orphaned folders.
-- **Fixed:** Global dark mode scrollbar styling to eliminate blinding white native scrollbars.
-- **Fixed:** Input overlap UI bug in the App Store deployment panel.
-### Added
-- **Added:** Official LinuxServer.io API integration as the default Template Registry.
-- **Added:** Rich metadata display in the App Store (Architectures, Documentation links, GitHub repository links).
-- **Added:** Dynamic Template Registry URL support via global settings, defaulting to LinuxServer.io templates.
-- **Fixed:** Smart Volume Sanitizer to automatically rewrite messy Portainer bind mounts into clean, relative paths (Sencho 1:1 path rule).
-- Git Flow branching strategy and branch protection.
-- GitHub Actions CI pipeline for automated TypeScript build verification.
-- **Added:** Automated Docker Hub CI/CD pipeline for the `dev` and `latest` tags.
-- **Added:** App Templates (App Store) with One-Click deployment, utilizing Portainer v2 JSON registries and auto-generating compose files.
+
+- **Architecture:** Replaced SSH/SFTP remote node model with Distributed API proxy (HTTP/WebSocket) — remote nodes now only require an API URL and Bearer token. Node Manager UI vastly simplified.
+- **Docs:** Migrated Mintlify config from deprecated `mint.json` to `docs.json` v2 format; bootstrapped full user-facing documentation (configuration, stack management, editor, multi-node, alerts, dashboard, resources, app store, observability, settings reference, troubleshooting, backup & restore).
+- **Design system:** Animated UI overhaul — new brand cyan token, spring-based animations on dialogs/tooltips/switches/tabs, dark mode shadow strengthening, Geist font now actually loaded.
+- Notification delivery replaced polling with WebSocket push — no more `setInterval` in `EditorLayout`.
+- `DatabaseService.addNotificationHistory` returns the full inserted record for real-time broadcasting.
+- `SettingsModal` overhauled — per-operation loading states, skeleton loader, unsaved-changes indicator, all saves use `PATCH /api/settings`.
+- `MonitorService` evaluates limits and detects container crashes across all registered nodes concurrently.
+- `MonitorService` reads retention settings dynamically each cycle.
+- Developer settings scoped to the local node — reads/writes always target local via `localOnly` regardless of active node.
+- Dark mode scrollbar styling — no more white native scrollbars.
+- Rebranded "Templates" → "App Store", "Ghost Containers" → "Unmanaged Containers", "Observability" → "Logs".
+- Global logs display chronologically (newest at bottom) with smooth auto-scrolling; UTC → local browser timezone.
+- Historical CPU/RAM charts relocated to the Home Dashboard; data normalized (CPU relative to host cores, RAM to GB).
+- `EditorLayout` main workspace container keyed to `activeView` — every view switch triggers a fade-up entrance animation.
+
+### Removed
+
+- SSH/SFTP remote node adapters (`IFileAdapter`, `LocalFileAdapter`, `SSHFileAdapter`, `SSHFileAdapter`, `ComposeService.executeRemote`, `ComposeService.streamLogs` SSH path) — ~500 lines.
+
+[0.1.0]: https://github.com/AnsoCode/Sencho/releases/tag/v0.1.0
