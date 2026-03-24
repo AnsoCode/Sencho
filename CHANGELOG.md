@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **fix(ci):** `docker-publish.yml` was triggered by `release: types: [published]` (GitHub Release event) instead of `push: tags: v*` — pushing a git tag never fired the workflow. Changed trigger to `push: tags: v*` and updated `enable` conditions from `github.event_name == 'release'` to `startsWith(github.ref, 'refs/tags/v')` so any `v*` tag push automatically builds and publishes `latest` + semver tags to Docker Hub without requiring a manual GitHub Release.
 
+### Added
+- **feat(ci):** Automated versioning via `release-please` — on every push to `main`, the `release-please` workflow opens or updates a Release PR with a generated CHANGELOG entry and `package.json` version bump. Merging the Release PR creates the `vX.Y.Z` tag which triggers `docker-publish.yml`. Version bumps follow Conventional Commits: `fix:` → patch, `feat:` → minor, `feat!:` / `BREAKING CHANGE:` → major.
+
 ---
 
 ## [0.1.0] - 2026-03-24
