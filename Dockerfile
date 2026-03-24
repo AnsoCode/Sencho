@@ -49,21 +49,28 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-# clang/lld: the cross-compiler toolchain (runs natively on amd64).
-# xx-apk adds the target-arch musl headers + libgcc to the sysroot so
-# xx-clang can link native .node binaries for the target platform.
-RUN apk add --no-cache clang lld python3 make && \
-    xx-apk add --no-cache musl-dev gcc
+# Host tools (run natively on amd64):
+#   clang lld  — LLVM cross-compiler + linker used by xx-clang/xx-clang++
+#   python3 make g++  — required by node-gyp to drive the native build system
+#
+# Target sysroot (installed for the TARGET arch by xx-apk):
+#   g++          — libstdc++ headers/libs; all three native modules use C++
+#   musl-dev     — musl libc headers needed for any C/C++ target compilation
+#   linux-headers — <pty.h> / <termios.h> required by node-pty
+RUN apk add --no-cache clang lld python3 make g++ && \
+    xx-apk add --no-cache g++ musl-dev linux-headers
 
 COPY backend/package*.json ./
 
-# npm_config_arch=$TARGETARCH   → tells prebuild-install / node-pre-gyp which
-#                                  pre-built binary to fetch (arm64 vs amd64).
-# CC/CXX=xx-clang(++)           → cross-compiles from source if no pre-built
-#                                  binary is available for the target arch.
+# npm_config_arch=$TARGETARCH → tells prebuild-install / node-pre-gyp which
+#   pre-built binary to attempt (arm64 vs amd64). Falls back to source build.
+# CC/CXX=xx-clang(++) → LLVM cross-compiler targeting $TARGETPLATFORM.
+# AR=xx-ar → cross-archiver; without it node-gyp uses the host ar (amd64)
+#   and produces wrong-arch static libraries that fail to link.
 RUN npm_config_arch=$TARGETARCH \
     CC=xx-clang \
     CXX=xx-clang++ \
+    AR=xx-ar \
     npm ci --omit=dev
 
 # Stage 4: Production runtime
