@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/AnsoCode/Sencho/compare/v0.2.0...v0.2.1) (2026-03-24)
+
+
+### Fixed
+
+* **editor:** bundle Monaco locally to fix stuck Loading state ([0eaa45b](https://github.com/AnsoCode/Sencho/commit/0eaa45bd7f5a4b5db9d51a577d25175bbcb4ff77))
+* **editor:** bundle Monaco locally to fix stuck Loading state ([0eaa45b](https://github.com/AnsoCode/Sencho/commit/0eaa45bd7f5a4b5db9d51a577d25175bbcb4ff77))
+* **editor:** bundle Monaco locally to fix stuck Loading state and CSP block ([79fde6e](https://github.com/AnsoCode/Sencho/commit/79fde6e2bd598085abfc7c702f5745bdfd692aec))
+* **editor:** Monaco CSP fix + release pipeline fixes ([36a9bf3](https://github.com/AnsoCode/Sencho/commit/36a9bf3109c096ddd5d8095089a6ffb7bd6dee8d))
+* **editor:** Monaco CSP fix + release pipeline fixes — v0.2.1 ([36a9bf3](https://github.com/AnsoCode/Sencho/commit/36a9bf3109c096ddd5d8095089a6ffb7bd6dee8d))
+
 ## [0.2.0](https://github.com/AnsoCode/Sencho/compare/v0.1.0...v0.2.0) (2026-03-24)
 
 
