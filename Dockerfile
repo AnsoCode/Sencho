@@ -44,27 +44,46 @@ FROM --platform=$BUILDPLATFORM node:20-alpine AS prod-deps
 # Copy xx cross-compilation tools into this stage
 COPY --from=xx / /
 
-ARG TARGETPLATFORM
 ARG TARGETARCH
+ARG BUILDARCH
 
 WORKDIR /app
 
-# clang/lld: the cross-compiler toolchain (runs natively on amd64).
-# xx-apk adds the target-arch musl headers + libgcc to the sysroot so
-# xx-clang can link native .node binaries for the target platform.
-RUN apk add --no-cache clang lld python3 make && \
-    xx-apk add --no-cache musl-dev gcc
+# Two paths depending on whether we are cross-compiling:
+#
+# Native (TARGETARCH == BUILDARCH, e.g. amd64 → amd64):
+#   Standard g++ is used. xx-clang introduces sysroot flags that conflict with
+#   node-gyp's header resolution on Alpine for same-platform builds, so we
+#   bypass it entirely and let npm ci use the host compiler directly.
+#
+# Cross (TARGETARCH != BUILDARCH, e.g. amd64 → arm64):
+#   xx-clang targets the foreign architecture without QEMU. The target sysroot
+#   is populated via xx-apk:
+#     g++           — libstdc++ headers/libs (all three native modules use C++)
+#     musl-dev      — musl libc headers for the target arch
+#     linux-headers — <pty.h> / <termios.h> required by node-pty
+RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+      apk add --no-cache python3 make g++; \
+    else \
+      apk add --no-cache clang lld python3 make g++ && \
+      xx-apk add --no-cache g++ musl-dev linux-headers; \
+    fi
 
 COPY backend/package*.json ./
 
-# npm_config_arch=$TARGETARCH   → tells prebuild-install / node-pre-gyp which
-#                                  pre-built binary to fetch (arm64 vs amd64).
-# CC/CXX=xx-clang(++)           → cross-compiles from source if no pre-built
-#                                  binary is available for the target arch.
-RUN npm_config_arch=$TARGETARCH \
-    CC=xx-clang \
-    CXX=xx-clang++ \
-    npm ci --omit=dev
+# Native: plain npm ci — g++ compiles native modules for the host arch.
+# Cross:  npm_config_arch tells prebuild-install/node-pre-gyp which pre-built
+#         binary to attempt; CC/CXX/AR route compilation through xx-clang so
+#         the output targets the foreign arch without any QEMU emulation.
+RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
+      npm ci --omit=dev; \
+    else \
+      npm_config_arch=$TARGETARCH \
+        CC=xx-clang \
+        CXX=xx-clang++ \
+        AR=xx-ar \
+        npm ci --omit=dev; \
+    fi
 
 # Stage 4: Production runtime
 # Runs on the TARGET platform — no compilation happens here.
