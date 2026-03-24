@@ -1,0 +1,71 @@
+---
+title: Stack Management
+description: Create, deploy, control, and remove Docker Compose stacks.
+---
+
+A **stack** in Sencho is a Docker Compose project: a directory inside your `COMPOSE_DIR` that contains at least a `compose.yaml` (or `docker-compose.yml`) file. Sencho automatically discovers every subdirectory as a stack.
+
+<Frame>
+  <img src="/images/stack-management/create-stack-dialog.png" alt="Create New Stack dialog" />
+</Frame>
+
+## Creating a stack
+
+Click **Create Stack** in the left sidebar. Enter a name and click **Create**.
+
+**Naming rules:**
+- Lowercase letters, numbers, and hyphens only (e.g. `my-app`, `nextcloud`)
+- No spaces or special characters
+- Must be unique — duplicates are rejected
+
+Sencho creates a new directory inside `COMPOSE_DIR` with a blank `compose.yaml` file. You'll land in the editor automatically.
+
+## The stack list
+
+All discovered stacks appear in the left sidebar. Each shows a color-coded status dot:
+
+| Color | Meaning |
+|-------|---------|
+| Green | All containers running |
+| Red | One or more containers exited |
+| Gray | No containers / status unknown |
+
+Use the **search box** above the list to filter stacks by name.
+
+## Deploying a stack
+
+Select a stack and click **Deploy** in the stack header. This runs `docker compose up -d` — pulling images if needed and creating or recreating containers.
+
+<Frame>
+  <img src="/images/editor/editor-overview.png" alt="Stack editor with control buttons" />
+</Frame>
+
+## Controlling a running stack
+
+The stack header exposes four actions:
+
+| Button | Command | What it does |
+|--------|---------|--------------|
+| **Stop** | `docker compose stop` | Stops containers without removing them. State is preserved. |
+| **Restart** | `docker compose restart` | Restarts all containers in the stack. |
+| **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
+| **Delete** | `down` + removes files | Stops and removes containers, then deletes the stack directory. |
+
+<Warning>
+  **Delete** is irreversible. It removes the stack directory — including `compose.yaml`, `.env`, and any bind-mounted files stored there. Back up important files before deleting.
+</Warning>
+
+## Stack context menu
+
+Right-click or use the **⋮** button on any stack in the sidebar to access:
+
+<Frame>
+  <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu showing Alerts option" />
+</Frame>
+
+- **Alerts** — configure metric-based alerting rules for this stack
+- **Check for updates** — manually trigger an image update check
+
+## Converting a `docker run` command
+
+If you have an existing `docker run` command and want to turn it into a Compose stack, go to the **Home** tab and paste it into the "Convert Docker Run to Compose" field. Sencho converts it to YAML that you can save as a new stack.

@@ -7,7 +7,7 @@ on:
     branches: [ develop ]
 
 jobs:
-  build-and-test:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -18,22 +18,265 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+          cache-dependency-path: backend/package-lock.json
 
-      - name: Install Backend Dependencies
+      - name: Install Dependencies
         working-directory: ./backend
         run: npm ci
 
-      - name: Build Backend (TypeScript)
+      - name: Build (TypeScript)
         working-directory: ./backend
         run: npm run build
 
-      - name: Install Frontend Dependencies
+      - name: Unit Tests (Vitest)
+        working-directory: ./backend
+        run: npm test
+
+      - name: Lint (ESLint)
+        working-directory: ./backend
+        run: npm run lint
+
+      - name: Audit Dependencies
+        working-directory: ./backend
+        run: npm audit --audit-level=high
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
         working-directory: ./frontend
         run: npm ci
 
-      - name: Build Frontend (Vite/React)
+      - name: Build (Vite/React)
         working-directory: ./frontend
         run: npm run build
+
+      - name: Lint (ESLint)
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Audit Dependencies
+        working-directory: ./frontend
+        run: npm audit --audit-level=high
+
+  docker-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (validation only)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: sencho:pr-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: sencho:pr-test
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+        continue-on-error: true
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [ backend, frontend ]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies (Playwright)
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Create compose directory
+        run: mkdir -p /tmp/compose
+
+      - name: Start backend
+        working-directory: ./backend
+        run: node dist/index.js &
+        env:
+          JWT_SECRET: ci-test-secret-key-not-for-production
+          COMPOSE_DIR: /tmp/compose
+          PORT: 3000
+          NODE_ENV: test
+
+      - name: Start frontend dev server
+        working-directory: ./frontend
+        run: npm run dev &
+
+      - name: Wait for services to be ready
+        run: npx wait-on http://localhost:3000/api/health http://localhost:5173 --timeout 30000
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          E2E_USERNAME: admin
+          E2E_PASSWORD: password123
+
+      - name: Upload E2E report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/report/
+            test-results/
+          retention-days: 7
+
+  update-screenshots:
+    runs-on: ubuntu-latest
+    # Only on develop pushes; skip bot commits to avoid an infinite loop
+    if: "github.event_name == 'push' && github.ref == 'refs/heads/develop' && !contains(github.event.head_commit.message, 'docs: refresh screenshots')"
+    needs: [ backend, frontend ]
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # PAT required — GITHUB_TOKEN cannot create PRs against a protected
+          # branch. DOCS_REPO_TOKEN is a classic PAT with repo scope.
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies (Playwright)
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Create compose directory
+        run: mkdir -p /tmp/compose
+
+      - name: Start backend
+        working-directory: ./backend
+        run: node dist/index.js &
+        env:
+          JWT_SECRET: ci-test-secret-key-not-for-production
+          COMPOSE_DIR: /tmp/compose
+          PORT: 3000
+          NODE_ENV: test
+
+      - name: Start frontend dev server
+        working-directory: ./frontend
+        run: npm run dev &
+
+      - name: Wait for services to be ready
+        run: npx wait-on http://localhost:3000/api/health http://localhost:5173 --timeout 30000
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        run: npx playwright test e2e/screenshots.spec.ts --project=chromium
+        env:
+          E2E_USERNAME: admin
+          E2E_PASSWORD: password123
+
+      - name: Open / update screenshots PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+          branch: chore/refresh-screenshots
+          commit-message: "docs: refresh screenshots"
+          title: "docs: refresh screenshots"
+          body: "Automated screenshot refresh — generated by the `update-screenshots` CI job on every push to `develop`."
+          add-paths: docs/images/
+          delete-branch: true
+
+  sync-docs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout Sencho repo
+        uses: actions/checkout@v4
+        with:
+          path: sencho
+
+      - name: Clone or init sencho-docs
+        env:
+          DOCS_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
+        run: |
+          # Always start clean so a previous partial/broken checkout can't cause
+          # "not in a git directory" on subsequent steps.
+          rm -rf sencho-docs
+
+          REMOTE="https://x-access-token:${DOCS_TOKEN}@github.com/AnsoCode/sencho-docs.git"
+
+          if git clone "${REMOTE}" sencho-docs 2>/dev/null; then
+            echo "Cloned existing sencho-docs."
+          else
+            echo "Clone failed (repo is empty or has no default branch) — initializing."
+            mkdir -p sencho-docs
+            cd sencho-docs
+            git init
+            git checkout -b main
+            git remote add origin "${REMOTE}"
+          fi
+
+      - name: Copy /docs into sencho-docs root
+        # --exclude='.git' prevents rsync --delete from wiping the .git
+        # directory that was just cloned/initialized in the previous step.
+        run: rsync -av --delete --exclude='.git' sencho/docs/ sencho-docs/
+
+      - name: Commit and push to sencho-docs
+        working-directory: sencho-docs
+        run: |
+          git config user.email "docs-bot@sencho.io"
+          git config user.name "Sencho Docs Bot"
+          git add -A
+          git commit -m "docs: sync from develop@${{ github.sha }}" || echo "No changes to commit"
+          git push origin HEAD:main

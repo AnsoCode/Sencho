@@ -1,7 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import WebSocket from 'ws';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
@@ -14,8 +16,6 @@ import si from 'systeminformation';
 import http from 'http';
 import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService } from './services/DatabaseService';
@@ -25,15 +25,14 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
 
-const execAsync = promisify(exec);
-
 // Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
 // util._extend internally. The warning fires at runtime when createProxyServer() is
-// first invoked (NOT at import time), so intercepting process.emitWarning here —
-// before the proxy instances are created below — fully prevents it.
+// first invoked (NOT at import time), so intercepting process.emitWarning here -
+// before the proxy instances are created below - fully prevents it.
 // http-proxy has no compatible update; this suppression is intentional and safe.
 const _origEmitWarning = process.emitWarning.bind(process);
 (process as any).emitWarning = (warning: any, ...args: any[]) => {
@@ -64,11 +63,86 @@ const getCookieOptions = (req: Request) => ({
 });
 
 // Middleware
+
+// Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+// crossOriginEmbedderPolicy: disabled — Monaco editor workers lack COEP headers.
+// hsts: disabled — HSTS must only be set when the app is served over HTTPS.
+//   Enabling it over HTTP permanently breaks browser access for 1 year.
+// contentSecurityPolicy.upgradeInsecureRequests: explicitly set to null.
+//   Helmet 8 merges custom directives with its defaults, which include this
+//   directive. It tells browsers to silently upgrade all HTTP sub-resource fetches
+//   to HTTPS. On a plain-HTTP self-hosted deployment (the common case) this causes
+//   every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR, producing a blank page.
+//   Setting null is the Helmet 8 API to remove a default directive.
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  // COOP is only meaningful over HTTPS. Over HTTP the browser logs a warning
+  // and ignores it, creating noise in the console with no security benefit.
+  crossOriginOpenerPolicy: false,
+  hsts: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      fontSrc: ["'self'", 'https:', 'data:'],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+      // connect-src: explicit 'self' covers same-origin fetch/XHR/WebSocket.
+      // ws: and wss: are included for WebSocket connections in any scheme context.
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+      // worker-src: Monaco editor creates Web Workers via blob: URLs for language
+      // services (syntax highlighting, intellisense). Without blob: they silently fail.
+      workerSrc: ["'self'", 'blob:'],
+      // Helmet 8 merges custom directives with its defaults, which include
+      // upgrade-insecure-requests. Setting it to null explicitly removes it.
+      // On plain-HTTP self-hosted deployments (the common case) this directive
+      // causes every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR → blank page.
+      upgradeInsecureRequests: null,
+    },
+  },
+}));
+
+// CORS — in production restrict to the configured frontend origin.
+// In development, mirror the request origin so Vite's dev server works.
+const corsOrigin = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL
+  : true;
+
 app.use(cors({
-  origin: true,
+  origin: corsOrigin,
   credentials: true,
 }));
-app.use(express.json());
+// Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
+// consumed here: express.json() drains the IncomingMessage stream into req.body
+// and http-proxy then pipes an already-ended stream to the remote server.
+// When Node.js pipes an ended readable it calls process.nextTick(dest.end()),
+// which fires *before* the proxyReq socket event, so any attempt to write the
+// body inside the proxyReq handler results in "write after end" and the request
+// hangs. Solution: skip JSON parsing for remote-targeted /api/ requests so the
+// raw stream flows through the proxy intact.
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const nodeIdHeader = req.headers['x-node-id'];
+  if (nodeIdHeader) {
+    const nodeId = parseInt(nodeIdHeader as string, 10);
+    const node = NodeRegistry.getInstance().getNode(nodeId);
+    if (
+      node?.type === 'remote' &&
+      req.path.startsWith('/api/') &&
+      !req.path.startsWith('/api/auth/') &&
+      !req.path.startsWith('/api/nodes')
+    ) {
+      // Preserve body stream for proxy piping
+      next();
+      return;
+    }
+  }
+  express.json()(req, res, next);
+});
 app.use(cookieParser());
 
 // Node Context Middleware
@@ -122,13 +196,15 @@ wsProxyServer.on('error', (err, _req, socket: any) => {
 });
 
 // Authentication Middleware
-// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy)
+// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy).
+// Bearer token is evaluated first: node-to-node proxy calls always carry a Bearer token and
+// should never be shadowed by a stale or cross-instance cookie.
 const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const cookieToken = req.cookies[COOKIE_NAME];
   const bearerToken = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
     : null;
-  const token = cookieToken || bearerToken;
+  const token = bearerToken || cookieToken;
 
   if (!token) {
     res.status(401).json({ error: 'Authentication required' });
@@ -150,6 +226,22 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
   }
 };
 
+// Rate limiter for auth endpoints — prevents brute-force attacks.
+// Production: 5 attempts per 15-minute window per IP.
+// Development: 100 attempts (so E2E tests and local tooling are not blocked).
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 5 : 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+});
+
+// Public health endpoint - no auth required (used by Docker HEALTHCHECK and uptime monitors)
+app.get('/api/health', (_req: Request, res: Response): void => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
 // Auth Routes (no authentication required)
 
 // Check if setup is needed
@@ -165,7 +257,7 @@ app.get('/api/auth/status', async (req: Request, res: Response): Promise<void> =
 });
 
 // Initial setup endpoint
-app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const dbSvc = DatabaseService.getInstance();
     const settings = dbSvc.getGlobalSettings();
@@ -216,7 +308,7 @@ app.post('/api/auth/setup', async (req: Request, res: Response): Promise<void> =
 });
 
 // Login endpoint
-app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -357,7 +449,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
       }
       // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
-      // doesn't reject the request with 404 ("Node X not found") — the remote
+      // doesn't reject the request with 404 ("Node X not found") - the remote
       // has no record of the gateway's node IDs and should treat the request
       // as local. This affects endpoints like EventSource /api/containers/:id/logs
       // that pass nodeId as a query param rather than the x-node-id header.
@@ -368,11 +460,28 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
         const newQs = params.toString();
         proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
       }
+      // Body forwarding: the conditional json parser (see top of file) skips
+      // parsing for remote requests, so req's raw stream is intact and
+      // http-proxy's req.pipe(proxyReq) forwards the body automatically.
+      // No manual body rewriting needed here.
+    },
+    proxyRes: (proxyRes) => {
+      // Mark every response forwarded from a remote node with a sentinel header.
+      // The frontend (apiFetch / fetchForNode) checks this before firing the
+      // global 'sencho-unauthorized' event: a 401 from a remote means the stored
+      // api_token for that node is invalid — not that the user's own session
+      // expired. Without this distinction, any node with a bad token causes an
+      // immediate logout loop.
+      proxyRes.headers['x-sencho-proxy'] = '1';
     },
     error: (err, _req, proxyRes) => {
       console.error('[Proxy] Remote node error:', (err as Error).message);
-      if (!(proxyRes as Response).headersSent) {
-        (proxyRes as Response).status(502).json({
+      // proxyRes can be either a ServerResponse (HTTP) or a raw Socket (WS/TCP errors).
+      // Only attempt to send an HTTP 502 if it is a proper ServerResponse with a
+      // headersSent flag - otherwise silently drop (the socket will be destroyed).
+      const res = proxyRes as any;
+      if (typeof res?.headersSent === 'boolean' && !res.headersSent && typeof res.status === 'function') {
+        res.status(502).json({
           error: 'Remote node is unreachable. Check the API URL and ensure Sencho is running on that host.'
         });
       }
@@ -408,9 +517,21 @@ app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
 const server = http.createServer(app);
 
 // WebSocket server with authentication
-const wss = new WebSocket.Server({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
 let terminalWs: WebSocket | null = null;
+
+// Notification push - set of authenticated browser clients subscribed to real-time alerts
+const notificationSubscribers = new Set<WebSocket>();
+NotificationService.getInstance().setBroadcaster((notification) => {
+  if (notificationSubscribers.size === 0) return;
+  const msg = JSON.stringify({ type: 'notification', payload: notification });
+  for (const ws of notificationSubscribers) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  }
+});
 
 // Handle WebSocket upgrade with JWT authentication
 server.on('upgrade', async (req, socket, head) => {
@@ -424,7 +545,9 @@ server.on('upgrade', async (req, socket, head) => {
   const cookieToken = cookies[COOKIE_NAME];
   const authHeader = req.headers['authorization'] as string | undefined;
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  const token = cookieToken || bearerToken;
+  // Prefer Bearer over cookie: node-to-node proxy upgrades carry a Bearer token and must
+  // not be shadowed by a browser cookie signed with a different instance's JWT secret.
+  const token = bearerToken || cookieToken;
 
   if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -436,7 +559,11 @@ server.on('upgrade', async (req, socket, head) => {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    jwt.verify(token, jwtSecret);
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
+
+    // Node proxy tokens are machine-to-machine credentials and must never be granted
+    // interactive terminal access (host console or container exec).
+    const isProxyToken = decoded.scope === 'node_proxy';
 
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
@@ -447,12 +574,56 @@ server.on('upgrade', async (req, socket, head) => {
     const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
     const node = NodeRegistry.getInstance().getNode(nodeId);
 
+    // Notification push channel - local only when no remote nodeId is specified.
+    // When a nodeId pointing to a remote node is provided, fall through to the
+    // proxy block below so the browser subscribes to that remote node's push stream.
+    if (pathname === '/ws/notifications' && (!node || node.type !== 'remote')) {
+      const notifWss = new WebSocketServer({ noServer: true });
+      notifWss.handleUpgrade(req, socket, head, (ws) => {
+        notifWss.close();
+        notificationSubscribers.add(ws);
+        ws.on('close', () => notificationSubscribers.delete(ws));
+        ws.on('error', () => { notificationSubscribers.delete(ws); ws.terminate(); });
+      });
+      return;
+    }
+
     // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
     if (node && node.type === 'remote' && node.api_url && node.api_token) {
       const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
-      req.headers['authorization'] = `Bearer ${node.api_token}`;
+
+      // Interactive console paths (host console / container exec) are guarded on the remote by
+      // an isProxyToken check that rejects the long-lived api_token (scope: 'node_proxy').
+      // Exchange it for a short-lived console_session token before forwarding so the remote
+      // allows the connection while keeping the guard intact for direct api_token access.
+      const isInteractiveConsolePath = pathname === '/api/system/host-console' || pathname === '/ws';
+      let bearerTokenForProxy = node.api_token;
+      if (isInteractiveConsolePath) {
+        try {
+          const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${node.api_token}` },
+          });
+          if (tokenRes.ok) {
+            const data = await tokenRes.json() as { token?: string };
+            if (typeof data.token === 'string') bearerTokenForProxy = data.token;
+          } else {
+            console.error(`[WS Proxy] Remote console-token request failed: ${tokenRes.status}`);
+            socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+        } catch (e) {
+          console.error('[WS Proxy] Failed to fetch remote console token:', (e as Error).message);
+          socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
+
+      req.headers['authorization'] = `Bearer ${bearerTokenForProxy}`;
       delete req.headers['x-node-id'];
-      // Strip the browser's session cookie — it is signed by this instance's JWT secret and
+      // Strip the browser's session cookie - it is signed by this instance's JWT secret and
       // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
       delete req.headers['cookie'];
       // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
@@ -471,8 +642,12 @@ server.on('upgrade', async (req, socket, head) => {
 
     if (logsMatch) {
       // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
-      const logsWss = new WebSocket.Server({ noServer: true });
+      const logsWss = new WebSocketServer({ noServer: true });
       logsWss.handleUpgrade(req, socket, head, (ws) => {
+        // Close the per-connection server immediately after the upgrade is complete.
+        // The wss instance is only needed to negotiate the handshake; keeping it open
+        // would accumulate listeners and allocate memory for every connection.
+        logsWss.close();
         const stackName = decodeURIComponent(logsMatch[1]);
         try {
           ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
@@ -484,14 +659,29 @@ server.on('upgrade', async (req, socket, head) => {
         }
       });
     } else if (hostConsoleMatch) {
-      const hostConsoleWss = new WebSocket.Server({ noServer: true });
+      // Node proxy tokens must not access interactive host terminals
+      if (isProxyToken) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      const hostConsoleWss = new WebSocketServer({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
+        hostConsoleWss.close();
         let targetDirectory = '';
         try {
-          targetDirectory = FileSystemService.getInstance(nodeId).getBaseDir();
+          const baseDir = FileSystemService.getInstance(nodeId).getBaseDir();
           const stackParam = parsedUrl.searchParams.get('stack');
           if (stackParam) {
-            targetDirectory = path.join(targetDirectory, stackParam);
+            const resolved = path.resolve(baseDir, stackParam);
+            if (!resolved.startsWith(path.resolve(baseDir))) {
+              ws.send('Error: Invalid stack path\r\n');
+              ws.close();
+              return;
+            }
+            targetDirectory = resolved;
+          } else {
+            targetDirectory = baseDir;
           }
         } catch (e) {
           targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
@@ -507,7 +697,13 @@ server.on('upgrade', async (req, socket, head) => {
         }
       });
     } else {
-      // Generic terminal WebSocket
+      // Generic terminal WebSocket (container exec)
+      // Node proxy tokens must not access interactive container terminals
+      if (isProxyToken) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });
@@ -539,14 +735,20 @@ wss.on('connection', (ws) => {
         // message belongs to the gateway's DB and won't resolve locally. Fall back to local.
         let nodeId = requestedId;
         try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).streamStats(data.containerId, ws);
+        DockerController.getInstance(nodeId).streamStats(data.containerId, ws).catch((err: Error) => {
+          console.error('[WS] streamStats error:', err.message);
+          if (ws.readyState === WebSocket.OPEN) ws.close();
+        });
       } else if (data.action === 'execContainer') {
         // Handle container exec for bash access
         // Input, resize, and cleanup are handled inside execContainer's closure
         const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
         let nodeId = requestedId;
         try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).execContainer(data.containerId, ws);
+        DockerController.getInstance(nodeId).execContainer(data.containerId, ws).catch((err: Error) => {
+          console.error('[WS] execContainer error:', err.message);
+          if (ws.readyState === WebSocket.OPEN) ws.close();
+        });
       }
     } catch (error) {
       // Malformed JSON - ignore silently
@@ -580,6 +782,9 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     res.send(content);
   } catch (error) {
@@ -640,20 +845,22 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
       const service = parsed.services[serviceName];
       if (!service?.env_file) continue;
 
+      const addEnvPath = (rawPath: string) => {
+        const resolved = path.resolve(stackDir, rawPath);
+        // Reject paths that escape the stack directory
+        if (!resolved.startsWith(path.resolve(stackDir) + path.sep) && resolved !== path.resolve(stackDir)) {
+          console.warn(`[Security] env_file path "${rawPath}" escapes stack directory — skipping`);
+          return;
+        }
+        envFiles.add(resolved);
+      };
+
       if (typeof service.env_file === 'string') {
-        const resolvedPath = path.isAbsolute(service.env_file)
-          ? service.env_file
-          : path.resolve(stackDir, service.env_file);
-        envFiles.add(resolvedPath);
+        addEnvPath(service.env_file);
       } else if (Array.isArray(service.env_file)) {
         for (const entry of service.env_file) {
           const entryPath = typeof entry === 'string' ? entry : (entry?.path || '');
-          if (entryPath) {
-            const resolvedPath = path.isAbsolute(entryPath)
-              ? entryPath
-              : path.resolve(stackDir, entryPath);
-            envFiles.add(resolvedPath);
-          }
+          if (entryPath) addEnvPath(entryPath);
         }
       }
     }
@@ -673,6 +880,9 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
 app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
     res.json({ envFiles: envPaths });
   } catch (error) {
@@ -683,6 +893,9 @@ app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const requestedFile = req.query.file as string | undefined;
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
@@ -946,15 +1159,27 @@ app.post('/api/convert', async (req: Request, res: Response) => {
 // Get all containers stats for dashboard
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getRunningContainers();
-    const allContainers = await dockerController.getAllContainers();
+    const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(req.nodeId));
+    const allContainers = await DockerController.getInstance(req.nodeId).getAllContainers();
 
-    const active = containers.length;
-    const exited = allContainers.filter((c: { State: string }) => c.State === 'exited').length;
+    // A container is "managed" if Docker started it from within COMPOSE_DIR.
+    // We use com.docker.compose.project.working_dir rather than project name because
+    // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
+    // project name of the root folder — causing false "external" classification.
+    const isManagedByComposeDir = (c: any): boolean => {
+      const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+      if (!workingDir) return false;
+      const resolved = path.resolve(workingDir);
+      return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
+    };
+
+    const active = allContainers.filter((c: any) => c.State === 'running').length;
+    const exited = allContainers.filter((c: any) => c.State === 'exited').length;
     const total = allContainers.length;
+    const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
+    const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
 
-    res.json({ active, exited, total, inactive: total - active - exited });
+    res.json({ active, managed, unmanaged, exited, total });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
@@ -977,7 +1202,7 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
 
       // Standardize naming: Strip stack name prefix if it exists
       let containerName = rawName;
@@ -1053,9 +1278,11 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
       }
     }));
 
-    // Sort globally by timestamp ascending (newest bottom) and limit to 2000 lines
+    // Sort globally by timestamp ascending (newest bottom).
+    // Limit to 500 lines - the client renders at most 300 rows at once, so
+    // sending 2000 lines was wasting bandwidth and inflating JSON parse time.
     allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
-    res.json(allLogs.slice(-2000));
+    res.json(allLogs.slice(-500));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch global logs' });
   }
@@ -1075,7 +1302,7 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      let rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
+      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
       let containerName = rawName;
       if (rawName.startsWith(`${stackName}-`)) containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
       else if (rawName.startsWith(`${stackName}_`)) containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
@@ -1225,11 +1452,48 @@ app.post('/api/agents', async (req: Request, res: Response) => {
   }
 });
 
+// Keys that contain auth credentials - never exposed to the frontend or writable via settings API
+const PRIVATE_SETTINGS_KEYS = new Set(['auth_username', 'auth_password_hash', 'auth_jwt_secret']);
+
+// Strict allowlist of keys writable via the settings API (prevents overwriting auth credentials)
+const ALLOWED_SETTING_KEYS = new Set([
+  'host_cpu_limit',
+  'host_ram_limit',
+  'host_disk_limit',
+  'docker_janitor_gb',
+  'global_crash',
+  'global_logs_refresh',
+  'developer_mode',
+  'template_registry_url',
+  'metrics_retention_hours',
+  'log_retention_days',
+]);
+
+// Zod schema for bulk PATCH - all keys optional, present keys fully validated
+import { z } from 'zod';
+const SettingsPatchSchema = z.object({
+  host_cpu_limit:          z.coerce.number().int().min(1).max(100).transform(String),
+  host_ram_limit:          z.coerce.number().int().min(1).max(100).transform(String),
+  host_disk_limit:         z.coerce.number().int().min(1).max(100).transform(String),
+  docker_janitor_gb:       z.coerce.number().min(0).transform(String),
+  global_crash:            z.enum(['0', '1']),
+  global_logs_refresh:     z.enum(['1', '3', '5', '10']),
+  developer_mode:          z.enum(['0', '1']),
+  template_registry_url:   z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
+  metrics_retention_hours: z.coerce.number().int().min(1).max(8760).transform(String),
+  log_retention_days:      z.coerce.number().int().min(1).max(365).transform(String),
+}).partial();
+
 app.get('/api/settings', async (req: Request, res: Response) => {
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
+    // Strip auth credentials - these are managed exclusively by /api/auth/* endpoints
+    for (const key of PRIVATE_SETTINGS_KEYS) {
+      delete settings[key];
+    }
     res.json(settings);
   } catch (error) {
+    console.error('Failed to fetch settings:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
   }
 });
@@ -1237,10 +1501,40 @@ app.get('/api/settings', async (req: Request, res: Response) => {
 app.post('/api/settings', async (req: Request, res: Response) => {
   try {
     const { key, value } = req.body;
-    DatabaseService.getInstance().updateGlobalSetting(key, value);
+    if (!key || typeof key !== 'string' || !ALLOWED_SETTING_KEYS.has(key)) {
+      res.status(400).json({ error: `Invalid or disallowed setting key: ${key}` });
+      return;
+    }
+    if (value === undefined || value === null) {
+      res.status(400).json({ error: 'Setting value is required' });
+      return;
+    }
+    DatabaseService.getInstance().updateGlobalSetting(key, String(value));
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to update setting:', error);
     res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
+
+app.patch('/api/settings', async (req: Request, res: Response) => {
+  try {
+    const parsed = SettingsPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const updateMany = db.getDb().transaction((entries: [string, string][]) => {
+      for (const [k, v] of entries) {
+        db.updateGlobalSetting(k, v);
+      }
+    });
+    updateMany(Object.entries(parsed.data) as [string, string][]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to bulk update settings:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
   }
 });
 
@@ -1256,12 +1550,26 @@ app.get('/api/alerts', async (req: Request, res: Response) => {
   }
 });
 
+const AlertCreateSchema = z.object({
+  stack_name: z.string().min(1).max(255),
+  metric: z.enum(['cpu_percent', 'memory_percent', 'memory_mb', 'net_rx', 'net_tx', 'restart_count']),
+  operator: z.enum(['>', '>=', '<', '<=', '==']),
+  threshold: z.number().min(0),
+  duration_mins: z.coerce.number().int().min(0).max(1440),
+  cooldown_mins: z.coerce.number().int().min(0).max(10080),
+});
+
 app.post('/api/alerts', async (req: Request, res: Response) => {
+  const parsed = AlertCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid alert data', details: parsed.error.flatten().fieldErrors });
+    return;
+  }
   try {
-    const alert = req.body;
-    DatabaseService.getInstance().addStackAlert(alert);
+    DatabaseService.getInstance().addStackAlert(parsed.data);
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to add alert:', error);
     res.status(500).json({ error: 'Failed to add alert' });
   }
 });
@@ -1276,7 +1584,7 @@ app.delete('/api/alerts/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/notifications', async (req: Request, res: Response) => {
+app.get('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
     const history = DatabaseService.getInstance().getNotificationHistory();
     res.json(history);
@@ -1285,7 +1593,7 @@ app.get('/api/notifications', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/notifications/read', async (req: Request, res: Response) => {
+app.post('/api/notifications/read', authMiddleware, async (req: Request, res: Response) => {
   try {
     DatabaseService.getInstance().markAllNotificationsRead();
     res.json({ success: true });
@@ -1294,7 +1602,7 @@ app.post('/api/notifications/read', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
+app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string, 10);
     DatabaseService.getInstance().deleteNotification(id);
@@ -1304,7 +1612,7 @@ app.delete('/api/notifications/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/notifications', async (req: Request, res: Response) => {
+app.delete('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
     DatabaseService.getInstance().deleteAllNotifications();
     res.json({ success: true });
@@ -1313,13 +1621,34 @@ app.delete('/api/notifications', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/notifications/test', async (req: Request, res: Response) => {
+app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { type, url } = req.body;
     await NotificationService.getInstance().testDispatch(type, url);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
+// Issue a short-lived console session token for WebSocket proxy delegation.
+// When the gateway needs to proxy an interactive terminal (host console or container exec)
+// to a remote node, it calls this endpoint (authenticated with the long-lived api_token)
+// to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
+// tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
+app.post('/api/system/console-token', authMiddleware, (req: Request, res: Response): void => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'No JWT secret configured' });
+      return;
+    }
+    const consoleToken = jwt.sign({ scope: 'console_session' }, jwtSecret, { expiresIn: '60s' });
+    res.json({ token: consoleToken });
+  } catch (error) {
+    console.error('Failed to issue console token:', error);
+    res.status(500).json({ error: 'Failed to issue console token' });
   }
 });
 
@@ -1354,13 +1683,24 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
 
 app.post('/api/system/prune/system', async (req: Request, res: Response) => {
   try {
-    const { target } = req.body; // 'containers', 'images', 'networks', 'volumes'
+    const { target, scope } = req.body as { target: string; scope?: string };
     if (!['containers', 'images', 'networks', 'volumes'].includes(target)) {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
     const dockerController = DockerController.getInstance(req.nodeId);
-    const result = await dockerController.pruneSystem(target);
+    const pruneScope = scope === 'managed' ? 'managed' : 'all';
+
+    let result: { success: boolean; reclaimedBytes: number };
+    if (pruneScope === 'managed' && target !== 'containers') {
+      const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+      result = await dockerController.pruneManagedOnly(
+        target as 'images' | 'volumes' | 'networks',
+        knownStacks
+      );
+    } else {
+      result = await dockerController.pruneSystem(target as 'containers' | 'images' | 'networks' | 'volumes');
+    }
 
     res.json({ message: 'Prune completed', ...result });
   } catch (error: any) {
@@ -1371,8 +1711,8 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
 
 app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const df = await dockerController.getDiskUsage();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const df = await DockerController.getInstance(req.nodeId).getDiskUsageClassified(knownStacks);
     res.json(df);
   } catch (error) {
     console.error('Failed to fetch docker disk usage:', error);
@@ -1380,10 +1720,23 @@ app.get('/api/system/docker-df', async (req: Request, res: Response) => {
   }
 });
 
+// Single endpoint returning classified images, volumes, and networks in one call
+app.get('/api/system/resources', async (req: Request, res: Response) => {
+  try {
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const result = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to fetch classified resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// Keep legacy endpoints for backward compat with remote proxy routing
 app.get('/api/system/images', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const images = await dockerController.getImages();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { images } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(images);
   } catch (error) {
     console.error('Failed to fetch images:', error);
@@ -1393,8 +1746,8 @@ app.get('/api/system/images', async (req: Request, res: Response) => {
 
 app.get('/api/system/volumes', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const volumes = await dockerController.getVolumes();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { volumes } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(volumes);
   } catch (error) {
     console.error('Failed to fetch volumes:', error);
@@ -1404,8 +1757,8 @@ app.get('/api/system/volumes', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks', async (req: Request, res: Response) => {
   try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const networks = await dockerController.getNetworks();
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const { networks } = await DockerController.getInstance(req.nodeId).getClassifiedResources(knownStacks);
     res.json(networks);
   } catch (error) {
     console.error('Failed to fetch networks:', error);
@@ -1461,6 +1814,11 @@ app.get('/api/templates', async (req: Request, res: Response) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
+});
+
+app.post('/api/templates/refresh-cache', authMiddleware, (req: Request, res: Response) => {
+  templateService.clearCache();
+  res.json({ success: true });
 });
 
 app.post('/api/templates/deploy', async (req: Request, res: Response) => {
@@ -1564,6 +1922,7 @@ app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Resp
 // Node Management API
 // =========================
 
+
 // List all nodes
 app.get('/api/nodes', async (req: Request, res: Response) => {
   try {
@@ -1599,8 +1958,14 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     if (!type || !['local', 'remote'].includes(type)) {
       return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
     }
-    if (type === 'remote' && (!api_url || typeof api_url !== 'string')) {
-      return res.status(400).json({ error: 'API URL is required for remote nodes' });
+    if (type === 'remote') {
+      if (!api_url || typeof api_url !== 'string') {
+        return res.status(400).json({ error: 'API URL is required for remote nodes' });
+      }
+      const urlCheck = isValidRemoteUrl(api_url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ error: urlCheck.reason });
+      }
     }
 
     const id = DatabaseService.getInstance().addNode({
@@ -1627,6 +1992,13 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string);
     const updates = req.body;
+
+    if (updates.api_url !== undefined && updates.api_url !== '') {
+      const urlCheck = isValidRemoteUrl(updates.api_url);
+      if (!urlCheck.valid) {
+        return res.status(400).json({ error: urlCheck.reason });
+      }
+    }
 
     DatabaseService.getInstance().updateNode(id, updates);
 
@@ -1711,4 +2083,35 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server when this file is the entry point (not when imported by tests).
+if (require.main === module) {
+  startServer();
+}
+
+// Exports used by tests (supertest requires the http.Server instance).
+export { app, server };
+
+// Graceful shutdown — allows in-flight requests to finish, then cleanly stops
+// background services and closes the SQLite connection before the process exits.
+// Docker sends SIGTERM when the container stops; Ctrl-C sends SIGINT in dev.
+const gracefulShutdown = (signal: string) => {
+  console.log(`[Shutdown] ${signal} received — shutting down gracefully…`);
+
+  server.close(() => {
+    console.log('[Shutdown] HTTP server closed');
+    try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
+    try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
+    try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
+    console.log('[Shutdown] Done — exiting');
+    process.exit(0);
+  });
+
+  // Force-exit after 10 s if connections refuse to drain
+  setTimeout(() => {
+    console.error('[Shutdown] Timed out waiting for connections — forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

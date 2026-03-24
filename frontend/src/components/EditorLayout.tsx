@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+
+type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
@@ -15,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
@@ -32,6 +35,7 @@ import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { useNodes } from '@/context/NodeContext';
+import type { Node } from '@/context/NodeContext';
 
 interface ContainerInfo {
   Id: string;
@@ -45,6 +49,16 @@ interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
 }
 
+interface Notification {
+  id: number;
+  level: 'info' | 'warning' | 'error';
+  message: string;
+  timestamp: number;
+  is_read: number; // 0 | 1 (SQLite boolean)
+  nodeId: number;
+  nodeName: string;
+}
+
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -56,6 +70,12 @@ const formatBytes = (bytes: number) => {
 export default function EditorLayout() {
   const { logout } = useAuth();
   const { nodes, activeNode, setActiveNode } = useNodes();
+  // Stable ref so notification callbacks always read the latest nodes list
+  // without needing nodes in their dependency arrays (which would cause loops).
+  const nodesRef = useRef<Node[]>([]);
+  nodesRef.current = nodes;
+  // Tracks cleanup functions for per-remote-node notification WebSocket connections.
+  const remoteNotifWsRef = useRef<Map<number, () => void>>(new Map());
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -67,7 +87,15 @@ export default function EditorLayout() {
   const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string, net: string, lastRx?: number, lastTx?: number }>>({});
+  // Incoming WebSocket stats are written here first (no re-render), then flushed
+  // to React state in one batched update every 1.5 s.
+  const pendingStatsRef = useRef<Record<string, { cpu: string; ram: string; net: string; lastRx: number; lastTx: number }>>({});
+  // Raw rx/tx byte totals used for rate calculation. Never cleared on flush so
+  // the delta is always computed against the most recent known value, avoiding
+  // the stale-closure bug that occurs when reading containerStats directly.
+  const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
@@ -75,13 +103,15 @@ export default function EditorLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('sencho-theme');
-    if (saved !== null) {
-      return saved === 'dark';
-    }
-    return true; // Default to dark mode
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('sencho-theme') as Theme | null;
+    if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
+    return 'dark'; // Default to dark mode
   });
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+  const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,7 +130,7 @@ export default function EditorLayout() {
   const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
 
   // Notifications & Settings state
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
@@ -110,17 +140,34 @@ export default function EditorLayout() {
     setAlertSheetOpen(true);
   };
 
-  // Theme toggle effect
+  // Listen for system dark mode changes (for 'auto' theme)
   useEffect(() => {
-    const html = document.documentElement;
-    if (isDarkMode) {
-      html.classList.add('dark');
-      localStorage.setItem('sencho-theme', 'dark');
-    } else {
-      html.classList.remove('dark');
-      localStorage.setItem('sencho-theme', 'light');
-    }
-  }, [isDarkMode]);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Apply dark class and persist theme preference
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('sencho-theme', theme);
+  }, [isDarkMode, theme]);
+
+  // Force Monaco to re-measure its container after the tab switch DOM settles.
+  // Monaco's internal child is position:static with an explicit pixel height that
+  // creates a circular CSS dependency (Monaco drives card height → grid height → Monaco).
+  // Fix: reset Monaco to 0×0 first (breaks the cycle), then trigger a forced synchronous
+  // reflow so the container has its CSS-correct size before Monaco re-measures.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const editor = monacoEditorRef.current;
+      if (!editor) return;
+      editor.layout({ width: 0, height: 0 }); // collapse → breaks CSS circular dependency
+      editor.layout();                          // forced reflow → measures correct container size
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeTab]);
 
   const refreshStacks = async (background = false) => {
     if (!background) setIsLoading(true);
@@ -155,12 +202,156 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification polling - independent of active node, runs once on mount
+  // Notification WS push - subscribe to local real-time alerts.
+  // Initial history load is handled by the [nodes] effect below.
+  useEffect(() => {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsBase = `${wsProtocol}//${window.location.host}`;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
+    let retryCount = 0;
+    const MAX_RETRY_DELAY_MS = 30000;
+
+    const connect = () => {
+      if (!isMounted) return;
+      ws = new WebSocket(`${wsBase}/ws/notifications`);
+
+      ws.onopen = () => {
+        if (!isMounted) {
+          // Component unmounted while the handshake was in-flight (React StrictMode double-mount)
+          ws?.close();
+          return;
+        }
+        retryCount = 0; // Reset backoff on successful connect
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === 'notification' && msg.payload) {
+            const localNode = nodesRef.current.find(n => n.type === 'local');
+            const tagged: Notification = {
+              ...(msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>),
+              nodeId: localNode?.id ?? -1,
+              nodeName: localNode?.name ?? 'Local',
+            };
+            setNotifications(prev => [tagged, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+          }
+        } catch (e) {
+          console.error('[WS notifications] parse error', e);
+        }
+      };
+
+      ws.onclose = (event) => {
+        if (!isMounted) return;
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
+        const delay = Math.min(1000 * Math.pow(2, retryCount), MAX_RETRY_DELAY_MS);
+        retryCount++;
+        console.debug(`[WS notifications] closed (code=${event.code}), reconnecting in ${delay}ms (attempt ${retryCount})`);
+        reconnectTimer = setTimeout(connect, delay);
+      };
+
+      ws.onerror = (event) => {
+        // onerror always fires before onclose - log it and let onclose handle reconnect
+        console.warn('[WS notifications] error event', event);
+      };
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      // Only close an already-open connection. If still CONNECTING, let onopen
+      // detect isMounted=false and close then — avoids the browser warning
+      // "WebSocket is closed before the connection is established".
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch all notifications when the nodes list changes (e.g. remote node added/removed).
+  // nodesRef ensures fetchNotifications always reads the latest nodes at call time.
   useEffect(() => {
     fetchNotifications();
-    const notificationInterval = setInterval(fetchNotifications, 5000);
-    return () => clearInterval(notificationInterval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Open / close per-remote-node notification WebSocket connections as the nodes list changes.
+  // Uses remoteNotifWsRef to avoid tearing down existing connections on unrelated node updates.
+  useEffect(() => {
+    const remoteNodes = nodes.filter(n => n.type === 'remote');
+    const currentIds = new Set(remoteNotifWsRef.current.keys());
+    const newIds = new Set(remoteNodes.map(n => n.id));
+
+    // Close connections for nodes that are no longer registered as remote
+    for (const id of currentIds) {
+      if (!newIds.has(id)) {
+        remoteNotifWsRef.current.get(id)?.();
+        remoteNotifWsRef.current.delete(id);
+      }
+    }
+
+    // Open connections for newly-added remote nodes
+    for (const rn of remoteNodes) {
+      if (remoteNotifWsRef.current.has(rn.id)) continue;
+
+      let ws: WebSocket | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let active = true;
+      let retryCount = 0;
+
+      const connect = () => {
+        if (!active) return;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/notifications?nodeId=${rn.id}`);
+
+        ws.onopen = () => { if (!active) { ws?.close(); } else { retryCount = 0; } };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data as string);
+            if (msg.type === 'notification' && msg.payload) {
+              // Read node name from ref so it stays fresh even if the node was renamed
+              const current = nodesRef.current.find(n => n.id === rn.id);
+              setNotifications(prev =>
+                [{ ...msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
+                  .sort((a, b) => b.timestamp - a.timestamp)
+              );
+            }
+          } catch (e) {
+            console.error(`[WS notifications:${rn.name}] parse error`, e);
+          }
+        };
+
+        ws.onclose = () => {
+          if (!active) return;
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
+        };
+
+        ws.onerror = (e) => console.warn(`[WS notifications:${rn.name}] error`, e);
+      };
+
+      connect();
+
+      remoteNotifWsRef.current.set(rn.id, () => {
+        active = false;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      });
+    }
+  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup all remote notification WebSocket connections on unmount
+  useEffect(() => {
+    return () => {
+      for (const cleanup of remoteNotifWsRef.current.values()) cleanup();
+      remoteNotifWsRef.current.clear();
+    };
+  }, []);
 
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).
   // Also clears any stale editor/container state that belonged to the previous node.
@@ -180,12 +371,36 @@ export default function EditorLayout() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await apiFetch('/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data);
+      const currentNodes = nodesRef.current;
+      const localNode = currentNodes.find(n => n.type === 'local');
+      const remoteNodes = currentNodes.filter(n => n.type === 'remote');
+
+      const [localResult, ...remoteResults] = await Promise.allSettled([
+        apiFetch('/notifications', { localOnly: true }),
+        ...remoteNodes.map(n => fetchForNode('/notifications', n.id)),
+      ]);
+
+      const all: Notification[] = [];
+
+      if (localResult.status === 'fulfilled' && localResult.value.ok) {
+        const data = await localResult.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+        data.forEach(n => all.push({ ...n, nodeId: localNode?.id ?? -1, nodeName: localNode?.name ?? 'Local' }));
       }
-    } catch (e) { }
+
+      for (let i = 0; i < remoteNodes.length; i++) {
+        const result = remoteResults[i];
+        if (result?.status === 'fulfilled' && result.value.ok) {
+          const data = await result.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+          const rn = remoteNodes[i];
+          data.forEach(n => all.push({ ...n, nodeId: rn.id, nodeName: rn.name }));
+        }
+      }
+
+      all.sort((a, b) => b.timestamp - a.timestamp);
+      setNotifications(all);
+    } catch (e) {
+      console.error('[Notifications] fetch error:', e);
+    }
   };
 
   const fetchImageUpdates = async () => {
@@ -195,32 +410,61 @@ export default function EditorLayout() {
         const data = await res.json();
         setStackUpdates(data);
       }
-    } catch (e) { }
+    } catch (e: unknown) {
+      console.error('[ImageUpdates] fetch failed:', e);
+    }
   };
 
   const markAllRead = async () => {
     try {
-      await apiFetch('/notifications/read', { method: 'POST' });
-      fetchNotifications();
-    } catch (e) { }
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      const unreadNodeIds = [...new Set(notifications.filter(n => !n.is_read).map(n => n.nodeId))];
+      await Promise.allSettled(unreadNodeIds.map(nodeId =>
+        nodeId === localNode?.id
+          ? apiFetch('/notifications/read', { method: 'POST', localOnly: true })
+          : fetchForNode('/notifications/read', nodeId, { method: 'POST' })
+      ));
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to mark notifications as read');
+    }
   };
 
-  const deleteNotification = async (id: number) => {
+  const deleteNotification = async (notif: Notification) => {
     try {
-      await apiFetch(`/notifications/${id}`, { method: 'DELETE' });
-      fetchNotifications();
-    } catch (e) { }
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      if (notif.nodeId === localNode?.id) {
+        await apiFetch(`/notifications/${notif.id}`, { method: 'DELETE', localOnly: true });
+      } else {
+        await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
+      }
+      setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to delete notification');
+    }
   };
 
   const clearAllNotifications = async () => {
     try {
-      await apiFetch('/notifications', { method: 'DELETE' });
-      fetchNotifications();
-    } catch (e) { }
+      const localNode = nodesRef.current.find(n => n.type === 'local');
+      const uniqueNodeIds = [...new Set(notifications.map(n => n.nodeId))];
+      await Promise.allSettled(uniqueNodeIds.map(nodeId =>
+        nodeId === localNode?.id
+          ? apiFetch('/notifications', { method: 'DELETE', localOnly: true })
+          : fetchForNode('/notifications', nodeId, { method: 'DELETE' })
+      ));
+      setNotifications([]);
+    } catch (e: unknown) {
+      const err = e as { message?: string; error?: string };
+      toast.error(err?.message || err?.error || 'Failed to clear notifications');
+    }
   };
 
   useEffect(() => {
     const wsMap: Record<string, WebSocket> = {};
+
     (containers || []).forEach(container => {
       if (!container?.Id) return;
       try {
@@ -238,6 +482,7 @@ export default function EditorLayout() {
             const data = JSON.parse(event.data);
             // Skip initial empty chunks where stats fields are missing
             if (!data.cpu_stats?.cpu_usage || !data.precpu_stats?.cpu_usage || !data.memory_stats?.usage) return;
+
             const cpuDelta = data.cpu_stats.cpu_usage.total_usage - data.precpu_stats.cpu_usage.total_usage;
             const systemDelta = (data.cpu_stats.system_cpu_usage || 0) - (data.precpu_stats.system_cpu_usage || 0);
             const onlineCpus = data.cpu_stats.online_cpus || 1;
@@ -247,37 +492,29 @@ export default function EditorLayout() {
             let currentRx = 0;
             let currentTx = 0;
             if (data.networks) {
-              Object.values(data.networks).forEach((net: any) => {
+              Object.values(data.networks as Record<string, { rx_bytes?: number; tx_bytes?: number }>).forEach((net) => {
                 currentRx += net.rx_bytes || 0;
                 currentTx += net.tx_bytes || 0;
               });
             }
 
-            setContainerStats(prev => {
-              const prevStat = prev[container.Id];
-              // Calculate rate if we have a previous value
-              const rxRate = prevStat?.lastRx !== undefined ? Math.max(0, currentRx - prevStat.lastRx) : 0;
-              const txRate = prevStat?.lastTx !== undefined ? Math.max(0, currentTx - prevStat.lastTx) : 0;
+            // Rate is derived from rawBytesRef which is never cleared on flush,
+            // so the delta is always accurate - no stale-closure risk.
+            const prevRaw = rawBytesRef.current[container.Id];
+            const rxRate = prevRaw ? Math.max(0, currentRx - prevRaw.lastRx) : 0;
+            const txRate = prevRaw ? Math.max(0, currentTx - prevRaw.lastTx) : 0;
+            rawBytesRef.current[container.Id] = { lastRx: currentRx, lastTx: currentTx };
 
-              const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
+            const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
 
-              // Check if values actually changed to prevent infinite re-renders
-              const newCpu = cpuPercent + '%';
-              if (prevStat && prevStat.cpu === newCpu && prevStat.ram === ramUsage && prevStat.lastRx === currentRx && prevStat.lastTx === currentTx) {
-                return prev;
-              }
-
-              return {
-                ...prev,
-                [container.Id]: {
-                  cpu: newCpu,
-                  ram: ramUsage,
-                  net: netIO,
-                  lastRx: currentRx,
-                  lastTx: currentTx
-                }
-              };
-            });
+            // Write into the buffer ref only - zero re-render cost.
+            pendingStatsRef.current[container.Id] = {
+              cpu: cpuPercent + '%',
+              ram: ramUsage,
+              net: netIO,
+              lastRx: currentRx,
+              lastTx: currentTx,
+            };
           } catch {
             // Ignore parse errors
           }
@@ -286,16 +523,39 @@ export default function EditorLayout() {
         // Ignore WebSocket errors
       }
     });
-    return () => {
-      Object.values(wsMap).forEach(ws => {
-        try {
-          ws.close();
-        } catch {
-          // Ignore close errors
+
+    // Flush buffered stats into React state once every 1.5 s.
+    // Snapshot + clear the buffer BEFORE calling setState so the updater
+    // function remains pure (no side-effects inside it).
+    const flushInterval = setInterval(() => {
+      const pending = pendingStatsRef.current;
+      if (Object.keys(pending).length === 0) return;
+      pendingStatsRef.current = {};
+
+      setContainerStats(prev => {
+        let hasChanges = false;
+        const next = { ...prev };
+        for (const [id, newStats] of Object.entries(pending)) {
+          const old = prev[id];
+          if (!old || old.cpu !== newStats.cpu || old.ram !== newStats.ram || old.net !== newStats.net) {
+            next[id] = newStats;
+            hasChanges = true;
+          }
         }
+        return hasChanges ? next : prev;
+      });
+    }, 1500);
+
+    return () => {
+      clearInterval(flushInterval);
+      // Discard buffered stats for the old stack so stale entries don't
+      // briefly appear when a new stack is selected.
+      pendingStatsRef.current = {};
+      Object.values(wsMap).forEach(ws => {
+        try { ws.close(); } catch { /* ignore */ }
       });
     };
-  }, [containers]);
+  }, [containers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadFile = async (filename: string) => {
     if (!filename) return;
@@ -453,9 +713,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to deploy:', error);
-      toast.error(error.message || 'Failed to deploy stack');
+      toast.error((error as Error).message || 'Failed to deploy stack');
     } finally {
       setLoadingAction(null);
     }
@@ -481,9 +741,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to stop:', error);
-      toast.error(error.message || 'Failed to stop stack');
+      toast.error((error as Error).message || 'Failed to stop stack');
     } finally {
       setLoadingAction(null);
     }
@@ -509,9 +769,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to restart:', error);
-      toast.error(error.message || 'Failed to restart stack');
+      toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
       setLoadingAction(null);
     }
@@ -537,9 +797,9 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update:', error);
-      toast.error(error.message || 'Failed to update stack');
+      toast.error((error as Error).message || 'Failed to update stack');
     } finally {
       setLoadingAction(null);
     }
@@ -570,9 +830,9 @@ export default function EditorLayout() {
         setIsEditing(false);
       }
       await refreshStacks();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to delete stack:', error);
-      toast.error(error.message || 'Failed to delete stack');
+      toast.error((error as Error).message || 'Failed to delete stack');
     } finally {
       setLoadingAction(null);
     }
@@ -600,9 +860,9 @@ export default function EditorLayout() {
       await refreshStacks();
       // Auto-load the new stack in the editor pane
       await loadFile(stackName);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to create stack:', error);
-      toast.error(error.message || 'Failed to create stack');
+      toast.error((error as Error).message || 'Failed to create stack');
     }
   };
 
@@ -668,7 +928,7 @@ export default function EditorLayout() {
         {/* Branding Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <img src="/sencho-logo.png" alt="Sencho Logo" className="w-12 h-12" />
+            <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-12 h-12" />
             <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
           </div>
           <TooltipProvider>
@@ -709,7 +969,7 @@ export default function EditorLayout() {
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
-                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                         }`} />
                       {node.name}
                     </div>
@@ -819,7 +1079,7 @@ export default function EditorLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
-          {/* Node Context Pill — visible only when a remote node is active */}
+          {/* Node Context Pill - visible only when a remote node is active */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
@@ -834,156 +1094,161 @@ export default function EditorLayout() {
             )}
           </div>
           <div className="flex items-center gap-4">
-          {/* Home Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => {
-              setSelectedFile(null);
-              setContent('');
-              setOriginalContent('');
-              setEnvContent('');
-              setOriginalEnvContent('');
-              setEnvFiles([]);
-              setSelectedEnvFile('');
-              setEnvExists(false);
-              setContainers([]);
-              setIsEditing(false);
-              setActiveView('dashboard');
-            }}
-            title="Go to Home Dashboard"
-          >
-            <Home className="w-4 h-4 mr-2" />
-            Home
-          </Button>
-          {/* Console Toggle */}
-          <Button
-            variant={activeView === 'host-console' ? 'default' : 'outline'}
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
-          >
-            <Terminal className="w-4 h-4 mr-2" />
-            Console
-          </Button>
-          {/* Resources Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('resources')}
-            title="System Resources"
-          >
-            <HardDrive className="w-4 h-4 mr-2" />
-            Resources
-          </Button>
-          {/* App Store Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('templates')}
-            title="App Store"
-          >
-            <CloudDownload className="w-4 h-4 mr-2" />
-            App Store
-          </Button>
-          {/* Global Observability Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setActiveView('global-observability')}
-            title="Global Logs"
-          >
-            <Activity className="w-4 h-4 mr-2" />
-            Logs
-          </Button>
+            {/* Home Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => {
+                setSelectedFile(null);
+                setContent('');
+                setOriginalContent('');
+                setEnvContent('');
+                setOriginalEnvContent('');
+                setEnvFiles([]);
+                setSelectedEnvFile('');
+                setEnvExists(false);
+                setContainers([]);
+                setIsEditing(false);
+                setActiveView('dashboard');
+              }}
+              title="Go to Home Dashboard"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Home
+            </Button>
+            {/* Console Toggle */}
+            <Button
+              variant={activeView === 'host-console' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
+            >
+              <Terminal className="w-4 h-4 mr-2" />
+              Console
+            </Button>
+            {/* Resources Toggle */}
+            <Button
+              variant={activeView === 'resources' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'resources' ? (selectedFile ? 'editor' : 'dashboard') : 'resources')}
+              title="System Resources"
+            >
+              <HardDrive className="w-4 h-4 mr-2" />
+              Resources
+            </Button>
+            {/* App Store Toggle */}
+            <Button
+              variant={activeView === 'templates' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'templates' ? (selectedFile ? 'editor' : 'dashboard') : 'templates')}
+              title="App Store"
+            >
+              <CloudDownload className="w-4 h-4 mr-2" />
+              App Store
+            </Button>
+            {/* Global Observability Toggle */}
+            <Button
+              variant={activeView === 'global-observability' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'global-observability' ? (selectedFile ? 'editor' : 'dashboard') : 'global-observability')}
+              title="Global Logs"
+            >
+              <Activity className="w-4 h-4 mr-2" />
+              Logs
+            </Button>
 
-          {/* Settings Modal Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-            onClick={() => setSettingsModalOpen(true)}
-            title="Notification Settings"
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
+            {/* Settings Modal Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setSettingsModalOpen(true)}
+              title="Notification Settings"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
 
-          {/* Notifications Popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
-                <Bell className="w-4 h-4" />
-                {notifications.filter(n => !n.is_read).length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                  </span>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
-              <div className="flex items-center justify-between p-4 border-b">
-                <h4 className="font-semibold">Notifications</h4>
-                <div className="flex gap-2">
+            {/* Notifications Popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
+                  <Bell className="w-4 h-4" />
                   {notifications.filter(n => !n.is_read).length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
-                      Mark all as read
-                    </Button>
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
                   )}
-                  {notifications.length > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="w-3 h-3 mr-1" />
-                      Clear all
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <ScrollArea className="h-80">
-                {notifications.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
-                ) : (
-                  <div className="flex flex-col">
-                    {notifications.map((notif: any) => (
-                      <div key={notif.id} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
-                        <div className="flex items-center gap-2 mb-1 pr-6">
-                          <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
-                            {notif.level}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground ml-auto">
-                            {new Date(notif.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="font-medium pr-6">{notif.message}</p>
-
-                        {/* Delete individual notification button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(notif.id);
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="end">
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h4 className="font-semibold">Notifications</h4>
+                  <div className="flex gap-2">
+                    {notifications.filter(n => !n.is_read).length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
+                        Mark all as read
+                      </Button>
+                    )}
+                    {notifications.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Clear all
+                      </Button>
+                    )}
                   </div>
-                )}
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
+                </div>
+                <ScrollArea className="h-80">
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
+                  ) : (
+                    <div className="flex flex-col">
+                      {notifications.map((notif) => (
+                        <div key={`${notif.nodeId}-${notif.id}`} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
+                          <div className="flex items-center gap-2 mb-1 pr-6">
+                            <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
+                              {notif.level}
+                            </Badge>
+                            {nodesRef.current.find(n => n.id === notif.nodeId)?.type === 'remote' && (
+                              <Badge variant="outline" className="text-[10px] font-normal">
+                                {notif.nodeName}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {new Date(notif.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="font-medium pr-6">{notif.message}</p>
+
+                          {/* Delete individual notification button */}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotification(notif);
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </PopoverContent>
+            </Popover>
           </div>{/* end right-side buttons */}
         </div>
 
         {/* Main Workspace */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
           {activeView === 'templates' ? (
             <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
           ) : activeView === 'resources' ? (
@@ -1173,8 +1438,18 @@ export default function EditorLayout() {
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                         <TabsList className="bg-muted">
-                          <TabsTrigger value="compose" className="rounded-lg">compose.yaml</TabsTrigger>
-                          <TabsTrigger value="env" disabled={!envExists} className="rounded-lg">.env</TabsTrigger>
+                          <TabsTrigger value="compose" className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'compose' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">compose.yaml</span>
+                          </TabsTrigger>
+                          <TabsTrigger value="env" disabled={!envExists} className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                            {activeTab === 'env' && (
+                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
+                            )}
+                            <span className="relative z-10">.env</span>
+                          </TabsTrigger>
                         </TabsList>
                       </Tabs>
 
@@ -1225,13 +1500,14 @@ export default function EditorLayout() {
                         </span>
                       </div>
                     )}
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
                       {!isFileLoading && (
                         <Editor
                           height="100%"
                           language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
                           theme={isDarkMode ? 'vs-dark' : 'vs'}
                           value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                          onMount={(editor) => { monacoEditorRef.current = editor; }}
                           onChange={(value) => {
                             if (!isEditing) return; // Prevent changes in view mode
                             if (activeTab === 'compose') {
@@ -1308,8 +1584,8 @@ export default function EditorLayout() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Stack Alert Sheet */}

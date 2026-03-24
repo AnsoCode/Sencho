@@ -1,0 +1,26 @@
+{
+  "name": "sencho",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "cd backend && npm test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnsoCode/Sencho.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/AnsoCode/Sencho/issues"
+  },
+  "homepage": "https://github.com/AnsoCode/Sencho#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

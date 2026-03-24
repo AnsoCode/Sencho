@@ -11,9 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Trash2, HelpCircle } from 'lucide-react';
+import { Trash2, HelpCircle, AlertTriangle, Info, CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
+import { useNodes } from '@/context/NodeContext';
 
 interface StackAlert {
     id?: number;
@@ -31,9 +32,23 @@ interface StackAlertSheetProps {
     stackName: string;
 }
 
+interface AgentStatus {
+    loading: boolean;
+    hasEnabled: boolean;
+    enabledTypes: string[];
+}
+
 export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetProps) {
+    const { activeNode } = useNodes();
+    const isRemote = activeNode?.type === 'remote';
+
     const [alerts, setAlerts] = useState<StackAlert[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [agentStatus, setAgentStatus] = useState<AgentStatus>({
+        loading: false,
+        hasEnabled: false,
+        enabledTypes: [],
+    });
 
     // New Alert Form State
     const [metric, setMetric] = useState('cpu_percent');
@@ -45,18 +60,41 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
     useEffect(() => {
         if (isOpen && stackName) {
             fetchAlerts();
+            fetchAgentStatus();
         }
-    }, [isOpen, stackName]);
+    }, [isOpen, stackName]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchAlerts = async () => {
         try {
-            const res = await apiFetch(`/alerts?stackName=${stackName}`);
+            const res = await apiFetch(`/alerts?stackName=${encodeURIComponent(stackName)}`);
             if (res.ok) {
                 const data = await res.json();
                 setAlerts(data);
             }
         } catch (e) {
-            console.error('Failed to fetch alerts', e);
+            console.error('[StackAlertSheet] Failed to fetch alerts', e);
+        }
+    };
+
+    const fetchAgentStatus = async () => {
+        setAgentStatus(prev => ({ ...prev, loading: true }));
+        try {
+            // Always fetch agents from the active node (proxied via x-node-id for remote)
+            const res = await apiFetch('/agents');
+            if (res.ok) {
+                const agents: Array<{ type: string; enabled: boolean }> = await res.json();
+                const enabled = agents.filter(a => a.enabled);
+                setAgentStatus({
+                    loading: false,
+                    hasEnabled: enabled.length > 0,
+                    enabledTypes: enabled.map(a => a.type),
+                });
+            } else {
+                setAgentStatus({ loading: false, hasEnabled: false, enabledTypes: [] });
+            }
+        } catch (e) {
+            console.error('[StackAlertSheet] Failed to fetch agent status', e);
+            setAgentStatus({ loading: false, hasEnabled: false, enabledTypes: [] });
         }
     };
 
@@ -73,23 +111,26 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
             operator,
             threshold: parseFloat(threshold),
             duration_mins: parseInt(duration, 10),
-            cooldown_mins: parseInt(cooldown, 10)
+            cooldown_mins: parseInt(cooldown, 10),
         };
 
         try {
             const res = await apiFetch('/alerts', {
                 method: 'POST',
-                body: JSON.stringify(newAlert)
+                body: JSON.stringify(newAlert),
             });
             if (res.ok) {
                 toast.success('Alert rule added.');
                 setThreshold('');
                 fetchAlerts();
             } else {
-                toast.error('Failed to add alert rule.');
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || err?.message || 'Failed to add alert rule.');
+                console.error('[StackAlertSheet] addAlert failed:', err);
             }
         } catch (e) {
-            toast.error('Network error.');
+            console.error('[StackAlertSheet] addAlert threw:', e);
+            toast.error('Network error. Could not reach the node.');
         } finally {
             setIsLoading(false);
         }
@@ -103,10 +144,11 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                 toast.success('Alert rule deleted.');
                 fetchAlerts();
             } else {
-                toast.error('Failed to delete alert rule.');
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || 'Failed to delete alert rule.');
             }
-        } catch (e) {
-            toast.error('Network error.');
+        } catch {
+            toast.error('Network error. Could not reach the node.');
         } finally {
             setIsLoading(false);
         }
@@ -118,12 +160,81 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
         memory_mb: 'Memory Usage (MB)',
         net_rx: 'Network In (MB)',
         net_tx: 'Network Out (MB)',
-        restart_count: 'Restart Count'
+        restart_count: 'Restart Count',
+    };
+
+    const agentTypeLabels: Record<string, string> = {
+        discord: 'Discord',
+        slack: 'Slack',
+        webhook: 'Webhook',
+    };
+
+    const renderAgentStatusBanner = () => {
+        if (agentStatus.loading) {
+            return (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    <span>Checking notification channels…</span>
+                </div>
+            );
+        }
+
+        if (isRemote) {
+            return (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                    <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                        <p className="font-medium text-blue-700 dark:text-blue-400">
+                            Remote node: <span className="font-semibold">{activeNode?.name}</span>
+                        </p>
+                        <p className="text-muted-foreground">
+                            Alert rules are stored and evaluated on this remote instance. Notifications are dispatched using that node's configured channels.
+                        </p>
+                        {!agentStatus.hasEnabled && (
+                            <p className="text-amber-600 dark:text-amber-400 font-medium mt-1">
+                                No notification channels are configured on this remote node. Open Settings → Notifications to configure them.
+                            </p>
+                        )}
+                        {agentStatus.hasEnabled && (
+                            <p className="text-green-600 dark:text-green-400 font-medium mt-1">
+                                Active channels: {agentStatus.enabledTypes.map(t => agentTypeLabels[t] ?? t).join(', ')}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        if (!agentStatus.hasEnabled) {
+            return (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
+                    <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="font-medium text-amber-700 dark:text-amber-400">No notification channels configured</p>
+                        <p className="text-muted-foreground mt-0.5">
+                            Alert rules will be saved and evaluated, but no notifications will be dispatched. Configure Discord, Slack, or a webhook in{' '}
+                            <span className="font-medium">Settings → Notifications</span>.
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                <div>
+                    <p className="font-medium text-green-700 dark:text-green-400">
+                        Notifications active via {agentStatus.enabledTypes.map(t => agentTypeLabels[t] ?? t).join(', ')}
+                    </p>
+                </div>
+            </div>
+        );
     };
 
     return (
         <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <SheetContent className="overflow-y-auto sm:max-w-[400px]">
+            <SheetContent className="overflow-y-auto sm:max-w-[420px]">
                 <SheetHeader>
                     <SheetTitle>Stack Alerts: {stackName}</SheetTitle>
                     <SheetDescription>
@@ -132,7 +243,10 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                 </SheetHeader>
 
                 <TooltipProvider>
-                    <div className="mt-6 space-y-6">
+                    <div className="mt-4 space-y-5">
+                        {/* Notification agent status banner */}
+                        {renderAgentStatusBanner()}
+
                         {/* List Existing Alerts */}
                         <div className="space-y-3">
                             <h4 className="text-sm font-semibold">Existing Rules</h4>
@@ -299,7 +413,11 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                             </div>
 
                             <Button className="w-full mt-2" onClick={addAlert} disabled={isLoading}>
-                                Add Rule
+                                {isLoading ? (
+                                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+                                ) : (
+                                    'Add Rule'
+                                )}
                             </Button>
                         </div>
                     </div>

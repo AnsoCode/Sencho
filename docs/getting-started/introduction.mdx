@@ -1,0 +1,32 @@
+---
+title: Introduction
+description: What Sencho is and why you might want it.
+---
+
+Sencho is a self-hosted Docker Compose management dashboard. It gives you a clean web UI to deploy, manage, and monitor your Docker Compose stacks — locally or across multiple remote servers — without touching a terminal.
+
+<Frame>
+  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing system stats and container metrics" />
+</Frame>
+
+## Key concepts
+
+- **Stacks** — a Docker Compose project living in your `COMPOSE_DIR`. Sencho treats each subdirectory as a stack.
+- **Nodes** — a Sencho instance. Your local machine is always the default node. Add remote nodes by pointing Sencho at another Sencho instance's API URL.
+- **Resources** — images, volumes, and networks that belong to your stacks (managed) or exist outside them (external/unused).
+
+<Note>
+  Sencho never accesses remote servers directly via SSH or Docker TCP. Remote management works by proxying API requests to another running Sencho instance.
+</Note>
+
+## What you can do
+
+- **Deploy and control stacks** — create, start, stop, restart, and delete Compose stacks with one click
+- **Edit files in-browser** — full Monaco editor for `compose.yaml` and `.env` files
+- **Monitor in real-time** — live CPU, RAM, disk, and network stats with historical charts
+- **Stream logs** — tail container logs individually or aggregate all stacks in one view
+- **Manage resources** — browse, filter, and prune Docker images, volumes, and networks
+- **Deploy from the App Store** — one-click deployment from a curated template registry
+- **Run a host console** — interactive terminal on the host OS directly in the browser
+- **Set alerts** — threshold-based notifications via Discord, Slack, or any webhook
+- **Manage multiple servers** — add remote Sencho instances as nodes and switch between them seamlessly

@@ -1,0 +1,60 @@
+---
+title: Dashboard
+description: Real-time system stats, historical metrics, and a quick-start converter for your host machine.
+---
+
+The **Home** tab is the first thing you see after logging in. It shows a live snapshot of your host's health alongside container activity across all stacks.
+
+<Frame>
+  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing container stats, system stats, and historical charts" />
+</Frame>
+
+## Container stats
+
+The top row summarises container state at a glance:
+
+| Card | What it shows |
+|------|---------------|
+| **Active Containers** | Running containers — broken down as `N managed · N external` |
+| **Exited Containers** | Stopped or crashed containers |
+| **Docker Network** | Current inbound/outbound network throughput across all containers |
+
+**Managed** means the container belongs to a stack in your `COMPOSE_DIR`. **External** means it exists on the Docker host but was started outside Sencho (e.g. by another Compose project or `docker run`).
+
+## System stats
+
+The second row shows host-level resource usage, polled every few seconds:
+
+| Card | What it shows |
+|------|---------------|
+| **Host CPU** | Current CPU usage percentage and core count |
+| **Host RAM** | Used / total memory in GB and percentage |
+| **Host Disk** | Used / total disk space for the primary mount point |
+
+When any value exceeds configured thresholds (set in **Settings → System Limits**), the card changes colour as a visual warning.
+
+## Historical metrics charts
+
+Two area charts display time-series data sampled at one-minute intervals, retained for up to 24 hours (configurable in **Settings → Developer**):
+
+- **Normalized CPU Usage** — total CPU percentage across all managed containers, normalised over all host cores
+- **Normalized RAM Usage** — total memory allocated by managed containers, in GB
+
+The x-axis shows time labels. Hover over a data point to see the exact value at that moment.
+
+<Note>
+  Charts only show data from the moment Sencho started. If you just installed Sencho, they will be mostly empty until metrics accumulate.
+</Note>
+
+## Convert `docker run` to Compose
+
+The bottom panel provides a quick converter: paste any `docker run` command and Sencho transforms it into a valid `docker-compose.yaml` snippet.
+
+```bash
+# Example input
+docker run -d --name myapp -p 8080:80 -e TZ=UTC -v /data:/app/data nginx:latest
+```
+
+Click **Convert** and the output YAML appears ready to copy. You can then create a new stack and paste it into the editor.
+
+This is useful when migrating existing containers to managed Compose stacks without having to write YAML by hand.

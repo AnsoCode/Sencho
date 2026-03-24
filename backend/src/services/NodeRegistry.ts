@@ -157,14 +157,14 @@ export class NodeRegistry {
         const headers = { Authorization: `Bearer ${node.api_token}` };
 
         try {
-            // Step 1: Verify auth. A 401 here means wrong token — surface that clearly.
+            // Step 1: Verify auth. A 401 here means wrong token - surface that clearly.
             const authRes = await axios.get(`${baseUrl}/api/auth/check`, { headers, timeout: 8000 });
             if (authRes.status !== 200) throw new Error(`Unexpected status ${authRes.status}`);
 
             db.updateNodeStatus(node.id, 'online');
 
             // Step 2: Fetch Docker stats in parallel. Use allSettled so a slow or missing
-            // endpoint doesn't fail the whole test — each field falls back to '-' gracefully.
+            // endpoint doesn't fail the whole test - each field falls back to '-' gracefully.
             const [statsResult, sysResult, imagesResult] = await Promise.allSettled([
                 axios.get(`${baseUrl}/api/stats`, { headers, timeout: 8000 }),
                 axios.get(`${baseUrl}/api/system/stats`, { headers, timeout: 8000 }),

@@ -13,9 +13,16 @@ import { Label } from './ui/label';
 
 interface Stats {
   active: number;
+  managed: number;
+  unmanaged: number;
   exited: number;
   total: number;
-  inactive: number;
+}
+
+interface MetricPoint {
+  timestamp: number;
+  cpu_percent: number;
+  memory_mb: number;
 }
 
 interface SystemStats {
@@ -60,13 +67,13 @@ export default function HomeDashboard() {
   const [convertedYaml, setConvertedYaml] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
-  const [stats, setStats] = useState<Stats>({ active: 0, exited: 0, total: 0, inactive: 0 });
+  const [stats, setStats] = useState<Stats>({ active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 });
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
-  const [metrics, setMetrics] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<MetricPoint[]>([]);
 
   // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
-    setStats({ active: 0, exited: 0, total: 0, inactive: 0 });
+    setStats({ active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 });
     const fetchStats = async () => {
       try {
         const res = await apiFetch('/stats');
@@ -174,14 +181,20 @@ export default function HomeDashboard() {
         method: 'POST',
         body: JSON.stringify({ stackName }),
       });
-      if (!createResponse.ok) throw new Error('Failed to create stack');
+      if (!createResponse.ok) {
+        const err = await createResponse.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to create stack');
+      }
 
       // Save the converted YAML content
       const saveResponse = await apiFetch(`/stacks/${stackName}`, {
         method: 'PUT',
         body: JSON.stringify({ content: convertedYaml }),
       });
-      if (!saveResponse.ok) throw new Error('Failed to save stack content');
+      if (!saveResponse.ok) {
+        const err = await saveResponse.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to save stack content');
+      }
 
       setCreateDialogOpen(false);
       setNewStackName('');
@@ -190,7 +203,7 @@ export default function HomeDashboard() {
       window.location.reload(); // Refresh to show new stack
     } catch (error) {
       console.error('Failed to create stack:', error);
-      toast.error('Failed to create stack');
+      toast.error((error as Error).message || 'Failed to create stack');
     }
   };
 
@@ -209,7 +222,9 @@ export default function HomeDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-500">{stats.active}</div>
-            <p className="text-xs text-muted-foreground mt-1">Currently running</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.managed} managed · {stats.unmanaged} external
+            </p>
           </CardContent>
         </Card>
 

@@ -1,0 +1,95 @@
+---
+title: Alerts & Notifications
+description: Set threshold-based alerts on container metrics and route them to Discord, Slack, or any webhook.
+---
+
+Sencho can watch your containers for resource anomalies and notify you when thresholds are breached. Alerts are defined per stack, and notifications are delivered through external agents you configure.
+
+<Frame>
+  <img src="/images/alerts-notifications/notifications-settings.png" alt="Notifications & Alerts settings showing Discord, Slack, and Webhook tabs" />
+</Frame>
+
+## How alerts work
+
+Sencho's monitoring service samples container metrics every minute and evaluates all defined alert rules. When a rule's condition holds true for the configured duration, a notification is dispatched. A cooldown period prevents the same alert from firing repeatedly.
+
+## Setting up a notification agent
+
+At least one agent must be enabled before alerts can be delivered. Go to **Settings → Notifications**.
+
+### Discord
+
+1. In Discord, go to your server's **Settings → Integrations → Webhooks**
+2. Click **New Webhook**, choose a channel, and copy the webhook URL
+3. In Sencho, open **Settings → Notifications → Discord**, paste the URL, enable the toggle, and click **Save**
+4. Click **Test** to send a test message
+
+### Slack
+
+1. In Slack, go to **api.slack.com/apps**, create an app, and add the **Incoming Webhooks** feature
+2. Activate it and copy the generated webhook URL for your chosen channel
+3. In Sencho, open **Settings → Notifications → Slack**, paste the URL, enable the toggle, and click **Save**
+
+### Generic Webhook
+
+Any HTTP endpoint that accepts a POST with a JSON body can receive Sencho alerts. Go to **Settings → Notifications → Webhook**, enter the URL, and click **Save**.
+
+The payload format is:
+```json
+{
+  "level": "warning",
+  "message": "cpu_percent exceeded 90% for 5 minutes on stack my-app",
+  "timestamp": "2026-03-22T10:00:00.000Z"
+}
+```
+
+## Creating stack alerts
+
+Stack alerts are configured per-stack. Right-click a stack in the sidebar (or click the **⋮** button) and select **Alerts**.
+
+<Frame>
+  <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu showing the Alerts option" />
+</Frame>
+
+The alerts sheet shows existing rules for the stack and a form to create new ones.
+
+### Alert fields
+
+| Field | Description |
+|-------|-------------|
+| **Metric** | The container metric to watch |
+| **Operator** | Comparison operator: `>`, `>=`, `<`, `<=`, `==` |
+| **Threshold** | The value to compare against |
+| **Duration (minutes)** | How long the condition must hold before firing |
+| **Cooldown (minutes)** | Minimum time between repeated notifications for this rule |
+
+### Available metrics
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| `cpu_percent` | % | CPU usage relative to total host cores |
+| `memory_mb` | MB | RSS memory used by the container |
+| `memory_percent` | % | Memory used as a fraction of the host total |
+| `net_rx` | bytes/s | Inbound network rate |
+| `net_tx` | bytes/s | Outbound network rate |
+| `restart_count` | count | Number of times the container has restarted |
+
+### Example: alert on high CPU
+
+To alert when any container in a stack uses more than 80% CPU for over 5 consecutive minutes, with a 30-minute cooldown:
+
+| Field | Value |
+|-------|-------|
+| Metric | `cpu_percent` |
+| Operator | `>` |
+| Threshold | `80` |
+| Duration | `5` |
+| Cooldown | `30` |
+
+## Notification history
+
+All dispatched notifications appear in the **notification bell** (top-right of the nav bar). Click it to see recent alerts with their level, message, and timestamp. Mark all as read or clear individual entries from there.
+
+<Note>
+  Notifications only reach external agents (Discord, Slack, Webhook) if at least one agent is enabled. Dashboard notifications appear regardless.
+</Note>

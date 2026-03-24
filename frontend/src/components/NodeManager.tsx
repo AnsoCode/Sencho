@@ -42,7 +42,7 @@ export function NodeManager() {
   const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
   const [deletingNode, setDeletingNode] = useState<Node | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
-  const [testResult, setTestResult] = useState<{ nodeId: number; info: any } | null>(null);
+  const [testResult, setTestResult] = useState<{ nodeId: number; info: { serverVersion?: string; os?: string; architecture?: string; containers?: number; images?: number; cpus?: number } } | null>(null);
 
   // Node token generation state
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
@@ -84,8 +84,8 @@ export function NodeManager() {
       }
 
       await refreshNodes();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to create node');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to create node');
     }
   };
 
@@ -105,8 +105,8 @@ export function NodeManager() {
       setEditingNodeId(null);
       setFormData(defaultFormData);
       await refreshNodes();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update node');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to update node');
     }
   };
 
@@ -135,8 +135,8 @@ export function NodeManager() {
       setDeleteOpen(false);
       setDeletingNode(null);
       await refreshNodes();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete node');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to delete node');
     }
   };
 
@@ -153,8 +153,8 @@ export function NodeManager() {
         toast.error(`Failed to connect: ${result.error}`);
       }
       await refreshNodes();
-    } catch (error: any) {
-      toast.error(error.message || 'Connection test failed');
+    } catch (error) {
+      toast.error((error as Error).message || 'Connection test failed');
     } finally {
       setTesting(null);
     }
@@ -169,8 +169,8 @@ export function NodeManager() {
       const { token } = await res.json();
       setGeneratedToken(token);
       toast.success('Node token generated');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to generate token');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to generate token');
     } finally {
       setGeneratingToken(false);
     }
@@ -247,13 +247,13 @@ export function NodeManager() {
             <SelectItem value="local">
               <div className="flex items-center gap-2">
                 <Monitor className="w-4 h-4" />
-                Local — Docker socket on this machine
+                Local - Docker socket on this machine
               </div>
             </SelectItem>
             <SelectItem value="remote">
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                Remote — another Sencho instance
+                Remote - another Sencho instance
               </div>
             </SelectItem>
           </SelectContent>

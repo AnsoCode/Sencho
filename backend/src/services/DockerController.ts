@@ -11,6 +11,32 @@ import { NodeRegistry } from './NodeRegistry';
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
+export interface ClassifiedImage {
+  Id: string;
+  RepoTags: string[];
+  Size: number;
+  Containers: number;
+  managedBy: string | null;
+  managedStatus: 'managed' | 'unmanaged' | 'unused';
+}
+
+export interface ClassifiedVolume {
+  Name: string;
+  Driver: string;
+  Mountpoint: string;
+  managedBy: string | null;
+  managedStatus: 'managed' | 'unmanaged';
+}
+
+export interface ClassifiedNetwork {
+  Id: string;
+  Name: string;
+  Driver: string;
+  Scope: string;
+  managedBy: string | null;
+  managedStatus: 'managed' | 'unmanaged' | 'system';
+}
+
 class DockerController {
   private docker: Docker;
   private nodeId: number;
@@ -65,7 +91,7 @@ class DockerController {
     const calculateReclaimableVolumes = (items: any[]) => {
       if (!items || !Array.isArray(items)) return 0;
       return items.filter(i => i.UsageData?.RefCount === 0).reduce((acc, item) => {
-        let size = item.UsageData?.Size || 0;
+        const size = item.UsageData?.Size || 0;
         return acc + size;
       }, 0);
     };
@@ -110,6 +136,172 @@ class DockerController {
   public async getNetworks() {
     const data = await this.docker.listNetworks();
     return this.validateApiData<any[]>(data);
+  }
+
+  public async getClassifiedResources(knownStackNames: string[]): Promise<{
+    images: ClassifiedImage[];
+    volumes: ClassifiedVolume[];
+    networks: ClassifiedNetwork[];
+  }> {
+    const SYSTEM_NETWORKS = new Set(['bridge', 'host', 'none']);
+    const knownSet = new Set(knownStackNames);
+
+    const [rawImages, rawVolumeData, rawNetworks, allContainers] = await Promise.all([
+      this.docker.listImages({ all: false }),
+      this.docker.listVolumes(),
+      this.docker.listNetworks(),
+      this.docker.listContainers({ all: true }),
+    ]);
+
+    const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
+
+    // Build imageId → project mapping from container labels
+    const imageToProject = new Map<string, string>();
+    for (const c of allContainers as any[]) {
+      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
+      if (project && c.ImageID) imageToProject.set(c.ImageID, project);
+    }
+
+    const images: ClassifiedImage[] = this.validateApiData<any[]>(rawImages).map((img: any) => {
+      const project = imageToProject.get(img.Id) ?? null;
+      const managedStatus: ClassifiedImage['managedStatus'] =
+        img.Containers === 0 ? 'unused' :
+        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+      return {
+        Id: img.Id,
+        RepoTags: img.RepoTags ?? [],
+        Size: img.Size ?? 0,
+        Containers: img.Containers ?? 0,
+        managedBy: managedStatus === 'managed' ? project : null,
+        managedStatus,
+      };
+    });
+
+    const volumes: ClassifiedVolume[] = rawVolumes.map((vol: any) => {
+      const project: string | undefined = vol.Labels?.['com.docker.compose.project'];
+      const managedStatus: ClassifiedVolume['managedStatus'] =
+        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+      return {
+        Name: vol.Name,
+        Driver: vol.Driver,
+        Mountpoint: vol.Mountpoint,
+        managedBy: managedStatus === 'managed' ? project! : null,
+        managedStatus,
+      };
+    });
+
+    const networks: ClassifiedNetwork[] = this.validateApiData<any[]>(rawNetworks).map((net: any) => {
+      if (SYSTEM_NETWORKS.has(net.Name)) {
+        return { Id: net.Id, Name: net.Name, Driver: net.Driver, Scope: net.Scope, managedBy: null, managedStatus: 'system' as const };
+      }
+      const project: string | undefined = net.Labels?.['com.docker.compose.project'];
+      const managedStatus: ClassifiedNetwork['managedStatus'] =
+        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+      return {
+        Id: net.Id,
+        Name: net.Name,
+        Driver: net.Driver,
+        Scope: net.Scope,
+        managedBy: managedStatus === 'managed' ? project! : null,
+        managedStatus,
+      };
+    });
+
+    return { images, volumes, networks };
+  }
+
+  public async pruneManagedOnly(
+    target: 'images' | 'volumes' | 'networks',
+    knownStackNames: string[]
+  ): Promise<{ success: boolean; reclaimedBytes: number }> {
+    const knownSet = new Set(knownStackNames);
+    let reclaimedBytes = 0;
+
+    if (target === 'volumes') {
+      const rawVolumeData = await this.docker.listVolumes();
+      const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
+      const prunable = rawVolumes.filter((v: any) => {
+        const project: string | undefined = v.Labels?.['com.docker.compose.project'];
+        return project && knownSet.has(project) && (v.UsageData?.RefCount ?? 1) === 0;
+      });
+      for (const vol of prunable) {
+        try {
+          await this.docker.getVolume(vol.Name).remove({ force: true });
+          reclaimedBytes += vol.UsageData?.Size ?? 0;
+        } catch (e) {
+          console.error(`[pruneManagedOnly] Failed to remove volume ${vol.Name}:`, e);
+        }
+      }
+    } else if (target === 'networks') {
+      const rawNetworks = await this.docker.listNetworks();
+      const prunable = (rawNetworks as any[]).filter((n: any) => {
+        const project: string | undefined = n.Labels?.['com.docker.compose.project'];
+        return project && knownSet.has(project);
+      });
+      for (const net of prunable) {
+        try {
+          await this.docker.getNetwork(net.Id).remove({ force: true });
+        } catch (e) {
+          console.error(`[pruneManagedOnly] Failed to remove network ${net.Name}:`, e);
+        }
+      }
+    } else if (target === 'images') {
+      const allContainers = await this.docker.listContainers({ all: true });
+      const unmanagedImageIds = new Set<string>();
+      for (const c of allContainers as any[]) {
+        const project: string | undefined = c.Labels?.['com.docker.compose.project'];
+        if (!project || !knownSet.has(project)) unmanagedImageIds.add(c.ImageID);
+      }
+      const rawImages = await this.docker.listImages({ all: false });
+      const prunable = (rawImages as any[]).filter((img: any) =>
+        img.Containers === 0 && !unmanagedImageIds.has(img.Id)
+      );
+      for (const img of prunable) {
+        try {
+          await this.docker.getImage(img.Id).remove({ force: true });
+          reclaimedBytes += img.Size ?? 0;
+        } catch (e) {
+          console.error(`[pruneManagedOnly] Failed to remove image ${img.Id}:`, e);
+        }
+      }
+    }
+
+    return { success: true, reclaimedBytes };
+  }
+
+  public async getDiskUsageClassified(knownStackNames: string[]): Promise<{
+    reclaimableImages: number;
+    reclaimableContainers: number;
+    reclaimableVolumes: number;
+    managedImageBytes: number;
+    unmanagedImageBytes: number;
+    managedVolumeBytes: number;
+    unmanagedVolumeBytes: number;
+  }> {
+    const [base, classified] = await Promise.all([
+      this.getDiskUsage(),
+      this.getClassifiedResources(knownStackNames),
+    ]);
+
+    const managedImageBytes = classified.images
+      .filter(i => i.managedStatus === 'managed')
+      .reduce((acc, i) => acc + i.Size, 0);
+    const unmanagedImageBytes = classified.images
+      .filter(i => i.managedStatus === 'unmanaged')
+      .reduce((acc, i) => acc + i.Size, 0);
+
+    const rawVolumeData = await this.docker.listVolumes();
+    const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
+    const knownSet = new Set(knownStackNames);
+
+    const managedVolumeBytes = rawVolumes
+      .filter((v: any) => knownSet.has(v.Labels?.['com.docker.compose.project'] ?? ''))
+      .reduce((acc: number, v: any) => acc + (v.UsageData?.Size ?? 0), 0);
+    const unmanagedVolumeBytes = rawVolumes
+      .filter((v: any) => !knownSet.has(v.Labels?.['com.docker.compose.project'] ?? ''))
+      .reduce((acc: number, v: any) => acc + (v.UsageData?.Size ?? 0), 0);
+
+    return { ...base, managedImageBytes, unmanagedImageBytes, managedVolumeBytes, unmanagedVolumeBytes };
   }
 
   public async removeImage(id: string) {
@@ -425,15 +617,27 @@ class DockerController {
     const stats = await container.stats({ stream: true });
 
     stats.on('data', (chunk: Buffer) => {
-      ws.send(chunk.toString());
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(chunk.toString());
+      }
     });
 
     stats.on('error', (err: Error) => {
-      ws.send(JSON.stringify({ error: err.message }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ error: err.message }));
+      }
     });
 
     stats.on('end', () => {
-      ws.send(JSON.stringify({ end: true }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ end: true }));
+      }
+    });
+
+    // Destroy the Docker stats stream when the WebSocket closes to prevent
+    // orphaned streams polling the daemon after client disconnect.
+    ws.on('close', () => {
+      try { (stats as any).destroy(); } catch { /* stream already ended */ }
     });
   }
 
@@ -539,7 +743,7 @@ class DockerController {
   }
 }
 
-export let globalDockerNetwork = { rxSec: 0, txSec: 0 };
+export const globalDockerNetwork = { rxSec: 0, txSec: 0 };
 let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
 
 export const updateGlobalDockerNetwork = async () => {

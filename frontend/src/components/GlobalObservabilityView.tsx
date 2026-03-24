@@ -7,6 +7,12 @@ import { RefreshCw, Download, Trash2, Search, Filter } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 
+// Max entries held in React state. Bounds SSE-mode memory growth.
+const MAX_LOG_ENTRIES = 2000;
+// Max rows rendered as DOM nodes at once. Prevents the renderer from
+// creating thousands of DOM nodes that OOM the browser on RAM-constrained hosts.
+const MAX_DISPLAY_ROWS = 300;
+
 
 interface LogEntry {
     stackName: string;
@@ -15,6 +21,9 @@ interface LogEntry {
     level: string;
     message: string;
     timestampMs: number;
+    // Assigned client-side at ingestion. Gives React a stable, collision-free
+    // key so the slice window can shift without touching existing DOM nodes.
+    _id: number;
 }
 
 export function GlobalObservabilityView() {
@@ -37,6 +46,9 @@ export function GlobalObservabilityView() {
 
     // SSE throttle buffer
     const bufferRef = useRef<LogEntry[]>([]);
+    // Monotonic counter for stable React keys. Incremented once per log entry
+    // at ingestion so duplicate-content lines never share a key.
+    const logIdRef = useRef(0);
 
     // Fetch settings on mount
     useEffect(() => {
@@ -81,8 +93,9 @@ export function GlobalObservabilityView() {
             eventSource.onmessage = (event) => {
                 try {
                     const entry: LogEntry = JSON.parse(event.data);
+                    entry._id = ++logIdRef.current;
                     bufferRef.current.push(entry);
-                } catch (e) { /* ignore parse errors */ }
+                } catch { /* ignore parse errors */ }
             };
 
             eventSource.onerror = () => {
@@ -96,7 +109,7 @@ export function GlobalObservabilityView() {
                     setLogs(prev => {
                         const merged = [...prev, ...batch];
                         merged.sort((a, b) => a.timestampMs - b.timestampMs);
-                        return merged.slice(-10000);
+                        return merged.slice(-MAX_LOG_ENTRIES);
                     });
                 }
             }, 500);
@@ -115,7 +128,11 @@ export function GlobalObservabilityView() {
                 try {
                     const logsRes = await apiFetch('/logs/global');
                     if (logsRes.ok) {
-                        setLogs(await logsRes.json());
+                        const data: LogEntry[] = await logsRes.json();
+                        // Stamp each entry with a monotonic _id at ingestion so React
+                        // has a stable, collision-free key for every log line.
+                        data.forEach(entry => { entry._id = ++logIdRef.current; });
+                        setLogs(data);
                     }
                 } catch (error) {
                     console.error('Failed to fetch global logs:', error);
@@ -156,8 +173,10 @@ export function GlobalObservabilityView() {
     }, [logs, selectedStacks, streamFilter, searchQuery, clearedAt]);
 
     useEffect(() => {
-        if (isAutoScrollEnabled) {
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (isAutoScrollEnabled && bottomRef.current) {
+            // Use instant scroll to avoid stacking smooth-scroll animations on every
+            // 5-second poll cycle, which wastes layout work and renderer memory.
+            bottomRef.current.scrollIntoView({ behavior: 'instant' });
         }
     }, [filteredLogs, isAutoScrollEnabled]);
 
@@ -224,7 +243,7 @@ export function GlobalObservabilityView() {
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Select value={streamFilter} onValueChange={(val: any) => setStreamFilter(val)}>
+                <Select value={streamFilter} onValueChange={(val) => setStreamFilter(val as 'ALL' | 'STDOUT' | 'STDERR')}>
                     <SelectTrigger className="w-[110px] h-8 text-sm">
                         <SelectValue placeholder="Stream" />
                     </SelectTrigger>
@@ -258,8 +277,13 @@ export function GlobalObservabilityView() {
             <div className="flex-1 overflow-auto p-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent" onScroll={handleScroll}>
                 {filteredLogs.length > 0 ? (
                     <>
-                        {filteredLogs.map((log, idx) => (
-                            <div key={idx} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
+                        {filteredLogs.length > MAX_DISPLAY_ROWS && (
+                            <div className="text-gray-600 italic text-xs text-center mb-3 py-1 border-b border-gray-800">
+                                Showing last {MAX_DISPLAY_ROWS} of {filteredLogs.length} matching entries. Use filters or clear logs to see earlier entries.
+                            </div>
+                        )}
+                        {filteredLogs.slice(-MAX_DISPLAY_ROWS).map((log) => (
+                            <div key={log._id} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
                                 <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
                                 <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
                                 <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-green-500'}`}>{log.level}:</span>

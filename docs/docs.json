@@ -1,0 +1,56 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Sencho",
+  "colors": {
+    "primary": "#0F172A",
+    "light": "#3B82F6",
+    "dark": "#0F172A"
+  },
+  "logo": {
+    "light": "/images/logo/logo-light.svg",
+    "dark": "/images/logo/logo-dark.svg",
+    "href": "/"
+  },
+  "favicon": "/images/logo/favicon.ico",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "getting-started/introduction",
+          "getting-started/quickstart",
+          "getting-started/configuration"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "features/overview",
+          "features/dashboard",
+          "features/stack-management",
+          "features/editor",
+          "features/resources",
+          "features/app-store",
+          "features/global-observability",
+          "features/host-console",
+          "features/multi-node",
+          "features/alerts-notifications"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/settings"
+        ]
+      },
+      {
+        "group": "Operations",
+        "pages": [
+          "operations/troubleshooting",
+          "operations/backup"
+        ]
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,11 @@ export interface TemplateEnv {
     default?: string;
 }
 
+interface TemplateVolume {
+    container?: string;
+    bind?: string;
+}
+
 export interface Template {
     type?: number;
     title: string;
@@ -24,13 +29,14 @@ export interface Template {
     logo?: string;
     image?: string;
     ports?: string[];
-    volumes?: any[];
+    volumes?: TemplateVolume[];
     env?: TemplateEnv[];
     categories?: string[];
     github_url?: string;
     docs_url?: string;
     architectures?: string[];
     stars?: number;
+    source?: string;
 }
 
 interface AppStoreViewProps {
@@ -48,6 +54,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [isDeploying, setIsDeploying] = useState(false);
     const [loading, setLoading] = useState(true);
 
+    const [selectedCategory, setSelectedCategory] = useState<string>('All');
     const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
     const [portVars, setPortVars] = useState<Record<string, string>>({});
     const [isDescExpanded, setIsDescExpanded] = useState(false);
@@ -66,8 +73,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             if (!res.ok) throw new Error('Failed to fetch templates');
             const data = await res.json();
             setTemplates(data || []);
-        } catch (err: any) {
-            toast.error(err.message || "Failed to load App Shop");
+        } catch (err) {
+            toast.error((err as Error).message || "Failed to load App Shop");
         } finally {
             setLoading(false);
         }
@@ -93,7 +100,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
         // Initialize Volumes
         const initVols: Record<string, string> = {};
-        t.volumes?.forEach((v: any) => {
+        t.volumes?.forEach((v) => {
             if (v.container) {
                 initVols[v.container] = v.bind || `./${v.container.split('/').filter(Boolean).pop() || 'data'}`;
             }
@@ -144,7 +151,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
         // Process Volumes
         if (modifiedTemplate.volumes) {
-            modifiedTemplate.volumes = modifiedTemplate.volumes.map((v: any) => {
+            modifiedTemplate.volumes = modifiedTemplate.volumes.map((v) => {
                 if (v.container && volVars[v.container] !== undefined) {
                     return { ...v, bind: volVars[v.container] };
                 }
@@ -173,18 +180,28 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             toast.success(`${selectedTemplate?.title} deployed successfully!`);
             setIsSheetOpen(false);
             onDeploySuccess(stackName.trim());
-        } catch (err: any) {
-            toast.error(err.message || 'Deployment failed');
+        } catch (err) {
+            toast.error((err as Error).message || 'Deployment failed');
         } finally {
             setIsDeploying(false);
         }
     };
 
-    const filtered = templates.filter(t =>
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (t.categories && t.categories.join(' ').toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const categories = useMemo(() => {
+        const cats = new Set<string>();
+        templates.forEach(t => t.categories?.forEach(c => cats.add(c)));
+        return ['All', ...Array.from(cats).sort()];
+    }, [templates]);
+
+    const filtered = useMemo(() => templates.filter(t => {
+        const matchesCategory = selectedCategory === 'All' || t.categories?.includes(selectedCategory);
+        const q = searchQuery.toLowerCase();
+        const matchesSearch = !q ||
+            t.title.toLowerCase().includes(q) ||
+            t.description?.toLowerCase().includes(q) ||
+            (t.categories && t.categories.join(' ').toLowerCase().includes(q));
+        return matchesCategory && matchesSearch;
+    }), [templates, selectedCategory, searchQuery]);
 
     return (
         <div className="flex flex-col h-full space-y-6">
@@ -196,10 +213,31 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                         placeholder="Search App Store..."
                         className="pl-8"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => { setSearchQuery(e.target.value); }}
                     />
                 </div>
             </div>
+
+            {!loading && categories.length > 1 && (
+                <div className="flex items-center gap-2">
+                    <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1 scrollbar-none">
+                        {categories.map(cat => (
+                            <Button
+                                key={cat}
+                                variant={selectedCategory === cat ? 'default' : 'outline'}
+                                size="sm"
+                                className="shrink-0 h-7 text-xs px-3 rounded-full"
+                                onClick={() => setSelectedCategory(cat)}
+                            >
+                                {cat}
+                            </Button>
+                        ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                        {filtered.length} app{filtered.length !== 1 ? 's' : ''}
+                    </span>
+                </div>
+            )}
 
             <div className="flex-1 overflow-auto">
                 {loading ? (
@@ -233,7 +271,12 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     <CardContent className="pt-0 mt-auto">
                                         <div className="flex flex-wrap gap-1 mt-2">
                                             {t.categories.slice(0, 3).map(c => (
-                                                <Badge variant="secondary" key={c} className="text-[10px] px-1.5 py-0 pb-0.5">
+                                                <Badge
+                                                    variant={selectedCategory === c ? 'default' : 'secondary'}
+                                                    key={c}
+                                                    className="text-[10px] px-1.5 py-0 pb-0.5 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedCategory(c); }}
+                                                >
                                                     {c}
                                                 </Badge>
                                             ))}
@@ -361,14 +404,15 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     {selectedTemplate.volumes && selectedTemplate.volumes.length > 0 && (
                                         <div className="space-y-4 pt-4 border-t">
                                             <h4 className="font-semibold">Volumes (Host : Container)</h4>
-                                            {selectedTemplate.volumes.map((v: any, idx: number) => {
-                                                if (!v.container) return null;
+                                            {selectedTemplate.volumes.map((v, idx: number) => {
+                                                const containerPath = v.container;
+                                                if (!containerPath) return null;
                                                 return (
                                                     <div key={idx} className="space-y-1.5">
-                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {v.container}</Label>
+                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {containerPath}</Label>
                                                         <Input
-                                                            value={volVars[v.container] !== undefined ? volVars[v.container] : ''}
-                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [v.container]: e.target.value }))}
+                                                            value={volVars[containerPath] !== undefined ? volVars[containerPath] : ''}
+                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [containerPath]: e.target.value }))}
                                                             placeholder={`/path/to/host/dir`}
                                                         />
                                                     </div>

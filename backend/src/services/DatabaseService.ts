@@ -136,6 +136,11 @@ export class DatabaseService {
         status TEXT NOT NULL DEFAULT 'unknown',
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS system_state (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -167,6 +172,8 @@ export class DatabaseService {
         stmt.run('docker_janitor_gb', '5');
         stmt.run('global_logs_refresh', '5');
         stmt.run('developer_mode', '0');
+        stmt.run('metrics_retention_hours', '24');
+        stmt.run('log_retention_days', '30');
 
         // Seed the default local node if none exists
         const nodeCount = (this.db.prepare('SELECT COUNT(*) as count FROM nodes').get() as any)?.count || 0;
@@ -244,6 +251,17 @@ export class DatabaseService {
         stmt.run(key, value);
     }
 
+    // --- System State (operational/runtime values - not user-defined config) ---
+
+    public getSystemState(key: string): string | null {
+        const row = this.db.prepare('SELECT value FROM system_state WHERE key = ?').get(key) as { value: string } | undefined;
+        return row?.value ?? null;
+    }
+
+    public setSystemState(key: string, value: string): void {
+        this.db.prepare('INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)').run(key, value);
+    }
+
     // --- Stack Alerts ---
 
     public getStackAlerts(stackName?: string): StackAlert[] {
@@ -292,9 +310,9 @@ export class DatabaseService {
         }));
     }
 
-    public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): void {
+    public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare('INSERT INTO notification_history (level, message, timestamp, is_read) VALUES (?, ?, ?, 0)');
-        stmt.run(notification.level, notification.message, notification.timestamp);
+        const result = stmt.run(notification.level, notification.message, notification.timestamp);
 
         this.db.exec(`
       DELETE FROM notification_history
@@ -302,6 +320,14 @@ export class DatabaseService {
         SELECT id FROM notification_history ORDER BY timestamp DESC LIMIT 100
       )
     `);
+
+        return {
+            id: result.lastInsertRowid as number,
+            level: notification.level,
+            message: notification.message,
+            timestamp: notification.timestamp,
+            is_read: false,
+        };
     }
 
     public markAllNotificationsRead(): void {
@@ -351,6 +377,11 @@ export class DatabaseService {
         const cutoff = Date.now() - (hoursToKeep * 60 * 60 * 1000);
         const stmt = this.db.prepare('DELETE FROM container_metrics WHERE timestamp < ?');
         stmt.run(cutoff);
+    }
+
+    public cleanupOldNotifications(daysToKeep = 30): void {
+        const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+        this.db.prepare('DELETE FROM notification_history WHERE timestamp < ?').run(cutoff);
     }
 
     // --- Nodes ---

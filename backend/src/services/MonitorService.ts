@@ -164,7 +164,7 @@ export class MonitorService {
                     try {
                         const parsed = JSON.parse(line);
                         // RECLAIMABLE might be something like "1.2GB" or "400MB" Let's parse it manually or just use raw sizes from docker api. Actually docker system df JSON format gives Reclaimable field as string e.g. "1.196GB" (or "0B").
-                        let reclaimStr = parsed.Reclaimable;
+                        const reclaimStr = parsed.Reclaimable;
                         if (reclaimStr) {
                             // Extract the number and the unit. e.g "1.196GB" (92%) -> 1.196
                             const match = reclaimStr.match(/^([0-9.]+)([a-zA-Z]+)/);
@@ -187,13 +187,14 @@ export class MonitorService {
                 // Only trigger once every while? To avoid spamming, we just check if it's over limit
                 // Let's ensure we only spam once per limit breach. We can use a local static variable.
                 const LAST_JANITOR_ALERT_KEY = 'last_janitor_alert_timestamp';
-                const lastAlert = parseInt(settings[LAST_JANITOR_ALERT_KEY] || '0', 10);
+                const lastAlertRaw = DatabaseService.getInstance().getSystemState(LAST_JANITOR_ALERT_KEY);
+                const lastAlert = parseInt(lastAlertRaw || '0', 10);
                 const janitorCooldown = 24 * 60 * 60 * 1000; // 24 hours cooldown for janitor
 
                 if (reclaimGb >= janitorLimitGb) {
                     if (Date.now() - lastAlert > janitorCooldown) {
                         await notifier.dispatchAlert('info', `Your system has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
-                        DatabaseService.getInstance().updateGlobalSetting(LAST_JANITOR_ALERT_KEY, Date.now().toString());
+                        DatabaseService.getInstance().setSystemState(LAST_JANITOR_ALERT_KEY, Date.now().toString());
                     }
                 }
             }
@@ -298,8 +299,14 @@ export class MonitorService {
         }
 
         try {
-            db.cleanupOldMetrics(24);
-        } catch (e) { }
+            const settings = db.getGlobalSettings();
+            const retentionHours = parseInt(settings['metrics_retention_hours'] || '24', 10);
+            db.cleanupOldMetrics(isNaN(retentionHours) ? 24 : retentionHours);
+            const retentionDays = parseInt(settings['log_retention_days'] || '30', 10);
+            db.cleanupOldNotifications(isNaN(retentionDays) ? 30 : retentionDays);
+        } catch (e) {
+            console.error('MonitorService: failed to cleanup old data', e);
+        }
     }
 
     private evaluateCondition(actual: number, operator: string, threshold: number): boolean {
