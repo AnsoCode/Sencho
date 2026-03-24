@@ -1,5 +1,7 @@
 # Stage 1: Build Frontend
-FROM node:20-alpine AS frontend-builder
+# Run on the BUILD platform (amd64 on GitHub Actions) — frontend has no native
+# modules so the compiled output is platform-agnostic JS/CSS/HTML.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -17,8 +19,12 @@ COPY frontend/ ./
 # Build frontend
 RUN npm run build
 
-# Stage 2: Build Backend
-FROM node:20-alpine AS backend-builder
+# Stage 2: Build Backend (TypeScript compilation only)
+# Run on the BUILD platform (amd64) so tsc runs at native speed.
+# Native modules (bcrypt, better-sqlite3, node-pty) are intentionally NOT
+# copied to the final image — they are re-installed on the TARGET platform
+# in Stage 3 so the correct architecture binaries are produced.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
 
 WORKDIR /app/backend
 
@@ -40,6 +46,11 @@ COPY backend/ ./
 RUN npm run build
 
 # Stage 3: Production
+# Runs on the TARGET platform (e.g. linux/arm64 via QEMU on amd64 runners).
+# We minimise QEMU-emulated work to a single lean `npm ci --omit=dev` which
+# compiles only the three native production modules (bcrypt, better-sqlite3,
+# node-pty) for the correct architecture. Build tooling is removed afterwards
+# to keep the image small.
 FROM node:20-alpine
 
 # Install Docker CLI, Docker Compose CLI, and Bash for Host Console
@@ -47,10 +58,16 @@ RUN apk add --no-cache docker-cli docker-cli-compose bash su-exec
 
 WORKDIR /app
 
-# Copy built backend and node_modules from backend-builder
+# Install production dependencies on the TARGET platform so native modules
+# (bcrypt, better-sqlite3, node-pty) are compiled for the right architecture.
+# Build tools are added, used, then removed in a single RUN layer.
+COPY backend/package*.json ./
+RUN apk add --no-cache python3 make g++ && \
+    npm ci --omit=dev && \
+    apk del python3 make g++
+
+# Copy compiled TypeScript output from the backend builder (platform-agnostic JS)
 COPY --from=backend-builder /app/backend/dist ./dist
-COPY --from=backend-builder /app/backend/node_modules ./node_modules
-COPY --from=backend-builder /app/backend/package.json ./
 
 # Copy built frontend from frontend-builder to public folder
 COPY --from=frontend-builder /app/frontend/dist ./public
