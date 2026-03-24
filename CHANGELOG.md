@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **fix(editor):** Monaco editor stuck on "Loading…" — `@monaco-editor/react` was fetching Monaco's loader from `cdn.jsdelivr.net` at runtime, which the Helmet CSP (`scriptSrc: 'self'`) correctly blocked. Fixed by configuring `loader.config({ monaco })` in `main.tsx` to use the locally bundled `monaco-editor` npm package and wiring a Vite `?worker` blob URL for the editor worker — no CDN requests, no CSP changes needed.
+- **fix(ci):** `release-please.yml` used `GITHUB_TOKEN` to create release tags — GitHub's security model prevents `GITHUB_TOKEN`-triggered events from cascading to other workflow runs, so `docker-publish.yml` never fired after a release. Switched to `DOCS_REPO_TOKEN` (PAT) so tag creation correctly triggers the Docker Hub publish workflow.
+- **fix(ci):** Screenshot refresh PR now auto-merges via `gh pr merge --auto --squash` after `peter-evans/create-pull-request` creates it — no more manual merge required on every `develop` push.
+
+### Fixed
 - **fix(ci):** `docker-publish.yml` was triggered by `release: types: [published]` (GitHub Release event) instead of `push: tags: v*` — pushing a git tag never fired the workflow. Changed trigger to `push: tags: v*` and updated `enable` conditions from `github.event_name == 'release'` to `startsWith(github.ref, 'refs/tags/v')` so any `v*` tag push automatically builds and publishes `latest` + semver tags to Docker Hub without requiring a manual GitHub Release.
 
 ### Added
