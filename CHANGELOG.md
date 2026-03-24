@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - fix(ci): add missing `docker/setup-qemu-action@v3` step to `docker-publish.yml` — without it multi-platform builds hang indefinitely and consume all available runner minutes
-- fix(docker): optimize Dockerfile for multi-platform builds using `--platform=$BUILDPLATFORM` on builder stages so TypeScript compilation runs at native amd64 speed; native modules (bcrypt, better-sqlite3, node-pty) are compiled for the target architecture only in the lean production stage via `npm ci --omit=dev`, reducing arm64 QEMU-emulated work from 6+ hours to ~15–30 minutes
+- fix(docker): eliminate QEMU execution of Node.js entirely using `tonistiigi/xx` cross-compilation; a dedicated `prod-deps` stage runs on the amd64 BUILD platform and compiles native modules (bcrypt, better-sqlite3, node-pty) for the TARGET architecture via `xx-clang` — fixes the `SIGILL` crash caused by Node.js v20 using ARMv8.1 LSE atomic instructions that the GitHub Actions QEMU version does not support
 
 ### Added
 - feat(ui): theme-aware sidebar logo — dark and light variants auto-switch based on active theme (dark/light/auto)

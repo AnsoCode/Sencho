@@ -1,56 +1,73 @@
+# Cross-compilation helper — provides xx-clang, xx-apk, etc.
+# Runs on the BUILD platform; its binaries are copied into build stages below.
+FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+
 # Stage 1: Build Frontend
-# Run on the BUILD platform (amd64 on GitHub Actions) — frontend has no native
-# modules so the compiled output is platform-agnostic JS/CSS/HTML.
+# Runs on the BUILD platform (amd64) — frontend has no native modules so the
+# compiled output (JS/CSS/HTML) is entirely platform-agnostic.
 FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy frontend package files
 COPY frontend/package*.json ./
-
-# Install dependencies
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
     npm install
 
-# Copy frontend source
 COPY frontend/ ./
-
-# Build frontend
 RUN npm run build
 
-# Stage 2: Build Backend (TypeScript compilation only)
-# Run on the BUILD platform (amd64) so tsc runs at native speed.
-# Native modules (bcrypt, better-sqlite3, node-pty) are intentionally NOT
-# copied to the final image — they are re-installed on the TARGET platform
-# in Stage 3 so the correct architecture binaries are produced.
+# Stage 2: Compile TypeScript
+# Runs on the BUILD platform (amd64) — tsc output is platform-agnostic JS.
 FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
 
 WORKDIR /app/backend
 
-# Install build dependencies for node-pty native modules
 RUN apk add --no-cache python3 make g++
 
-# Copy backend package files
 COPY backend/package*.json ./
-
-# Install dependencies
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
     npm install
 
-# Copy backend source
 COPY backend/ ./
-
-# Build backend
 RUN npm run build
 
-# Stage 3: Production
-# Runs on the TARGET platform (e.g. linux/arm64 via QEMU on amd64 runners).
-# We minimise QEMU-emulated work to a single lean `npm ci --omit=dev` which
-# compiles only the three native production modules (bcrypt, better-sqlite3,
-# node-pty) for the correct architecture. Build tooling is removed afterwards
-# to keep the image small.
+# Stage 3: Production dependencies (cross-compiled — NO QEMU execution)
+# Runs on the BUILD platform (amd64) but compiles native modules
+# (bcrypt, better-sqlite3, node-pty) for the TARGET platform using
+# tonistiigi/xx + clang as the cross-compiler.
+# This avoids the Node.js v20 SIGILL crash that occurs when npm runs
+# under QEMU because QEMU lacks ARMv8.1 LSE atomic instruction support.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS prod-deps
+
+# Copy xx cross-compilation tools into this stage
+COPY --from=xx / /
+
+ARG TARGETPLATFORM
+ARG TARGETARCH
+
+WORKDIR /app
+
+# clang/lld: the cross-compiler toolchain (runs natively on amd64).
+# xx-apk adds the target-arch musl headers + libgcc to the sysroot so
+# xx-clang can link native .node binaries for the target platform.
+RUN apk add --no-cache clang lld python3 make && \
+    xx-apk add --no-cache musl-dev gcc
+
+COPY backend/package*.json ./
+
+# npm_config_arch=$TARGETARCH   → tells prebuild-install / node-pre-gyp which
+#                                  pre-built binary to fetch (arm64 vs amd64).
+# CC/CXX=xx-clang(++)           → cross-compiles from source if no pre-built
+#                                  binary is available for the target arch.
+RUN npm_config_arch=$TARGETARCH \
+    CC=xx-clang \
+    CXX=xx-clang++ \
+    npm ci --omit=dev
+
+# Stage 4: Production runtime
+# Runs on the TARGET platform — no compilation happens here.
 FROM node:20-alpine
 
 # Install Docker CLI, Docker Compose CLI, and Bash for Host Console
@@ -58,18 +75,14 @@ RUN apk add --no-cache docker-cli docker-cli-compose bash su-exec
 
 WORKDIR /app
 
-# Install production dependencies on the TARGET platform so native modules
-# (bcrypt, better-sqlite3, node-pty) are compiled for the right architecture.
-# Build tools are added, used, then removed in a single RUN layer.
-COPY backend/package*.json ./
-RUN apk add --no-cache python3 make g++ && \
-    npm ci --omit=dev && \
-    apk del python3 make g++
+# Copy cross-compiled production node_modules from the prod-deps stage
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/package.json ./
 
-# Copy compiled TypeScript output from the backend builder (platform-agnostic JS)
+# Copy compiled TypeScript output (platform-agnostic JS)
 COPY --from=backend-builder /app/backend/dist ./dist
 
-# Copy built frontend from frontend-builder to public folder
+# Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./public
 
 # Set environment to production
