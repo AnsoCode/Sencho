@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **fix(ci):** `docker-publish.yml` was triggered by `release: types: [published]` (GitHub Release event) instead of `push: tags: v*` — pushing a git tag never fired the workflow. Changed trigger to `push: tags: v*` and updated `enable` conditions from `github.event_name == 'release'` to `startsWith(github.ref, 'refs/tags/v')` so any `v*` tag push automatically builds and publishes `latest` + semver tags to Docker Hub without requiring a manual GitHub Release.
+
 ---
 
 ## [0.1.0] - 2026-03-24

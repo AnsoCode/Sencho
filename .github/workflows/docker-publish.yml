@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - develop
-  release:
-    types: [published]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -38,9 +38,9 @@ jobs:
           tags: |
             # If pushing to develop, tag as 'dev'
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
-            # If a release is published, tag as 'latest' and the specific version
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            # If pushing a v* tag, tag as 'latest' and the specific semver version
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
