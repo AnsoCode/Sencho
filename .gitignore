@@ -44,6 +44,7 @@ npm-debug.log*
 # Claude Code
 .claude/
 plans/
+CLAUDE.md
 
 # Playwright MCP
 .playwright-mcp/
