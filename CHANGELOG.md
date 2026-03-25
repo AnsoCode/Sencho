@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* **env:** fix 404 when loading env files for stacks with `env_file` paths outside the stack directory (e.g. shared `globals.env`). The `/envs` endpoint now only returns files that exist on disk, and absolute `env_file` paths from compose files are no longer rejected.
-* **csp:** fix Content Security Policy violation caused by inline theme-detection script. Moved to an external `theme-init.js` file so it is covered by `script-src 'self'`.
+* **csp:** add `https:` to `img-src` directive so App Store template icons load correctly from external registries.
+* **helmet:** disable `Origin-Agent-Cluster` header to eliminate browser warning on plain-HTTP deployments.
+* **charts:** suppress Recharts `width(-1) height(-1)` warnings by setting `minWidth={0}` on `ResponsiveContainer`.
 
 ## [0.2.2](https://github.com/AnsoCode/Sencho/compare/v0.2.1...v0.2.2) (2026-03-25)
 

@@ -79,6 +79,9 @@ app.use(helmet({
   // COOP is only meaningful over HTTPS. Over HTTP the browser logs a warning
   // and ignores it, creating noise in the console with no security benefit.
   crossOriginOpenerPolicy: false,
+  // Origin-Agent-Cluster is only meaningful over HTTPS. Over plain HTTP the
+  // browser logs a warning and ignores it. Disabling removes console noise.
+  originAgentCluster: false,
   hsts: false,
   contentSecurityPolicy: {
     directives: {
@@ -87,7 +90,9 @@ app.use(helmet({
       fontSrc: ["'self'", 'https:', 'data:'],
       formAction: ["'self'"],
       frameAncestors: ["'self'"],
-      imgSrc: ["'self'", 'data:'],
+      // img-src: 'https:' is required for App Store template icons hosted on
+      // external registries (e.g. raw.githubusercontent.com).
+      imgSrc: ["'self'", 'data:', 'https:'],
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
