@@ -22,9 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* **csp:** add `https:` to `img-src` directive so App Store template icons load correctly from external registries.
-* **helmet:** disable `Origin-Agent-Cluster` header to eliminate browser warning on plain-HTTP deployments.
-* **charts:** suppress Recharts `width(-1) height(-1)` warnings by setting `minWidth={0}` on `ResponsiveContainer`.
+* **charts:** suppress Recharts `width(-1) height(-1)` warnings by removing conflicting `aspect-video` default and adding `minWidth={0}` + `minHeight={0}` on `ResponsiveContainer`.
 
 ## [0.2.2](https://github.com/AnsoCode/Sencho/compare/v0.2.1...v0.2.2) (2026-03-25)
 
