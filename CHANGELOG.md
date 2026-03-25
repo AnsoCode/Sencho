@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2](https://github.com/AnsoCode/Sencho/compare/v0.2.1...v0.2.2) (2026-03-25)
+
+
+### Fixed
+
+* **editor:** ESLint unused params fix ([dd5b698](https://github.com/AnsoCode/Sencho/commit/dd5b698b3f96e643af608a36128f05874a3b1f3c))
+* **editor:** ESLint unused params fix ([dd5b698](https://github.com/AnsoCode/Sencho/commit/dd5b698b3f96e643af608a36128f05874a3b1f3c))
+* **editor:** remove unused params from getWorker to satisfy ESLint ([34172a9](https://github.com/AnsoCode/Sencho/commit/34172a99226a4810465968ff9d238b85b1430829))
+* **editor:** remove unused params from getWorker to satisfy ESLint ([34172a9](https://github.com/AnsoCode/Sencho/commit/34172a99226a4810465968ff9d238b85b1430829))
+* **editor:** remove unused params from getWorker to satisfy ESLint ([59290e9](https://github.com/AnsoCode/Sencho/commit/59290e9e9d00cc97698e0223ab2810ae9f7b06d2))
+
 ## [0.2.1](https://github.com/AnsoCode/Sencho/compare/v0.2.0...v0.2.1) (2026-03-24)
 
 
