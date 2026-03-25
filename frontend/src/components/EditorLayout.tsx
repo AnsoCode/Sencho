@@ -1009,7 +1009,7 @@ export default function EditorLayout() {
           </div>
           <h3 className="text-sm font-semibold text-muted-foreground px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
-            <CommandList className="max-h-none overflow-visible">
+            <CommandList className="max-h-none overflow-visible" data-stacks-loaded={!isLoading}>
               {isLoading ? (
                 <div className="space-y-2 px-2 mt-2">
                   <Skeleton className="h-12 w-full" />
