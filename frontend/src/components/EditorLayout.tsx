@@ -16,8 +16,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, LogOut, ExternalLink, Bell, Settings, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar } from 'lucide-react';
+import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
 import { Label } from './ui/label';
@@ -34,6 +34,7 @@ import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
+import { FleetView } from './FleetView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 
@@ -68,7 +69,6 @@ const formatBytes = (bytes: number) => {
 };
 
 export default function EditorLayout() {
-  const { logout } = useAuth();
   const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -112,7 +112,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -181,16 +181,19 @@ export default function EditorLayout() {
       const fileList: string[] = Array.isArray(data) ? data : [];
       setFiles(fileList);
 
-      // Fetch status for each stack
-      const statuses: StackStatus = {};
-      for (const file of fileList) {
-        try {
+      // Fetch status for all stacks in parallel
+      const statusResults = await Promise.allSettled(
+        fileList.map(async (file) => {
           const containersRes = await apiFetch(`/stacks/${file}/containers`);
           const containers = await containersRes.json();
           const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
-          statuses[file] = hasRunning ? 'running' : (Array.isArray(containers) && containers.length > 0 ? 'exited' : 'unknown');
-        } catch {
-          statuses[file] = 'unknown';
+          return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
+        })
+      );
+      const statuses: StackStatus = {};
+      for (const result of statusResults) {
+        if (result.status === 'fulfilled') {
+          statuses[result.value.file] = result.value.status;
         }
       }
       setStackStatuses(statuses);
@@ -926,26 +929,11 @@ export default function EditorLayout() {
       {/* Left Sidebar (Stacks) */}
       <div className="w-64 border-r border-border bg-card flex flex-col">
         {/* Branding Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-border">
+        <div className="h-16 flex items-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
             <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-12 h-12" />
             <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
           </div>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={logout}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <LogOut className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Logout</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
 
         {/* Node Switcher */}
@@ -1117,6 +1105,17 @@ export default function EditorLayout() {
               <Home className="w-4 h-4 mr-2" />
               Home
             </Button>
+            {/* Fleet Overview Toggle */}
+            <Button
+              variant={activeView === 'fleet' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'fleet' ? (selectedFile ? 'editor' : 'dashboard') : 'fleet')}
+              title="Fleet Overview"
+            >
+              <Radar className="w-4 h-4 mr-2" />
+              Fleet
+            </Button>
             {/* Console Toggle */}
             <Button
               variant={activeView === 'host-console' ? 'default' : 'outline'}
@@ -1159,18 +1158,6 @@ export default function EditorLayout() {
             >
               <Activity className="w-4 h-4 mr-2" />
               Logs
-            </Button>
-
-            {/* Settings Modal Toggle */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setSettingsModalOpen(true)}
-              title="Notification Settings"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
             </Button>
 
             {/* Notifications Popover */}
@@ -1244,6 +1231,13 @@ export default function EditorLayout() {
                 </ScrollArea>
               </PopoverContent>
             </Popover>
+
+            {/* User Profile Dropdown */}
+            <UserProfileDropdown
+              theme={theme}
+              setTheme={setTheme}
+              onOpenSettings={() => setSettingsModalOpen(true)}
+            />
           </div>{/* end right-side buttons */}
         </div>
 
@@ -1537,6 +1531,14 @@ export default function EditorLayout() {
             </ErrorBoundary>
           ) : activeView === 'global-observability' ? (
             <GlobalObservabilityView />
+          ) : activeView === 'fleet' ? (
+            <FleetView onNavigateToNode={(nodeId) => {
+              const node = nodes.find(n => n.id === nodeId);
+              if (node) {
+                setActiveNode(node);
+                setActiveView('dashboard');
+              }
+            }} />
           ) : (
             <HomeDashboard />
           )}
@@ -1584,8 +1586,6 @@ export default function EditorLayout() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        theme={theme}
-        setTheme={setTheme}
       />
 
       {/* Stack Alert Sheet */}

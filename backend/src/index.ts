@@ -18,13 +18,14 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService } from './services/DatabaseService';
+import { DatabaseService, Node } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { LicenseService } from './services/LicenseService';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
@@ -139,7 +140,9 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       node?.type === 'remote' &&
       req.path.startsWith('/api/') &&
       !req.path.startsWith('/api/auth/') &&
-      !req.path.startsWith('/api/nodes')
+      !req.path.startsWith('/api/nodes') &&
+      !req.path.startsWith('/api/license') &&
+      !req.path.startsWith('/api/fleet')
     ) {
       // Preserve body stream for proxy piping
       next();
@@ -169,7 +172,9 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
   if (
     req.path.startsWith('/api/') &&
     !req.path.startsWith('/api/auth/') &&
-    !req.path.startsWith('/api/nodes')
+    !req.path.startsWith('/api/nodes') &&
+    !req.path.startsWith('/api/license') &&
+    !req.path.startsWith('/api/fleet')
   ) {
     const node = DatabaseService.getInstance().getNode(req.nodeId);
     if (!node) {
@@ -422,6 +427,283 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
+// --- License Routes (local-only, never proxied) ---
+
+// Pro feature guard: returns false and sends 403 if not Pro tier.
+const requirePro = (_req: Request, res: Response): boolean => {
+  if (LicenseService.getInstance().getTier() !== 'pro') {
+    res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+    return false;
+  }
+  return true;
+};
+
+app.get('/api/license', (_req: Request, res: Response): void => {
+  try {
+    const info = LicenseService.getInstance().getLicenseInfo();
+    res.json(info);
+  } catch (error) {
+    console.error('[License] Error getting license info:', error);
+    res.status(500).json({ error: 'Failed to retrieve license information' });
+  }
+});
+
+app.post('/api/license/activate', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { license_key } = req.body;
+    if (!license_key || typeof license_key !== 'string') {
+      res.status(400).json({ error: 'A valid license key is required' });
+      return;
+    }
+    const result = await LicenseService.getInstance().activate(license_key.trim());
+    if (result.success) {
+      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('[License] Activation error:', error);
+    res.status(500).json({ error: 'License activation failed' });
+  }
+});
+
+app.post('/api/license/deactivate', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await LicenseService.getInstance().deactivate();
+    if (result.success) {
+      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('[License] Deactivation error:', error);
+    res.status(500).json({ error: 'License deactivation failed' });
+  }
+});
+
+app.post('/api/license/validate', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await LicenseService.getInstance().validate();
+    res.json({ ...result, license: LicenseService.getInstance().getLicenseInfo() });
+  } catch (error) {
+    console.error('[License] Validation error:', error);
+    res.status(500).json({ error: 'License validation failed' });
+  }
+});
+
+// --- Fleet Overview (local-only, aggregates all nodes) ---
+
+interface FleetNodeOverview {
+  id: number;
+  name: string;
+  type: 'local' | 'remote';
+  status: 'online' | 'offline' | 'unknown';
+  stats: {
+    active: number;
+    managed: number;
+    unmanaged: number;
+    exited: number;
+    total: number;
+  } | null;
+  systemStats: {
+    cpu: { usage: string; cores: number };
+    memory: { total: number; used: number; free: number; usagePercent: string };
+    disk: { total: number; used: number; free: number; usagePercent: string } | null;
+  } | null;
+  stacks: string[] | null;
+}
+
+app.get('/api/fleet/overview', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+
+    const results = await Promise.allSettled(
+      nodes.map(async (node): Promise<FleetNodeOverview> => {
+        if (node.type === 'remote') {
+          return fetchRemoteNodeOverview(node);
+        }
+        return fetchLocalNodeOverview(node);
+      })
+    );
+
+    const overview: FleetNodeOverview[] = results.map((result, i) => {
+      if (result.status === 'fulfilled') return result.value;
+      console.error(`[Fleet] Failed to fetch node ${nodes[i].name}:`, result.reason);
+      return {
+        id: nodes[i].id,
+        name: nodes[i].name,
+        type: nodes[i].type,
+        status: 'offline' as const,
+        stats: null,
+        systemStats: null,
+        stacks: null,
+      };
+    });
+
+    res.json(overview);
+  } catch (error) {
+    console.error('[Fleet] Overview error:', error);
+    res.status(500).json({ error: 'Failed to fetch fleet overview' });
+  }
+});
+
+// Pro-gated: detailed stack info per node
+app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+
+  try {
+    const nodeId = parseInt(req.params.nodeId as string, 10);
+    const node = DatabaseService.getInstance().getNode(nodeId);
+    if (!node) {
+      res.status(404).json({ error: 'Node not found' });
+      return;
+    }
+
+    if (node.type === 'remote') {
+      if (!node.api_url || !node.api_token) {
+        res.status(503).json({ error: 'Remote node not configured' });
+        return;
+      }
+      const response = await fetch(`${node.api_url.replace(/\/$/, '')}/api/stacks`, {
+        headers: { Authorization: `Bearer ${node.api_token}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        res.status(502).json({ error: 'Failed to fetch stacks from remote node' });
+        return;
+      }
+      const stacks = await response.json();
+      res.json(stacks);
+      return;
+    }
+
+    const stacks = await FileSystemService.getInstance(nodeId).getStacks();
+    res.json(stacks);
+  } catch (error) {
+    console.error('[Fleet] Node stacks error:', error);
+    res.status(500).json({ error: 'Failed to fetch node stacks' });
+  }
+});
+
+async function fetchLocalNodeOverview(node: Node): Promise<FleetNodeOverview> {
+  try {
+    const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(node.id));
+    const [allContainers, stacks, currentLoad, mem, fsSize] = await Promise.all([
+      DockerController.getInstance(node.id).getAllContainers(),
+      FileSystemService.getInstance(node.id).getStacks(),
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+    ]);
+
+    const isManagedByComposeDir = (c: any): boolean => {
+      const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+      if (!workingDir) return false;
+      const resolved = path.resolve(workingDir);
+      return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
+    };
+
+    const active = allContainers.filter((c: any) => c.State === 'running').length;
+    const exited = allContainers.filter((c: any) => c.State === 'exited').length;
+    const total = allContainers.length;
+    const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
+    const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
+
+    const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
+
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      status: 'online',
+      stats: { active, managed, unmanaged, exited, total },
+      systemStats: {
+        cpu: { usage: currentLoad.currentLoad.toFixed(1), cores: currentLoad.cpus.length },
+        memory: {
+          total: mem.total,
+          used: mem.used,
+          free: mem.free,
+          usagePercent: ((mem.used / mem.total) * 100).toFixed(1),
+        },
+        disk: mainDisk ? {
+          total: mainDisk.size,
+          used: mainDisk.used,
+          free: mainDisk.available,
+          usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
+        } : null,
+      },
+      stacks,
+    };
+  } catch (error) {
+    console.error(`[Fleet] Local node ${node.name} error:`, error);
+    return {
+      id: node.id, name: node.name, type: node.type, status: 'offline',
+      stats: null, systemStats: null, stacks: null,
+    };
+  }
+}
+
+async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
+  if (!node.api_url || !node.api_token) {
+    return {
+      id: node.id, name: node.name, type: node.type, status: 'offline',
+      stats: null, systemStats: null, stacks: null,
+    };
+  }
+
+  const baseUrl = node.api_url.replace(/\/$/, '');
+  const headers = { Authorization: `Bearer ${node.api_token}` };
+
+  try {
+    const [statsRes, systemStatsRes, stacksRes] = await Promise.allSettled([
+      fetch(`${baseUrl}/api/stats`, { headers, signal: AbortSignal.timeout(10000) }),
+      fetch(`${baseUrl}/api/system/stats`, { headers, signal: AbortSignal.timeout(10000) }),
+      fetch(`${baseUrl}/api/stacks`, { headers, signal: AbortSignal.timeout(10000) }),
+    ]);
+
+    interface RemoteSystemStats {
+      cpu: { usage: string; cores: number };
+      memory: { total: number; used: number; free: number; usagePercent: string };
+      disk?: { total: number; used: number; free: number; usagePercent: string } | null;
+    }
+
+    const stats: FleetNodeOverview['stats'] | null = statsRes.status === 'fulfilled' && statsRes.value.ok
+      ? await statsRes.value.json() as FleetNodeOverview['stats'] : null;
+    const systemStatsRaw: RemoteSystemStats | null = systemStatsRes.status === 'fulfilled' && systemStatsRes.value.ok
+      ? await systemStatsRes.value.json() as RemoteSystemStats : null;
+    const stacks: string[] | null = stacksRes.status === 'fulfilled' && stacksRes.value.ok
+      ? await stacksRes.value.json() as string[] : null;
+
+    const systemStats: FleetNodeOverview['systemStats'] | null = systemStatsRaw ? {
+      cpu: systemStatsRaw.cpu,
+      memory: systemStatsRaw.memory,
+      disk: systemStatsRaw.disk ? {
+        total: systemStatsRaw.disk.total,
+        used: systemStatsRaw.disk.used,
+        free: systemStatsRaw.disk.free,
+        usagePercent: systemStatsRaw.disk.usagePercent,
+      } : null,
+    } : null;
+
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      status: stats || systemStats ? 'online' : 'offline',
+      stats,
+      systemStats,
+      stacks,
+    };
+  } catch (error) {
+    console.error(`[Fleet] Remote node ${node.name} error:`, error);
+    return {
+      id: node.id, name: node.name, type: node.type, status: 'offline',
+      stats: null, systemStats: null, stacks: null,
+    };
+  }
+}
+
 // Remote Node HTTP Proxy - single global instance.
 // Previously, createProxyMiddleware was called inside the request handler on every API
 // call, spawning a new proxy instance (and http-proxy server) each time. This caused:
@@ -497,7 +779,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
 // Intercepts all /api/ requests for remote Distributed API nodes and forwards them
 // to the target Sencho instance. Node management and auth routes always execute locally.
 app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes')) {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet')) {
     next();
     return;
   }
@@ -2088,6 +2370,9 @@ async function startServer() {
     // Continue starting server even if migration fails
   }
 
+  // Initialize License Service (starts trial on first boot, periodic validation)
+  LicenseService.getInstance().initialize();
+
   // Start Background Watchdog
   MonitorService.getInstance().start();
 
@@ -2115,6 +2400,7 @@ const gracefulShutdown = (signal: string) => {
 
   server.close(() => {
     console.log('[Shutdown] HTTP server closed');
+    try { LicenseService.getInstance().destroy(); } catch { /* already stopped */ }
     try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
     try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
     try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }

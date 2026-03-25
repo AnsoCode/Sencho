@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **licensing:** Community/Pro tier system with Lemon Squeezy integration. Includes `LicenseService` backend singleton, `/api/license` endpoints (activate, deactivate, validate), `LicenseContext` frontend provider, License settings tab, `ProBadge` and `ProGate` reusable components, and 14-day Pro trial on first install. License data stored in `system_state` table with 72-hour periodic validation and 30-day offline grace period.
+* **fleet:** Fleet Overview dashboard showing all nodes in a card grid with status, container counts, CPU/RAM/disk usage bars. Pro tier unlocks stack drill-down, auto-refresh (30s), and per-node stack details via `/api/fleet/overview` and `/api/fleet/node/:nodeId/stacks` endpoints.
+* **ui:** User Profile Dropdown replacing scattered Settings/LogOut buttons. Includes theme toggle (System/Light/Dark), billing link (Pro only), documentation, and version display. Appearance tab removed from Settings.
+* **settings:** About section displaying version, license tier, status, instance ID, and links to docs/changelog/issues.
+
 ### Fixed
 
 * **charts:** suppress Recharts `width(-1) height(-1)` warnings by removing conflicting `aspect-video` default and adding `minWidth={0}` + `minHeight={0}` on `ResponsiveContainer`.

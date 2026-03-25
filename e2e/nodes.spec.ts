@@ -8,7 +8,8 @@ import { loginAs } from './helpers';
 test.describe('Node management', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
-    // Open Settings modal then navigate to the Nodes section
+    // Settings is inside the User Profile Dropdown — open it first
+    await page.getByRole('button', { name: /profile/i }).click();
     await page.getByRole('button', { name: /settings/i }).click();
     await page.getByRole('button', { name: /^nodes$/i }).click();
   });

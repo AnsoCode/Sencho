@@ -15,6 +15,8 @@ RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm install
 
 COPY frontend/ ./
+# vite.config.ts reads the root package.json for the app version
+COPY package.json /app/package.json
 RUN npm run build
 
 # Stage 2: Compile TypeScript
