@@ -17,19 +17,11 @@ function AppContent() {
   }
 
   if (needsSetup) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Setup className="w-full max-w-sm" onComplete={completeSetup} />
-      </div>
-    );
+    return <Setup onComplete={completeSetup} />;
   }
 
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Login className="w-full max-w-sm" />
-      </div>
-    );
+    return <Login />;
   }
 
   return (
