@@ -1,5 +1,6 @@
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NodeProvider } from './context/NodeContext';
+import { LicenseProvider } from './context/LicenseContext';
 import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import EditorLayout from './components/EditorLayout';
@@ -33,7 +34,9 @@ function AppContent() {
 
   return (
     <NodeProvider>
-      <EditorLayout />
+      <LicenseProvider>
+        <EditorLayout />
+      </LicenseProvider>
     </NodeProvider>
   );
 }

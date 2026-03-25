@@ -18,10 +18,12 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Palette, Moon, Sun, Monitor, Code, Server, Package, RefreshCw, Database, Info } from 'lucide-react';
+import { Shield, Activity, Bell, Palette, Moon, Sun, Monitor, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
+import { useLicense } from '@/context/LicenseContext';
+import { ProBadge } from './ProBadge';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -43,7 +45,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes' | 'appstore';
+type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes' | 'appstore';
 
 type Theme = 'light' | 'dark' | 'auto';
 
@@ -69,12 +71,16 @@ const DEFAULT_SETTINGS: PatchableSettings = {
 
 export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModalProps) {
     const { activeNode } = useNodes();
+    const { license, activate, deactivate } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
+    const [licenseKeyInput, setLicenseKeyInput] = useState('');
+    const [isActivating, setIsActivating] = useState(false);
+    const [isDeactivating, setIsDeactivating] = useState(false);
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -409,6 +415,9 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
                         {!isRemote && (
                             <NavButton section="account" icon={<Shield className="w-4 h-4 mr-2" />} label="Account" />
                         )}
+                        {!isRemote && (
+                            <NavButton section="license" icon={<Crown className="w-4 h-4 mr-2" />} label="License" />
+                        )}
                         <NavButton
                             section="system"
                             icon={<Activity className="w-4 h-4 mr-2" />}
@@ -475,6 +484,151 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
                                     }
                                 </Button>
                             </div>
+                        </div>
+                    )}
+
+                    {activeSection === 'license' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">License</h3>
+                                <p className="text-sm text-muted-foreground">Manage your Sencho Pro license.</p>
+                            </div>
+
+                            {/* Current Tier Display */}
+                            <div className="bg-muted/10 p-4 border border-border rounded-xl space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        {license?.tier === 'pro' ? (
+                                            <CheckCircle className="w-5 h-5 text-green-500" />
+                                        ) : (
+                                            <Crown className="w-5 h-5 text-muted-foreground" />
+                                        )}
+                                        <span className="font-medium text-base">
+                                            {license?.tier === 'pro' ? 'Sencho Pro' : 'Sencho Community'}
+                                        </span>
+                                    </div>
+                                    {license?.tier === 'pro' && <ProBadge />}
+                                </div>
+
+                                {license?.status === 'trial' && license.trialDaysRemaining !== null && (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Clock className="w-4 h-4" />
+                                        <span>Trial: {license.trialDaysRemaining} day{license.trialDaysRemaining !== 1 ? 's' : ''} remaining</span>
+                                    </div>
+                                )}
+
+                                {license?.status === 'active' && (
+                                    <div className="space-y-2 text-sm">
+                                        {license.customerName && (
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Customer</span>
+                                                <span>{license.customerName}</span>
+                                            </div>
+                                        )}
+                                        {license.productName && (
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Plan</span>
+                                                <span>{license.productName}</span>
+                                            </div>
+                                        )}
+                                        {license.maskedKey && (
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">License Key</span>
+                                                <span className="font-mono text-xs">{license.maskedKey}</span>
+                                            </div>
+                                        )}
+                                        {license.validUntil && (
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Renews</span>
+                                                <span>{new Date(license.validUntil).toLocaleDateString()}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {license?.status === 'expired' && (
+                                    <div className="flex items-center gap-2 text-sm text-destructive">
+                                        <XCircle className="w-4 h-4" />
+                                        <span>Your Pro license has expired. Renew to restore Pro features.</span>
+                                    </div>
+                                )}
+
+                                {license?.status === 'disabled' && (
+                                    <div className="flex items-center gap-2 text-sm text-destructive">
+                                        <XCircle className="w-4 h-4" />
+                                        <span>Your license has been disabled. Contact support for assistance.</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Activation / Deactivation */}
+                            {license?.status === 'active' ? (
+                                <div className="flex items-center justify-between">
+                                    <p className="text-sm text-muted-foreground">
+                                        Deactivating will revert to Community features.
+                                    </p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={async () => {
+                                            setIsDeactivating(true);
+                                            const result = await deactivate();
+                                            if (result.success) {
+                                                toast.success('License deactivated.');
+                                            } else {
+                                                toast.error(result.error || 'Deactivation failed');
+                                            }
+                                            setIsDeactivating(false);
+                                        }}
+                                        disabled={isDeactivating}
+                                    >
+                                        {isDeactivating
+                                            ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Deactivating...</>
+                                            : 'Deactivate License'
+                                        }
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-base">Activate License Key</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Enter your Sencho Pro license key to unlock all features.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                                            value={licenseKeyInput}
+                                            onChange={(e) => setLicenseKeyInput(e.target.value)}
+                                            className="font-mono"
+                                        />
+                                        <Button
+                                            onClick={async () => {
+                                                if (!licenseKeyInput.trim()) return;
+                                                setIsActivating(true);
+                                                const result = await activate(licenseKeyInput.trim());
+                                                if (result.success) {
+                                                    toast.success('License activated! Welcome to Sencho Pro.');
+                                                    setLicenseKeyInput('');
+                                                } else {
+                                                    toast.error(result.error || 'Activation failed');
+                                                }
+                                                setIsActivating(false);
+                                            }}
+                                            disabled={isActivating || !licenseKeyInput.trim()}
+                                        >
+                                            {isActivating
+                                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Activating...</>
+                                                : 'Activate'
+                                            }
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Don't have a license? <a href="https://sencho.io/pricing" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">Get Sencho Pro</a>
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 

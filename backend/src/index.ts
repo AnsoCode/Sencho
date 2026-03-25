@@ -25,6 +25,7 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { LicenseService } from './services/LicenseService';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
@@ -139,7 +140,8 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       node?.type === 'remote' &&
       req.path.startsWith('/api/') &&
       !req.path.startsWith('/api/auth/') &&
-      !req.path.startsWith('/api/nodes')
+      !req.path.startsWith('/api/nodes') &&
+      !req.path.startsWith('/api/license')
     ) {
       // Preserve body stream for proxy piping
       next();
@@ -169,7 +171,8 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
   if (
     req.path.startsWith('/api/') &&
     !req.path.startsWith('/api/auth/') &&
-    !req.path.startsWith('/api/nodes')
+    !req.path.startsWith('/api/nodes') &&
+    !req.path.startsWith('/api/license')
   ) {
     const node = DatabaseService.getInstance().getNode(req.nodeId);
     if (!node) {
@@ -422,6 +425,70 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
+// --- License Routes (local-only, never proxied) ---
+
+// Pro feature guard: returns false and sends 403 if not Pro tier.
+const requirePro = (_req: Request, res: Response): boolean => {
+  if (LicenseService.getInstance().getTier() !== 'pro') {
+    res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+    return false;
+  }
+  return true;
+};
+
+app.get('/api/license', (_req: Request, res: Response): void => {
+  try {
+    const info = LicenseService.getInstance().getLicenseInfo();
+    res.json(info);
+  } catch (error) {
+    console.error('[License] Error getting license info:', error);
+    res.status(500).json({ error: 'Failed to retrieve license information' });
+  }
+});
+
+app.post('/api/license/activate', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { license_key } = req.body;
+    if (!license_key || typeof license_key !== 'string') {
+      res.status(400).json({ error: 'A valid license key is required' });
+      return;
+    }
+    const result = await LicenseService.getInstance().activate(license_key.trim());
+    if (result.success) {
+      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('[License] Activation error:', error);
+    res.status(500).json({ error: 'License activation failed' });
+  }
+});
+
+app.post('/api/license/deactivate', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await LicenseService.getInstance().deactivate();
+    if (result.success) {
+      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('[License] Deactivation error:', error);
+    res.status(500).json({ error: 'License deactivation failed' });
+  }
+});
+
+app.post('/api/license/validate', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await LicenseService.getInstance().validate();
+    res.json({ ...result, license: LicenseService.getInstance().getLicenseInfo() });
+  } catch (error) {
+    console.error('[License] Validation error:', error);
+    res.status(500).json({ error: 'License validation failed' });
+  }
+});
+
 // Remote Node HTTP Proxy - single global instance.
 // Previously, createProxyMiddleware was called inside the request handler on every API
 // call, spawning a new proxy instance (and http-proxy server) each time. This caused:
@@ -497,7 +564,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
 // Intercepts all /api/ requests for remote Distributed API nodes and forwards them
 // to the target Sencho instance. Node management and auth routes always execute locally.
 app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes')) {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license')) {
     next();
     return;
   }
@@ -2088,6 +2155,9 @@ async function startServer() {
     // Continue starting server even if migration fails
   }
 
+  // Initialize License Service (starts trial on first boot, periodic validation)
+  LicenseService.getInstance().initialize();
+
   // Start Background Watchdog
   MonitorService.getInstance().start();
 
@@ -2115,6 +2185,7 @@ const gracefulShutdown = (signal: string) => {
 
   server.close(() => {
     console.log('[Shutdown] HTTP server closed');
+    try { LicenseService.getInstance().destroy(); } catch { /* already stopped */ }
     try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
     try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
     try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
