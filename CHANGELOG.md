@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3](https://github.com/AnsoCode/Sencho/compare/v0.2.2...v0.2.3) (2026-03-25)
+
+
+### Fixed
+
+* **env:** resolve 404 when loading env files and CSP inline script violation ([#134](https://github.com/AnsoCode/Sencho/issues/134)) ([1e6367a](https://github.com/AnsoCode/Sencho/commit/1e6367a147dddb323799a3cd1947507c595d21db))
+
 ## [Unreleased]
 
 ### Fixed
