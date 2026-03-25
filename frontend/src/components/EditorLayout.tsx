@@ -1563,8 +1563,6 @@ export default function EditorLayout() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
-        theme={theme}
-        setTheme={setTheme}
       />
 
       {/* Stack Alert Sheet */}

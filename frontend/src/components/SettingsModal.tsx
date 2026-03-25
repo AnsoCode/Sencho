@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Palette, Moon, Sun, Monitor, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -45,15 +45,11 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'appearance' | 'developer' | 'nodes' | 'appstore';
-
-type Theme = 'light' | 'dark' | 'auto';
+type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'developer' | 'nodes' | 'appstore';
 
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
-    theme: Theme;
-    setTheme: (theme: Theme) => void;
 }
 
 const DEFAULT_SETTINGS: PatchableSettings = {
@@ -69,7 +65,7 @@ const DEFAULT_SETTINGS: PatchableSettings = {
     log_retention_days: '30',
 };
 
-export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { license, activate, deactivate } = useLicense();
     const isRemote = activeNode?.type === 'remote';
@@ -80,7 +76,7 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'appearance' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -425,9 +421,6 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
                             showDot={hasSystemChanges}
                         />
                         <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
-                        {!isRemote && (
-                            <NavButton section="appearance" icon={<Palette className="w-4 h-4 mr-2" />} label="Appearance" />
-                        )}
                         <NavButton
                             section="developer"
                             icon={<Code className="w-4 h-4 mr-2" />}
@@ -781,41 +774,6 @@ export function SettingsModal({ isOpen, onClose, theme, setTheme }: SettingsModa
                                 <TabsContent value="slack">{renderAgentTab('slack', 'Slack')}</TabsContent>
                                 <TabsContent value="webhook">{renderAgentTab('webhook', 'Custom Webhook')}</TabsContent>
                             </Tabs>
-                        </div>
-                    )}
-
-                    {activeSection === 'appearance' && (
-                        <div className="space-y-6">
-                            <div>
-                                <h3 className="text-lg font-semibold tracking-tight">Appearance</h3>
-                                <p className="text-sm text-muted-foreground">Customize Sencho's visual theme.</p>
-                            </div>
-                            <div className="flex items-center gap-3 mt-6 flex-wrap">
-                                <Button
-                                    variant={theme === 'light' ? 'default' : 'outline'}
-                                    className="w-32 h-20 flex flex-col gap-2 rounded-xl"
-                                    onClick={() => setTheme('light')}
-                                >
-                                    <Sun className="w-6 h-6" />
-                                    Light
-                                </Button>
-                                <Button
-                                    variant={theme === 'dark' ? 'default' : 'outline'}
-                                    className="w-32 h-20 flex flex-col gap-2 rounded-xl"
-                                    onClick={() => setTheme('dark')}
-                                >
-                                    <Moon className="w-6 h-6" />
-                                    Dark
-                                </Button>
-                                <Button
-                                    variant={theme === 'auto' ? 'default' : 'outline'}
-                                    className="w-32 h-20 flex flex-col gap-2 rounded-xl"
-                                    onClick={() => setTheme('auto')}
-                                >
-                                    <Monitor className="w-6 h-6" />
-                                    Auto
-                                </Button>
-                            </div>
                         </div>
                     )}
 
