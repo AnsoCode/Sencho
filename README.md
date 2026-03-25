@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/AnsoCode/Sencho/actions/workflows/ci.yml/badge.svg)](https://github.com/AnsoCode/Sencho/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/docker/v/saelix/sencho?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/saelix/sencho)
-[![License](https://img.shields.io/badge/license-pending-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-BSL--1.1-blue)](#license)
 
 A self-hosted Docker Compose management dashboard. Manage your stacks, containers, images, volumes, and networks through a modern web UI.
 
@@ -69,4 +69,4 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting. **Do not open public
 
 ## License
 
-License pending. See [issue #100](https://github.com/AnsoCode/Sencho/issues/100) for the license decision discussion and [LICENSE](LICENSE) for current status.
+Sencho is licensed under the [Business Source License 1.1](LICENSE). You may use, modify, and redistribute the code freely, including for production use. The only restriction is offering Sencho as a competing hosted or managed service. On **2030-03-25**, the license automatically converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
