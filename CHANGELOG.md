@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **env:** fix 404 when loading env files for stacks with `env_file` paths outside the stack directory (e.g. shared `globals.env`). The `/envs` endpoint now only returns files that exist on disk, and absolute `env_file` paths from compose files are no longer rejected.
+* **csp:** fix Content Security Policy violation caused by inline theme-detection script. Moved to an external `theme-init.js` file so it is covered by `script-src 'self'`.
+
 ## [0.2.2](https://github.com/AnsoCode/Sencho/compare/v0.2.1...v0.2.2) (2026-03-25)
 
 

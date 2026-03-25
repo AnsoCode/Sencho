@@ -847,11 +847,6 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
 
       const addEnvPath = (rawPath: string) => {
         const resolved = path.resolve(stackDir, rawPath);
-        // Reject paths that escape the stack directory
-        if (!resolved.startsWith(path.resolve(stackDir) + path.sep) && resolved !== path.resolve(stackDir)) {
-          console.warn(`[Security] env_file path "${rawPath}" escapes stack directory — skipping`);
-          return;
-        }
         envFiles.add(resolved);
       };
 
@@ -866,15 +861,31 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
     }
 
     if (envFiles.size === 0) {
-      return [defaultEnvPath];
+      envFiles.add(defaultEnvPath);
     }
 
-    return Array.from(envFiles);
+    // Filter to only include files that actually exist on disk
+    const existing: string[] = [];
+    for (const f of envFiles) {
+      try {
+        await fsService.access(f);
+        existing.push(f);
+      } catch {
+        // File does not exist — skip
+      }
+    }
+    return existing;
   } catch (error) {
     console.warn(`Could not parse compose.yaml for env_file resolution in stack "${stackName}":`, error);
   }
 
-  return [defaultEnvPath];
+  // Fallback: return default only if it exists
+  try {
+    await fsService.access(defaultEnvPath);
+    return [defaultEnvPath];
+  } catch {
+    return [];
+  }
 }
 
 app.get('/api/stacks/:stackName/envs', async (req: Request, res: Response) => {
