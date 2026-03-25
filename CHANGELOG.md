@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5](https://github.com/AnsoCode/Sencho/compare/v0.2.4...v0.2.5) (2026-03-25)
+
+
+### Fixed
+
+* **charts:** suppress Recharts dimension warnings on initial render ([#141](https://github.com/AnsoCode/Sencho/issues/141)) ([c6633b0](https://github.com/AnsoCode/Sencho/commit/c6633b0245d10671aac78fedac875be63c62a1e1))
+
 ## [0.2.4](https://github.com/AnsoCode/Sencho/compare/v0.2.3...v0.2.4) (2026-03-25)
 
 
