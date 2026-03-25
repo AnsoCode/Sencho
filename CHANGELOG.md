@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/AnsoCode/Sencho/compare/v0.3.0...v0.3.1) (2026-03-25)
+
+
+### Fixed
+
+* **e2e:** wait for sidebar stacks to finish loading before assertions ([#149](https://github.com/AnsoCode/Sencho/issues/149)) ([9ba9a3a](https://github.com/AnsoCode/Sencho/commit/9ba9a3a4565702135f22736a6b2310fc0da1d2f1))
+
 ## [0.3.0](https://github.com/AnsoCode/Sencho/compare/v0.2.5...v0.3.0) (2026-03-25)
 
 
