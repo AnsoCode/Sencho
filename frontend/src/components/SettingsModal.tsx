@@ -45,7 +45,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'developer' | 'nodes' | 'appstore';
+type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'developer' | 'nodes' | 'appstore' | 'about';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -433,6 +433,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         {!isRemote && (
                             <NavButton section="appstore" icon={<Package className="w-4 h-4 mr-2" />} label="App Store" />
                         )}
+                        <NavButton section="about" icon={<Info className="w-4 h-4 mr-2" />} label="About" />
                     </nav>
                 </div>
 
@@ -901,6 +902,66 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     {activeSection === 'nodes' && (
                         <NodeManager />
+                    )}
+
+                    {activeSection === 'about' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">About Sencho</h3>
+                                <p className="text-sm text-muted-foreground">Version and instance information.</p>
+                            </div>
+
+                            <div className="space-y-4 bg-muted/10 p-4 border border-border rounded-xl">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-muted-foreground">Version</span>
+                                    <Badge variant="secondary" className="font-mono">v{__APP_VERSION__}</Badge>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-muted-foreground">Tier</span>
+                                    <div>{license?.tier === 'pro' ? <ProBadge /> : <Badge variant="outline">Community</Badge>}</div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm text-muted-foreground">License Status</span>
+                                    <Badge variant="outline" className="capitalize">{license?.status ?? 'community'}</Badge>
+                                </div>
+                                {license?.instanceId && (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-muted-foreground">Instance ID</span>
+                                        <code className="text-xs font-mono bg-muted px-2 py-1 rounded">{license.instanceId.slice(0, 8)}</code>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Links</h4>
+                                <div className="flex flex-col gap-1.5">
+                                    <a
+                                        href="https://docs.sencho.io"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        Documentation &rarr;
+                                    </a>
+                                    <a
+                                        href="https://github.com/AnsoCode/Sencho/blob/main/CHANGELOG.md"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        Changelog &rarr;
+                                    </a>
+                                    <a
+                                        href="https://github.com/AnsoCode/Sencho/issues"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        Report an Issue &rarr;
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                     {activeSection === 'appstore' && (

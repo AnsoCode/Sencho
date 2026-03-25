@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
@@ -34,6 +34,7 @@ import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
+import { FleetView } from './FleetView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 
@@ -111,7 +112,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -180,16 +181,19 @@ export default function EditorLayout() {
       const fileList: string[] = Array.isArray(data) ? data : [];
       setFiles(fileList);
 
-      // Fetch status for each stack
-      const statuses: StackStatus = {};
-      for (const file of fileList) {
-        try {
+      // Fetch status for all stacks in parallel
+      const statusResults = await Promise.allSettled(
+        fileList.map(async (file) => {
           const containersRes = await apiFetch(`/stacks/${file}/containers`);
           const containers = await containersRes.json();
           const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
-          statuses[file] = hasRunning ? 'running' : (Array.isArray(containers) && containers.length > 0 ? 'exited' : 'unknown');
-        } catch {
-          statuses[file] = 'unknown';
+          return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
+        })
+      );
+      const statuses: StackStatus = {};
+      for (const result of statusResults) {
+        if (result.status === 'fulfilled') {
+          statuses[result.value.file] = result.value.status;
         }
       }
       setStackStatuses(statuses);
@@ -1101,6 +1105,17 @@ export default function EditorLayout() {
               <Home className="w-4 h-4 mr-2" />
               Home
             </Button>
+            {/* Fleet Overview Toggle */}
+            <Button
+              variant={activeView === 'fleet' ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setActiveView(activeView === 'fleet' ? (selectedFile ? 'editor' : 'dashboard') : 'fleet')}
+              title="Fleet Overview"
+            >
+              <Radar className="w-4 h-4 mr-2" />
+              Fleet
+            </Button>
             {/* Console Toggle */}
             <Button
               variant={activeView === 'host-console' ? 'default' : 'outline'}
@@ -1516,6 +1531,14 @@ export default function EditorLayout() {
             </ErrorBoundary>
           ) : activeView === 'global-observability' ? (
             <GlobalObservabilityView />
+          ) : activeView === 'fleet' ? (
+            <FleetView onNavigateToNode={(nodeId) => {
+              const node = nodes.find(n => n.id === nodeId);
+              if (node) {
+                setActiveNode(node);
+                setActiveView('dashboard');
+              }
+            }} />
           ) : (
             <HomeDashboard />
           )}

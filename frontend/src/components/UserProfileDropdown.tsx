@@ -14,8 +14,6 @@ interface UserProfileDropdownProps {
     onOpenSettings: () => void;
 }
 
-const APP_VERSION = __APP_VERSION__;
-
 export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
     const { logout } = useAuth();
     const { license, isPro } = useLicense();
@@ -38,8 +36,6 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                             <p className="text-sm font-medium truncate">admin</p>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                 {isPro ? <ProBadge /> : <span>Community</span>}
-                                <span>&middot;</span>
-                                <span>v{APP_VERSION}</span>
                             </div>
                         </div>
                     </div>
