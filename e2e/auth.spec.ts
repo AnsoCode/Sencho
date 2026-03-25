@@ -49,9 +49,9 @@ test.describe('Authentication', () => {
 
   test('logout returns to the login screen', async ({ page }) => {
     await loginAs(page);
-    // The logout button renders a Lucide LogOut icon — Lucide adds a CSS class matching the icon name
-    const logoutBtn = page.locator('button:has(.lucide-log-out)');
-    await logoutBtn.click();
+    // Log Out is inside the User Profile Dropdown — open it first
+    await page.getByRole('button', { name: /profile/i }).click();
+    await page.getByRole('button', { name: /log out/i }).click();
     await page.waitForTimeout(1_000);
     expect(await isDashboard(page)).toBe(false);
   });
