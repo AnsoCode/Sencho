@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **auth:** Login and Setup pages redesigned with split-panel branding layout (dark branding panel + theme-aware form)
+* **auth:** Optional admin email field on Setup for future license recovery
+* **ui:** Mobile-responsive login/setup with compact logo header
+
+### Fixed
+
+* **e2e:** Use explicit `data-stacks-loaded` string values for reliable attribute selector matching
+
 ## [0.3.1](https://github.com/AnsoCode/Sencho/compare/v0.3.0...v0.3.1) (2026-03-25)
 
 

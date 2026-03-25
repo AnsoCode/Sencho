@@ -277,7 +277,7 @@ app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response)
       return;
     }
 
-    const { username, password, confirmPassword } = req.body;
+    const { username, password, confirmPassword, admin_email } = req.body;
 
     // Validation
     if (!username || !password || !confirmPassword) {
@@ -306,6 +306,10 @@ app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response)
     dbSvc.updateGlobalSetting('auth_username', username);
     dbSvc.updateGlobalSetting('auth_password_hash', passwordHash);
     dbSvc.updateGlobalSetting('auth_jwt_secret', jwtSecret);
+
+    if (admin_email && typeof admin_email === 'string') {
+      dbSvc.updateGlobalSetting('admin_email', admin_email.trim());
+    }
 
     // Issue JWT and log user in
     const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
