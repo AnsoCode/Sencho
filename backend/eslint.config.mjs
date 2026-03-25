@@ -22,6 +22,9 @@ export default tseslint.config(
       // Terminal output processing intentionally uses control characters in regexes
       'no-control-regex': 'off',
       'no-console': 'off',
+      // New in ESLint 10 recommended — existing patterns, suppress until addressed
+      'no-useless-assignment': 'warn',
+      'preserve-caught-error': 'warn',
     },
   },
 )

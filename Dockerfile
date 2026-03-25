@@ -9,7 +9,7 @@ FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-COPY frontend/package*.json ./
+COPY frontend/package*.json frontend/.npmrc ./
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
     npm install
@@ -25,7 +25,7 @@ WORKDIR /app/backend
 
 RUN apk add --no-cache python3 make g++
 
-COPY backend/package*.json ./
+COPY backend/package*.json backend/.npmrc ./
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
     npm install
@@ -69,7 +69,7 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
       xx-apk add --no-cache g++ musl-dev linux-headers; \
     fi
 
-COPY backend/package*.json ./
+COPY backend/package*.json backend/.npmrc ./
 
 # Native: plain npm ci — g++ compiles native modules for the host arch.
 # Cross:  npm_config_arch tells prebuild-install/node-pre-gyp which pre-built
