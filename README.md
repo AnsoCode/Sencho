@@ -69,4 +69,4 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting. **Do not open public
 
 ## License
 
-License pending. See the [license decision issue](https://github.com/AnsoCode/Sencho/issues) and [LICENSE](LICENSE) for details.
+License pending. See [issue #100](https://github.com/AnsoCode/Sencho/issues/100) for the license decision discussion and [LICENSE](LICENSE) for current status.
