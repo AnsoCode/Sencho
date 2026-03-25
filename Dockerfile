@@ -69,7 +69,7 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
       xx-apk add --no-cache g++ musl-dev linux-headers; \
     fi
 
-COPY backend/package*.json ./
+COPY backend/package*.json backend/.npmrc ./
 
 # Native: plain npm ci — g++ compiles native modules for the host arch.
 # Cross:  npm_config_arch tells prebuild-install/node-pre-gyp which pre-built
