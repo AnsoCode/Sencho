@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4](https://github.com/AnsoCode/Sencho/compare/v0.2.3...v0.2.4) (2026-03-25)
+
+
+### Fixed
+
+* **csp:** allow external images in App Store and suppress console warnings ([#138](https://github.com/AnsoCode/Sencho/issues/138)) ([c5217cd](https://github.com/AnsoCode/Sencho/commit/c5217cd96de3dd8d2971668373b6eabd2c1654a4))
+
 ## [0.2.3](https://github.com/AnsoCode/Sencho/compare/v0.2.2...v0.2.3) (2026-03-25)
 
 
