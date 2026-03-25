@@ -6,9 +6,12 @@ import { loginAs } from './helpers';
 
 const TEST_STACK = 'e2e-test-stack';
 
-/** Wait for the stacks sidebar to be ready (Create Stack button is always rendered). */
+/** Wait for the stacks sidebar to finish loading (skeletons replaced with actual stack list). */
 async function waitForStacksLoaded(page: import('@playwright/test').Page) {
   await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
+  // The CommandList has data-stacks-loaded="true" once the async refreshStacks() completes.
+  // Without this, tests can race against the loading state and miss newly created stacks.
+  await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
 }
 
 /** Delete the test stack via the browser's authenticated fetch (so cookies are included). */
