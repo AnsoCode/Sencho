@@ -236,7 +236,7 @@ jobs:
 
       - name: Open / update screenshots PR
         id: create-pr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.DOCS_REPO_TOKEN }}
           branch: chore/refresh-screenshots
