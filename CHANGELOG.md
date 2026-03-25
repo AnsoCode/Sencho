@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/AnsoCode/Sencho/compare/v0.2.5...v0.3.0) (2026-03-25)
+
+
+### Added
+
+* add Community/Pro licensing, fleet view, and UI reorganization ([#145](https://github.com/AnsoCode/Sencho/issues/145)) ([4f26f22](https://github.com/AnsoCode/Sencho/commit/4f26f22ccef89441be032a266723cf6fca0a488a))
+
 ## [0.2.5](https://github.com/AnsoCode/Sencho/compare/v0.2.4...v0.2.5) (2026-03-25)
 
 
