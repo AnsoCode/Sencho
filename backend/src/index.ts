@@ -437,7 +437,7 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
 
 // Apply authentication middleware to all /api/* routes except /api/auth/*
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || /^\/webhooks\/\d+\/trigger$/.test(req.path)) {
+  if (req.path.startsWith('/auth/') || /^\/webhooks\/\d+\/trigger$/.test(req.path) || req.path === '/webhooks/lemonsqueezy') {
     next();
     return;
   }
