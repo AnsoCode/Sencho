@@ -236,4 +236,70 @@ export class FileSystemService {
       console.error('Migration error:', error);
     }
   }
+
+  /**
+   * Backup stack files (compose.yaml + .env) to .sencho-backup/ within the stack dir.
+   */
+  async backupStackFiles(stackName: string): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
+    const backupDir = path.join(stackDir, '.sencho-backup');
+    await fsPromises.mkdir(backupDir, { recursive: true });
+
+    // Copy compose file
+    const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+    for (const file of composeFiles) {
+      const src = path.join(stackDir, file);
+      try {
+        await fsPromises.access(src);
+        await fsPromises.copyFile(src, path.join(backupDir, file));
+      } catch {
+        // File doesn't exist, skip
+      }
+    }
+
+    // Copy .env if it exists
+    const envSrc = path.join(stackDir, '.env');
+    try {
+      await fsPromises.access(envSrc);
+      await fsPromises.copyFile(envSrc, path.join(backupDir, '.env'));
+    } catch {
+      // No .env to backup
+    }
+
+    // Write timestamp marker
+    await fsPromises.writeFile(path.join(backupDir, '.timestamp'), Date.now().toString(), 'utf-8');
+  }
+
+  /**
+   * Restore stack files from .sencho-backup/ back to the stack dir.
+   */
+  async restoreStackFiles(stackName: string): Promise<void> {
+    const stackDir = path.join(this.baseDir, stackName);
+    const backupDir = path.join(stackDir, '.sencho-backup');
+
+    const items = await fsPromises.readdir(backupDir);
+    for (const item of items) {
+      if (item === '.timestamp') continue;
+      await fsPromises.copyFile(path.join(backupDir, item), path.join(stackDir, item));
+    }
+  }
+
+  /**
+   * Get backup info for a stack.
+   */
+  async getBackupInfo(stackName: string): Promise<{ exists: boolean; timestamp: number | null }> {
+    const backupDir = path.join(this.baseDir, stackName, '.sencho-backup');
+    try {
+      await fsPromises.access(backupDir);
+      const tsFile = path.join(backupDir, '.timestamp');
+      try {
+        const ts = await fsPromises.readFile(tsFile, 'utf-8');
+        return { exists: true, timestamp: parseInt(ts, 10) || null };
+      } catch {
+        return { exists: true, timestamp: null };
+      }
+    } catch {
+      return { exists: false, timestamp: null };
+    }
+  }
 }

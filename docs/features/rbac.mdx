@@ -1,0 +1,58 @@
+---
+title: RBAC & User Management
+description: Role-based access control for Sencho Pro — create admin and viewer accounts to control who can modify your stacks.
+---
+
+<Note>
+  RBAC requires a Sencho Pro license. Community Edition supports a single admin account only.
+</Note>
+
+Sencho Pro introduces role-based access control with two distinct roles: **Admin** and **Viewer**. This lets you give team members read-only access to your infrastructure without risking accidental changes.
+
+## Roles
+
+| Role | Description |
+|------|-------------|
+| **Admin** | Full access to all features — deploy, edit, manage users, configure nodes, and more |
+| **Viewer** | Read-only access to dashboards, logs, stats, and file contents |
+
+### What viewers can see
+
+- Dashboard and home metrics
+- Stacks list and stack detail view
+- Compose and `.env` file contents (read-only)
+- Per-container stats and logs
+- Fleet view
+- Resources hub (images, volumes, networks — read-only)
+- Global logs
+- Notifications
+
+### What viewers cannot do
+
+- Edit compose or environment files
+- Deploy, restart, stop, or start stacks
+- Create or delete stacks
+- Manage users, nodes, webhooks, or alerts
+- Access the host console
+- Prune resources
+- Change settings
+
+## Managing users
+
+Admins can manage accounts in **Settings → Users**. From there you can:
+
+- **Create** a new user with a username, password, and role (Admin or Viewer)
+- **Edit** an existing user's password or role
+- **Delete** a user account
+
+## Migration from single-admin setup
+
+When you upgrade to Sencho Pro, your existing single-admin credentials are automatically migrated to the new users table. No manual action is required — your login continues to work as before, and your account is assigned the Admin role.
+
+## License tiers
+
+| Tier | Admin accounts | Viewer accounts |
+|------|---------------|-----------------|
+| **Community** | 1 | 0 |
+| **Personal Pro** | 1 | 1 |
+| **Team Pro** | Unlimited | Unlimited |

@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2 } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
@@ -37,6 +37,8 @@ import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
+import { useAuth } from '@/context/AuthContext';
+import { useLicense } from '@/context/LicenseContext';
 
 interface ContainerInfo {
   Id: string;
@@ -69,6 +71,8 @@ const formatBytes = (bytes: number) => {
 };
 
 export default function EditorLayout() {
+  const { isAdmin } = useAuth();
+  const { isPro } = useLicense();
   const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -103,6 +107,7 @@ export default function EditorLayout() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [isFileLoading, setIsFileLoading] = useState(false);
+  const [backupInfo, setBackupInfo] = useState<{ exists: boolean; timestamp: number | null }>({ exists: false, timestamp: null });
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('sencho-theme') as Theme | null;
     if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
@@ -624,6 +629,17 @@ export default function EditorLayout() {
         console.error('Failed to load containers:', error);
         setContainers([]);
       }
+
+      // Load backup info (Pro only)
+      if (isPro) {
+        try {
+          const backupRes = await apiFetch(`/stacks/${filename}/backup`);
+          if (backupRes.ok) setBackupInfo(await backupRes.json());
+          else setBackupInfo({ exists: false, timestamp: null });
+        } catch {
+          setBackupInfo({ exists: false, timestamp: null });
+        }
+      }
     } catch (error) {
       console.error('Failed to load file:', error);
       setSelectedFile(null);
@@ -678,6 +694,32 @@ export default function EditorLayout() {
     }
   };
 
+  const rollbackStack = async () => {
+    if (!selectedFile || loadingAction !== null) return;
+    setLoadingAction('rollback');
+    try {
+      const res = await apiFetch(`/stacks/${selectedFile}/rollback`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error || 'Rollback failed');
+      }
+      toast.success('Stack rolled back successfully.');
+      // Reload the editor content
+      const contentRes = await apiFetch(`/stacks/${selectedFile}`);
+      const text = await contentRes.text();
+      setContent(text || '');
+      setOriginalContent(text || '');
+      // Refresh backup info
+      const backupRes = await apiFetch(`/stacks/${selectedFile}/backup`);
+      if (backupRes.ok) setBackupInfo(await backupRes.json());
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Rollback failed';
+      toast.error(msg);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
   const handleSaveAndDeploy = async (e: React.MouseEvent) => {
     await saveFile();
     await deployStack(e);
@@ -716,9 +758,17 @@ export default function EditorLayout() {
       const conts = await containersRes.json();
       setContainers(Array.isArray(conts) ? conts : []);
       await refreshStacks(true);
+      // Refresh backup info
+      if (isPro) {
+        try {
+          const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
+          if (backupRes.ok) setBackupInfo(await backupRes.json());
+        } catch { /* ignore */ }
+      }
     } catch (error) {
       console.error('Failed to deploy:', error);
-      toast.error((error as Error).message || 'Failed to deploy stack');
+      const msg = (error as Error).message || 'Failed to deploy stack';
+      toast.error(isPro ? `${msg} — automatically rolled back to previous version.` : msg);
     } finally {
       setLoadingAction(null);
     }
@@ -969,7 +1019,7 @@ export default function EditorLayout() {
         )}
 
         {/* Create Stack Button */}
-        <div className="p-4">
+        {isAdmin && <div className="p-4">
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="w-full rounded-lg">
@@ -995,7 +1045,7 @@ export default function EditorLayout() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+        </div>}
 
         {/* Search Input & Stack List */}
         <Command className="bg-transparent flex-1 flex flex-col overflow-hidden">
@@ -1119,6 +1169,7 @@ export default function EditorLayout() {
               Fleet
             </Button>
             {/* Console Toggle */}
+            {isAdmin && (
             <Button
               variant={activeView === 'host-console' ? 'default' : 'outline'}
               size="sm"
@@ -1128,6 +1179,7 @@ export default function EditorLayout() {
               <Terminal className="w-4 h-4 mr-2" />
               Console
             </Button>
+            )}
             {/* Resources Toggle */}
             <Button
               variant={activeView === 'resources' ? 'default' : 'outline'}
@@ -1263,6 +1315,7 @@ export default function EditorLayout() {
                         {/* Stack Name */}
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
+                        {isAdmin && (
                         <div className="flex items-center gap-2 flex-wrap">
                           {isRunning ? (
                             <>
@@ -1285,6 +1338,23 @@ export default function EditorLayout() {
                             <CloudDownload className="w-4 h-4 mr-2" />
                             {loadingAction === 'update' ? 'Updating...' : 'Update'}
                           </Button>
+                          {isPro && backupInfo.exists && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
+                                    <Undo2 className="w-4 h-4 mr-2" />
+                                    {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {backupInfo.timestamp
+                                    ? `Roll back to backup from ${new Date(backupInfo.timestamp).toLocaleString()}`
+                                    : 'Roll back to previous deployment'}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                           <Button
                             type="button"
                             size="sm"
@@ -1300,6 +1370,7 @@ export default function EditorLayout() {
                             {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
                           </Button>
                         </div>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent className="p-4 pt-2">
@@ -1391,6 +1462,7 @@ export default function EditorLayout() {
                                         <TooltipContent>View Live Logs</TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
+                                    {isAdmin && (
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -1407,6 +1479,7 @@ export default function EditorLayout() {
                                         <TooltipContent>Open Bash Terminal</TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -1464,6 +1537,7 @@ export default function EditorLayout() {
                         </Select>
                       )}
                     </div>
+                    {isAdmin && (
                     <div className="flex gap-2">
                       {!isEditing ? (
                         <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
@@ -1487,6 +1561,7 @@ export default function EditorLayout() {
                         </>
                       )}
                     </div>
+                    )}
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {activeTab === 'env' && (
@@ -1517,7 +1592,7 @@ export default function EditorLayout() {
                             fontSize: 14,
                             padding: { top: 10 },
                             scrollBeyondLastLine: false,
-                            readOnly: !isEditing,
+                            readOnly: !isEditing || !isAdmin,
                           }}
                         />
                       )}

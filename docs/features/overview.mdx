@@ -19,6 +19,18 @@ Add remote Sencho instances as nodes. All dashboard operations — stack managem
 
 Monitor your entire infrastructure from a single screen. The fleet dashboard shows all nodes with health metrics, container counts, and resource usage. Pro users unlock fleet health summary cards, container drill-down, search, sorting, filtering, and critical node detection. [Learn more →](/features/fleet-view)
 
+## RBAC & user management
+
+Create viewer accounts with read-only access to dashboards, logs, and file contents — while keeping deploy and edit permissions locked to admins. Sencho Pro supports two roles: Admin (full access) and Viewer (read-only). [Learn more →](/features/rbac)
+
+## Atomic deployments
+
+Pro users get automatic backup and rollback on every deployment. Before applying changes, Sencho snapshots your compose and environment files. If containers crash after deploy, the previous configuration is restored automatically. [Learn more →](/features/atomic-deployments)
+
+## Fleet-wide backups
+
+Create point-in-time snapshots of every compose file and environment file across all nodes. Snapshots are stored centrally and can be browsed by node and stack. Restore individual stacks from any snapshot with optional one-click redeploy — even to remote nodes. Offline nodes are gracefully skipped with visible warnings. [Learn more →](/features/fleet-backups)
+
 ## Real-time logs & stats
 
 Stream container logs and resource metrics (CPU, memory, network I/O) live in the browser via WebSocket and Server-Sent Events connections. The Home dashboard shows historical CPU and RAM charts over the last 24 hours.

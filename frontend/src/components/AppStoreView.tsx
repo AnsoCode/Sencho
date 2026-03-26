@@ -10,6 +10,7 @@ import { Search, Rocket, Loader2, Info, ExternalLink, Star } from "lucide-react"
 import { toast } from "sonner";
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
+import { useAuth } from '@/context/AuthContext';
 
 export interface TemplateEnv {
     name: string;
@@ -44,6 +45,7 @@ interface AppStoreViewProps {
 }
 
 export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
+    const { isAdmin } = useAuth();
     const { activeNode } = useNodes();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -471,9 +473,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                 <div className="flex flex-col w-full gap-2">
                                     <Button
                                         onClick={handleDeploy}
-                                        disabled={isDeploying || !stackName.trim()}
+                                        disabled={isDeploying || !stackName.trim() || !isAdmin}
                                         className="w-full"
                                         size="lg"
+                                        title={!isAdmin ? 'Admin access required to deploy' : undefined}
                                     >
                                         {isDeploying ? (
                                             <>

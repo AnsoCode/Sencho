@@ -37,7 +37,10 @@
           "features/multi-node",
           "features/fleet-view",
           "features/alerts-notifications",
-          "features/webhooks"
+          "features/webhooks",
+          "features/rbac",
+          "features/atomic-deployments",
+          "features/fleet-backups"
         ]
       },
       {

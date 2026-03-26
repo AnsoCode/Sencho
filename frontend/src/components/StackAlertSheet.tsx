@@ -15,6 +15,7 @@ import { Trash2, HelpCircle, AlertTriangle, Info, CheckCircle2, Loader2 } from '
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface StackAlert {
     id?: number;
@@ -39,6 +40,7 @@ interface AgentStatus {
 }
 
 export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetProps) {
+    const { isAdmin } = useAuth();
     const { activeNode } = useNodes();
     const isRemote = activeNode?.type === 'remote';
 
@@ -266,7 +268,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                                                     Trigger after {alert.duration_mins}m • Cooldown: {alert.cooldown_mins}m
                                                 </div>
                                             </div>
-                                            <Button
+                                            {isAdmin && <Button
                                                 variant="ghost"
                                                 size="icon"
                                                 className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
@@ -274,7 +276,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                                                 disabled={isLoading}
                                             >
                                                 <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            </Button>}
                                         </div>
                                     </div>
                                 ))
@@ -284,7 +286,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                         <hr />
 
                         {/* Add New Alert Form */}
-                        <div className="space-y-4">
+                        {isAdmin && <div className="space-y-4">
                             <h4 className="text-sm font-semibold">Add New Rule</h4>
 
                             <div className="space-y-2">
@@ -419,7 +421,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                                     'Add Rule'
                                 )}
                             </Button>
-                        </div>
+                        </div>}
                     </div>
                 </TooltipProvider>
             </SheetContent>

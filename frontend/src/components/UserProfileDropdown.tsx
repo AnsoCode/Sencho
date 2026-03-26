@@ -15,7 +15,7 @@ interface UserProfileDropdownProps {
 }
 
 export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
-    const { logout } = useAuth();
+    const { logout, user, isAdmin } = useAuth();
     const { license, isPro } = useLicense();
 
     return (
@@ -33,8 +33,12 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                             <User className="w-4 h-4 text-muted-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">admin</p>
+                            <p className="text-sm font-medium truncate">{user?.username ?? 'admin'}</p>
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${isAdmin ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                                    {user?.role ?? 'admin'}
+                                </span>
+                                <span className="text-muted-foreground/40">·</span>
                                 {isPro ? <ProBadge /> : <span>Community</span>}
                             </div>
                         </div>

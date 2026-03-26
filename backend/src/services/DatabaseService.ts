@@ -59,12 +59,41 @@ export interface WebhookExecution {
     executed_at: number;
 }
 
+export interface User {
+    id: number;
+    username: string;
+    password_hash: string;
+    role: 'admin' | 'viewer';
+    created_at: number;
+    updated_at: number;
+}
+
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
     message: string;
     timestamp: number;
     is_read: boolean;
+}
+
+export interface FleetSnapshot {
+    id: number;
+    description: string;
+    created_by: string;
+    node_count: number;
+    stack_count: number;
+    skipped_nodes: string;
+    created_at: number;
+}
+
+export interface FleetSnapshotFile {
+    id: number;
+    snapshot_id: number;
+    node_id: number;
+    node_name: string;
+    stack_name: string;
+    filename: string;
+    content: string;
 }
 
 export class DatabaseService {
@@ -83,6 +112,7 @@ export class DatabaseService {
 
         this.initSchema();
         this.migrateJsonConfig(dataDir);
+        this.migrateAdminToUsersTable();
     }
 
     public static getInstance(): DatabaseService {
@@ -188,6 +218,38 @@ export class DatabaseService {
       );
 
       CREATE INDEX IF NOT EXISTS idx_webhook_executions_webhook ON webhook_executions(webhook_id);
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'admin',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS fleet_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        description TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL,
+        node_count INTEGER NOT NULL,
+        stack_count INTEGER NOT NULL,
+        skipped_nodes TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS fleet_snapshot_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_id INTEGER NOT NULL,
+        node_id INTEGER NOT NULL,
+        node_name TEXT NOT NULL,
+        stack_name TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        content TEXT NOT NULL,
+        FOREIGN KEY(snapshot_id) REFERENCES fleet_snapshots(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_snapshot_files_snapshot ON fleet_snapshot_files(snapshot_id);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -229,6 +291,22 @@ export class DatabaseService {
                 'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
             ).run('Local', 'local', process.env.COMPOSE_DIR || '/app/compose', 1, 'online', Date.now());
         }
+    }
+
+    private migrateAdminToUsersTable(): void {
+        const userCount = (this.db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
+        if (userCount > 0) return;
+
+        const settings = this.getGlobalSettings();
+        const username = settings.auth_username;
+        const passwordHash = settings.auth_password_hash;
+        if (!username || !passwordHash) return;
+
+        const now = Date.now();
+        this.db.prepare(
+            'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+        ).run(username, passwordHash, 'admin', now, now);
+        console.log(`Migrated admin user "${username}" to users table.`);
     }
 
     private migrateJsonConfig(dataDir: string) {
@@ -592,5 +670,106 @@ export class DatabaseService {
         ).run(execution.webhook_id, execution.webhook_id);
 
         return result.lastInsertRowid as number;
+    }
+
+    // --- Users ---
+
+    public getUsers(): Omit<User, 'password_hash'>[] {
+        return this.db.prepare('SELECT id, username, role, created_at, updated_at FROM users ORDER BY created_at ASC').all() as Omit<User, 'password_hash'>[];
+    }
+
+    public getUser(id: number): User | undefined {
+        return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+    }
+
+    public getUserByUsername(username: string): User | undefined {
+        return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined;
+    }
+
+    public addUser(user: { username: string; password_hash: string; role: 'admin' | 'viewer' }): number {
+        const now = Date.now();
+        const result = this.db.prepare(
+            'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+        ).run(user.username, user.password_hash, user.role, now, now);
+        return result.lastInsertRowid as number;
+    }
+
+    public updateUser(id: number, updates: Partial<{ username: string; password_hash: string; role: string }>): void {
+        const fields: string[] = [];
+        const values: (string | number)[] = [];
+
+        if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
+        if (updates.password_hash !== undefined) { fields.push('password_hash = ?'); values.push(updates.password_hash); }
+        if (updates.role !== undefined) { fields.push('role = ?'); values.push(updates.role); }
+
+        if (fields.length === 0) return;
+
+        fields.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+        this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteUser(id: number): void {
+        this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    }
+
+    public getUserCount(): number {
+        return (this.db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number })?.count || 0;
+    }
+
+    public getAdminCount(): number {
+        return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get() as { count: number })?.count || 0;
+    }
+
+    // --- Fleet Snapshots ---
+
+    public createSnapshot(description: string, createdBy: string, nodeCount: number, stackCount: number, skippedNodes: string): number {
+        const result = this.db.prepare(
+            'INSERT INTO fleet_snapshots (description, created_by, node_count, stack_count, skipped_nodes, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(description, createdBy, nodeCount, stackCount, skippedNodes, Date.now());
+        return result.lastInsertRowid as number;
+    }
+
+    public insertSnapshotFiles(snapshotId: number, files: Array<{ nodeId: number; nodeName: string; stackName: string; filename: string; content: string }>): void {
+        const insert = this.db.prepare(
+            'INSERT INTO fleet_snapshot_files (snapshot_id, node_id, node_name, stack_name, filename, content) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        const insertMany = this.db.transaction((rows: Array<{ nodeId: number; nodeName: string; stackName: string; filename: string; content: string }>) => {
+            for (const row of rows) {
+                insert.run(snapshotId, row.nodeId, row.nodeName, row.stackName, row.filename, row.content);
+            }
+        });
+        insertMany(files);
+    }
+
+    public getSnapshots(limit = 50, offset = 0): FleetSnapshot[] {
+        return this.db.prepare(
+            'SELECT * FROM fleet_snapshots ORDER BY created_at DESC LIMIT ? OFFSET ?'
+        ).all(limit, offset) as FleetSnapshot[];
+    }
+
+    public getSnapshot(id: number): FleetSnapshot | undefined {
+        return this.db.prepare('SELECT * FROM fleet_snapshots WHERE id = ?').get(id) as FleetSnapshot | undefined;
+    }
+
+    public getSnapshotFiles(snapshotId: number): FleetSnapshotFile[] {
+        return this.db.prepare(
+            'SELECT * FROM fleet_snapshot_files WHERE snapshot_id = ? ORDER BY node_name, stack_name'
+        ).all(snapshotId) as FleetSnapshotFile[];
+    }
+
+    public getSnapshotStackFiles(snapshotId: number, nodeId: number, stackName: string): FleetSnapshotFile[] {
+        return this.db.prepare(
+            'SELECT * FROM fleet_snapshot_files WHERE snapshot_id = ? AND node_id = ? AND stack_name = ?'
+        ).all(snapshotId, nodeId, stackName) as FleetSnapshotFile[];
+    }
+
+    public deleteSnapshot(id: number): void {
+        this.db.prepare('DELETE FROM fleet_snapshots WHERE id = ?').run(id);
+    }
+
+    public getSnapshotCount(): number {
+        return (this.db.prepare('SELECT COUNT(*) as count FROM fleet_snapshots').get() as { count: number })?.count || 0;
     }
 }

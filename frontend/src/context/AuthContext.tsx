@@ -2,10 +2,17 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 
 type AppStatus = 'loading' | 'needsSetup' | 'notAuthenticated' | 'authenticated';
 
+interface UserInfo {
+  username: string;
+  role: 'admin' | 'viewer';
+}
+
 interface AuthContextType {
   appStatus: AppStatus;
   isAuthenticated: boolean;
   needsSetup: boolean;
+  user: UserInfo | null;
+  isAdmin: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   completeSetup: () => void;
@@ -16,6 +23,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [appStatus, setAppStatus] = useState<AppStatus>('loading');
+  const [user, setUser] = useState<UserInfo | null>(null);
 
   const checkAuth = async () => {
     try {
@@ -24,9 +32,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: 'include',
       });
       const statusData = await statusResponse.json();
-      
+
       if (statusData.needsSetup) {
         setAppStatus('needsSetup');
+        setUser(null);
         return;
       }
 
@@ -34,13 +43,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const authResponse = await fetch('/api/auth/check', {
         credentials: 'include',
       });
-      
+
       if (authResponse.ok) {
+        const data = await authResponse.json();
+        setUser(data.user ?? null);
         setAppStatus('authenticated');
       } else {
+        setUser(null);
         setAppStatus('notAuthenticated');
       }
     } catch {
+      setUser(null);
       setAppStatus('notAuthenticated');
     }
   };
@@ -85,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      setUser(null);
       setAppStatus('notAuthenticated');
     }
   };
@@ -94,14 +108,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      appStatus, 
-      isAuthenticated: appStatus === 'authenticated', 
+    <AuthContext.Provider value={{
+      appStatus,
+      isAuthenticated: appStatus === 'authenticated',
       needsSetup: appStatus === 'needsSetup',
-      login, 
-      logout, 
+      user,
+      isAdmin: user?.role === 'admin',
+      login,
+      logout,
       completeSetup,
-      checkAuth 
+      checkAuth
     }}>
       {children}
     </AuthContext.Provider>

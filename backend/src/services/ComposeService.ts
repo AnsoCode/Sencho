@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import WebSocket from 'ws';
 import DockerController from './DockerController';
+import { FileSystemService } from './FileSystemService';
 import { LogFormatter } from './LogFormatter';
 import { NodeRegistry } from './NodeRegistry';
 
@@ -77,43 +78,74 @@ export class ComposeService {
     await this.execute('docker', ['compose', action], stackDir, ws);
   }
 
-  async deployStack(stackName: string, ws?: WebSocket): Promise<void> {
+  async deployStack(stackName: string, ws?: WebSocket, atomic?: boolean): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
+    const sendOutput = (data: string) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+    };
 
-    try {
-      const dockerController = DockerController.getInstance(this.nodeId);
-      const legacyContainers = await dockerController.getContainersByStack(stackName);
-      if (legacyContainers && legacyContainers.length > 0) {
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(`=== Cleaning up existing containers for clean deployment ===\n`);
-        await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
+    // Atomic: backup files before deploying
+    if (atomic) {
+      try {
+        const fsSvc = FileSystemService.getInstance(this.nodeId);
+        await fsSvc.backupStackFiles(stackName);
+        sendOutput('=== Backup created for atomic deployment ===\n');
+      } catch (e) {
+        console.warn(`Failed to backup stack files for ${stackName}:`, e);
       }
-    } catch (e) {
-      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
     }
 
-    await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+    try {
+      try {
+        const dockerController = DockerController.getInstance(this.nodeId);
+        const legacyContainers = await dockerController.getContainersByStack(stackName);
+        if (legacyContainers && legacyContainers.length > 0) {
+          sendOutput(`=== Cleaning up existing containers for clean deployment ===\n`);
+          await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
+        }
+      } catch (e) {
+        console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+      }
 
-    // Post-Deploy Health Probe
-    await new Promise(resolve => setTimeout(resolve, 3000));
+      await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
 
-    const dockerController = DockerController.getInstance(this.nodeId);
-    const containers = await dockerController.getDocker().listContainers({
-      all: true,
-      filters: { label: [`com.docker.compose.project=${stackName}`] }
-    });
+      // Post-Deploy Health Probe
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-    for (const containerInfo of containers) {
-      if (containerInfo.State === 'exited') {
-        const container = dockerController.getDocker().getContainer(containerInfo.Id);
-        const inspectData = await container.inspect();
-        const exitCode = inspectData.State.ExitCode;
+      const dockerController = DockerController.getInstance(this.nodeId);
+      const containers = await dockerController.getDocker().listContainers({
+        all: true,
+        filters: { label: [`com.docker.compose.project=${stackName}`] }
+      });
 
-        if (exitCode !== 0) {
-          const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
-          const logStr = logs.toString('utf-8');
-          throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
+      for (const containerInfo of containers) {
+        if (containerInfo.State === 'exited') {
+          const container = dockerController.getDocker().getContainer(containerInfo.Id);
+          const inspectData = await container.inspect();
+          const exitCode = inspectData.State.ExitCode;
+
+          if (exitCode !== 0) {
+            const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
+            const logStr = logs.toString('utf-8');
+            throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
+          }
         }
       }
+    } catch (deployError) {
+      // Atomic: auto-rollback on failure
+      if (atomic) {
+        sendOutput('\n=== Deployment failed — rolling back to previous version ===\n');
+        try {
+          const fsSvc = FileSystemService.getInstance(this.nodeId);
+          await fsSvc.restoreStackFiles(stackName);
+          await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+          sendOutput('=== Rolled back successfully ===\n');
+        } catch (rollbackError) {
+          console.error(`Rollback failed for ${stackName}:`, rollbackError);
+          sendOutput('=== Rollback failed — manual intervention may be required ===\n');
+        }
+      }
+      throw deployError;
     }
   }
 
@@ -228,29 +260,81 @@ export class ComposeService {
     startStream();
   }
 
-  async updateStack(stackName: string, ws?: WebSocket): Promise<void> {
+  async updateStack(stackName: string, ws?: WebSocket, atomic?: boolean): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
     const sendOutput = (data: string) => {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
     };
 
-    try {
-      const dockerController = DockerController.getInstance(this.nodeId);
-      const legacyContainers = await dockerController.getContainersByStack(stackName);
-      if (legacyContainers && legacyContainers.length > 0) {
-        sendOutput(`=== Cleaning up existing containers for clean update ===\n`);
-        await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
+    // Atomic: backup files before updating
+    if (atomic) {
+      try {
+        const fsSvc = FileSystemService.getInstance(this.nodeId);
+        await fsSvc.backupStackFiles(stackName);
+        sendOutput('=== Backup created for atomic update ===\n');
+      } catch (e) {
+        console.warn(`Failed to backup stack files for ${stackName}:`, e);
       }
-    } catch (e) {
-      console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
     }
 
-    sendOutput('=== Pulling latest images ===\n');
-    await this.execute('docker', ['compose', 'pull'], stackDir, ws);
+    try {
+      try {
+        const dockerController = DockerController.getInstance(this.nodeId);
+        const legacyContainers = await dockerController.getContainersByStack(stackName);
+        if (legacyContainers && legacyContainers.length > 0) {
+          sendOutput(`=== Cleaning up existing containers for clean update ===\n`);
+          await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
+        }
+      } catch (e) {
+        console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+      }
 
-    sendOutput('=== Recreating containers ===\n');
-    await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
-    sendOutput('=== Stack updated successfully ===\n');
+      sendOutput('=== Pulling latest images ===\n');
+      await this.execute('docker', ['compose', 'pull'], stackDir, ws);
+
+      sendOutput('=== Recreating containers ===\n');
+      await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+
+      // Post-Update Health Probe
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      const dockerController = DockerController.getInstance(this.nodeId);
+      const containers = await dockerController.getDocker().listContainers({
+        all: true,
+        filters: { label: [`com.docker.compose.project=${stackName}`] }
+      });
+
+      for (const containerInfo of containers) {
+        if (containerInfo.State === 'exited') {
+          const container = dockerController.getDocker().getContainer(containerInfo.Id);
+          const inspectData = await container.inspect();
+          const exitCode = inspectData.State.ExitCode;
+
+          if (exitCode !== 0) {
+            const logs = await container.logs({ stdout: true, stderr: true, tail: 50 });
+            const logStr = logs.toString('utf-8');
+            throw new Error(`CONTAINER_CRASHED\nExit Code: ${exitCode}\n${logStr}`);
+          }
+        }
+      }
+
+      sendOutput('=== Stack updated successfully ===\n');
+    } catch (updateError) {
+      // Atomic: auto-rollback on failure
+      if (atomic) {
+        sendOutput('\n=== Update failed — rolling back to previous version ===\n');
+        try {
+          const fsSvc = FileSystemService.getInstance(this.nodeId);
+          await fsSvc.restoreStackFiles(stackName);
+          await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+          sendOutput('=== Rolled back successfully ===\n');
+        } catch (rollbackError) {
+          console.error(`Rollback failed for ${stackName}:`, rollbackError);
+          sendOutput('=== Rollback failed — manual intervention may be required ===\n');
+        }
+      }
+      throw updateError;
+    }
   }
 
   public async downStack(stackName: string): Promise<void> {

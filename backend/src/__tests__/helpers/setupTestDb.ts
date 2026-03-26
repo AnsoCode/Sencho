@@ -34,6 +34,9 @@ export async function setupTestDb(): Promise<string> {
   db.updateGlobalSetting('auth_password_hash', passwordHash);
   db.updateGlobalSetting('auth_jwt_secret', TEST_JWT_SECRET);
 
+  // Also seed the users table (RBAC login reads from here)
+  db.addUser({ username: TEST_USERNAME, password_hash: passwordHash, role: 'admin' });
+
   return tmpDir;
 }
 
