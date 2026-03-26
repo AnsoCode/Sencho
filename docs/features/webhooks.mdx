@@ -1,0 +1,127 @@
+---
+title: Webhooks
+description: Trigger stack actions from CI/CD pipelines via HTTP webhooks with HMAC signature authentication.
+---
+
+<Note>
+  Webhooks require a Sencho Pro license.
+</Note>
+
+Sencho webhooks let external systems trigger stack actions over HTTP. The typical use case: your CI pipeline builds a new image, then calls a Sencho webhook to deploy the updated stack — no manual intervention required.
+
+## How it works
+
+1. You create a webhook in **Settings → Webhooks**, targeting a specific stack and action
+2. Sencho generates a unique secret for HMAC-SHA256 signature validation
+3. Your CI/CD system sends a `POST` request to the trigger URL with the correct signature
+4. Sencho validates the signature and executes the action asynchronously
+
+## Creating a webhook
+
+Open **Settings → Webhooks** and click **Create Webhook**. Fill in:
+
+| Field | Description |
+|-------|-------------|
+| **Name** | A display name (e.g. "Deploy on push") |
+| **Stack** | The target stack to act on |
+| **Action** | One of: `deploy`, `restart`, `stop`, `start`, `pull` |
+
+After creation, Sencho shows the webhook secret **once**. Copy it immediately — it cannot be retrieved later.
+
+### Actions explained
+
+| Action | What it does |
+|--------|-------------|
+| **Deploy** | Runs `docker compose down` then `docker compose up -d` (full redeploy) |
+| **Restart** | Runs `docker compose restart` |
+| **Stop** | Runs `docker compose stop` |
+| **Start** | Runs `docker compose start` |
+| **Pull** | Pulls latest images and recreates changed containers |
+
+## Triggering a webhook
+
+Send a POST request to the trigger URL with an HMAC-SHA256 signature:
+
+```
+POST /api/webhooks/{id}/trigger
+Content-Type: application/json
+X-Webhook-Signature: sha256={hmac}
+```
+
+The signature is computed as `HMAC-SHA256(request_body, webhook_secret)` and sent in the `X-Webhook-Signature` header with a `sha256=` prefix.
+
+### Example with curl
+
+```bash
+SECRET="your-webhook-secret"
+BODY='{}'
+SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | cut -d' ' -f2)
+
+curl -X POST https://your-sencho.com/api/webhooks/3/trigger \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: sha256=$SIGNATURE" \
+  -d "$BODY"
+```
+
+### Overriding the action
+
+By default, the webhook executes the action configured at creation time. You can override it per-request by including an `action` field in the body:
+
+```json
+{ "action": "restart" }
+```
+
+### Response
+
+A successful trigger returns `202 Accepted` immediately. The action executes asynchronously in the background.
+
+```json
+{ "message": "Webhook accepted", "action": "deploy" }
+```
+
+## CI/CD integration examples
+
+### GitHub Actions
+
+```yaml
+- name: Deploy via Sencho
+  run: |
+    BODY='{}'
+    SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "${{ secrets.SENCHO_WEBHOOK_SECRET }}" | cut -d' ' -f2)
+    curl -X POST "${{ secrets.SENCHO_URL }}/api/webhooks/${{ secrets.SENCHO_WEBHOOK_ID }}/trigger" \
+      -H "Content-Type: application/json" \
+      -H "X-Webhook-Signature: sha256=$SIGNATURE" \
+      -d "$BODY"
+```
+
+### GitLab CI
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - BODY='{}'
+    - SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SENCHO_WEBHOOK_SECRET" | cut -d' ' -f2)
+    - 'curl -X POST "$SENCHO_URL/api/webhooks/$SENCHO_WEBHOOK_ID/trigger"
+        -H "Content-Type: application/json"
+        -H "X-Webhook-Signature: sha256=$SIGNATURE"
+        -d "$BODY"'
+```
+
+## Execution history
+
+Each webhook tracks its last 100 executions. Click **Recent executions** on any webhook row to see:
+
+- Status (success/failure)
+- Action performed
+- Execution time
+- Duration
+- Error message (if failed)
+
+## Security
+
+- Webhook secrets are 64-character hex strings generated with `crypto.randomBytes(32)`
+- Signature validation uses `crypto.timingSafeEqual` to prevent timing attacks
+- Secrets are shown only once at creation — API responses return masked values
+- Webhook trigger endpoints are public (no session cookie required) but protected by HMAC signature validation
+- Each webhook targets a single stack — there is no way to execute arbitrary commands

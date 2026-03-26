@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **fleet:** Critical node detection with red badge for nodes exceeding 90% CPU or disk usage
 * **fleet:** Error toasts on stack and container fetch failures (replaces silent error swallowing)
 * **fleet:** ProGate now wraps placeholder content instead of empty children for a better upgrade preview
+* **webhooks:** Custom CI/CD webhooks — create webhooks targeting specific stacks and actions (deploy, restart, stop, start, pull), trigger them from GitHub Actions, GitLab CI, or any HTTP client with HMAC-SHA256 signature authentication (Pro)
+* **webhooks:** Execution history tracking — last 100 executions per webhook with status, duration, and error details
+* **webhooks:** Webhook management UI in Settings with create/edit/delete, enable/disable toggle, one-time secret reveal, and copy-to-clipboard for trigger URLs
 
 ### Fixed
 

@@ -36,7 +36,8 @@
           "features/host-console",
           "features/multi-node",
           "features/fleet-view",
-          "features/alerts-notifications"
+          "features/alerts-notifications",
+          "features/webhooks"
         ]
       },
       {

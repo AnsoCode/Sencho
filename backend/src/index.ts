@@ -26,6 +26,7 @@ import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
 import { LicenseService } from './services/LicenseService';
+import { WebhookService } from './services/WebhookService';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
@@ -142,7 +143,8 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       !req.path.startsWith('/api/auth/') &&
       !req.path.startsWith('/api/nodes') &&
       !req.path.startsWith('/api/license') &&
-      !req.path.startsWith('/api/fleet')
+      !req.path.startsWith('/api/fleet') &&
+      !req.path.startsWith('/api/webhooks')
     ) {
       // Preserve body stream for proxy piping
       next();
@@ -174,7 +176,8 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
     !req.path.startsWith('/api/auth/') &&
     !req.path.startsWith('/api/nodes') &&
     !req.path.startsWith('/api/license') &&
-    !req.path.startsWith('/api/fleet')
+    !req.path.startsWith('/api/fleet') &&
+    !req.path.startsWith('/api/webhooks')
   ) {
     const node = DatabaseService.getInstance().getNode(req.nodeId);
     if (!node) {
@@ -424,7 +427,7 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
 
 // Apply authentication middleware to all /api/* routes except /api/auth/*
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/')) {
+  if (req.path.startsWith('/auth/') || /^\/webhooks\/\d+\/trigger$/.test(req.path)) {
     next();
     return;
   }
@@ -748,6 +751,143 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
   }
 }
 
+// ─── Webhooks (Pro) ─── CRUD requires auth + Pro, trigger is public with HMAC ───
+
+// Webhook CRUD (auth + Pro required)
+app.get('/api/webhooks', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
+  if (!requirePro(_req, res)) return;
+  try {
+    const webhooks = DatabaseService.getInstance().getWebhooks();
+    const svc = WebhookService.getInstance();
+    res.json(webhooks.map(w => ({ ...w, secret: svc.maskSecret(w.secret) })));
+  } catch (error) {
+    console.error('[Webhooks] List error:', error);
+    res.status(500).json({ error: 'Failed to list webhooks' });
+  }
+});
+
+app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const { name, stack_name, action, enabled } = req.body;
+    if (!name || !stack_name || !action) {
+      res.status(400).json({ error: 'name, stack_name, and action are required' });
+      return;
+    }
+    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull'];
+    if (!validActions.includes(action)) {
+      res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
+      return;
+    }
+
+    const svc = WebhookService.getInstance();
+    const secret = svc.generateSecret();
+    const id = DatabaseService.getInstance().addWebhook({
+      name, stack_name, action, secret, enabled: enabled !== false,
+    });
+
+    // Return the full secret only on creation
+    res.status(201).json({ id, secret });
+  } catch (error) {
+    console.error('[Webhooks] Create error:', error);
+    res.status(500).json({ error: 'Failed to create webhook' });
+  }
+});
+
+app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const webhook = DatabaseService.getInstance().getWebhook(id);
+    if (!webhook) { res.status(404).json({ error: 'Webhook not found' }); return; }
+
+    const { name, stack_name, action, enabled } = req.body;
+    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull'];
+    if (action && !validActions.includes(action)) {
+      res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
+      return;
+    }
+
+    DatabaseService.getInstance().updateWebhook(id, { name, stack_name, action, enabled });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Webhooks] Update error:', error);
+    res.status(500).json({ error: 'Failed to update webhook' });
+  }
+});
+
+app.delete('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    DatabaseService.getInstance().deleteWebhook(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Webhooks] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete webhook' });
+  }
+});
+
+app.get('/api/webhooks/:id/history', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const executions = DatabaseService.getInstance().getWebhookExecutions(id);
+    res.json(executions);
+  } catch (error) {
+    console.error('[Webhooks] History error:', error);
+    res.status(500).json({ error: 'Failed to fetch webhook history' });
+  }
+});
+
+// Webhook trigger — public endpoint, authenticated via HMAC signature
+app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    const webhook = db.getWebhook(id);
+
+    if (!webhook || !webhook.enabled) {
+      res.status(404).json({ error: 'Webhook not found or disabled' });
+      return;
+    }
+
+    // Pro gate — trigger only works with an active Pro license
+    if (LicenseService.getInstance().getTier() !== 'pro') {
+      res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+      return;
+    }
+
+    // Validate HMAC signature
+    const signature = req.headers['x-webhook-signature'] as string;
+    if (!signature) {
+      res.status(401).json({ error: 'Missing X-Webhook-Signature header' });
+      return;
+    }
+
+    const rawBody = JSON.stringify(req.body ?? {});
+    const svc = WebhookService.getInstance();
+    if (!svc.validateSignature(rawBody, webhook.secret, signature)) {
+      res.status(401).json({ error: 'Invalid signature' });
+      return;
+    }
+
+    // Use action from body if provided, otherwise use webhook default
+    const action = req.body?.action || webhook.action;
+    const triggerSource = req.headers['user-agent'] || req.ip || null;
+
+    // Execute asynchronously — return 202 immediately
+    res.status(202).json({ message: 'Webhook accepted', action });
+
+    svc.execute(id, action, triggerSource).catch(err => {
+      console.error(`[Webhooks] Execution error for webhook ${id}:`, err);
+    });
+  } catch (error) {
+    console.error('[Webhooks] Trigger error:', error);
+    res.status(500).json({ error: 'Failed to process webhook' });
+  }
+});
+
 // Remote Node HTTP Proxy - single global instance.
 // Previously, createProxyMiddleware was called inside the request handler on every API
 // call, spawning a new proxy instance (and http-proxy server) each time. This caused:
@@ -823,7 +963,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
 // Intercepts all /api/ requests for remote Distributed API nodes and forwards them
 // to the target Sencho instance. Node management and auth routes always execute locally.
 app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet')) {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet') || req.path.startsWith('/webhooks')) {
     next();
     return;
   }
