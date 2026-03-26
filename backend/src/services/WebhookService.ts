@@ -34,7 +34,7 @@ export class WebhookService {
         );
     }
 
-    public async execute(webhookId: number, action: string, triggerSource: string | null): Promise<{ success: boolean; error?: string; duration_ms: number }> {
+    public async execute(webhookId: number, action: string, triggerSource: string | null, atomic?: boolean): Promise<{ success: boolean; error?: string; duration_ms: number }> {
         const db = DatabaseService.getInstance();
         const webhook = db.getWebhook(webhookId);
         if (!webhook) throw new Error('Webhook not found');
@@ -62,7 +62,7 @@ export class WebhookService {
             const compose = ComposeService.getInstance(defaultNodeId);
             switch (action) {
                 case 'deploy':
-                    await compose.deployStack(webhook.stack_name);
+                    await compose.deployStack(webhook.stack_name, undefined, atomic);
                     break;
                 case 'restart':
                     await compose.runCommand(webhook.stack_name, 'restart');
@@ -74,7 +74,7 @@ export class WebhookService {
                     await compose.runCommand(webhook.stack_name, 'start');
                     break;
                 case 'pull':
-                    await compose.updateStack(webhook.stack_name);
+                    await compose.updateStack(webhook.stack_name, undefined, atomic);
                     break;
                 default:
                     throw new Error(`Unknown action: ${action}`);

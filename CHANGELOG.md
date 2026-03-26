@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **webhooks:** Custom CI/CD webhooks — create webhooks targeting specific stacks and actions (deploy, restart, stop, start, pull), trigger them from GitHub Actions, GitLab CI, or any HTTP client with HMAC-SHA256 signature authentication (Pro)
 * **webhooks:** Execution history tracking — last 100 executions per webhook with status, duration, and error details
 * **webhooks:** Webhook management UI in Settings with create/edit/delete, enable/disable toggle, one-time secret reveal, and copy-to-clipboard for trigger URLs
+* **rbac:** Role-based access control with admin and viewer roles — viewers get full read-only access to dashboard, stacks, logs, and stats while admins retain full control (Pro)
+* **rbac:** User management UI in Settings — create, edit, and delete users with username/password/role controls, protected by admin-only access
+* **rbac:** Automatic migration of existing single-admin credentials to the new multi-user system on first boot
+* **rbac:** Viewer restrictions across the entire UI — read-only editor, hidden action buttons, disabled host console, and disabled resource management
+* **atomic:** Atomic deployments with automatic rollback — Sencho backs up compose.yaml and .env before deploying, and auto-restores if health probes detect crashed containers (Pro)
+* **atomic:** Manual rollback button in the stack action bar — restore the previous deployment with one click when a backup exists (Pro)
+* **atomic:** Health probes added to stack updates (previously only on deploys) — crashed containers trigger auto-rollback during updates too
+* **atomic:** Webhook-triggered deploys and updates now use atomic rollback for Pro users
+* **fleet:** Fleet-wide backups — snapshot all compose files and .env files across every node (local and remote) into a central backup stored in SQLite (Pro)
+* **fleet:** Snapshot detail view — browse captured files per node and stack with inline preview in a collapsible tree
+* **fleet:** Per-stack restore from any snapshot — overwrite current compose files with the snapshot version, with optional one-click redeploy (Pro admin)
+* **fleet:** Graceful handling of offline nodes during snapshot creation — skipped nodes are recorded with reason and displayed as warnings
 
 ### Fixed
 

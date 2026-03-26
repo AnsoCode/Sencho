@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle, Box, Activity,
-    Play, Square, RotateCcw, ExternalLink,
+    Play, Square, RotateCcw, ExternalLink, Camera,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,9 +11,11 @@ import { Input } from '@/components/ui/input';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiFetch } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from './ProGate';
+import FleetSnapshots from './FleetSnapshots';
 import { toast } from 'sonner';
 
 // --- Types ---
@@ -567,210 +569,229 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 </Button>
             </div>
 
-            {/* Loading State */}
-            {loading && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
-                            <Skeleton className="h-8 w-32" />
-                            <div className="grid grid-cols-3 gap-2">
-                                <Skeleton className="h-14 rounded-lg" />
-                                <Skeleton className="h-14 rounded-lg" />
-                                <Skeleton className="h-14 rounded-lg" />
-                            </div>
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-3/4" />
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Empty State */}
-            {!loading && nodes.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <Server className="w-12 h-12 text-muted-foreground/50 mb-4" />
-                    <h3 className="text-lg font-medium mb-1">No nodes configured</h3>
-                    <p className="text-sm text-muted-foreground">Add nodes in Settings to see your fleet here.</p>
-                </div>
-            )}
-
-            {/* Fleet Content */}
-            {!loading && nodes.length > 0 && (
-                <>
-                    {/* Pro: Fleet Health Summary Cards */}
-                    {isPro && onlineNodes.length > 0 && (
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                            <StatCard
-                                icon={Box}
-                                label="Containers"
-                                value={`${totalContainers}`}
-                                sub={`${totalContainersAll} total across fleet`}
-                            />
-                            <StatCard
-                                icon={Activity}
-                                label="Fleet CPU"
-                                value={`${avgCpu}%`}
-                                sub={worstCpuNode ? `Peak: ${worstCpuNode.name} (${worstCpuNode.systemStats?.cpu.usage}%)` : undefined}
-                            />
-                            <StatCard
-                                icon={MemoryStick}
-                                label="Fleet Memory"
-                                value={formatBytes(totalMemUsed)}
-                                sub={totalMemTotal > 0 ? `of ${formatBytes(totalMemTotal)} (${((totalMemUsed / totalMemTotal) * 100).toFixed(0)}%)` : undefined}
-                            />
-                            <StatCard
-                                icon={AlertTriangle}
-                                label="Alerts"
-                                value={`${criticalCount}`}
-                                sub={criticalCount > 0 ? `${criticalCount} node${criticalCount > 1 ? 's' : ''} above 90% CPU or disk` : 'All nodes healthy'}
-                                alert={criticalCount > 0}
-                            />
-                        </div>
-                    )}
-
-                    {/* Pro: Search, Sort & Filter Toolbar */}
+            <Tabs defaultValue="overview">
+                <TabsList>
+                    <TabsTrigger value="overview">Overview</TabsTrigger>
                     {isPro && (
-                        <div className="flex flex-wrap items-center gap-3 mb-4">
-                            {/* Search */}
-                            <div className="relative flex-1 min-w-[200px] max-w-sm">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                                <Input
-                                    placeholder="Search nodes or stacks..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-9 h-9"
-                                />
-                            </div>
-
-                            {/* Sort */}
-                            <Select value={prefs.sortBy} onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}>
-                                <SelectTrigger className="w-[150px] h-9">
-                                    <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="name">Name</SelectItem>
-                                    <SelectItem value="cpu">CPU Usage</SelectItem>
-                                    <SelectItem value="memory">Memory Usage</SelectItem>
-                                    <SelectItem value="containers">Containers</SelectItem>
-                                    <SelectItem value="status">Status</SelectItem>
-                                </SelectContent>
-                            </Select>
-
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-9 w-9 p-0"
-                                onClick={() => updatePrefs({ sortDir: prefs.sortDir === 'asc' ? 'desc' : 'asc' })}
-                                title={prefs.sortDir === 'asc' ? 'Ascending' : 'Descending'}
-                            >
-                                <ArrowUpDown className={`w-4 h-4 ${prefs.sortDir === 'desc' ? 'rotate-180' : ''} transition-transform`} />
-                            </Button>
-
-                            {/* Filter pills */}
-                            <div className="flex items-center gap-1.5">
-                                {(['all', 'online', 'offline'] as FilterStatus[]).map(status => (
-                                    <Button
-                                        key={status}
-                                        variant={prefs.filterStatus === status ? 'default' : 'outline'}
-                                        size="sm"
-                                        className="h-7 text-xs px-2.5"
-                                        onClick={() => updatePrefs({ filterStatus: status })}
-                                    >
-                                        {status === 'all' ? 'All' : status === 'online' ? (
-                                            <><Play className="w-3 h-3 mr-1" />Online</>
-                                        ) : (
-                                            <><Square className="w-3 h-3 mr-1" />Offline</>
-                                        )}
-                                    </Button>
-                                ))}
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                                {(['all', 'local', 'remote'] as FilterType[]).map(type => (
-                                    <Button
-                                        key={type}
-                                        variant={prefs.filterType === type ? 'default' : 'outline'}
-                                        size="sm"
-                                        className="h-7 text-xs px-2.5"
-                                        onClick={() => updatePrefs({ filterType: type })}
-                                    >
-                                        {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
-                                    </Button>
-                                ))}
-                            </div>
-
-                            <Button
-                                variant={prefs.filterCritical ? 'destructive' : 'outline'}
-                                size="sm"
-                                className="h-7 text-xs px-2.5"
-                                onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
-                            >
-                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                Critical Only
-                            </Button>
-                        </div>
+                        <TabsTrigger value="snapshots">
+                            <Camera className="w-4 h-4 mr-1.5" />Snapshots
+                        </TabsTrigger>
                     )}
+                </TabsList>
 
-                    {/* Node Grid */}
-                    {processedNodes.length > 0 ? (
+                <TabsContent value="overview">
+                    {/* Loading State */}
+                    {loading && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {processedNodes.map(node => (
-                                <NodeCard
-                                    key={node.id}
-                                    node={node}
-                                    onNavigate={onNavigateToNode}
-                                />
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
+                                    <Skeleton className="h-8 w-32" />
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <Skeleton className="h-14 rounded-lg" />
+                                        <Skeleton className="h-14 rounded-lg" />
+                                        <Skeleton className="h-14 rounded-lg" />
+                                    </div>
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-3/4" />
+                                </div>
                             ))}
                         </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                            <Search className="w-10 h-10 text-muted-foreground/50 mb-3" />
-                            <h3 className="text-sm font-medium mb-1">No nodes match your filters</h3>
-                            <p className="text-xs text-muted-foreground">Try adjusting your search or filter criteria.</p>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="mt-3"
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
-                                }}
-                            >
-                                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                                Clear filters
-                            </Button>
+                    )}
+
+                    {/* Empty State */}
+                    {!loading && nodes.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                            <Server className="w-12 h-12 text-muted-foreground/50 mb-4" />
+                            <h3 className="text-lg font-medium mb-1">No nodes configured</h3>
+                            <p className="text-sm text-muted-foreground">Add nodes in Settings to see your fleet here.</p>
                         </div>
                     )}
 
-                    {/* Pro auto-refresh indicator */}
-                    {isPro && (
-                        <p className="text-xs text-muted-foreground text-center mt-6">
-                            Auto-refreshing every 30 seconds
-                        </p>
-                    )}
+                    {/* Fleet Content */}
+                    {!loading && nodes.length > 0 && (
+                        <>
+                            {/* Pro: Fleet Health Summary Cards */}
+                            {isPro && onlineNodes.length > 0 && (
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                                    <StatCard
+                                        icon={Box}
+                                        label="Containers"
+                                        value={`${totalContainers}`}
+                                        sub={`${totalContainersAll} total across fleet`}
+                                    />
+                                    <StatCard
+                                        icon={Activity}
+                                        label="Fleet CPU"
+                                        value={`${avgCpu}%`}
+                                        sub={worstCpuNode ? `Peak: ${worstCpuNode.name} (${worstCpuNode.systemStats?.cpu.usage}%)` : undefined}
+                                    />
+                                    <StatCard
+                                        icon={MemoryStick}
+                                        label="Fleet Memory"
+                                        value={formatBytes(totalMemUsed)}
+                                        sub={totalMemTotal > 0 ? `of ${formatBytes(totalMemTotal)} (${((totalMemUsed / totalMemTotal) * 100).toFixed(0)}%)` : undefined}
+                                    />
+                                    <StatCard
+                                        icon={AlertTriangle}
+                                        label="Alerts"
+                                        value={`${criticalCount}`}
+                                        sub={criticalCount > 0 ? `${criticalCount} node${criticalCount > 1 ? 's' : ''} above 90% CPU or disk` : 'All nodes healthy'}
+                                        alert={criticalCount > 0}
+                                    />
+                                </div>
+                            )}
 
-                    {/* Free tier: Pro gate for advanced features */}
-                    {!isPro && nodes.length > 0 && (
-                        <div className="mt-6">
-                            <ProGate featureName="Fleet Management">
-                                {/* Preview of what Pro unlocks */}
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                                    <div className="rounded-xl border bg-card p-4 h-24" />
-                                    <div className="rounded-xl border bg-card p-4 h-24" />
-                                    <div className="rounded-xl border bg-card p-4 h-24" />
-                                    <div className="rounded-xl border bg-card p-4 h-24" />
+                            {/* Pro: Search, Sort & Filter Toolbar */}
+                            {isPro && (
+                                <div className="flex flex-wrap items-center gap-3 mb-4">
+                                    {/* Search */}
+                                    <div className="relative flex-1 min-w-[200px] max-w-sm">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                                        <Input
+                                            placeholder="Search nodes or stacks..."
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="pl-9 h-9"
+                                        />
+                                    </div>
+
+                                    {/* Sort */}
+                                    <Select value={prefs.sortBy} onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}>
+                                        <SelectTrigger className="w-[150px] h-9">
+                                            <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="name">Name</SelectItem>
+                                            <SelectItem value="cpu">CPU Usage</SelectItem>
+                                            <SelectItem value="memory">Memory Usage</SelectItem>
+                                            <SelectItem value="containers">Containers</SelectItem>
+                                            <SelectItem value="status">Status</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-9 w-9 p-0"
+                                        onClick={() => updatePrefs({ sortDir: prefs.sortDir === 'asc' ? 'desc' : 'asc' })}
+                                        title={prefs.sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                                    >
+                                        <ArrowUpDown className={`w-4 h-4 ${prefs.sortDir === 'desc' ? 'rotate-180' : ''} transition-transform`} />
+                                    </Button>
+
+                                    {/* Filter pills */}
+                                    <div className="flex items-center gap-1.5">
+                                        {(['all', 'online', 'offline'] as FilterStatus[]).map(status => (
+                                            <Button
+                                                key={status}
+                                                variant={prefs.filterStatus === status ? 'default' : 'outline'}
+                                                size="sm"
+                                                className="h-7 text-xs px-2.5"
+                                                onClick={() => updatePrefs({ filterStatus: status })}
+                                            >
+                                                {status === 'all' ? 'All' : status === 'online' ? (
+                                                    <><Play className="w-3 h-3 mr-1" />Online</>
+                                                ) : (
+                                                    <><Square className="w-3 h-3 mr-1" />Offline</>
+                                                )}
+                                            </Button>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                        {(['all', 'local', 'remote'] as FilterType[]).map(type => (
+                                            <Button
+                                                key={type}
+                                                variant={prefs.filterType === type ? 'default' : 'outline'}
+                                                size="sm"
+                                                className="h-7 text-xs px-2.5"
+                                                onClick={() => updatePrefs({ filterType: type })}
+                                            >
+                                                {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
+                                            </Button>
+                                        ))}
+                                    </div>
+
+                                    <Button
+                                        variant={prefs.filterCritical ? 'destructive' : 'outline'}
+                                        size="sm"
+                                        className="h-7 text-xs px-2.5"
+                                        onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
+                                    >
+                                        <AlertTriangle className="w-3 h-3 mr-1" />
+                                        Critical Only
+                                    </Button>
                                 </div>
-                                <div className="flex gap-3 mb-4">
-                                    <div className="h-9 rounded-md border bg-card flex-1 max-w-sm" />
-                                    <div className="h-9 rounded-md border bg-card w-[150px]" />
+                            )}
+
+                            {/* Node Grid */}
+                            {processedNodes.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    {processedNodes.map(node => (
+                                        <NodeCard
+                                            key={node.id}
+                                            node={node}
+                                            onNavigate={onNavigateToNode}
+                                        />
+                                    ))}
                                 </div>
-                            </ProGate>
-                        </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                    <Search className="w-10 h-10 text-muted-foreground/50 mb-3" />
+                                    <h3 className="text-sm font-medium mb-1">No nodes match your filters</h3>
+                                    <p className="text-xs text-muted-foreground">Try adjusting your search or filter criteria.</p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="mt-3"
+                                        onClick={() => {
+                                            setSearchQuery('');
+                                            updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
+                                        }}
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                                        Clear filters
+                                    </Button>
+                                </div>
+                            )}
+
+                            {/* Pro auto-refresh indicator */}
+                            {isPro && (
+                                <p className="text-xs text-muted-foreground text-center mt-6">
+                                    Auto-refreshing every 30 seconds
+                                </p>
+                            )}
+
+                            {/* Free tier: Pro gate for advanced features */}
+                            {!isPro && nodes.length > 0 && (
+                                <div className="mt-6">
+                                    <ProGate featureName="Fleet Management">
+                                        {/* Preview of what Pro unlocks */}
+                                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                                            <div className="rounded-xl border bg-card p-4 h-24" />
+                                            <div className="rounded-xl border bg-card p-4 h-24" />
+                                            <div className="rounded-xl border bg-card p-4 h-24" />
+                                            <div className="rounded-xl border bg-card p-4 h-24" />
+                                        </div>
+                                        <div className="flex gap-3 mb-4">
+                                            <div className="h-9 rounded-md border bg-card flex-1 max-w-sm" />
+                                            <div className="h-9 rounded-md border bg-card w-[150px]" />
+                                        </div>
+                                    </ProGate>
+                                </div>
+                            )}
+                        </>
                     )}
-                </>
-            )}
+                </TabsContent>
+
+                {isPro && (
+                    <TabsContent value="snapshots">
+                        <FleetSnapshots />
+                    </TabsContent>
+                )}
+            </Tabs>
         </div>
     );
 }

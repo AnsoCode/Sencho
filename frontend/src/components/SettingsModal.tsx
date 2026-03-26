@@ -18,10 +18,12 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
+import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { ProBadge } from './ProBadge';
 import { ProGate } from './ProGate';
@@ -46,7 +48,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'about';
+type SectionId = 'account' | 'license' | 'users' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'about';
 
 interface WebhookItem {
     id: number;
@@ -372,8 +374,279 @@ function WebhooksSection({ isPro }: { isPro: boolean }) {
     );
 }
 
+interface UserItem {
+    id: number;
+    username: string;
+    role: 'admin' | 'viewer';
+    created_at: number;
+}
+
+function UsersSection() {
+    const { user: currentUser } = useAuth();
+    const [users, setUsers] = useState<UserItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    // Form state
+    const [formUsername, setFormUsername] = useState('');
+    const [formPassword, setFormPassword] = useState('');
+    const [formConfirmPassword, setFormConfirmPassword] = useState('');
+    const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer');
+
+    const fetchUsers = async () => {
+        try {
+            const res = await apiFetch('/users', { localOnly: true });
+            if (res.ok) setUsers(await res.json());
+        } catch { /* ignore */ } finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetchUsers(); }, []);
+
+    const resetForm = () => {
+        setFormUsername('');
+        setFormPassword('');
+        setFormConfirmPassword('');
+        setFormRole('viewer');
+        setEditingUser(null);
+        setShowForm(false);
+    };
+
+    const handleSave = async () => {
+        if (!formUsername || formUsername.length < 3) {
+            toast.error('Username must be at least 3 characters.');
+            return;
+        }
+        if (!/^[a-zA-Z0-9_-]+$/.test(formUsername)) {
+            toast.error('Username can only contain letters, numbers, underscores, and hyphens.');
+            return;
+        }
+        if (!editingUser && !formPassword) {
+            toast.error('Password is required for new users.');
+            return;
+        }
+        if (formPassword && formPassword.length < 6) {
+            toast.error('Password must be at least 6 characters.');
+            return;
+        }
+        if (formPassword && formPassword !== formConfirmPassword) {
+            toast.error('Passwords do not match.');
+            return;
+        }
+        setSaving(true);
+        try {
+            if (editingUser) {
+                const body: Record<string, string> = { username: formUsername, role: formRole };
+                if (formPassword) body.password = formPassword;
+                const res = await apiFetch(`/users/${editingUser.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                    localOnly: true,
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    toast.error(err?.error || err?.message || 'Failed to update user.');
+                    return;
+                }
+                toast.success('User updated.');
+            } else {
+                const res = await apiFetch('/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: formUsername, password: formPassword, role: formRole }),
+                    localOnly: true,
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    toast.error(err?.error || err?.message || 'Failed to create user.');
+                    return;
+                }
+                toast.success('User created.');
+            }
+            resetForm();
+            fetchUsers();
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Something went wrong.';
+            toast.error(msg);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDelete = async (userId: number) => {
+        try {
+            const res = await apiFetch(`/users/${userId}`, { method: 'DELETE', localOnly: true });
+            if (!res.ok) {
+                const err = await res.json();
+                toast.error(err?.error || err?.message || 'Failed to delete user.');
+                return;
+            }
+            toast.success('User deleted.');
+            fetchUsers();
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Something went wrong.';
+            toast.error(msg);
+        }
+    };
+
+    const startEdit = (u: UserItem) => {
+        setEditingUser(u);
+        setFormUsername(u.username);
+        setFormRole(u.role);
+        setFormPassword('');
+        setFormConfirmPassword('');
+        setShowForm(true);
+    };
+
+    return (
+        <ProGate featureName="User management">
+            <div className="space-y-6">
+                <div className="flex items-start justify-between pr-8">
+                    <div>
+                        <h3 className="text-lg font-semibold tracking-tight">User Management</h3>
+                        <p className="text-sm text-muted-foreground">Create and manage user accounts with role-based access control.</p>
+                    </div>
+                    {!showForm && (
+                        <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
+                            <Plus className="w-4 h-4 mr-1" />Add User
+                        </Button>
+                    )}
+                </div>
+
+                {/* Add/Edit Form */}
+                {showForm && (
+                    <div className="space-y-4 bg-muted/10 p-4 border border-border rounded-xl">
+                        <h4 className="text-sm font-medium">{editingUser ? 'Edit User' : 'New User'}</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Username</Label>
+                                <Input
+                                    value={formUsername}
+                                    onChange={(e) => setFormUsername(e.target.value)}
+                                    placeholder="username"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Role</Label>
+                                <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="admin">Admin</SelectItem>
+                                        <SelectItem value="viewer">Viewer</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>{editingUser ? 'New Password (optional)' : 'Password'}</Label>
+                                <Input
+                                    type="password"
+                                    value={formPassword}
+                                    onChange={(e) => setFormPassword(e.target.value)}
+                                    placeholder={editingUser ? 'Leave blank to keep' : 'min. 6 characters'}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Confirm Password</Label>
+                                <Input
+                                    type="password"
+                                    value={formConfirmPassword}
+                                    onChange={(e) => setFormConfirmPassword(e.target.value)}
+                                    placeholder="Confirm password"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
+                            <Button size="sm" onClick={handleSave} disabled={saving}>
+                                {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" />Saving...</> : (editingUser ? 'Update User' : 'Create User')}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Users Table */}
+                {loading ? (
+                    <div className="space-y-3">
+                        <Skeleton className="h-12 w-full" />
+                        <Skeleton className="h-12 w-full" />
+                    </div>
+                ) : users.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground text-sm">No users found.</div>
+                ) : (
+                    <div className="border border-border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-muted/30 border-b border-border">
+                                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Username</th>
+                                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Role</th>
+                                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Created</th>
+                                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map((u) => {
+                                    const isSelf = u.username === currentUser?.username;
+                                    return (
+                                        <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/10">
+                                            <td className="px-4 py-2.5 font-medium">
+                                                {u.username}
+                                                {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                                            </td>
+                                            <td className="px-4 py-2.5">
+                                                <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-xs capitalize">
+                                                    {u.role}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-muted-foreground">
+                                                {new Date(u.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right">
+                                                <div className="flex gap-1 justify-end">
+                                                    <Button variant="ghost" size="sm" onClick={() => startEdit(u)}>
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </Button>
+                                                    <AlertDialog>
+                                                        <AlertDialogTrigger asChild>
+                                                            <Button variant="ghost" size="sm" disabled={isSelf}>
+                                                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                                            </Button>
+                                                        </AlertDialogTrigger>
+                                                        <AlertDialogContent>
+                                                            <AlertDialogHeader>
+                                                                <AlertDialogTitle>Delete user "{u.username}"?</AlertDialogTitle>
+                                                                <AlertDialogDescription>
+                                                                    This action cannot be undone. The user will lose access immediately.
+                                                                </AlertDialogDescription>
+                                                            </AlertDialogHeader>
+                                                            <AlertDialogFooter>
+                                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                <AlertDialogAction onClick={() => handleDelete(u.id)}>Delete</AlertDialogAction>
+                                                            </AlertDialogFooter>
+                                                        </AlertDialogContent>
+                                                    </AlertDialog>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </ProGate>
+    );
+}
+
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const { activeNode } = useNodes();
+    const { isAdmin } = useAuth();
     const { license, isPro, activate, deactivate } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
@@ -383,7 +656,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -720,6 +993,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         )}
                         {!isRemote && (
                             <NavButton section="license" icon={<Crown className="w-4 h-4 mr-2" />} label="License" />
+                        )}
+                        {!isRemote && isAdmin && (
+                            <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" />
                         )}
                         <NavButton
                             section="system"
@@ -1090,6 +1366,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     {activeSection === 'webhooks' && (
                         <WebhooksSection isPro={isPro} />
+                    )}
+
+                    {activeSection === 'users' && (
+                        <UsersSection />
                     )}
 
                     {activeSection === 'developer' && (

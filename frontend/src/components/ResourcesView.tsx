@@ -11,6 +11,7 @@ import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useNodes } from '@/context/NodeContext';
+import { useAuth } from '@/context/AuthContext';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -305,6 +306,7 @@ function TableSkeleton({ cols, rows = 5 }: { cols: number; rows?: number }) {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function ResourcesView() {
+    const { isAdmin } = useAuth();
     const { activeNode } = useNodes();
     const [usage, setUsage] = useState<UsageData | null>(null);
     const [images, setImages] = useState<DockerImage[]>([]);
@@ -485,7 +487,7 @@ export default function ResourcesView() {
                 </Card>
 
                 {/* Quick Clean */}
-                <Card className="col-span-1 md:col-span-2 border-border shadow-sm flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
+                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-sm flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Quick Clean
@@ -531,7 +533,7 @@ export default function ResourcesView() {
                             />
                         </div>
                     </CardContent>
-                </Card>
+                </Card>}
             </div>
 
             {/* Resource Tabs */}
@@ -609,9 +611,9 @@ export default function ResourcesView() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
                                                     <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>
+                                                </Button>}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -656,9 +658,9 @@ export default function ResourcesView() {
                                             <TableCell className="hidden md:table-cell text-xs text-muted-foreground truncate max-w-[300px]">{vol.Mountpoint}</TableCell>
                                             <TableCell><ManagedBadge status={vol.managedStatus} managedBy={vol.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
                                                     <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>
+                                                </Button>}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -705,7 +707,7 @@ export default function ResourcesView() {
                                             <TableCell><Badge variant="outline" className="text-[10px] h-5">{net.Scope}</Badge></TableCell>
                                             <TableCell><ManagedBadge status={net.managedStatus} managedBy={net.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                <Button
+                                                {isAdmin && <Button
                                                     variant="ghost"
                                                     size="icon"
                                                     className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-30"
@@ -713,7 +715,7 @@ export default function ResourcesView() {
                                                     onClick={() => setConfirmDelete({ type: 'networks', id: net.Id, name: net.Name })}
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>
+                                                </Button>}
                                             </TableCell>
                                         </TableRow>
                                     ))}

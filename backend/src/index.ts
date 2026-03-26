@@ -195,7 +195,7 @@ app.use(nodeContextMiddleware);
 declare global {
   namespace Express {
     interface Request {
-      user?: { username: string };
+      user?: { username: string; role: 'admin' | 'viewer' };
       nodeId: number;
     }
   }
@@ -228,9 +228,9 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
-    // Accept both user sessions and node proxy tokens
-    req.user = { username: decoded.username || 'node-proxy' };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string };
+    // Accept both user sessions and node proxy tokens. Default role to 'admin' for backward compat with pre-RBAC tokens.
+    req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as 'admin' | 'viewer') || 'admin' };
     next();
   } catch (err) {
     console.error('[Auth] Token validation failed:', (err as Error).message);
@@ -314,8 +314,11 @@ app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response)
       dbSvc.updateGlobalSetting('admin_email', admin_email.trim());
     }
 
+    // Create admin user in users table
+    dbSvc.addUser({ username, password_hash: passwordHash, role: 'admin' });
+
     // Issue JWT and log user in
-    const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
+    const token = jwt.sign({ username, role: 'admin' }, jwtSecret, { expiresIn: '24h' });
     res.cookie(COOKIE_NAME, token, getCookieOptions(req));
     res.json({ success: true, message: 'Setup completed successfully' });
   } catch (error) {
@@ -334,16 +337,16 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
   }
 
   try {
-    const settings = DatabaseService.getInstance().getGlobalSettings();
-    const storedUsername = settings.auth_username;
-    const storedHash = settings.auth_password_hash;
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername(username);
 
-    if (storedUsername && storedHash && username === storedUsername) {
-      const isValid = await bcrypt.compare(password, storedHash);
+    if (user) {
+      const isValid = await bcrypt.compare(password, user.password_hash);
       if (isValid) {
+        const settings = db.getGlobalSettings();
         const jwtSecret = settings.auth_jwt_secret;
         if (!jwtSecret) throw new Error('JWT secret missing from DB');
-        const token = jwt.sign({ username }, jwtSecret, { expiresIn: '24h' });
+        const token = jwt.sign({ username: user.username, role: user.role }, jwtSecret, { expiresIn: '24h' });
         res.cookie(COOKIE_NAME, token, getCookieOptions(req));
         res.json({ success: true, message: 'Login successful' });
         return;
@@ -357,7 +360,7 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
   }
 });
 
-// Update password endpoint
+// Update password endpoint — any authenticated user can change their own password
 app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const { oldPassword, newPassword } = req.body;
@@ -371,21 +374,22 @@ app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response
     }
 
     const dbSvc = DatabaseService.getInstance();
-    const settings = dbSvc.getGlobalSettings();
-    const storedHash = settings.auth_password_hash;
+    const user = dbSvc.getUserByUsername(req.user!.username);
 
-    if (!storedHash) {
-      res.status(400).json({ error: 'Auth not configured properly' });
+    if (!user) {
+      res.status(400).json({ error: 'User not found' });
       return;
     }
 
-    const isValid = await bcrypt.compare(oldPassword, storedHash);
+    const isValid = await bcrypt.compare(oldPassword, user.password_hash);
     if (!isValid) {
       res.status(401).json({ error: 'Invalid old password' });
       return;
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
+    dbSvc.updateUser(user.id, { password_hash: newHash });
+    // Keep global_settings in sync for backward compat
     dbSvc.updateGlobalSetting('auth_password_hash', newHash);
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
@@ -410,6 +414,7 @@ app.get('/api/auth/check', authMiddleware, (req: Request, res: Response): void =
 
 // Generate a long-lived node proxy token for Sencho-to-Sencho authentication
 app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
@@ -445,6 +450,14 @@ const requirePro = (_req: Request, res: Response): boolean => {
   return true;
 };
 
+const requireAdmin = (req: Request, res: Response): boolean => {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' });
+    return false;
+  }
+  return true;
+};
+
 app.get('/api/license', (_req: Request, res: Response): void => {
   try {
     const info = LicenseService.getInstance().getLicenseInfo();
@@ -456,6 +469,7 @@ app.get('/api/license', (_req: Request, res: Response): void => {
 });
 
 app.post('/api/license/activate', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { license_key } = req.body;
     if (!license_key || typeof license_key !== 'string') {
@@ -475,6 +489,7 @@ app.post('/api/license/activate', async (req: Request, res: Response): Promise<v
 });
 
 app.post('/api/license/deactivate', async (_req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(_req, res)) return;
   try {
     const result = await LicenseService.getInstance().deactivate();
     if (result.success) {
@@ -751,6 +766,354 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
   }
 }
 
+// ─── Fleet Snapshots (Pro) ───
+
+interface SnapshotNodeData {
+  nodeId: number;
+  nodeName: string;
+  stacks: Array<{
+    stackName: string;
+    files: Array<{ filename: string; content: string }>;
+  }>;
+}
+
+async function captureLocalNodeFiles(node: Node): Promise<SnapshotNodeData> {
+  const fsService = FileSystemService.getInstance(node.id);
+  const stackNames = await fsService.getStacks();
+  const stacks: SnapshotNodeData['stacks'] = [];
+
+  for (const stackName of stackNames) {
+    const files: Array<{ filename: string; content: string }> = [];
+    try {
+      const composeContent = await fsService.getStackContent(stackName);
+      files.push({ filename: 'compose.yaml', content: composeContent });
+    } catch {
+      // Stack has no compose file — skip
+      continue;
+    }
+    try {
+      const envContent = await fsService.getEnvContent(stackName);
+      files.push({ filename: '.env', content: envContent });
+    } catch {
+      // No .env file — that's fine
+    }
+    stacks.push({ stackName, files });
+  }
+
+  return { nodeId: node.id, nodeName: node.name, stacks };
+}
+
+async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
+  if (!node.api_url || !node.api_token) {
+    throw new Error('Remote node not configured');
+  }
+
+  const baseUrl = node.api_url.replace(/\/$/, '');
+  const headers = { Authorization: `Bearer ${node.api_token}` };
+
+  const stacksRes = await fetch(`${baseUrl}/api/stacks`, {
+    headers,
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!stacksRes.ok) throw new Error('Failed to fetch stacks from remote node');
+  const stackNames = await stacksRes.json() as string[];
+
+  const stacks: SnapshotNodeData['stacks'] = [];
+
+  for (const stackName of stackNames) {
+    const files: Array<{ filename: string; content: string }> = [];
+    try {
+      const composeRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}`, {
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (composeRes.ok) {
+        const content = await composeRes.text();
+        files.push({ filename: 'compose.yaml', content });
+      }
+    } catch {
+      continue;
+    }
+    try {
+      const envRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}/env`, {
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (envRes.ok) {
+        const content = await envRes.text();
+        files.push({ filename: '.env', content });
+      }
+    } catch {
+      // No .env — skip
+    }
+    if (files.length > 0) {
+      stacks.push({ stackName, files });
+    }
+  }
+
+  return { nodeId: node.id, nodeName: node.name, stacks };
+}
+
+// Create fleet snapshot
+app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePro(req, res)) return;
+
+  try {
+    const { description = '' } = req.body;
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+    const username = req.user?.username || 'admin';
+
+    const results = await Promise.allSettled(
+      nodes.map(async (node) => {
+        if (node.type === 'remote') {
+          return captureRemoteNodeFiles(node);
+        }
+        return captureLocalNodeFiles(node);
+      })
+    );
+
+    const capturedNodes: SnapshotNodeData[] = [];
+    const skippedNodes: Array<{ nodeId: number; nodeName: string; reason: string }> = [];
+
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        capturedNodes.push(result.value);
+      } else {
+        console.error(`[Fleet Snapshot] Failed to capture node ${nodes[i].name}:`, result.reason);
+        skippedNodes.push({
+          nodeId: nodes[i].id,
+          nodeName: nodes[i].name,
+          reason: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+      }
+    });
+
+    let totalStacks = 0;
+    const allFiles: Array<{ nodeId: number; nodeName: string; stackName: string; filename: string; content: string }> = [];
+
+    for (const nodeData of capturedNodes) {
+      totalStacks += nodeData.stacks.length;
+      for (const stack of nodeData.stacks) {
+        for (const file of stack.files) {
+          allFiles.push({
+            nodeId: nodeData.nodeId,
+            nodeName: nodeData.nodeName,
+            stackName: stack.stackName,
+            filename: file.filename,
+            content: file.content,
+          });
+        }
+      }
+    }
+
+    const snapshotId = db.createSnapshot(
+      description,
+      username,
+      capturedNodes.length,
+      totalStacks,
+      JSON.stringify(skippedNodes),
+    );
+
+    if (allFiles.length > 0) {
+      db.insertSnapshotFiles(snapshotId, allFiles);
+    }
+
+    const snapshot = db.getSnapshot(snapshotId);
+    res.status(201).json(snapshot);
+  } catch (error) {
+    console.error('[Fleet Snapshot] Create error:', error);
+    res.status(500).json({ error: 'Failed to create fleet snapshot' });
+  }
+});
+
+// List fleet snapshots
+app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
+    const offset = parseInt(req.query.offset as string, 10) || 0;
+    const db = DatabaseService.getInstance();
+    const snapshots = db.getSnapshots(limit, offset);
+    const total = db.getSnapshotCount();
+    res.json({ snapshots, total });
+  } catch (error) {
+    console.error('[Fleet Snapshot] List error:', error);
+    res.status(500).json({ error: 'Failed to list fleet snapshots' });
+  }
+});
+
+// Get snapshot detail
+app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    const snapshot = db.getSnapshot(id);
+    if (!snapshot) {
+      res.status(404).json({ error: 'Snapshot not found' });
+      return;
+    }
+
+    const files = db.getSnapshotFiles(id);
+
+    // Group files by node and stack
+    const nodesMap = new Map<number, { nodeId: number; nodeName: string; stacks: Map<string, Array<{ filename: string; content: string }>> }>();
+    for (const file of files) {
+      if (!nodesMap.has(file.node_id)) {
+        nodesMap.set(file.node_id, { nodeId: file.node_id, nodeName: file.node_name, stacks: new Map() });
+      }
+      const nodeEntry = nodesMap.get(file.node_id)!;
+      if (!nodeEntry.stacks.has(file.stack_name)) {
+        nodeEntry.stacks.set(file.stack_name, []);
+      }
+      nodeEntry.stacks.get(file.stack_name)!.push({ filename: file.filename, content: file.content });
+    }
+
+    const nodes = Array.from(nodesMap.values()).map(n => ({
+      nodeId: n.nodeId,
+      nodeName: n.nodeName,
+      stacks: Array.from(n.stacks.entries()).map(([stackName, stackFiles]) => ({
+        stackName,
+        files: stackFiles,
+      })),
+    }));
+
+    res.json({ ...snapshot, nodes });
+  } catch (error) {
+    console.error('[Fleet Snapshot] Detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch snapshot details' });
+  }
+});
+
+// Restore a stack from snapshot
+app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePro(req, res)) return;
+
+  try {
+    const snapshotId = parseInt(req.params.id as string, 10);
+    const { nodeId, stackName, redeploy = false } = req.body;
+
+    if (!nodeId || !stackName) {
+      res.status(400).json({ error: 'nodeId and stackName are required' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const snapshot = db.getSnapshot(snapshotId);
+    if (!snapshot) {
+      res.status(404).json({ error: 'Snapshot not found' });
+      return;
+    }
+
+    const files = db.getSnapshotStackFiles(snapshotId, nodeId, stackName);
+    if (files.length === 0) {
+      res.status(404).json({ error: 'No files found for this stack in the snapshot' });
+      return;
+    }
+
+    const node = db.getNode(nodeId);
+    if (!node) {
+      res.status(404).json({ error: 'Target node no longer exists' });
+      return;
+    }
+
+    if (node.type === 'local') {
+      const fsService = FileSystemService.getInstance(node.id);
+
+      // Backup current files before restore
+      try {
+        await fsService.backupStackFiles(stackName);
+      } catch {
+        // Stack may not exist yet — that's ok
+      }
+
+      for (const file of files) {
+        if (file.filename === 'compose.yaml') {
+          await fsService.saveStackContent(stackName, file.content);
+        } else if (file.filename === '.env') {
+          await fsService.saveEnvContent(stackName, file.content);
+        }
+      }
+
+      if (redeploy) {
+        const composeService = ComposeService.getInstance(node.id);
+        await composeService.deployStack(stackName);
+      }
+    } else {
+      // Remote node
+      if (!node.api_url || !node.api_token) {
+        res.status(503).json({ error: 'Remote node not configured' });
+        return;
+      }
+
+      const baseUrl = node.api_url.replace(/\/$/, '');
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${node.api_token}`,
+        'Content-Type': 'application/json',
+      };
+
+      for (const file of files) {
+        if (file.filename === 'compose.yaml') {
+          const putRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ content: file.content }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!putRes.ok) throw new Error('Failed to restore compose file on remote node');
+        } else if (file.filename === '.env') {
+          const putRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}/env`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ content: file.content }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!putRes.ok) throw new Error('Failed to restore env file on remote node');
+        }
+      }
+
+      if (redeploy) {
+        await fetch(`${baseUrl}/api/compose/${encodeURIComponent(stackName)}/up`, {
+          method: 'POST',
+          headers,
+          signal: AbortSignal.timeout(30000),
+        });
+      }
+    }
+
+    res.json({ message: 'Stack restored successfully', redeployed: redeploy });
+  } catch (error) {
+    console.error('[Fleet Snapshot] Restore error:', error);
+    res.status(500).json({ error: 'Failed to restore stack from snapshot' });
+  }
+});
+
+// Delete snapshot
+app.delete('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePro(req, res)) return;
+
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    const snapshot = db.getSnapshot(id);
+    if (!snapshot) {
+      res.status(404).json({ error: 'Snapshot not found' });
+      return;
+    }
+    db.deleteSnapshot(id);
+    res.json({ message: 'Snapshot deleted' });
+  } catch (error) {
+    console.error('[Fleet Snapshot] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete snapshot' });
+  }
+});
+
 // ─── Webhooks (Pro) ─── CRUD requires auth + Pro, trigger is public with HMAC ───
 
 // Webhook CRUD (auth + Pro required)
@@ -767,6 +1130,7 @@ app.get('/api/webhooks', authMiddleware, async (_req: Request, res: Response): P
 });
 
 app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   if (!requirePro(req, res)) return;
   try {
     const { name, stack_name, action, enabled } = req.body;
@@ -795,6 +1159,7 @@ app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): P
 });
 
 app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -817,6 +1182,7 @@ app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response)
 });
 
 app.delete('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -879,12 +1245,157 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
     // Execute asynchronously — return 202 immediately
     res.status(202).json({ message: 'Webhook accepted', action });
 
-    svc.execute(id, action, triggerSource).catch(err => {
+    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    svc.execute(id, action, triggerSource, atomic).catch(err => {
       console.error(`[Webhooks] Execution error for webhook ${id}:`, err);
     });
   } catch (error) {
     console.error('[Webhooks] Trigger error:', error);
     res.status(500).json({ error: 'Failed to process webhook' });
+  }
+});
+
+// --- User Management (local-only, admin + Pro gated for creation) ---
+
+app.get('/api/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const users = DatabaseService.getInstance().getUsers();
+    res.json(users);
+  } catch (error) {
+    console.error('[Users] List error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.post('/api/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePro(req, res)) return;
+  try {
+    const { username, password, role } = req.body;
+
+    if (!username || !password || !role) {
+      res.status(400).json({ error: 'Username, password, and role are required' });
+      return;
+    }
+    if (typeof username !== 'string' || username.length < 3 || !/^[a-zA-Z0-9_-]+$/.test(username)) {
+      res.status(400).json({ error: 'Username must be at least 3 characters (letters, numbers, underscore, hyphen)' });
+      return;
+    }
+    if (typeof password !== 'string' || password.length < 6) {
+      res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return;
+    }
+    if (role !== 'admin' && role !== 'viewer') {
+      res.status(400).json({ error: 'Role must be "admin" or "viewer"' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getUserByUsername(username);
+    if (existing) {
+      res.status(409).json({ error: 'A user with this username already exists' });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const id = db.addUser({ username, password_hash: passwordHash, role });
+    res.status(201).json({ id, username, role });
+  } catch (error) {
+    console.error('[Users] Create error:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    const user = db.getUser(id);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const { username, password, role } = req.body;
+    const updates: Partial<{ username: string; password_hash: string; role: string }> = {};
+
+    if (username !== undefined) {
+      if (typeof username !== 'string' || username.length < 3 || !/^[a-zA-Z0-9_-]+$/.test(username)) {
+        res.status(400).json({ error: 'Username must be at least 3 characters (letters, numbers, underscore, hyphen)' });
+        return;
+      }
+      const existing = db.getUserByUsername(username);
+      if (existing && existing.id !== id) {
+        res.status(409).json({ error: 'A user with this username already exists' });
+        return;
+      }
+      updates.username = username;
+    }
+
+    if (role !== undefined) {
+      if (role !== 'admin' && role !== 'viewer') {
+        res.status(400).json({ error: 'Role must be "admin" or "viewer"' });
+        return;
+      }
+      // Prevent demoting yourself
+      if (user.username === req.user!.username && role !== user.role) {
+        res.status(400).json({ error: 'Cannot change your own role' });
+        return;
+      }
+      // Prevent removing the last admin
+      if (user.role === 'admin' && role === 'viewer' && db.getAdminCount() <= 1) {
+        res.status(400).json({ error: 'Cannot demote the only admin user' });
+        return;
+      }
+      updates.role = role;
+    }
+
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.length < 6) {
+        res.status(400).json({ error: 'Password must be at least 6 characters' });
+        return;
+      }
+      updates.password_hash = await bcrypt.hash(password, 10);
+    }
+
+    db.updateUser(id, updates);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Users] Update error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    const user = db.getUser(id);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    // Cannot delete yourself
+    if (user.username === req.user!.username) {
+      res.status(400).json({ error: 'Cannot delete your own account' });
+      return;
+    }
+
+    // Cannot delete the last admin
+    if (user.role === 'admin' && db.getAdminCount() <= 1) {
+      res.status(400).json({ error: 'Cannot delete the only admin user' });
+      return;
+    }
+
+    db.deleteUser(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Users] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 
@@ -1264,6 +1775,7 @@ app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
 });
 
 app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
@@ -1409,6 +1921,7 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 });
 
 app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
@@ -1442,6 +1955,7 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { stackName } = req.body;
     if (!stackName || typeof stackName !== 'string') {
@@ -1462,6 +1976,7 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
 });
 
 app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   const stackName = req.params.name as string;
   try {
     // Stage 1: Tell Docker to clean up ghost networks/containers
@@ -1503,6 +2018,7 @@ app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
 });
 
 app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1514,6 +2030,7 @@ app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
 });
 
 app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1525,6 +2042,7 @@ app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
 });
 
 app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1537,17 +2055,21 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 
 // End of legacy container routes
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
-    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
+    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
     res.json({ message: 'Deployed successfully' });
   } catch (error: any) {
     console.error('Failed to deploy stack:', error);
-    res.status(500).json({ error: error.message || 'Failed to deploy stack' });
+    const rolledBack = LicenseService.getInstance().getTier() === 'pro';
+    res.status(500).json({ error: error.message || 'Failed to deploy stack', rolledBack });
   }
 });
 
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
@@ -1558,6 +2080,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1576,6 +2099,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 });
 
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1594,6 +2118,7 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -1613,13 +2138,49 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
 
 // Update stack: pull images and recreate containers
 app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
-    // Await update completion
-    await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined);
+    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
     res.json({ status: 'Update completed' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update' });
+    const rolledBack = LicenseService.getInstance().getTier() === 'pro';
+    res.status(500).json({ error: 'Failed to update', rolledBack });
+  }
+});
+
+// Manual rollback endpoint (Pro + Admin)
+app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePro(req, res)) return;
+  try {
+    const stackName = req.params.stackName as string;
+    const fsSvc = FileSystemService.getInstance(req.nodeId);
+    const backupInfo = await fsSvc.getBackupInfo(stackName);
+    if (!backupInfo.exists) {
+      return res.status(404).json({ error: 'No backup available for this stack.' });
+    }
+    await fsSvc.restoreStackFiles(stackName);
+    // Re-deploy with restored files (non-atomic to avoid loops)
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, false);
+    res.json({ message: 'Stack rolled back successfully.' });
+  } catch (error: any) {
+    console.error('Rollback failed:', error);
+    res.status(500).json({ error: error.message || 'Rollback failed.' });
+  }
+});
+
+// Backup info endpoint (read-only)
+app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => {
+  try {
+    const stackName = req.params.stackName as string;
+    const fsSvc = FileSystemService.getInstance(req.nodeId);
+    const info = await fsSvc.getBackupInfo(stackName);
+    res.json(info);
+  } catch (error: any) {
+    console.error('Failed to get backup info:', error);
+    res.status(500).json({ error: error.message || 'Failed to get backup info.' });
   }
 });
 
@@ -1925,6 +2486,7 @@ app.get('/api/agents', async (req: Request, res: Response) => {
 });
 
 app.post('/api/agents', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const agent = req.body;
     DatabaseService.getInstance().upsertAgent(agent);
@@ -1981,6 +2543,7 @@ app.get('/api/settings', async (req: Request, res: Response) => {
 });
 
 app.post('/api/settings', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { key, value } = req.body;
     if (!key || typeof key !== 'string' || !ALLOWED_SETTING_KEYS.has(key)) {
@@ -2000,6 +2563,7 @@ app.post('/api/settings', async (req: Request, res: Response) => {
 });
 
 app.patch('/api/settings', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const parsed = SettingsPatchSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -2042,6 +2606,7 @@ const AlertCreateSchema = z.object({
 });
 
 app.post('/api/alerts', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   const parsed = AlertCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid alert data', details: parsed.error.flatten().fieldErrors });
@@ -2057,6 +2622,7 @@ app.post('/api/alerts', async (req: Request, res: Response) => {
 });
 
 app.delete('/api/alerts/:id', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     DatabaseService.getInstance().deleteStackAlert(id);
@@ -2104,6 +2670,7 @@ app.delete('/api/notifications', authMiddleware, async (req: Request, res: Respo
 });
 
 app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { type, url } = req.body;
     await NotificationService.getInstance().testDispatch(type, url);
@@ -2119,6 +2686,7 @@ app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Re
 // to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
 // tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
 app.post('/api/system/console-token', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
@@ -2149,6 +2717,7 @@ app.get('/api/system/orphans', async (req: Request, res: Response) => {
 });
 
 app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { containerIds } = req.body;
     if (!Array.isArray(containerIds)) {
@@ -2164,6 +2733,7 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
 });
 
 app.post('/api/system/prune/system', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { target, scope } = req.body as { target: string; scope?: string };
     if (!['containers', 'images', 'networks', 'volumes'].includes(target)) {
@@ -2249,6 +2819,7 @@ app.get('/api/system/networks', async (req: Request, res: Response) => {
 });
 
 app.post('/api/system/images/delete', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
@@ -2262,6 +2833,7 @@ app.post('/api/system/images/delete', async (req: Request, res: Response) => {
 });
 
 app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
@@ -2275,6 +2847,7 @@ app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
 });
 
 app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
@@ -2299,11 +2872,13 @@ app.get('/api/templates', async (req: Request, res: Response) => {
 });
 
 app.post('/api/templates/refresh-cache', authMiddleware, (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   templateService.clearCache();
   res.json({ success: true });
 });
 
 app.post('/api/templates/deploy', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { stackName, template, envVars } = req.body;
 
@@ -2336,7 +2911,8 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 
     // 4. Deploy the stack with atomic rollback
     try {
-      await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined);
+      const atomic = LicenseService.getInstance().getTier() === 'pro';
+      await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
       res.json({ success: true, message: 'Template deployed successfully' });
     } catch (deployError: any) {
       const rawError = deployError.message || String(deployError);
@@ -2387,6 +2963,7 @@ app.get('/api/image-updates', authMiddleware, (_req: Request, res: Response) => 
 });
 
 app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Response) => {
+    if (!requireAdmin(_req, res)) return;
     try {
         const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
         if (!triggered) {
@@ -2431,6 +3008,7 @@ app.get('/api/nodes/:id', async (req: Request, res: Response) => {
 
 // Create a new node
 app.post('/api/nodes', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
 
@@ -2471,6 +3049,7 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
 
 // Update a node
 app.put('/api/nodes/:id', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string);
     const updates = req.body;
@@ -2496,6 +3075,7 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
 
 // Delete a node
 app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string);
     DatabaseService.getInstance().deleteNode(id);
