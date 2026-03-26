@@ -37,6 +37,28 @@ export interface Node {
     api_token?: string;
 }
 
+export interface Webhook {
+    id?: number;
+    name: string;
+    stack_name: string;
+    action: 'deploy' | 'restart' | 'stop' | 'start' | 'pull';
+    secret: string;
+    enabled: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface WebhookExecution {
+    id?: number;
+    webhook_id: number;
+    action: string;
+    status: 'success' | 'failure';
+    trigger_source: string | null;
+    duration_ms: number | null;
+    error: string | null;
+    executed_at: number;
+}
+
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
@@ -141,6 +163,31 @@ export class DatabaseService {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        stack_name TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'deploy',
+        secret TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS webhook_executions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        webhook_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        trigger_source TEXT,
+        duration_ms INTEGER,
+        error TEXT,
+        executed_at INTEGER NOT NULL,
+        FOREIGN KEY(webhook_id) REFERENCES webhooks(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_webhook_executions_webhook ON webhook_executions(webhook_id);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -480,5 +527,70 @@ export class DatabaseService {
             result[row.stack_name] = row.has_update === 1;
         }
         return result;
+    }
+
+    // --- Webhooks ---
+
+    public getWebhooks(): Webhook[] {
+        return this.db.prepare('SELECT * FROM webhooks ORDER BY created_at DESC').all().map((row: any) => ({
+            ...row,
+            enabled: row.enabled === 1,
+        }));
+    }
+
+    public getWebhook(id: number): Webhook | undefined {
+        const row = this.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as any;
+        if (!row) return undefined;
+        return { ...row, enabled: row.enabled === 1 };
+    }
+
+    public addWebhook(webhook: Omit<Webhook, 'id' | 'created_at' | 'updated_at'>): number {
+        const now = Date.now();
+        const result = this.db.prepare(
+            'INSERT INTO webhooks (name, stack_name, action, secret, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(webhook.name, webhook.stack_name, webhook.action, webhook.secret, webhook.enabled ? 1 : 0, now, now);
+        return result.lastInsertRowid as number;
+    }
+
+    public updateWebhook(id: number, updates: Partial<Pick<Webhook, 'name' | 'stack_name' | 'action' | 'enabled'>>): void {
+        const fields: string[] = [];
+        const values: (string | number)[] = [];
+
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.stack_name !== undefined) { fields.push('stack_name = ?'); values.push(updates.stack_name); }
+        if (updates.action !== undefined) { fields.push('action = ?'); values.push(updates.action); }
+        if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+
+        if (fields.length === 0) return;
+
+        fields.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+        this.db.prepare(`UPDATE webhooks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteWebhook(id: number): void {
+        this.db.prepare('DELETE FROM webhooks WHERE id = ?').run(id);
+    }
+
+    // --- Webhook Executions ---
+
+    public getWebhookExecutions(webhookId: number, limit = 20): WebhookExecution[] {
+        return this.db.prepare(
+            'SELECT * FROM webhook_executions WHERE webhook_id = ? ORDER BY executed_at DESC LIMIT ?'
+        ).all(webhookId, limit) as WebhookExecution[];
+    }
+
+    public addWebhookExecution(execution: Omit<WebhookExecution, 'id'>): number {
+        const result = this.db.prepare(
+            'INSERT INTO webhook_executions (webhook_id, action, status, trigger_source, duration_ms, error, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(execution.webhook_id, execution.action, execution.status, execution.trigger_source, execution.duration_ms, execution.error, execution.executed_at);
+
+        // Keep only last 100 executions per webhook
+        this.db.prepare(
+            'DELETE FROM webhook_executions WHERE webhook_id = ? AND id NOT IN (SELECT id FROM webhook_executions WHERE webhook_id = ? ORDER BY executed_at DESC LIMIT 100)'
+        ).run(execution.webhook_id, execution.webhook_id);
+
+        return result.lastInsertRowid as number;
     }
 }

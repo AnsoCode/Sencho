@@ -18,12 +18,13 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 import { useLicense } from '@/context/LicenseContext';
 import { ProBadge } from './ProBadge';
+import { ProGate } from './ProGate';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -45,7 +46,29 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'developer' | 'nodes' | 'appstore' | 'about';
+type SectionId = 'account' | 'license' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'about';
+
+interface WebhookItem {
+    id: number;
+    name: string;
+    stack_name: string;
+    action: string;
+    secret: string;
+    enabled: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+interface WebhookExecution {
+    id: number;
+    webhook_id: number;
+    action: string;
+    status: 'success' | 'failure';
+    trigger_source: string | null;
+    duration_ms: number | null;
+    error: string | null;
+    executed_at: number;
+}
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -65,9 +88,293 @@ const DEFAULT_SETTINGS: PatchableSettings = {
     log_retention_days: '30',
 };
 
+function WebhooksSection({ isPro }: { isPro: boolean }) {
+    const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [showForm, setShowForm] = useState(false);
+    const [newSecret, setNewSecret] = useState<{ id: number; secret: string } | null>(null);
+    const [expandedHistory, setExpandedHistory] = useState<number | null>(null);
+    const [history, setHistory] = useState<Record<number, WebhookExecution[]>>({});
+    const [loadingHistory, setLoadingHistory] = useState<number | null>(null);
+
+    // Form state
+    const [formName, setFormName] = useState('');
+    const [formStack, setFormStack] = useState('');
+    const [formAction, setFormAction] = useState<string>('deploy');
+    const [stacks, setStacks] = useState<string[]>([]);
+
+    const fetchWebhooks = async () => {
+        try {
+            const res = await apiFetch('/webhooks', { localOnly: true });
+            if (res.ok) setWebhooks(await res.json());
+        } catch { /* ignore */ } finally { setLoading(false); }
+    };
+
+    const fetchStacks = async () => {
+        try {
+            const res = await apiFetch('/stacks');
+            if (res.ok) setStacks(await res.json());
+        } catch { /* ignore */ }
+    };
+
+    useEffect(() => { fetchWebhooks(); fetchStacks(); }, []);
+
+    const handleCreate = async () => {
+        if (!formName || !formStack || !formAction) {
+            toast.error('All fields are required.');
+            return;
+        }
+        setCreating(true);
+        try {
+            const res = await apiFetch('/webhooks', {
+                method: 'POST',
+                localOnly: true,
+                body: JSON.stringify({ name: formName, stack_name: formStack, action: formAction }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setNewSecret({ id: data.id, secret: data.secret });
+                setShowForm(false);
+                setFormName(''); setFormStack(''); setFormAction('deploy');
+                fetchWebhooks();
+                toast.success('Webhook created.');
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || err?.message || 'Failed to create webhook.');
+            }
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Network error.');
+        } finally { setCreating(false); }
+    };
+
+    const handleDelete = async (id: number) => {
+        try {
+            const res = await apiFetch(`/webhooks/${id}`, { method: 'DELETE', localOnly: true });
+            if (res.ok) { toast.success('Webhook deleted.'); fetchWebhooks(); }
+            else { const err = await res.json().catch(() => ({})); toast.error(err?.error || 'Failed to delete.'); }
+        } catch { toast.error('Network error.'); }
+    };
+
+    const handleToggle = async (id: number, enabled: boolean) => {
+        try {
+            const res = await apiFetch(`/webhooks/${id}`, {
+                method: 'PUT', localOnly: true,
+                body: JSON.stringify({ enabled }),
+            });
+            if (res.ok) fetchWebhooks();
+        } catch { /* ignore */ }
+    };
+
+    const fetchHistory = async (webhookId: number) => {
+        if (expandedHistory === webhookId) { setExpandedHistory(null); return; }
+        setExpandedHistory(webhookId);
+        setLoadingHistory(webhookId);
+        try {
+            const res = await apiFetch(`/webhooks/${webhookId}/history`, { localOnly: true });
+            if (res.ok) {
+                const data = await res.json();
+                setHistory(prev => ({ ...prev, [webhookId]: data }));
+            }
+        } catch { /* ignore */ } finally { setLoadingHistory(null); }
+    };
+
+    const copyToClipboard = (text: string, label: string) => {
+        navigator.clipboard.writeText(text);
+        toast.success(`${label} copied to clipboard.`);
+    };
+
+    if (!isPro) {
+        return (
+            <div className="space-y-6">
+                <div>
+                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <ProBadge /></h3>
+                    <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
+                </div>
+                <ProGate featureName="Webhooks">
+                    <div className="space-y-3">
+                        <div className="h-16 rounded-xl border bg-card" />
+                        <div className="h-16 rounded-xl border bg-card" />
+                    </div>
+                </ProGate>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-start justify-between pr-8">
+                <div>
+                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <ProBadge /></h3>
+                    <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
+                </div>
+                <Button size="sm" onClick={() => setShowForm(!showForm)}>
+                    <Plus className="w-4 h-4 mr-1.5" /> Create Webhook
+                </Button>
+            </div>
+
+            {/* Create Form */}
+            {showForm && (
+                <div className="space-y-4 bg-muted/10 p-4 border border-border rounded-xl">
+                    <div className="space-y-2">
+                        <Label>Name</Label>
+                        <Input placeholder="Deploy on push" value={formName} onChange={e => setFormName(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Stack</Label>
+                        <Select value={formStack} onValueChange={setFormStack}>
+                            <SelectTrigger><SelectValue placeholder="Select a stack..." /></SelectTrigger>
+                            <SelectContent>
+                                {stacks.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Action</Label>
+                        <Select value={formAction} onValueChange={setFormAction}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="deploy">Deploy (down + up)</SelectItem>
+                                <SelectItem value="restart">Restart</SelectItem>
+                                <SelectItem value="stop">Stop</SelectItem>
+                                <SelectItem value="start">Start</SelectItem>
+                                <SelectItem value="pull">Pull & Update</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+                        <Button size="sm" onClick={handleCreate} disabled={creating}>
+                            {creating ? <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />Creating...</> : 'Create'}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Secret reveal (shown once after creation) */}
+            {newSecret && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle className="w-4 h-4" /> Webhook created — copy your secret now
+                    </div>
+                    <p className="text-xs text-muted-foreground">This secret will not be shown again. Store it securely.</p>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs font-mono bg-muted px-3 py-2 rounded-lg break-all">{newSecret.secret}</code>
+                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(newSecret.secret, 'Secret')}>
+                            <Copy className="w-4 h-4" />
+                        </Button>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setNewSecret(null)}>Dismiss</Button>
+                </div>
+            )}
+
+            {/* Loading state */}
+            {loading && (
+                <div className="space-y-3">
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                    <Skeleton className="h-20 w-full rounded-xl" />
+                </div>
+            )}
+
+            {/* Empty state */}
+            {!loading && webhooks.length === 0 && !showForm && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Webhook className="w-10 h-10 text-muted-foreground/50 mb-3" />
+                    <p className="text-sm text-muted-foreground">No webhooks configured yet.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Create one to trigger stack actions from CI/CD.</p>
+                </div>
+            )}
+
+            {/* Webhook list */}
+            {!loading && webhooks.map(wh => {
+                const triggerUrl = `${window.location.origin}/api/webhooks/${wh.id}/trigger`;
+                const isExpanded = expandedHistory === wh.id;
+                return (
+                    <div key={wh.id} className="border border-border rounded-xl overflow-hidden">
+                        <div className="p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <Webhook className="w-4 h-4 text-muted-foreground shrink-0" />
+                                    <span className="font-medium text-sm truncate">{wh.name}</span>
+                                    <Badge variant="outline" className="text-[10px] shrink-0">{wh.action}</Badge>
+                                    <Badge variant="secondary" className="text-[10px] shrink-0">{wh.stack_name}</Badge>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Switch checked={wh.enabled} onCheckedChange={(c) => handleToggle(wh.id!, c)} />
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDelete(wh.id!)}>
+                                        <Trash2 className="w-4 h-4 text-muted-foreground" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Trigger URL */}
+                            <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Trigger URL</Label>
+                                <div className="flex items-center gap-2">
+                                    <code className="flex-1 text-[11px] font-mono bg-muted px-2.5 py-1.5 rounded-md truncate">{triggerUrl}</code>
+                                    <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => copyToClipboard(triggerUrl, 'URL')}>
+                                        <Copy className="w-3 h-3" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Secret (masked) */}
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground">Secret:</span>
+                                <code className="font-mono text-muted-foreground">{wh.secret}</code>
+                            </div>
+
+                            {/* History toggle */}
+                            <button
+                                onClick={() => fetchHistory(wh.id!)}
+                                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                <History className="w-3 h-3" />
+                                Recent executions
+                            </button>
+                        </div>
+
+                        {/* Execution history */}
+                        {isExpanded && (
+                            <div className="border-t bg-muted/20 px-4 py-3">
+                                {loadingHistory === wh.id ? (
+                                    <Skeleton className="h-8 w-full" />
+                                ) : (history[wh.id!] ?? []).length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">No executions yet.</p>
+                                ) : (
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                        {(history[wh.id!] ?? []).map(ex => (
+                                            <div key={ex.id} className="flex items-center gap-2 text-xs">
+                                                {ex.status === 'success'
+                                                    ? <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    : <XCircle className="w-3 h-3 text-red-500 shrink-0" />}
+                                                <span className="font-medium">{ex.action}</span>
+                                                <span className="text-muted-foreground">
+                                                    {new Date(ex.executed_at).toLocaleString()}
+                                                </span>
+                                                {ex.duration_ms !== null && (
+                                                    <span className="text-muted-foreground">{(ex.duration_ms / 1000).toFixed(1)}s</span>
+                                                )}
+                                                {ex.error && (
+                                                    <span className="text-red-500 truncate" title={ex.error}>{ex.error}</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const { activeNode } = useNodes();
-    const { license, activate, deactivate } = useLicense();
+    const { license, isPro, activate, deactivate } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
     const [licenseKeyInput, setLicenseKeyInput] = useState('');
@@ -76,7 +383,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -421,6 +728,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             showDot={hasSystemChanges}
                         />
                         <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
+                        {!isRemote && (
+                            <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" />
+                        )}
                         <NavButton
                             section="developer"
                             icon={<Code className="w-4 h-4 mr-2" />}
@@ -776,6 +1086,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 <TabsContent value="webhook">{renderAgentTab('webhook', 'Custom Webhook')}</TabsContent>
                             </Tabs>
                         </div>
+                    )}
+
+                    {activeSection === 'webhooks' && (
+                        <WebhooksSection isPro={isPro} />
                     )}
 
                     {activeSection === 'developer' && (
