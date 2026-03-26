@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **fleet:** Per-stack restore from any snapshot — overwrite current compose files with the snapshot version, with optional one-click redeploy (Pro admin)
 * **fleet:** Graceful handling of offline nodes during snapshot creation — skipped nodes are recorded with reason and displayed as warnings
 
+* **licensing:** Lemon Squeezy checkout integration — server-side checkout URL generation via `POST /api/checkout` with admin email pre-fill and instance ID tracking
+* **licensing:** Lemon Squeezy webhook endpoint (`POST /api/webhooks/lemonsqueezy`) with HMAC-SHA256 signature verification — handles order, subscription, and payment lifecycle events for automatic license activation/deactivation
+* **licensing:** Customer billing portal link (`GET /api/billing/portal`) — stored from webhook events, accessible via "Manage Subscription" button in Settings
+* **licensing:** In-app checkout buttons in Settings > License for Personal Pro and Team Pro plans with manual license key activation as fallback
+* **licensing:** `LemonSqueezyService` backend service encapsulating all Lemon Squeezy API interactions (checkout creation, webhook processing, signature verification)
+
 ### Changed
 
 * **pricing:** Personal Pro raised from $49/year to $69/year, lifetime from $199 to $249

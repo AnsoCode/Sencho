@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
@@ -647,7 +647,7 @@ function UsersSection() {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { isAdmin } = useAuth();
-    const { license, isPro, activate, deactivate } = useLicense();
+    const { license, isPro, activate, deactivate, checkout } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
     const [licenseKeyInput, setLicenseKeyInput] = useState('');
@@ -1141,72 +1141,118 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 )}
                             </div>
 
-                            {/* Activation / Deactivation */}
-                            {license?.status === 'active' ? (
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm text-muted-foreground">
-                                        Deactivating will revert to Community features.
-                                    </p>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={async () => {
-                                            setIsDeactivating(true);
-                                            const result = await deactivate();
-                                            if (result.success) {
-                                                toast.success('License deactivated.');
-                                            } else {
-                                                toast.error(result.error || 'Deactivation failed');
-                                            }
-                                            setIsDeactivating(false);
-                                        }}
-                                        disabled={isDeactivating}
-                                    >
-                                        {isDeactivating
-                                            ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Deactivating...</>
-                                            : 'Deactivate License'
-                                        }
-                                    </Button>
-                                </div>
-                            ) : (
+                            {/* Manage Subscription (active Pro) */}
+                            {license?.status === 'active' && (
                                 <div className="space-y-3">
-                                    <div className="space-y-1">
-                                        <Label className="text-base">Activate License Key</Label>
-                                        <p className="text-xs text-muted-foreground">
-                                            Enter your Sencho Pro license key to unlock all features.
-                                        </p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
-                                            value={licenseKeyInput}
-                                            onChange={(e) => setLicenseKeyInput(e.target.value)}
-                                            className="font-mono"
-                                        />
+                                    {license.portalUrl && (
                                         <Button
-                                            onClick={async () => {
-                                                if (!licenseKeyInput.trim()) return;
-                                                setIsActivating(true);
-                                                const result = await activate(licenseKeyInput.trim());
-                                                if (result.success) {
-                                                    toast.success('License activated! Welcome to Sencho Pro.');
-                                                    setLicenseKeyInput('');
-                                                } else {
-                                                    toast.error(result.error || 'Activation failed');
-                                                }
-                                                setIsActivating(false);
-                                            }}
-                                            disabled={isActivating || !licenseKeyInput.trim()}
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => window.open(license.portalUrl!, '_blank')}
                                         >
-                                            {isActivating
-                                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Activating...</>
-                                                : 'Activate'
+                                            <CreditCard className="w-4 h-4 mr-2" />
+                                            Manage Subscription
+                                            <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+                                        </Button>
+                                    )}
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-sm text-muted-foreground">
+                                            Deactivating will revert to Community features.
+                                        </p>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={async () => {
+                                                setIsDeactivating(true);
+                                                const result = await deactivate();
+                                                if (result.success) {
+                                                    toast.success('License deactivated.');
+                                                } else {
+                                                    toast.error(result.error || 'Deactivation failed');
+                                                }
+                                                setIsDeactivating(false);
+                                            }}
+                                            disabled={isDeactivating}
+                                        >
+                                            {isDeactivating
+                                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Deactivating...</>
+                                                : 'Deactivate License'
                                             }
                                         </Button>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* Subscribe / Activate (not active) */}
+                            {license?.status !== 'active' && (
+                                <div className="space-y-4">
+                                    {/* Checkout buttons */}
+                                    <div className="space-y-1">
+                                        <Label className="text-base">Subscribe to Sencho Pro</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Purchase a license to unlock all Pro features.
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button
+                                            size="sm"
+                                            onClick={async () => {
+                                                const result = await checkout('personal_annual');
+                                                if (!result.success) toast.error(result.error || 'Checkout failed');
+                                            }}
+                                        >
+                                            <Crown className="w-4 h-4 mr-2" />
+                                            Personal — $69/yr
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={async () => {
+                                                const result = await checkout('team_annual');
+                                                if (!result.success) toast.error(result.error || 'Checkout failed');
+                                            }}
+                                        >
+                                            <Users className="w-4 h-4 mr-2" />
+                                            Team — $149/yr
+                                        </Button>
+                                    </div>
                                     <p className="text-xs text-muted-foreground">
-                                        Don't have a license? <a href="https://sencho.io/pricing" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">Get Sencho Pro</a>
+                                        <a href="https://sencho.io/pricing" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">View all plans</a> including monthly and lifetime options.
                                     </p>
+
+                                    {/* Manual key activation (fallback) */}
+                                    <div className="border-t border-border pt-4 space-y-2">
+                                        <Label className="text-sm text-muted-foreground">Already have a license key?</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                                                value={licenseKeyInput}
+                                                onChange={(e) => setLicenseKeyInput(e.target.value)}
+                                                className="font-mono"
+                                            />
+                                            <Button
+                                                variant="outline"
+                                                onClick={async () => {
+                                                    if (!licenseKeyInput.trim()) return;
+                                                    setIsActivating(true);
+                                                    const result = await activate(licenseKeyInput.trim());
+                                                    if (result.success) {
+                                                        toast.success('License activated! Welcome to Sencho Pro.');
+                                                        setLicenseKeyInput('');
+                                                    } else {
+                                                        toast.error(result.error || 'Activation failed');
+                                                    }
+                                                    setIsActivating(false);
+                                                }}
+                                                disabled={isActivating || !licenseKeyInput.trim()}
+                                            >
+                                                {isActivating
+                                                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Activating...</>
+                                                    : 'Activate'
+                                                }
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>

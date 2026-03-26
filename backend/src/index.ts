@@ -26,6 +26,7 @@ import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
 import { LicenseService } from './services/LicenseService';
+import { LemonSqueezyService, type CheckoutVariant, type WebhookPayload } from './services/LemonSqueezyService';
 import { WebhookService } from './services/WebhookService';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
@@ -124,6 +125,10 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
 }));
+// Parse Lemon Squeezy webhooks as raw Buffer for HMAC signature verification.
+// Must be registered BEFORE express.json() so the body is not consumed as JSON.
+app.use('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' }));
+
 // Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
 // consumed here: express.json() drains the IncomingMessage stream into req.body
 // and http-proxy then pipes an already-ended stream to the remote server.
@@ -510,6 +515,86 @@ app.post('/api/license/validate', async (_req: Request, res: Response): Promise<
   } catch (error) {
     console.error('[License] Validation error:', error);
     res.status(500).json({ error: 'License validation failed' });
+  }
+});
+
+// --- Checkout & Billing (local-only) ---
+
+const VALID_CHECKOUT_VARIANTS: CheckoutVariant[] = [
+  'personal_annual', 'personal_lifetime',
+  'team_monthly', 'team_annual', 'team_lifetime',
+];
+
+app.post('/api/checkout', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { variant } = req.body as { variant?: string };
+    if (!variant || !VALID_CHECKOUT_VARIANTS.includes(variant as CheckoutVariant)) {
+      res.status(400).json({ error: `Invalid variant. Must be one of: ${VALID_CHECKOUT_VARIANTS.join(', ')}` });
+      return;
+    }
+    const ls = LemonSqueezyService.getInstance();
+    if (!ls.isConfigured()) {
+      res.status(503).json({ error: 'Lemon Squeezy is not configured on this instance.' });
+      return;
+    }
+    // Pre-fill admin email from global settings if available
+    const email = DatabaseService.getInstance().getGlobalSettings().admin_email || undefined;
+    const { url } = await ls.createCheckout(variant as CheckoutVariant, email);
+    res.json({ url });
+  } catch (error) {
+    console.error('[Checkout] Error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+app.get('/api/billing/portal', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const portalUrl = DatabaseService.getInstance().getSystemState('customer_portal_url');
+    if (!portalUrl) {
+      res.status(404).json({ error: 'No billing portal available. Subscribe via checkout first.' });
+      return;
+    }
+    res.json({ url: portalUrl });
+  } catch (error) {
+    console.error('[Billing] Portal error:', error);
+    res.status(500).json({ error: 'Failed to retrieve billing portal' });
+  }
+});
+
+// --- Lemon Squeezy Webhook (public — verified via HMAC signature) ---
+
+app.post('/api/webhooks/lemonsqueezy', (req: Request, res: Response): void => {
+  try {
+    const ls = LemonSqueezyService.getInstance();
+    const signature = req.headers['x-signature'] as string;
+    if (!signature) {
+      res.status(401).json({ error: 'Missing signature' });
+      return;
+    }
+
+    const rawBody = req.body as Buffer;
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      res.status(400).json({ error: 'Empty or invalid body' });
+      return;
+    }
+
+    if (!ls.verifySignature(rawBody, signature)) {
+      console.warn('[Webhook] Invalid signature — rejecting.');
+      res.status(401).json({ error: 'Invalid signature' });
+      return;
+    }
+
+    const payload = JSON.parse(rawBody.toString('utf-8')) as WebhookPayload;
+    ls.processWebhookEvent(payload);
+
+    // Always return 200 to acknowledge receipt
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('[Webhook] Processing error:', (error as Error).message);
+    // Still return 200 to prevent Lemon Squeezy from retrying on parse errors
+    res.status(200).json({ received: true, error: 'Processing error' });
   }
 });
 

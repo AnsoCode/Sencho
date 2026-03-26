@@ -17,6 +17,7 @@ export interface LicenseInfo {
     validUntil: string | null;
     trialDaysRemaining: number | null;
     instanceId: string;
+    portalUrl: string | null;
 }
 
 /** Seat limits per variant. null = unlimited. */
@@ -227,6 +228,7 @@ export class LicenseService {
             validUntil,
             trialDaysRemaining,
             instanceId,
+            portalUrl: db.getSystemState('customer_portal_url') || null,
         };
     }
 
@@ -322,6 +324,12 @@ export class LicenseService {
             'license_customer_name',
             'license_product_name',
             'license_variant_name',
+            'subscription_id',
+            'customer_id',
+            'customer_portal_url',
+            'update_payment_url',
+            'order_id',
+            'receipt_url',
         ];
         for (const key of keysToRemove) {
             db.setSystemState(key, '');
