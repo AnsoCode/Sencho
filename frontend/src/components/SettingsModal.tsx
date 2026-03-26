@@ -381,7 +381,7 @@ interface UserItem {
     created_at: number;
 }
 
-function UsersSection({ isPro }: { isPro: boolean }) {
+function UsersSection() {
     const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1369,7 +1369,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     )}
 
                     {activeSection === 'users' && (
-                        <UsersSection isPro={isPro} />
+                        <UsersSection />
                     )}
 
                     {activeSection === 'developer' && (
