@@ -1,0 +1,118 @@
+---
+title: Fleet View
+description: Monitor all your nodes from a single dashboard with real-time health metrics, search, filtering, and container drill-down.
+---
+
+The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment — local and remote — on one screen. It is available to all tiers, with advanced features unlocked by Sencho Pro.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-overview.png" alt="Fleet View showing health summary cards, toolbar, and node grid" />
+</Frame>
+
+## Community features
+
+Every Sencho installation gets the full fleet monitoring grid at no cost.
+
+### Node grid
+
+Each node appears as a card showing:
+
+| Data | Description |
+|------|-------------|
+| **Status badge** | Online (green) or Offline (grayed out) |
+| **Type badge** | `local` or `remote` |
+| **Running containers** | Count of containers in `running` state |
+| **Stopped containers** | Count of containers in `exited` state |
+| **Stacks** | Total number of Compose stacks on the node |
+| **CPU usage** | Current percentage with colour-coded bar (green → amber → red) |
+| **RAM usage** | Used / total with percentage bar |
+| **Disk usage** | Used / total with percentage bar |
+
+Offline nodes are visually dimmed and show a "Node unreachable" placeholder instead of stats.
+
+### Manual refresh
+
+Click the **Refresh** button in the top-right to re-fetch data from all nodes. The button shows a spinner while loading.
+
+---
+
+## Pro features
+
+<Note>
+  The features below require a Sencho Pro license. Community users see an upgrade prompt in place of these controls.
+</Note>
+
+### Fleet health summary cards
+
+Four cards appear above the node grid, aggregating data across all online nodes:
+
+| Card | What it shows |
+|------|---------------|
+| **Containers** | Total running containers, with fleet-wide total in subtitle |
+| **Fleet CPU** | Average CPU across all online nodes, plus which node has the highest load |
+| **Fleet Memory** | Total RAM used / total available across the fleet |
+| **Alerts** | Count of nodes with critical resource usage (CPU or disk above 90%). Card turns red when any exist |
+
+### Auto-refresh
+
+Fleet data automatically refreshes every 30 seconds. A subtle indicator at the bottom of the page confirms this is active.
+
+### Search
+
+The search bar filters the node grid in real time. It matches against:
+- Node names (e.g. typing `dev` shows only nodes with "dev" in the name)
+- Stack names (e.g. typing `plex` shows only nodes that have a "plex" stack)
+
+### Sorting
+
+Use the sort dropdown to order nodes by:
+- **Name** (alphabetical)
+- **CPU Usage** (highest first)
+- **Memory Usage** (highest first)
+- **Containers** (most first)
+- **Status** (online first)
+
+Click the arrow button next to the dropdown to toggle ascending/descending.
+
+Sort preferences are saved to your browser and persist across sessions.
+
+### Filtering
+
+Filter pills let you narrow the grid:
+
+| Filter | Options |
+|--------|---------|
+| **Status** | All · Online · Offline |
+| **Type** | All Types · Local · Remote |
+| **Critical Only** | Show only nodes with CPU or disk above 90% |
+
+A "Clear filters" button appears when filters hide all nodes.
+
+### Stack drill-down
+
+Click **Stack details** on any online node card to expand the stack list. Each stack shows a count of its containers.
+
+Click a stack name to expand it further and see individual containers with:
+- Container name
+- State badge (running, exited, restarting)
+- Uptime (e.g. "Up 43 hours")
+
+Hover over any container row to reveal an **Open in editor** button that navigates you directly to that node's stack editor.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-drill-down.png" alt="Fleet View with stack expanded showing container details" />
+</Frame>
+
+### Critical node detection
+
+Nodes with CPU or disk usage above 90% automatically receive a red **Critical** badge. Combined with the **Critical Only** filter, this lets you quickly triage overloaded servers.
+
+---
+
+## How fleet data is fetched
+
+Fleet View queries all registered nodes in parallel. Each node responds independently — one slow or offline node does not block the others. Local node data comes from the Docker socket and system stats directly. Remote node data is fetched over the Distributed API proxy using each node's Bearer token.
+
+<Note>
+  Fleet View always runs on your primary (local) Sencho instance. It is never proxied through a remote node.
+</Note>

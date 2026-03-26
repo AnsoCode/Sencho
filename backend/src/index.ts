@@ -590,6 +590,46 @@ app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): P
   }
 });
 
+// Pro-gated: container details for a specific stack on a specific node
+app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+
+  try {
+    const nodeId = parseInt(req.params.nodeId as string, 10);
+    const stackName = req.params.stackName as string;
+    const node = DatabaseService.getInstance().getNode(nodeId);
+    if (!node) {
+      res.status(404).json({ error: 'Node not found' });
+      return;
+    }
+
+    if (node.type === 'remote') {
+      if (!node.api_url || !node.api_token) {
+        res.status(503).json({ error: 'Remote node not configured' });
+        return;
+      }
+      const response = await fetch(`${node.api_url.replace(/\/$/, '')}/api/stacks/${encodeURIComponent(stackName)}/containers`, {
+        headers: { Authorization: `Bearer ${node.api_token}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        res.status(502).json({ error: 'Failed to fetch containers from remote node' });
+        return;
+      }
+      const containers = await response.json();
+      res.json(containers);
+      return;
+    }
+
+    const dockerController = DockerController.getInstance(nodeId);
+    const containers = await dockerController.getContainersByStack(stackName);
+    res.json(containers);
+  } catch (error) {
+    console.error('[Fleet] Node stack containers error:', error);
+    res.status(500).json({ error: 'Failed to fetch stack containers' });
+  }
+});
+
 async function fetchLocalNodeOverview(node: Node): Promise<FleetNodeOverview> {
   try {
     const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(node.id));
