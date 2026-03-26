@@ -1298,6 +1298,17 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       return;
     }
 
+    // Enforce seat limits based on license variant
+    const seatLimits = LicenseService.getInstance().getSeatLimits();
+    if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      return;
+    }
+    if (role === 'viewer' && seatLimits.maxViewers !== null && db.getViewerCount() >= seatLimits.maxViewers) {
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxViewers} viewer account${seatLimits.maxViewers === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      return;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const id = db.addUser({ username, password_hash: passwordHash, role });
     res.status(201).json({ id, username, role });

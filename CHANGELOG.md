@@ -64,6 +64,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **fleet:** Per-stack restore from any snapshot — overwrite current compose files with the snapshot version, with optional one-click redeploy (Pro admin)
 * **fleet:** Graceful handling of offline nodes during snapshot creation — skipped nodes are recorded with reason and displayed as warnings
 
+### Changed
+
+* **pricing:** Personal Pro raised from $49/year to $69/year, lifetime from $199 to $249
+* **pricing:** Personal Pro viewer seats increased from 1 to 3 (1 admin + 3 viewers)
+* **pricing:** Team Pro monthly billing option added at $15/month alongside $149/year
+* **pricing:** Lifetime pricing marked as time-limited early-adopter offer (90-day launch window)
+* **licensing:** License variant (Personal/Team) now stored from Lemon Squeezy metadata and exposed in license API response
+* **rbac:** Seat limits enforced server-side based on license variant — Personal Pro: 1 admin + 3 viewers, Team Pro: unlimited
+
 ### Fixed
 
 * **e2e:** Use explicit `data-stacks-loaded` string values for reliable attribute selector matching
