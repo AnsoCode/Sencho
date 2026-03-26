@@ -501,7 +501,7 @@ function UsersSection({ isPro }: { isPro: boolean }) {
     };
 
     return (
-        <ProGate feature="User management" isPro={isPro}>
+        <ProGate featureName="User management">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
