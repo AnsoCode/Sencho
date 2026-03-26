@@ -80,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok && data.success) {
         setAppStatus('authenticated');
+        // Fetch user info (role, username) so isAdmin is correct immediately
+        await checkAuth();
         return { success: true };
       } else {
         return { success: false, error: data.error || 'Login failed' };
@@ -104,7 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const completeSetup = () => {
-    setAppStatus('authenticated');
+    // Fetch user info so isAdmin is correct after setup
+    checkAuth();
   };
 
   return (
