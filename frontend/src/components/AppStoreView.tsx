@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Search, Rocket, Loader2, Info, ExternalLink, Github, Star } from "lucide-react";
+import { Search, Rocket, Loader2, Info, ExternalLink, GitHub, Star } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
@@ -347,7 +347,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                                     )}
                                                     {selectedTemplate.github_url && (
                                                         <a href={selectedTemplate.github_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground transition-colors">
-                                                            <Github className="w-3 h-3" />
+                                                            <GitHub className="w-3 h-3" />
                                                             <span>Source</span>
                                                         </a>
                                                     )}
