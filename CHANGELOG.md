@@ -26,10 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **auth:** Login and Setup pages redesigned with split-panel branding layout (dark branding panel + theme-aware form)
 * **auth:** Optional admin email field on Setup for future license recovery
 * **ui:** Mobile-responsive login/setup with compact logo header
+* **fleet:** Fleet health summary cards — aggregated container, CPU, memory, and alert counts across all nodes (Pro)
+* **fleet:** Container-level drill-down — expand stacks to see individual containers with state, uptime, and quick navigation (Pro)
+* **fleet:** Node sorting by name, CPU, memory, container count, or status with persistent preferences (Pro)
+* **fleet:** Status, type, and critical resource filtering with pill-style toolbar (Pro)
+* **fleet:** Fleet-wide search across node names and stack names (Pro)
+* **fleet:** Critical node detection with red badge for nodes exceeding 90% CPU or disk usage
+* **fleet:** Error toasts on stack and container fetch failures (replaces silent error swallowing)
+* **fleet:** ProGate now wraps placeholder content instead of empty children for a better upgrade preview
 
 ### Fixed
 
 * **e2e:** Use explicit `data-stacks-loaded` string values for reliable attribute selector matching
+* **app-store:** Fix crash caused by removed `Github` icon in newer lucide-react versions
 
 ## [0.3.1](https://github.com/AnsoCode/Sencho/compare/v0.3.0...v0.3.1) (2026-03-25)
 
