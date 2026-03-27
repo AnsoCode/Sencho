@@ -43,13 +43,17 @@ The left panel lists all containers that belong to the selected stack. Each cont
 
 ### Container actions
 
-Each container row has three action buttons:
+Each container row has action buttons that appear on hover:
 
-| Button | What it does |
-|--------|--------------|
-| **Logs** (external link icon) | Opens a live log stream modal for that container |
-| **Terminal** (terminal icon) | Opens an interactive bash session inside the container |
-| **Copy ID** | Copies the container ID to the clipboard |
+| Button | Icon | What it does |
+|--------|------|--------------|
+| **Open App** | External link | Opens the container's web UI in a new tab (uses the first mapped port) |
+| **View Live Logs** | Scroll text | Opens a live log stream modal for that container (available when running) |
+| **Open Bash Terminal** | Terminal | Opens an interactive bash session inside the container (admin only, available when running) |
+
+<Frame>
+  <img src="/images/editor/container-actions.png" alt="Container action buttons on a running container" />
+</Frame>
 
 ### Log viewer
 

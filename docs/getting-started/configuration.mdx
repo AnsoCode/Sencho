@@ -9,8 +9,15 @@ Sencho is configured entirely through environment variables and Docker volume mo
 
 | Variable | Description |
 |----------|-------------|
-| `JWT_SECRET` | Secret key used to sign session tokens. Use a long, random string (32+ characters). Changing this invalidates all active sessions. |
 | `COMPOSE_DIR` | Absolute path to the directory that contains your Compose stacks. Every subdirectory inside becomes a stack in Sencho. |
+
+<Note>
+  **JWT_SECRET is generated automatically.** Sencho creates a secure random signing key during initial setup and stores it in its database. You do not need to provide one.
+</Note>
+
+### How Sencho organizes your compose directory
+
+When you point `COMPOSE_DIR` at a directory, Sencho expects each stack to live in its own subdirectory. If you create a stack through the UI, Sencho automatically creates a subfolder and places a blank `compose.yaml` inside it. Sencho does not move or "capture" existing files - it simply treats every subdirectory as a separate stack.
 
 ## Optional environment variables
 
@@ -93,7 +100,6 @@ services:
       - ./sencho-data:/app/data
       - /opt/compose:/opt/compose          # 1:1 path rule
     environment:
-      - JWT_SECRET=your-long-random-secret-here
       - COMPOSE_DIR=/opt/compose
       - DATA_DIR=/app/data
 ```
@@ -109,7 +115,6 @@ services:
     env_file:
       - /opt/compose/globals.env          # shared vars for all stacks
     environment:
-      - JWT_SECRET=your-secret
       - COMPOSE_DIR=/opt/compose
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

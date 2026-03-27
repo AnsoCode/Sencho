@@ -16,6 +16,10 @@ Create point-in-time snapshots of every `compose.yaml` and `.env` file across yo
 3. Optionally enter a description (e.g. "Before v2 migration")
 4. Click **Create** - Sencho captures files from every reachable node
 
+<Frame>
+  <img src="/images/fleet-backups/create-snapshot.png" alt="Create Snapshot dialog" />
+</Frame>
+
 During creation, Sencho connects to each node in parallel:
 - **Local nodes** - reads files directly from the compose directory
 - **Remote nodes** - fetches files via the Distributed API proxy using the node's API token
@@ -23,6 +27,10 @@ During creation, Sencho connects to each node in parallel:
 If a remote node is offline or unreachable, it is **skipped gracefully**. The snapshot is still created with data from all reachable nodes, and skipped nodes are recorded with the reason for the failure.
 
 ## Browsing snapshots
+
+<Frame>
+  <img src="/images/fleet-backups/browse-snapshots.png" alt="Snapshot list showing date, description, scope, and warnings" />
+</Frame>
 
 The snapshot list shows:
 - **Date** - when the snapshot was taken

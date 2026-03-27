@@ -51,7 +51,11 @@ Stack alerts are configured per-stack. Right-click a stack in the sidebar (or cl
   <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu showing the Alerts option" />
 </Frame>
 
-The alerts sheet shows existing rules for the stack and a form to create new ones.
+The alerts panel slides open, showing existing rules for the stack and a form to create new ones.
+
+<Frame>
+  <img src="/images/alerts-notifications/alert-panel.png" alt="Alert panel showing alert rules and creation form" />
+</Frame>
 
 ### Alert fields
 
@@ -93,3 +97,24 @@ All dispatched notifications appear in the **notification bell** (top-right of t
 <Note>
   Notifications only reach external agents (Discord, Slack, Webhook) if at least one agent is enabled. Dashboard notifications appear regardless.
 </Note>
+
+## Alerts on remote nodes
+
+Alerts work the same way on remote nodes as they do locally. When you switch to a remote node and right-click a stack, the alerts panel shows and manages rules for that remote instance.
+
+<Frame>
+  <img src="/images/alerts-notifications/alert-panel-remote.png" alt="Alert panel on a remote node" />
+</Frame>
+
+### How it works
+
+1. **Alert rules are stored on each node independently.** When you create an alert while a remote node is selected, the rule is saved on that remote Sencho instance's database - not your primary instance.
+2. **Monitoring runs locally on each node.** The remote Sencho instance evaluates its own alert rules against its own container metrics every minute.
+3. **Notifications are sent by the node that detects the breach.** Make sure notification agents (Discord, Slack, Webhook) are configured on each remote node where you want to receive alerts - notification settings are per-instance.
+
+### Setup checklist for remote alerts
+
+1. On the **remote** Sencho instance, go to **Settings → Notifications** and configure at least one agent
+2. From your **primary** instance, switch to the remote node
+3. Right-click a stack and select **Alerts** to create rules
+4. The remote instance handles monitoring and notification delivery independently

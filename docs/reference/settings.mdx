@@ -27,6 +27,45 @@ Click **Update Password** to apply. The change takes effect immediately; existin
 
 ---
 
+## License
+
+**Scope:** Global
+
+Manage your Sencho Pro license from this section.
+
+| Element | Description |
+|---------|-------------|
+| **Current tier** | Shows whether you are on Community or Pro, with a tier badge |
+| **Trial status** | If on a trial, shows remaining days |
+| **Customer / Plan / Key** | Displayed when a Pro license is active |
+| **Renews** | Next renewal date for active subscriptions |
+| **View Pricing** | Opens the Sencho pricing page to purchase a license |
+| **Activate** | Enter a license key to activate Pro |
+| **Manage Subscription** | Opens the billing portal (active Pro only) |
+| **Deactivate License** | Reverts to Community features (active Pro only) |
+
+---
+
+## Users
+
+<Note>
+  Users management requires a Sencho Pro license and admin role. Community Edition supports a single admin account only.
+</Note>
+
+**Scope:** Global
+
+Create and manage user accounts with role-based access.
+
+| Action | Description |
+|--------|-------------|
+| **Create user** | Add a new account with username, password, and role (Admin or Viewer) |
+| **Edit user** | Change an existing user's password or role |
+| **Delete user** | Remove a user account |
+
+See [RBAC & User Management](/features/rbac) for details on what each role can access.
+
+---
+
 ## System Limits
 
 **Scope:** Per-node (applies to the currently selected node)
@@ -35,10 +74,10 @@ Configure resource thresholds that trigger visual warnings on the dashboard stat
 
 | Setting | Range | Description |
 |---------|-------|-------------|
-| **Host CPU Limit** | 1–100% | CPU percentage above which the CPU card turns orange/red |
-| **Host RAM Limit** | 1–100% | RAM percentage above which the RAM card turns orange/red |
-| **Host Disk Limit** | 1–100% | Disk percentage above which the Disk card turns orange/red |
-| **Docker Janitor Threshold** | ≥ 0 GB | Minimum free disk space to maintain. When free space falls below this value, a warning is shown. Set to `0` to disable. |
+| **Host CPU Limit** | 1-100% | CPU percentage above which the CPU card turns orange/red |
+| **Host RAM Limit** | 1-100% | RAM percentage above which the RAM card turns orange/red |
+| **Host Disk Limit** | 1-100% | Disk percentage above which the Disk card turns orange/red |
+| **Docker Janitor Threshold** | 0+ GB | Minimum free disk space to maintain. When free space falls below this value, a warning is shown. Set to `0` to disable. |
 | **Global Crash Alerts** | On / Off | When enabled, Sencho sends a notification whenever any managed container exits unexpectedly |
 
 Click **Save** to apply. An unsaved-changes indicator appears when you have edits pending.
@@ -64,13 +103,24 @@ At least one agent must be enabled for stack alerts to deliver notifications. Se
 
 ---
 
-## Appearance
+## Webhooks
 
-**Scope:** Global (stored in the browser, not the server)
+<Note>
+  Webhooks require a Sencho Pro license.
+</Note>
 
-| Setting | Options | Description |
-|---------|---------|-------------|
-| **Theme** | Light / Dark / Auto | `Auto` follows the OS system preference. Changes apply immediately without a page reload. |
+**Scope:** Global
+
+Create and manage HTTP webhooks that external systems (CI/CD pipelines, automation tools) can call to trigger stack actions. See [Webhooks](/features/webhooks) for the full walkthrough including authentication and CI examples.
+
+Quick reference:
+
+| Action | How |
+|--------|-----|
+| Create a webhook | Click **Create Webhook**, select a stack and action |
+| Copy trigger URL | Click the copy icon on any webhook row |
+| View execution history | Expand a webhook row to see recent executions |
+| Delete a webhook | Click the trash icon |
 
 ---
 
@@ -124,3 +174,43 @@ Quick reference:
 Click **Save** to update the URL. Click **Refresh Cache** to clear the cached template list and fetch fresh data from the registry immediately.
 
 See [App Store](/features/app-store#custom-template-registry) for more on custom registries.
+
+---
+
+## Support
+
+**Scope:** Global
+
+Links to help resources available to all tiers, plus priority support channels for Pro users.
+
+### Resources (all tiers)
+
+| Resource | Description |
+|----------|-------------|
+| **Documentation** | Opens docs.sencho.io - guides, reference, and tutorials |
+| **GitHub Issues** | Report bugs and request features on GitHub |
+
+### Pro support
+
+Pro license holders get additional support channels:
+
+| Channel | Description |
+|---------|-------------|
+| **Email Support** | Direct email support (Personal Pro) |
+| **Priority Email Support** | Responses within 24 hours (Team Pro) |
+
+---
+
+## About
+
+**Scope:** Global
+
+Displays instance information at a glance.
+
+| Field | Description |
+|-------|-------------|
+| **Version** | Current Sencho version |
+| **Tier** | Community or Pro tier badge |
+| **License Status** | Active, trial, expired, or community |
+| **Instance ID** | Unique identifier for this Sencho instance (shown when a license is active) |
+| **Changelog** | Link to the full changelog on GitHub |
