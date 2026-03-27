@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2 } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
@@ -27,7 +27,8 @@ import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
@@ -891,6 +892,54 @@ export default function EditorLayout() {
     }
   };
 
+  // Context-menu-friendly stack actions (accept file name directly)
+  const executeStackActionByFile = async (stackFile: string, action: string, endpoint: string) => {
+    if (loadingAction !== null) return;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setLoadingAction(action);
+    try {
+      const response = await apiFetch(`/stacks/${stackName}/${endpoint}`, { method: 'POST' });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `${action} failed`);
+      }
+      toast.success(`Stack ${action}ed successfully!`);
+      if (selectedFile === stackFile) {
+        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+        const conts = await containersRes.json();
+        setContainers(Array.isArray(conts) ? conts : []);
+      }
+      await refreshStacks(true);
+      if (action === 'deploy' && isPro) {
+        try {
+          const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
+          if (backupRes.ok) setBackupInfo(await backupRes.json());
+        } catch { /* ignore */ }
+      }
+    } catch (error) {
+      console.error(`Failed to ${action}:`, error);
+      const msg = (error as Error).message || `Failed to ${action} stack`;
+      toast.error(action === 'deploy' && isPro ? `${msg} - automatically rolled back to previous version.` : msg);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const checkUpdatesForStack = async () => {
+    try {
+      const res = await apiFetch('/image-updates/refresh', { method: 'POST' });
+      if (res.ok) {
+        toast.success('Checking for image updates...');
+        setTimeout(() => fetchImageUpdates(), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to check for updates');
+      }
+    } catch {
+      toast.error('Failed to check for updates');
+    }
+  };
+
   const handleCreateStack = async () => {
     if (!newStackName.trim()) return;
     // Send stackName directly (no .yml extension - backend creates directory)
@@ -979,7 +1028,7 @@ export default function EditorLayout() {
       {/* Left Sidebar (Stacks) */}
       <div className="w-64 border-r border-border bg-card flex flex-col">
         {/* Branding Header */}
-        <div className="h-16 flex items-center px-4 border-b border-border">
+        <div className="h-16 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
             <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-12 h-12" />
             <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
@@ -1069,44 +1118,127 @@ export default function EditorLayout() {
                   </div>
                 ) : (
                   (filteredFiles || []).map(file => (
-                    <CommandItem
-                      key={file}
-                      value={file}
-                      onSelect={() => loadFile(file)}
-                      className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
-                    >
-                      <div className="flex items-center gap-2 w-full">
-                        <div
-                          className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
-                            stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
-                            }`}
-                        />
-                        <span className="flex-1 truncate">{getDisplayName(file)}</span>
+                    <ContextMenu key={file}>
+                      <ContextMenuTrigger asChild>
+                        <div>
+                          <CommandItem
+                            value={file}
+                            onSelect={() => loadFile(file)}
+                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <div
+                                className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
+                                  stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                                  }`}
+                              />
+                              <span className="flex-1 truncate">{getDisplayName(file)}</span>
 
-                        {stackUpdates[file] && (
-                          <span
-                            className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
-                            title="Update available"
-                          />
-                        )}
+                              {stackUpdates[file] && (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                                  title="Update available"
+                                />
+                              )}
 
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openAlertSheet(file)}>
-                                <BellRing className="h-4 w-4 mr-2" />
-                                Alerts
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openAlertSheet(file)}>
+                                      <BellRing className="h-4 w-4 mr-2" />
+                                      Alerts
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => checkUpdatesForStack()}>
+                                      <RefreshCw className="h-4 w-4 mr-2" />
+                                      Check for updates
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                                      <Play className="h-4 w-4 mr-2" />
+                                      Deploy
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                                      <Square className="h-4 w-4 mr-2" />
+                                      Stop
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                                      <RotateCw className="h-4 w-4 mr-2" />
+                                      Restart
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                                      <Download className="h-4 w-4 mr-2" />
+                                      Update
+                                    </DropdownMenuItem>
+                                    {isAdmin && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive"
+                                          onClick={() => {
+                                            setStackToDelete(file.replace(/\.(yml|yaml)$/, ''));
+                                            setDeleteDialogOpen(true);
+                                          }}
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-2" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </div>
+                          </CommandItem>
                         </div>
-                      </div>
-                    </CommandItem>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem onClick={() => openAlertSheet(file)}>
+                          <BellRing className="h-4 w-4 mr-2" />
+                          Alerts
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => checkUpdatesForStack()}>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Check for updates
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                          <Play className="h-4 w-4 mr-2" />
+                          Deploy
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                          <Square className="h-4 w-4 mr-2" />
+                          Stop
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                          <RotateCw className="h-4 w-4 mr-2" />
+                          Restart
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Update
+                        </ContextMenuItem>
+                        {isAdmin && (
+                          <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                setStackToDelete(file.replace(/\.(yml|yaml)$/, ''));
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </ContextMenuItem>
+                          </>
+                        )}
+                      </ContextMenuContent>
+                    </ContextMenu>
                   ))
                 )}
               </CommandList>
