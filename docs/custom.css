@@ -1,0 +1,8 @@
+/* Increase logo size in navbar and footer to match the Sencho app */
+#navbar .nav-logo {
+  height: 36px !important;
+}
+
+footer .nav-logo {
+  height: 36px !important;
+}

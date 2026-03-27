@@ -4,8 +4,8 @@
   "name": "Sencho",
   "colors": {
     "primary": "#00BEC7",
-    "light": "#0891B2",
-    "dark": "#22D3EE"
+    "light": "#007982",
+    "dark": "#00BEC7"
   },
   "logo": {
     "light": "/images/logo/logo-light.png",
@@ -22,7 +22,7 @@
   "background": {
     "decoration": "gradient",
     "color": {
-      "dark": "#0F172A"
+      "dark": "#090909"
     }
   },
   "navbar": {
