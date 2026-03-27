@@ -1,6 +1,6 @@
 ---
 title: Licensing & Billing
-description: How Sencho Pro licensing works — trials, activation, checkout, webhooks, and subscription management.
+description: How Sencho Pro licensing works — trials, activation, and subscription management.
 ---
 
 Sencho uses an open-core model. The **Community** tier is free forever with unlimited nodes. **Pro** unlocks advanced features like fleet management, RBAC, webhooks, atomic deployments, and fleet-wide backups.
@@ -23,22 +23,14 @@ When the trial expires, Sencho automatically reverts to the Community tier. No d
 
 ## Purchasing a license
 
-There are two ways to subscribe:
+1. Visit [sencho.io](https://sencho.io/#pricing) and choose a plan.
+2. Complete the checkout on Lemon Squeezy.
+3. You'll receive a license key by email.
 
-### In-app checkout
+## Activating your license
 
 1. Go to **Settings > License** in your Sencho dashboard.
-2. Click **Personal — $69.99/yr** or **Team — $499.99/yr** (or visit [sencho.io/pricing](https://sencho.io/pricing) for all options).
-3. Complete the checkout on Lemon Squeezy.
-4. If your instance is reachable from the internet, the license activates automatically via webhook.
-5. If not, you'll receive a license key by email — enter it in the activation field.
-
-### Manual activation
-
-If you purchased a license key separately:
-
-1. Go to **Settings > License**.
-2. Paste your key into the **Activate License Key** field.
+2. Paste your key into the **License Key** field.
 3. Click **Activate**.
 
 Sencho validates the key against Lemon Squeezy and activates Pro features immediately.
@@ -49,39 +41,7 @@ Active licenses are re-validated every **72 hours** against the Lemon Squeezy AP
 
 ## Managing your subscription
 
-If your license was purchased through checkout, a **Manage Subscription** button appears in Settings > License. This opens the Lemon Squeezy customer portal where you can:
-
-- Update your payment method
-- View invoices and receipts
-- Cancel or resume your subscription
-- Switch between plans
-
-## Webhook integration
-
-<Note>
-  Webhook support is optional. It enables automatic license activation and real-time subscription updates.
-</Note>
-
-If your Sencho instance is publicly accessible, you can configure a Lemon Squeezy webhook to send events directly to it:
-
-**Webhook URL:** `https://your-sencho-domain/api/webhooks/lemonsqueezy`
-
-Sencho handles these events automatically:
-
-| Event | Action |
-|-------|--------|
-| `order_created` | Activates license (lifetime purchases) |
-| `order_refunded` | Revokes license |
-| `subscription_created` | Activates license |
-| `subscription_updated` | Updates plan/variant |
-| `subscription_cancelled` | Keeps active until end of period |
-| `subscription_expired` | Revokes license |
-| `subscription_paused` | Pauses license |
-| `subscription_resumed` | Reactivates license |
-| `subscription_payment_failed` | Logs warning (grace period) |
-| `subscription_payment_success` | Confirms renewal |
-
-All webhook requests are verified using HMAC-SHA256 signatures before processing.
+To manage your subscription (update payment method, view invoices, cancel, or switch plans), visit the [Lemon Squeezy customer portal](https://app.lemonsqueezy.com/my-orders) or use the link in your purchase confirmation email.
 
 ## Deactivating a license
 

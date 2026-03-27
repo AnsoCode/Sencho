@@ -1186,43 +1186,24 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             {/* Subscribe / Activate (not active) */}
                             {license?.status !== 'active' && (
                                 <div className="space-y-4">
-                                    {/* Checkout buttons */}
                                     <div className="space-y-1">
                                         <Label className="text-base">Subscribe to Sencho Pro</Label>
                                         <p className="text-xs text-muted-foreground">
-                                            Purchase a license to unlock all Pro features.
+                                            Purchase a license key from our website, then activate it below.
                                         </p>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Button
-                                            size="sm"
-                                            onClick={async () => {
-                                                const result = await checkout('personal_annual');
-                                                if (!result.success) toast.error(result.error || 'Checkout failed');
-                                            }}
-                                        >
-                                            <Crown className="w-4 h-4 mr-2" />
-                                            Personal — $69.99/yr
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={async () => {
-                                                const result = await checkout('team_annual');
-                                                if (!result.success) toast.error(result.error || 'Checkout failed');
-                                            }}
-                                        >
-                                            <Users className="w-4 h-4 mr-2" />
-                                            Team — $499.99/yr
-                                        </Button>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        <a href="https://sencho.io/pricing" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors">View all plans</a> including monthly and lifetime options.
-                                    </p>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => checkout()}
+                                    >
+                                        <Crown className="w-4 h-4 mr-2" />
+                                        View Pricing
+                                        <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+                                    </Button>
 
-                                    {/* Manual key activation (fallback) */}
+                                    {/* License key activation */}
                                     <div className="border-t border-border pt-4 space-y-2">
-                                        <Label className="text-sm text-muted-foreground">Already have a license key?</Label>
+                                        <Label className="text-sm text-muted-foreground">Have a license key?</Label>
                                         <div className="flex gap-2">
                                             <Input
                                                 placeholder="XXXXX-XXXXX-XXXXX-XXXXX"

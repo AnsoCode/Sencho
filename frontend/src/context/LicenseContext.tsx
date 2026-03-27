@@ -6,14 +6,6 @@ export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disa
 
 export type LicenseVariant = 'personal' | 'team' | null;
 
-export type CheckoutVariant =
-    | 'personal_monthly'
-    | 'personal_annual'
-    | 'personal_lifetime'
-    | 'team_monthly'
-    | 'team_annual'
-    | 'team_lifetime';
-
 export interface LicenseInfo {
     tier: LicenseTier;
     status: LicenseStatus;
@@ -34,7 +26,7 @@ interface LicenseContextType {
     refresh: () => Promise<void>;
     activate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
     deactivate: () => Promise<{ success: boolean; error?: string }>;
-    checkout: (variant: CheckoutVariant) => Promise<{ success: boolean; error?: string }>;
+    checkout: () => void;
 }
 
 const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
@@ -96,22 +88,8 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const checkout = useCallback(async (variant: CheckoutVariant): Promise<{ success: boolean; error?: string }> => {
-        try {
-            const res = await apiFetch('/checkout', {
-                method: 'POST',
-                localOnly: true,
-                body: JSON.stringify({ variant }),
-            });
-            const data = await res.json();
-            if (res.ok && data.url) {
-                window.open(data.url, '_blank');
-                return { success: true };
-            }
-            return { success: false, error: data.error || 'Failed to create checkout' };
-        } catch {
-            return { success: false, error: 'Network error. Please try again.' };
-        }
+    const checkout = useCallback(() => {
+        window.open('https://sencho.io/#pricing', '_blank');
     }, []);
 
     const isPro = license?.tier === 'pro';

@@ -64,11 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **fleet:** Per-stack restore from any snapshot — overwrite current compose files with the snapshot version, with optional one-click redeploy (Pro admin)
 * **fleet:** Graceful handling of offline nodes during snapshot creation — skipped nodes are recorded with reason and displayed as warnings
 
-* **licensing:** Lemon Squeezy checkout integration — server-side checkout URL generation via `POST /api/checkout` with admin email pre-fill and instance ID tracking
-* **licensing:** Lemon Squeezy webhook endpoint (`POST /api/webhooks/lemonsqueezy`) with HMAC-SHA256 signature verification — handles order, subscription, and payment lifecycle events for automatic license activation/deactivation
-* **licensing:** Customer billing portal link (`GET /api/billing/portal`) — stored from webhook events, accessible via "Manage Subscription" button in Settings
-* **licensing:** In-app checkout buttons in Settings > License for Personal Pro and Team Pro plans with manual license key activation as fallback
-* **licensing:** `LemonSqueezyService` backend service encapsulating all Lemon Squeezy API interactions (checkout creation, webhook processing, signature verification)
+* **licensing:** In-app "View Pricing" button redirects to sencho.io for plan selection — license key activation is the primary flow for self-hosted instances
 
 ### Changed
 
@@ -76,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **pricing:** Team Pro — $49.99/month, $499.99/year, $1,499 lifetime (unlimited accounts)
 * **pricing:** Lifetime pricing marked as time-limited early-adopter offer (90-day launch window)
 * **licensing:** License variant (Personal/Team) now stored from Lemon Squeezy metadata and exposed in license API response
+
+### Removed
+
+* **licensing:** Server-side Lemon Squeezy checkout URL generation, webhook endpoint, and billing portal — not applicable to self-hosted model where each user runs their own instance
 * **rbac:** Seat limits enforced server-side based on license variant — Personal Pro: 1 admin + 3 viewers, Team Pro: unlimited
 
 ### Fixed
