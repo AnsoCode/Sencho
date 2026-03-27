@@ -3,41 +3,17 @@ title: Features Overview
 description: A high-level tour of everything Sencho can do.
 ---
 
+## Dashboard
+
+The Home view shows real-time system stats at a glance - active containers, exited containers, Docker network activity, and host resource usage (CPU, RAM, disk). Historical CPU and RAM charts display trends over the last 24 hours. A Docker Run converter lets you paste any `docker run` command and convert it to a Compose stack. [Learn more →](/features/dashboard)
+
 ## Stack management
 
-Deploy, start, stop, restart, and remove Docker Compose stacks through a point-and-click interface. Edit `compose.yaml` and `.env` files directly in the built-in Monaco editor with syntax highlighting. [Learn more →](/features/stack-management)
+Deploy, start, stop, restart, update, and remove Docker Compose stacks through a point-and-click interface. Right-click any stack in the sidebar for a context menu with quick actions including alerts configuration, update checks, and deployment controls. [Learn more →](/features/stack-management)
 
 ## Editor
 
-Full in-browser code editor for your Compose and environment files. Toggle edit mode, save to disk, or save and deploy in one step. Per-container live stats and an interactive bash exec terminal live alongside the editor. [Learn more →](/features/editor)
-
-## Multi-node support
-
-Add remote Sencho instances as nodes. All dashboard operations - stack management, logs, stats - work identically whether you're targeting your local machine or a server on the other side of the world. Uses a transparent HTTP proxy model; no SSH or shared Docker sockets required. [Learn more →](/features/multi-node)
-
-## Fleet View
-
-Monitor your entire infrastructure from a single screen. The fleet dashboard shows all nodes with health metrics, container counts, and resource usage. Pro users unlock fleet health summary cards, container drill-down, search, sorting, filtering, and critical node detection. [Learn more →](/features/fleet-view)
-
-## RBAC & user management
-
-Create viewer accounts with read-only access to dashboards, logs, and file contents - while keeping deploy and edit permissions locked to admins. Sencho Pro supports two roles: Admin (full access) and Viewer (read-only). [Learn more →](/features/rbac)
-
-## Atomic deployments
-
-Pro users get automatic backup and rollback on every deployment. Before applying changes, Sencho snapshots your compose and environment files. If containers crash after deploy, the previous configuration is restored automatically. [Learn more →](/features/atomic-deployments)
-
-## Fleet-wide backups
-
-Create point-in-time snapshots of every compose file and environment file across all nodes. Snapshots are stored centrally and can be browsed by node and stack. Restore individual stacks from any snapshot with optional one-click redeploy - even to remote nodes. Offline nodes are gracefully skipped with visible warnings. [Learn more →](/features/fleet-backups)
-
-## Real-time logs & stats
-
-Stream container logs and resource metrics (CPU, memory, network I/O) live in the browser via WebSocket and Server-Sent Events connections. The Home dashboard shows historical CPU and RAM charts over the last 24 hours.
-
-## Global observability
-
-The **Logs** view aggregates output from all containers across all stacks into a single scrollable stream. Filter by stack, log level (stdout/stderr), or search for keywords. Switch to developer mode for real-time SSE streaming.
+Full in-browser Monaco editor for your `compose.yaml` and `.env` files with syntax highlighting. Toggle edit mode, save to disk, or save and deploy in one step. The container panel shows per-container live stats (CPU, RAM, network), with buttons to open the app, stream logs, or launch a bash terminal. [Learn more →](/features/editor)
 
 ## Resources hub
 
@@ -49,20 +25,48 @@ View and manage all Docker images, volumes, and networks. Resources are classifi
 | **External** | Part of another Compose project |
 | **Unused / Reclaimable** | Safe to prune |
 
-Run scoped prune operations to clean up Sencho-managed resources only, or target all Docker resources when needed.
+Run scoped prune operations to clean up Sencho-managed resources only, or target all Docker resources when needed. [Learn more →](/features/resources)
 
 ## App Store
 
-Browse 190+ pre-configured application templates. Filter by category (Media, Automation, Development, etc.), configure environment variables, volumes, and ports, and deploy with a single click.
+Browse 190+ pre-configured application templates. Filter by category (Media, Automation, Development, etc.), configure environment variables, volumes, and ports, and deploy with a single click. Customize the template source URL to use your own registry. [Learn more →](/features/app-store)
+
+## Global observability
+
+The **Logs** view aggregates output from all containers across all stacks into a single scrollable stream. Filter by stack, log level (stdout/stderr), or search for keywords. Switch to developer mode for real-time SSE streaming instead of polling. [Learn more →](/features/global-observability)
 
 ## Host console
 
-Open an interactive terminal on the host OS directly in the browser - full xterm.js emulation with color support. No SSH client required.
+Open an interactive terminal on the host OS directly in the browser - full xterm.js emulation with color support. No SSH client required. Admin-only access. [Learn more →](/features/host-console)
 
-## Webhooks
+## Multi-node support
 
-Trigger stack actions from external CI/CD pipelines via HTTP webhooks. Create a webhook targeting a specific stack and action, then call it from GitHub Actions, GitLab CI, or any system that can send an HTTP POST. Requests are authenticated with HMAC-SHA256 signatures - no session cookies required. [Learn more →](/features/webhooks)
+Add remote Sencho instances as nodes. All dashboard operations - stack management, logs, stats - work identically whether you're targeting your local machine or a server on the other side of the world. Uses a transparent HTTP proxy model; no SSH or shared Docker sockets required. [Learn more →](/features/multi-node)
+
+## Fleet View
+
+Monitor your entire infrastructure from a single screen. The fleet dashboard shows all nodes with health metrics, container counts, and resource usage. Pro users unlock fleet health summary cards, container drill-down, search, sorting, filtering, and critical node detection. [Learn more →](/features/fleet-view)
 
 ## Alerts & notifications
 
-Configure threshold-based alerts (CPU, memory, network, restart count) per stack. Route notifications to Discord, Slack, or any generic webhook endpoint. [Learn more →](/features/alerts-notifications)
+Configure threshold-based alerts (CPU, memory, network, restart count) per stack. Route notifications to Discord, Slack, or any generic webhook endpoint. Alerts are evaluated every minute with configurable duration and cooldown. [Learn more →](/features/alerts-notifications)
+
+## Webhooks
+
+Trigger stack actions from external CI/CD pipelines via HTTP webhooks. Create a webhook targeting a specific stack and action, then call it from GitHub Actions, GitLab CI, or any system that can send an HTTP POST. Requests are authenticated with HMAC-SHA256 signatures. [Learn more →](/features/webhooks)
+
+## RBAC & user management
+
+Create viewer accounts with read-only access to dashboards, logs, and file contents - while keeping deploy and edit permissions locked to admins. Sencho Pro supports two roles: Admin (full access) and Viewer (read-only). [Learn more →](/features/rbac)
+
+## Atomic deployments
+
+Pro users get automatic backup and rollback on every deployment. Before applying changes, Sencho snapshots your compose and environment files. If containers crash after deploy, the previous configuration is restored automatically. [Learn more →](/features/atomic-deployments)
+
+## Fleet-wide backups
+
+Create point-in-time snapshots of every compose file and environment file across all nodes. Snapshots are stored centrally and can be browsed by node and stack. Restore individual stacks from any snapshot with optional one-click redeploy - even to remote nodes. [Learn more →](/features/fleet-backups)
+
+## Licensing & billing
+
+Sencho is free for personal use with the Community tier. Pro unlocks RBAC, webhooks, fleet backups, atomic deployments, and advanced fleet features. Manage your license, view subscription details, and access the billing portal from Settings. [Learn more →](/features/licensing)

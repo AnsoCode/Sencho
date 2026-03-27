@@ -13,18 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-* **sidebar:** right-click context menu on stacks with full lifecycle actions (deploy, stop, restart, update, delete, alerts, check for updates)
-* **sidebar:** expanded three-dot dropdown menu to match context menu actions
-* **settings:** new "Support" tab with tier-appropriate help channels (docs, GitHub Issues, email support for Pro)
-* **ui:** TierBadge component with distinctive icons per tier — Globe (Community), Crown (Pro), Users (Team)
-
 ### Changed
 
-* **sidebar:** centered logo and app name in sidebar header
-* **settings:** removed duplicate Documentation and GitHub Issues links from About section (now in Support tab)
-* replaced ProBadge with TierBadge across UserProfileDropdown and Settings
+* **docs:** comprehensive documentation audit — updated 11 pages with accurate content and 14 fresh screenshots
+* **docs/configuration:** removed JWT_SECRET from required env vars (it's auto-generated), added compose directory reorganization explanation
+* **docs/settings:** added missing License, Users, Webhooks, Support, and About sections; removed obsolete Appearance section
+* **docs/editor:** fixed container actions table to match actual UI (Open App, View Live Logs, Open Bash Terminal)
+* **docs/features-overview:** updated all feature descriptions to match current implementation
+* **docs/alerts:** added remote node alerts section with setup checklist
+* **docs:** added screenshots for Fleet View, Fleet Backups, RBAC, Webhooks, Multi-Node, Editor, Alerts, and Settings
 
 ## [0.9.0](https://github.com/AnsoCode/Sencho/compare/v0.8.0...v0.9.0) (2026-03-27)
 
