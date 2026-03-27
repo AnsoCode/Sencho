@@ -45,6 +45,7 @@ npm-debug.log*
 .claude/
 plans/
 CLAUDE.md
+MANUAL_STEPS.md
 
 # Playwright MCP
 .playwright-mcp/
