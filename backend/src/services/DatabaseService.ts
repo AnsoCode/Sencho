@@ -726,6 +726,7 @@ export class DatabaseService {
         return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'viewer'").get() as { count: number })?.count || 0;
     }
 
+
     // --- Fleet Snapshots ---
 
     public createSnapshot(description: string, createdBy: string, nodeCount: number, stackCount: number, skippedNodes: string): number {

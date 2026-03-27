@@ -1310,6 +1310,7 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       return;
     }
 
+
     const passwordHash = await bcrypt.hash(password, 10);
     const id = db.addUser({ username, password_hash: passwordHash, role });
     res.status(201).json({ id, username, role });
