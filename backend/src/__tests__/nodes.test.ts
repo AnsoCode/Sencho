@@ -1,5 +1,5 @@
 /**
- * Tests for node management API — focusing on api_url validation (SSRF fix C2).
+ * Tests for node management API - focusing on api_url validation (SSRF fix C2).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
@@ -21,7 +21,7 @@ afterAll(() => {
   cleanupTestDb(tmpDir);
 });
 
-describe('POST /api/nodes — api_url SSRF validation (C2 fix)', () => {
+describe('POST /api/nodes - api_url SSRF validation (C2 fix)', () => {
   it('rejects localhost api_url', async () => {
     const res = await request(app)
       .post('/api/nodes')
@@ -66,7 +66,7 @@ describe('POST /api/nodes — api_url SSRF validation (C2 fix)', () => {
         api_url: 'http://192.168.1.50:3000',
         api_token: 'sometoken',
       });
-    // Should succeed (201 or 200) — not a validation error
+    // Should succeed (201 or 200) - not a validation error
     expect(res.status).not.toBe(400);
   });
 

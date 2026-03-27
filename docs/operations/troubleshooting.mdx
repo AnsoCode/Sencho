@@ -15,13 +15,13 @@ docker compose -f /path/to/your/stack/compose.yaml logs
 
 The most common causes:
 
-- **Missing environment variable** — a required variable in your `.env` file is empty or has the wrong name.
-- **Port already in use** — another container or host process is bound to the same port. Change the host port in the compose file.
-- **Volume path does not exist** — a bind-mount path on the host doesn't exist yet. Create the directory manually.
+- **Missing environment variable** - a required variable in your `.env` file is empty or has the wrong name.
+- **Port already in use** - another container or host process is bound to the same port. Change the host port in the compose file.
+- **Volume path does not exist** - a bind-mount path on the host doesn't exist yet. Create the directory manually.
 
 ---
 
-## The 1:1 path rule — volumes resolve to wrong paths
+## The 1:1 path rule - volumes resolve to wrong paths
 
 **Symptom:** Stacks deploy but relative volume paths (e.g. `./config:/config`) point to the wrong location inside the container, or `docker compose` exits with a path error.
 
@@ -37,7 +37,7 @@ environment:
   - COMPOSE_DIR=/opt/docker
 ```
 
-See [Configuration — the 1:1 path rule](/getting-started/configuration#compose-directory-the-11-path-rule) for a full explanation.
+See [Configuration - the 1:1 path rule](/getting-started/configuration#compose-directory-the-11-path-rule) for a full explanation.
 
 ---
 
@@ -61,7 +61,7 @@ ls -la /var/run/docker.sock
 # Expected: srw-rw---- 1 root docker ...
 ```
 
-If the group is not `docker`, the auto-detection still works — Sencho reads the GID from the socket file at startup.
+If the group is not `docker`, the auto-detection still works - Sencho reads the GID from the socket file at startup.
 
 ---
 
@@ -95,7 +95,7 @@ proxy_set_header Connection "upgrade";
 proxy_read_timeout 3600s;
 ```
 
-Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends — no extra config needed.
+Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends - no extra config needed.
 
 ---
 
@@ -106,7 +106,7 @@ Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends — no ex
 **Checks in order:**
 
 1. **Is the remote Sencho instance running?** SSH to that machine and verify.
-2. **Is the API URL correct?** It must include the protocol and port (e.g. `http://192.168.1.20:3001`). Open it in a browser — you should see a JSON response from `/api/health`.
+2. **Is the API URL correct?** It must include the protocol and port (e.g. `http://192.168.1.20:3001`). Open it in a browser - you should see a JSON response from `/api/health`.
 3. **Is the token correct?** Tokens are long JWT strings. Even one missing character will cause auth to fail. Regenerate the token on the remote instance and update the node config.
 4. **Is there a firewall blocking the port?** The primary Sencho host must be able to reach the remote host's Sencho port.
 
@@ -131,7 +131,7 @@ sqlite3 /path/to/data/sencho.db
 DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash', 'auth_jwt_secret');
 ```
 
-4. Restart the container — the setup screen will appear on next visit.
+4. Restart the container - the setup screen will appear on next visit.
 
 <Warning>
   This resets authentication entirely. All active sessions become invalid. Your stacks, nodes, and alert rules are not affected.

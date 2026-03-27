@@ -28,7 +28,7 @@ export async function apiFetch(
   if (response.status === 401) {
     // Only fire the global logout event for local auth failures.
     // When the response carries x-sencho-proxy, the 401 came from a remote
-    // Sencho node (expired/invalid api_token) — not from the user's own session.
+    // Sencho node (expired/invalid api_token) - not from the user's own session.
     // Logging out in that case creates an unrecoverable loop.
     if (!response.headers.get('x-sencho-proxy')) {
       window.dispatchEvent(new Event('sencho-unauthorized'));

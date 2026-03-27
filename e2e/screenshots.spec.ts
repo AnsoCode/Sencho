@@ -16,7 +16,7 @@ const DOCS_IMAGES = path.resolve(__dirname, '../docs/images');
 
 test.use({
   viewport: { width: 1280, height: 800 },
-  // Always capture — this spec exists solely to produce screenshots
+  // Always capture - this spec exists solely to produce screenshots
   screenshot: 'on',
 });
 

@@ -23,7 +23,7 @@ Click any segment to automatically filter the tabs below to that category.
 
 ## Quick Clean panel
 
-Four prune buttons let you reclaim disk space immediately. By default they operate on **Sencho-managed resources only** — they will not touch external Docker projects.
+Four prune buttons let you reclaim disk space immediately. By default they operate on **Sencho-managed resources only** - they will not touch external Docker projects.
 
 | Button | What it removes |
 |--------|----------------|
@@ -32,7 +32,7 @@ Four prune buttons let you reclaim disk space immediately. By default they opera
 | **Prune Dead Networks** | Networks not connected to any Sencho container |
 | **Purge Unmanaged Containers** | Containers Sencho doesn't recognise (started outside it) |
 
-Each button has a **⋮ More options** menu that lets you target **all Docker resources** instead of Sencho-only. Use this carefully — it can affect other Compose projects running on the same host.
+Each button has a **⋮ More options** menu that lets you target **all Docker resources** instead of Sencho-only. Use this carefully - it can affect other Compose projects running on the same host.
 
 A confirmation dialog appears before any destructive operation, showing a summary of what will be removed.
 
@@ -45,8 +45,8 @@ Lists all Docker images on the host with their ID, repository tag, size, and sta
 **Filter buttons:** `All` · `Managed` · `External`
 
 **Status badges:**
-- `In Use` + stack name — image is actively used by a running container
-- `Unused` — image has no running containers; safe to delete
+- `In Use` + stack name - image is actively used by a running container
+- `Unused` - image has no running containers; safe to delete
 
 Click the trash icon on any row to delete an individual image. Sencho will warn you if the image is in use.
 

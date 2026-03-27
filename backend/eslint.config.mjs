@@ -15,14 +15,14 @@ export default tseslint.config(
         varsIgnorePattern: '^_',
         argsIgnorePattern: '^_',
       }],
-      // Pre-existing patterns — warn rather than error until addressed
+      // Pre-existing patterns - warn rather than error until addressed
       '@typescript-eslint/ban-ts-comment': 'warn',
       '@typescript-eslint/no-namespace': 'warn',
       'no-empty': 'warn',
       // Terminal output processing intentionally uses control characters in regexes
       'no-control-regex': 'off',
       'no-console': 'off',
-      // New in ESLint 10 recommended — existing patterns, suppress until addressed
+      // New in ESLint 10 recommended - existing patterns, suppress until addressed
       'no-useless-assignment': 'warn',
       'preserve-caught-error': 'warn',
     },

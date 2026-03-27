@@ -1,5 +1,5 @@
 /**
- * Stack management E2E tests — happy path CRUD.
+ * Stack management E2E tests - happy path CRUD.
  */
 import { test, expect } from '@playwright/test';
 import { loginAs } from './helpers';
@@ -17,7 +17,7 @@ async function waitForStacksLoaded(page: import('@playwright/test').Page) {
 /** Delete the test stack via the browser's authenticated fetch (so cookies are included). */
 async function deleteTestStackViaApi(page: import('@playwright/test').Page) {
   await page.evaluate(async (name) => {
-    await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+    await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => { });
   }, TEST_STACK);
 }
 
@@ -47,9 +47,9 @@ test.describe('Stack management', () => {
     await Promise.race([
       page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 8_000 }),
       page.getByText(/already exists/i).waitFor({ state: 'visible', timeout: 8_000 }),
-    ]).catch(() => {});
+    ]).catch(() => { });
 
-    // The stack should now exist — refresh and verify via the sidebar
+    // The stack should now exist - refresh and verify via the sidebar
     await page.reload();
     await loginAs(page);
     await waitForStacksLoaded(page);

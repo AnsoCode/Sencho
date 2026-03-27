@@ -272,7 +272,7 @@ export default function EditorLayout() {
       isMounted = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       // Only close an already-open connection. If still CONNECTING, let onopen
-      // detect isMounted=false and close then — avoids the browser warning
+      // detect isMounted=false and close then - avoids the browser warning
       // "WebSocket is closed before the connection is established".
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.close();
@@ -768,7 +768,7 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to deploy:', error);
       const msg = (error as Error).message || 'Failed to deploy stack';
-      toast.error(isPro ? `${msg} — automatically rolled back to previous version.` : msg);
+      toast.error(isPro ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
       setLoadingAction(null);
     }
@@ -1060,56 +1060,56 @@ export default function EditorLayout() {
           <h3 className="text-sm font-semibold text-muted-foreground px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
-            <CommandList className="max-h-none overflow-visible">
-              {isLoading ? (
-                <div className="space-y-2 px-2 mt-2">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              ) : (
-                (filteredFiles || []).map(file => (
-                  <CommandItem
-                    key={file}
-                    value={file}
-                    onSelect={() => loadFile(file)}
-                    className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <div
-                        className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
-                          stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
-                          }`}
-                      />
-                      <span className="flex-1 truncate">{getDisplayName(file)}</span>
-
-                      {stackUpdates[file] && (
-                        <span
-                          className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
-                          title="Update available"
+              <CommandList className="max-h-none overflow-visible">
+                {isLoading ? (
+                  <div className="space-y-2 px-2 mt-2">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
+                ) : (
+                  (filteredFiles || []).map(file => (
+                    <CommandItem
+                      key={file}
+                      value={file}
+                      onSelect={() => loadFile(file)}
+                      className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div
+                          className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
+                            stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                            }`}
                         />
-                      )}
+                        <span className="flex-1 truncate">{getDisplayName(file)}</span>
 
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-6 w-6">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openAlertSheet(file)}>
-                              <BellRing className="h-4 w-4 mr-2" />
-                              Alerts
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {stackUpdates[file] && (
+                          <span
+                            className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                            title="Update available"
+                          />
+                        )}
+
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openAlertSheet(file)}>
+                                <BellRing className="h-4 w-4 mr-2" />
+                                Alerts
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
-                    </div>
-                  </CommandItem>
-                ))
-              )}
-            </CommandList>
+                    </CommandItem>
+                  ))
+                )}
+              </CommandList>
             </div>
           </ScrollArea>
         </Command>
@@ -1170,15 +1170,15 @@ export default function EditorLayout() {
             </Button>
             {/* Console Toggle */}
             {isAdmin && (
-            <Button
-              variant={activeView === 'host-console' ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
-            >
-              <Terminal className="w-4 h-4 mr-2" />
-              Console
-            </Button>
+              <Button
+                variant={activeView === 'host-console' ? 'default' : 'outline'}
+                size="sm"
+                className="rounded-lg"
+                onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
+              >
+                <Terminal className="w-4 h-4 mr-2" />
+                Console
+              </Button>
             )}
             {/* Resources Toggle */}
             <Button
@@ -1316,60 +1316,60 @@ export default function EditorLayout() {
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
                         {isAdmin && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isRunning ? (
-                            <>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
-                                <Square className="w-4 h-4 mr-2" />
-                                {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {isRunning ? (
+                              <>
+                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
+                                  <Square className="w-4 h-4 mr-2" />
+                                  {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
+                                </Button>
+                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
+                                  <RotateCw className="w-4 h-4 mr-2" />
+                                  {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
+                                </Button>
+                              </>
+                            ) : (
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
+                                <Play className="w-4 h-4 mr-2" />
+                                {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
                               </Button>
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
-                                <RotateCw className="w-4 h-4 mr-2" />
-                                {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
-                              </Button>
-                            </>
-                          ) : (
-                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
-                              <Play className="w-4 h-4 mr-2" />
-                              {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
+                            )}
+                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
+                              <CloudDownload className="w-4 h-4 mr-2" />
+                              {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
-                          )}
-                          <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
-                            <CloudDownload className="w-4 h-4 mr-2" />
-                            {loadingAction === 'update' ? 'Updating...' : 'Update'}
-                          </Button>
-                          {isPro && backupInfo.exists && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
-                                    <Undo2 className="w-4 h-4 mr-2" />
-                                    {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {backupInfo.timestamp
-                                    ? `Roll back to backup from ${new Date(backupInfo.timestamp).toLocaleString()}`
-                                    : 'Roll back to previous deployment'}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            className="rounded-lg"
-                            disabled={loadingAction !== null}
-                            onClick={() => {
-                              setStackToDelete(selectedFile);
-                              setDeleteDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
-                          </Button>
-                        </div>
+                            {isPro && backupInfo.exists && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
+                                      <Undo2 className="w-4 h-4 mr-2" />
+                                      {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {backupInfo.timestamp
+                                      ? `Roll back to backup from ${new Date(backupInfo.timestamp).toLocaleString()}`
+                                      : 'Roll back to previous deployment'}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              className="rounded-lg"
+                              disabled={loadingAction !== null}
+                              onClick={() => {
+                                setStackToDelete(selectedFile);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </CardHeader>
@@ -1463,22 +1463,22 @@ export default function EditorLayout() {
                                       </Tooltip>
                                     </TooltipProvider>
                                     {isAdmin && (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className="rounded-lg h-8 w-8"
-                                            onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
-                                            disabled={container?.State !== 'running'}
-                                          >
-                                            <Terminal className="w-4 h-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Open Bash Terminal</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="rounded-lg h-8 w-8"
+                                              onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
+                                              disabled={container?.State !== 'running'}
+                                            >
+                                              <Terminal className="w-4 h-4" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Open Bash Terminal</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                     )}
                                   </div>
                                 </div>
@@ -1538,29 +1538,29 @@ export default function EditorLayout() {
                       )}
                     </div>
                     {isAdmin && (
-                    <div className="flex gap-2">
-                      {!isEditing ? (
-                        <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
-                          <Pencil className="w-4 h-4 mr-2" />
-                          Edit
-                        </Button>
-                      ) : (
-                        <>
-                          <Button size="sm" variant="outline" className="rounded-lg" onClick={discardChanges}>
-                            <X className="w-4 h-4 mr-2" />
-                            Discard
+                      <div className="flex gap-2">
+                        {!isEditing ? (
+                          <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
+                            <Pencil className="w-4 h-4 mr-2" />
+                            Edit
                           </Button>
-                          <Button size="sm" variant="outline" className="rounded-lg" onClick={saveFile}>
-                            <Save className="w-4 h-4 mr-2" />
-                            Save Only
-                          </Button>
-                          <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
-                            <Rocket className="w-4 h-4 mr-2" />
-                            Save & Deploy
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="outline" className="rounded-lg" onClick={discardChanges}>
+                              <X className="w-4 h-4 mr-2" />
+                              Discard
+                            </Button>
+                            <Button size="sm" variant="outline" className="rounded-lg" onClick={saveFile}>
+                              <Save className="w-4 h-4 mr-2" />
+                              Save Only
+                            </Button>
+                            <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
+                              <Rocket className="w-4 h-4 mr-2" />
+                              Save & Deploy
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">

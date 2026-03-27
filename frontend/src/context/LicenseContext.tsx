@@ -43,7 +43,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
                 setLicense(data);
             }
         } catch {
-            // Silently fail — license info is non-critical
+            // Silently fail - license info is non-critical
         } finally {
             setLoading(false);
         }

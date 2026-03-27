@@ -14,13 +14,13 @@ Sencho stores all its state in two places: the **data directory** (SQLite databa
 Default path: `/app/data` inside the container, mapped to wherever you mounted it on the host (e.g. `./sencho-data`).
 
 Contains:
-- `sencho.db` — SQLite database with all settings, nodes, alerts, metrics history, and notification history
+- `sencho.db` - SQLite database with all settings, nodes, alerts, metrics history, and notification history
 
 This single file is everything Sencho knows about itself. Back it up and you can fully restore any Sencho installation.
 
 ### 2. Compose directory (`COMPOSE_DIR`)
 
-The directory containing your stack subdirectories — your `compose.yaml` files, `.env` files, and any bind-mounted config files stored there.
+The directory containing your stack subdirectories - your `compose.yaml` files, `.env` files, and any bind-mounted config files stored there.
 
 This is your actual application data. It lives entirely outside Sencho and you almost certainly already have it on a schedule, but include it in any Sencho backup plan.
 
@@ -131,7 +131,7 @@ If other Sencho instances were pointing to your old host as a remote node, updat
 | Item | Location | Notes |
 |------|----------|-------|
 | Container data volumes | Wherever each stack's volumes are mounted on the host | Back these up separately per-application |
-| Actual container images | Docker image cache | These are re-pulled on next deploy — no backup needed |
+| Actual container images | Docker image cache | These are re-pulled on next deploy - no backup needed |
 | Sencho logs (docker logs) | Container stdout | Not persisted beyond container lifetime |
 
 <Note>

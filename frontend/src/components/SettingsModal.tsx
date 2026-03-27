@@ -257,7 +257,7 @@ function WebhooksSection({ isPro }: { isPro: boolean }) {
             {newSecret && (
                 <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                        <CheckCircle className="w-4 h-4" /> Webhook created — copy your secret now
+                        <CheckCircle className="w-4 h-4" /> Webhook created - copy your secret now
                     </div>
                     <p className="text-xs text-muted-foreground">This secret will not be shown again. Store it securely.</p>
                     <div className="flex items-center gap-2">

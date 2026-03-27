@@ -11,13 +11,13 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
-  // Don't stop on first failure — show all results
+  // Don't stop on first failure - show all results
   maxFailures: 0,
   // How long to wait for a single test
   timeout: 30_000,
   // How long to wait for an expect() assertion
   expect: { timeout: 5_000 },
-  // Run tests serially — Sencho is a single-user app and tests share DB state
+  // Run tests serially - Sencho is a single-user app and tests share DB state
   workers: 1,
   reporter: [['list'], ['html', { outputFolder: 'e2e/report', open: 'never' }]],
 

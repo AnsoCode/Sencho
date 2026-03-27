@@ -12,7 +12,7 @@ import { Page, expect } from '@playwright/test';
 export const TEST_USERNAME = process.env.E2E_USERNAME ?? 'admin';
 export const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'password123';
 
-/** Selector for the dashboard — only present in EditorLayout, not on login/setup pages */
+/** Selector for the dashboard - only present in EditorLayout, not on login/setup pages */
 const DASHBOARD_INDICATOR = 'img[alt="Sencho Logo"]';
 
 /** Returns true if the current page is the first-run setup screen */
@@ -67,7 +67,7 @@ export async function loginAs(page: Page, username = TEST_USERNAME, password = T
   }
 
   throw new Error(
-    'loginAs: could not determine page state — expected setup, login, or dashboard. ' +
+    'loginAs: could not determine page state - expected setup, login, or dashboard. ' +
     'Check that E2E_USERNAME and E2E_PASSWORD are set correctly.',
   );
 }

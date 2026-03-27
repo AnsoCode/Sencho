@@ -10,7 +10,7 @@ import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 // Use the locally bundled Monaco instead of fetching from cdn.jsdelivr.net.
 // The CSP (scriptSrc: 'self') blocks external CDN scripts; bundling avoids
 // that entirely. Sencho only needs YAML/plaintext so the base editorWorker
-// covers all language modes — no additional language workers required.
+// covers all language modes - no additional language workers required.
 window.MonacoEnvironment = {
   getWorker(): Worker {
     return new editorWorker()

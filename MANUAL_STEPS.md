@@ -7,14 +7,14 @@ These actions could not be performed automatically and need to be done manually 
 Go to **Settings > Branches > Add branch ruleset** for `main`:
 
 - [x] Require a pull request before merging
-  - Required approvals: 0 (solo dev — you merge your own PRs after CI passes)
+  - Required approvals: 0 (solo dev - you merge your own PRs after CI passes)
   - Dismiss stale reviews when new commits are pushed: ON
 - [x] Require status checks to pass before merging
   - Add these job names: `Backend (Build, Test, Lint)`, `Frontend (Build, Lint)`, `Docker Build & Scan`, `E2E Tests (Playwright)`
 - [x] Require conversation resolution before merging
 - [x] Do not allow bypassing the above settings (even you must go through PRs)
 - [x] Do not allow deletions
-- [ ] Require signed commits (optional — future improvement)
+- [ ] Require signed commits (optional - future improvement)
 
 ## 2. Repository Settings
 

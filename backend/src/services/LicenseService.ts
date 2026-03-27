@@ -97,7 +97,7 @@ export class LicenseService {
     private static instance: LicenseService;
     private validationTimer: ReturnType<typeof setInterval> | null = null;
 
-    private constructor() {}
+    private constructor() { }
 
     public static getInstance(): LicenseService {
         if (!LicenseService.instance) {
@@ -133,7 +133,7 @@ export class LicenseService {
     }
 
     /**
-     * Returns the current license tier. Synchronous — reads from cached DB state only.
+     * Returns the current license tier. Synchronous - reads from cached DB state only.
      */
     public getTier(): LicenseTier {
         const db = DatabaseService.getInstance();
@@ -147,7 +147,7 @@ export class LicenseService {
             if (validUntil && new Date(validUntil) > new Date()) {
                 return 'pro';
             }
-            // Trial expired — update status
+            // Trial expired - update status
             db.setSystemState('license_status', 'community');
             return 'community';
         }
@@ -263,7 +263,7 @@ export class LicenseService {
             if (data.license_key?.expires_at) {
                 db.setSystemState('license_valid_until', data.license_key.expires_at);
             } else {
-                // Lifetime license — no expiry
+                // Lifetime license - no expiry
                 db.setSystemState('license_valid_until', '');
             }
 
@@ -404,7 +404,7 @@ export class LicenseService {
             console.log('[License] Validation successful.');
             return { success: true };
         } catch (err) {
-            // Network failure — don't change status, just log
+            // Network failure - don't change status, just log
             console.warn('[License] Validation network error (keeping current status):', (err as Error).message);
             return { success: false, error: 'Unable to reach license server' };
         }

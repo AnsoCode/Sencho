@@ -7,7 +7,7 @@ description: Trigger stack actions from CI/CD pipelines via HTTP webhooks with H
   Webhooks require a Sencho Pro license.
 </Note>
 
-Sencho webhooks let external systems trigger stack actions over HTTP. The typical use case: your CI pipeline builds a new image, then calls a Sencho webhook to deploy the updated stack — no manual intervention required.
+Sencho webhooks let external systems trigger stack actions over HTTP. The typical use case: your CI pipeline builds a new image, then calls a Sencho webhook to deploy the updated stack - no manual intervention required.
 
 ## How it works
 
@@ -26,7 +26,7 @@ Open **Settings → Webhooks** and click **Create Webhook**. Fill in:
 | **Stack** | The target stack to act on |
 | **Action** | One of: `deploy`, `restart`, `stop`, `start`, `pull` |
 
-After creation, Sencho shows the webhook secret **once**. Copy it immediately — it cannot be retrieved later.
+After creation, Sencho shows the webhook secret **once**. Copy it immediately - it cannot be retrieved later.
 
 ### Actions explained
 
@@ -122,6 +122,6 @@ Each webhook tracks its last 100 executions. Click **Recent executions** on any 
 
 - Webhook secrets are 64-character hex strings generated with `crypto.randomBytes(32)`
 - Signature validation uses `crypto.timingSafeEqual` to prevent timing attacks
-- Secrets are shown only once at creation — API responses return masked values
+- Secrets are shown only once at creation - API responses return masked values
 - Webhook trigger endpoints are public (no session cookie required) but protected by HMAC signature validation
-- Each webhook targets a single stack — there is no way to execute arbitrary commands
+- Each webhook targets a single stack - there is no way to execute arbitrary commands

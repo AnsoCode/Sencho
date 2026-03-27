@@ -28,7 +28,7 @@
   --input: oklch(0.9400 0 0);
   --ring: oklch(0.50 0.14 200);
 
-  /* Brand — technical cyan, the signature accent */
+  /* Brand - technical cyan, the signature accent */
   --brand: oklch(0.50 0.14 200);
   --brand-foreground: oklch(1 0 0);
   --brand-muted: oklch(0.50 0.14 200 / 0.12);
@@ -110,7 +110,7 @@
   --input: oklch(0.3200 0 0);
   --ring: oklch(0.72 0.14 200);
 
-  /* Brand — bright technical cyan on dark backgrounds */
+  /* Brand - bright technical cyan on dark backgrounds */
   --brand: oklch(0.72 0.14 200);
   --brand-foreground: oklch(0.05 0 0);
   --brand-muted: oklch(0.72 0.14 200 / 0.12);
@@ -140,7 +140,7 @@
   /* Shape */
   --radius: 0.5rem;
 
-  /* Shadows — deeper on dark backgrounds */
+  /* Shadows - deeper on dark backgrounds */
   --shadow-x: 0px;
   --shadow-y: 1px;
   --shadow-blur: 2px;
@@ -331,7 +331,7 @@ body {
 .animate-delay-300 { animation-delay: 300ms; }
 
 /* ─────────────────────────────────────────────────────────────
-   PREFERS REDUCED MOTION — zero-cost accessibility
+   PREFERS REDUCED MOTION - zero-cost accessibility
 ───────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

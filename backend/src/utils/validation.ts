@@ -10,7 +10,7 @@ export const isValidStackName = (name: string): boolean =>
 /**
  * Validates that a remote node API URL is a safe, well-formed HTTP/HTTPS URL.
  * Rejects loopback addresses to prevent SSRF against local services.
- * Private/LAN IPs are allowed — users legitimately point Sencho at nodes on their LAN.
+ * Private/LAN IPs are allowed - users legitimately point Sencho at nodes on their LAN.
  */
 export function isValidRemoteUrl(
   raw: string,
@@ -32,7 +32,7 @@ export function isValidRemoteUrl(
   if (loopback.test(url.hostname)) {
     return {
       valid: false,
-      reason: 'API URL cannot point to localhost or loopback — use the actual host address',
+      reason: 'API URL cannot point to localhost or loopback - use the actual host address',
     };
   }
   return { valid: true, url };

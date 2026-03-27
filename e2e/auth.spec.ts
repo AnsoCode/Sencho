@@ -49,7 +49,7 @@ test.describe('Authentication', () => {
 
   test('logout returns to the login screen', async ({ page }) => {
     await loginAs(page);
-    // Log Out is inside the User Profile Dropdown — open it first
+    // Log Out is inside the User Profile Dropdown - open it first
     await page.getByRole('button', { name: /profile/i }).click();
     await page.getByRole('button', { name: /log out/i }).click();
     await page.waitForTimeout(1_000);
