@@ -521,7 +521,7 @@ app.post('/api/license/validate', async (_req: Request, res: Response): Promise<
 // --- Checkout & Billing (local-only) ---
 
 const VALID_CHECKOUT_VARIANTS: CheckoutVariant[] = [
-  'personal_annual', 'personal_lifetime',
+  'personal_monthly', 'personal_annual', 'personal_lifetime',
   'team_monthly', 'team_annual', 'team_lifetime',
 ];
 

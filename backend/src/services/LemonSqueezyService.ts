@@ -6,6 +6,7 @@ const LEMON_SQUEEZY_API = 'https://api.lemonsqueezy.com/v1';
 
 /** Checkout variant keys mapped to environment variable names. */
 export type CheckoutVariant =
+    | 'personal_monthly'
     | 'personal_annual'
     | 'personal_lifetime'
     | 'team_monthly'
@@ -13,6 +14,7 @@ export type CheckoutVariant =
     | 'team_lifetime';
 
 const VARIANT_ENV_MAP: Record<CheckoutVariant, string> = {
+    personal_monthly: 'LEMONSQUEEZY_VARIANT_ID_PERSONAL_MONTHLY',
     personal_annual: 'LEMONSQUEEZY_VARIANT_ID_PERSONAL_ANNUAL',
     personal_lifetime: 'LEMONSQUEEZY_VARIANT_ID_PERSONAL_LIFETIME',
     team_monthly: 'LEMONSQUEEZY_VARIANT_ID_TEAM_MONTHLY',

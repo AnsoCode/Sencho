@@ -7,6 +7,7 @@ export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disa
 export type LicenseVariant = 'personal' | 'team' | null;
 
 export type CheckoutVariant =
+    | 'personal_monthly'
     | 'personal_annual'
     | 'personal_lifetime'
     | 'team_monthly'

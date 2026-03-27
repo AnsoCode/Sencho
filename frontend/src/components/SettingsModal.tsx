@@ -1202,7 +1202,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                             }}
                                         >
                                             <Crown className="w-4 h-4 mr-2" />
-                                            Personal — $69/yr
+                                            Personal — $69.99/yr
                                         </Button>
                                         <Button
                                             size="sm"
@@ -1213,7 +1213,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                             }}
                                         >
                                             <Users className="w-4 h-4 mr-2" />
-                                            Team — $149/yr
+                                            Team — $499.99/yr
                                         </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">

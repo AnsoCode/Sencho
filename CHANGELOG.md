@@ -72,9 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* **pricing:** Personal Pro raised from $49/year to $69/year, lifetime from $199 to $249
-* **pricing:** Personal Pro viewer seats increased from 1 to 3 (1 admin + 3 viewers)
-* **pricing:** Team Pro monthly billing option added at $15/month alongside $149/year
+* **pricing:** Personal Pro — $7.99/month, $69.99/year, $249 lifetime (1 admin + 3 viewers)
+* **pricing:** Team Pro — $49.99/month, $499.99/year, $1,499 lifetime (unlimited accounts)
 * **pricing:** Lifetime pricing marked as time-limited early-adopter offer (90-day launch window)
 * **licensing:** License variant (Personal/Team) now stored from Lemon Squeezy metadata and exposed in license API response
 * **rbac:** Seat limits enforced server-side based on license variant — Personal Pro: 1 admin + 3 viewers, Team Pro: unlimited
