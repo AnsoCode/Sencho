@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0](https://github.com/AnsoCode/Sencho/compare/v0.9.0...v0.10.0) (2026-03-27)
+
+
+### Added
+
+* stack context menu, tier icons, centered logo & support ([#194](https://github.com/AnsoCode/Sencho/issues/194)) ([dda1671](https://github.com/AnsoCode/Sencho/commit/dda1671e5a4c6788ba5ad97b00cbac98910f3ef0))
+
 ## [Unreleased]
 
 ### Added
