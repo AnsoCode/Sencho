@@ -74,7 +74,7 @@ describe('authMiddleware', () => {
     const res = await request(app)
       .get('/api/stacks')
       .set('Authorization', `Bearer ${token}`);
-    // Will succeed (200) or fail with a docker/fs error (500) — but NOT 401
+    // Will succeed (200) or fail with a docker/fs error (500) - but NOT 401
     expect(res.status).not.toBe(401);
   });
 
@@ -96,7 +96,7 @@ describe('authMiddleware', () => {
 // ─── Protected endpoint: console-token ───────────────────────────────────────
 
 describe('POST /api/system/console-token', () => {
-  it('returns 401 without authentication (was a security bug — C1 fix)', async () => {
+  it('returns 401 without authentication (was a security bug - C1 fix)', async () => {
     const res = await request(app).post('/api/system/console-token');
     expect(res.status).toBe(401);
   });

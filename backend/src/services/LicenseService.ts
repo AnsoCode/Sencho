@@ -5,16 +5,31 @@ import { DatabaseService } from './DatabaseService';
 export type LicenseTier = 'community' | 'pro';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
+export type LicenseVariant = 'personal' | 'team' | null;
+
 export interface LicenseInfo {
     tier: LicenseTier;
     status: LicenseStatus;
+    variant: LicenseVariant;
     customerName: string | null;
     productName: string | null;
     maskedKey: string | null;
     validUntil: string | null;
     trialDaysRemaining: number | null;
     instanceId: string;
+    portalUrl: string | null;
 }
+
+/** Seat limits per variant. null = unlimited. */
+export interface SeatLimits {
+    maxAdmins: number | null;
+    maxViewers: number | null;
+}
+
+const SEAT_LIMITS: Record<string, SeatLimits> = {
+    personal: { maxAdmins: 1, maxViewers: 3 },
+    team: { maxAdmins: null, maxViewers: null },
+};
 
 interface LemonSqueezyActivationResponse {
     activated: boolean;
@@ -82,7 +97,7 @@ export class LicenseService {
     private static instance: LicenseService;
     private validationTimer: ReturnType<typeof setInterval> | null = null;
 
-    private constructor() {}
+    private constructor() { }
 
     public static getInstance(): LicenseService {
         if (!LicenseService.instance) {
@@ -118,7 +133,7 @@ export class LicenseService {
     }
 
     /**
-     * Returns the current license tier. Synchronous — reads from cached DB state only.
+     * Returns the current license tier. Synchronous - reads from cached DB state only.
      */
     public getTier(): LicenseTier {
         const db = DatabaseService.getInstance();
@@ -132,7 +147,7 @@ export class LicenseService {
             if (validUntil && new Date(validUntil) > new Date()) {
                 return 'pro';
             }
-            // Trial expired — update status
+            // Trial expired - update status
             db.setSystemState('license_status', 'community');
             return 'community';
         }
@@ -163,6 +178,31 @@ export class LicenseService {
     }
 
     /**
+     * Get the license variant (personal or team) from stored metadata.
+     * Trial licenses default to "team" so users can explore all features.
+     */
+    public getVariant(): LicenseVariant {
+        const db = DatabaseService.getInstance();
+        const status = db.getSystemState('license_status');
+        if (status === 'trial') return 'team';
+        const variantName = db.getSystemState('license_variant_name');
+        if (!variantName) return null;
+        const lower = variantName.toLowerCase();
+        if (lower.includes('team')) return 'team';
+        if (lower.includes('personal')) return 'personal';
+        return 'personal'; // default activated licenses to personal
+    }
+
+    /**
+     * Get seat limits for the current license variant.
+     */
+    public getSeatLimits(): SeatLimits {
+        const variant = this.getVariant();
+        if (!variant) return { maxAdmins: 1, maxViewers: 0 }; // community
+        return SEAT_LIMITS[variant] || SEAT_LIMITS.personal;
+    }
+
+    /**
      * Get full license information for the API response.
      */
     public getLicenseInfo(): LicenseInfo {
@@ -181,12 +221,14 @@ export class LicenseService {
         return {
             tier: this.getTier(),
             status,
+            variant: this.getVariant(),
             customerName: db.getSystemState('license_customer_name'),
             productName: db.getSystemState('license_product_name'),
             maskedKey: key ? `****-****-****-${key.slice(-4)}` : null,
             validUntil,
             trialDaysRemaining,
             instanceId,
+            portalUrl: db.getSystemState('customer_portal_url') || null,
         };
     }
 
@@ -221,7 +263,7 @@ export class LicenseService {
             if (data.license_key?.expires_at) {
                 db.setSystemState('license_valid_until', data.license_key.expires_at);
             } else {
-                // Lifetime license — no expiry
+                // Lifetime license - no expiry
                 db.setSystemState('license_valid_until', '');
             }
 
@@ -230,6 +272,9 @@ export class LicenseService {
             }
             if (data.meta?.product_name) {
                 db.setSystemState('license_product_name', data.meta.product_name);
+            }
+            if (data.meta?.variant_name) {
+                db.setSystemState('license_variant_name', data.meta.variant_name);
             }
 
             console.log('[License] Activated successfully.');
@@ -278,6 +323,13 @@ export class LicenseService {
             'license_last_validated',
             'license_customer_name',
             'license_product_name',
+            'license_variant_name',
+            'subscription_id',
+            'customer_id',
+            'customer_portal_url',
+            'update_payment_url',
+            'order_id',
+            'receipt_url',
         ];
         for (const key of keysToRemove) {
             db.setSystemState(key, '');
@@ -345,11 +397,14 @@ export class LicenseService {
             if (data.meta?.product_name) {
                 db.setSystemState('license_product_name', data.meta.product_name);
             }
+            if (data.meta?.variant_name) {
+                db.setSystemState('license_variant_name', data.meta.variant_name);
+            }
 
             console.log('[License] Validation successful.');
             return { success: true };
         } catch (err) {
-            // Network failure — don't change status, just log
+            // Network failure - don't change status, just log
             console.warn('[License] Validation network error (keeping current status):', (err as Error).message);
             return { success: false, error: 'Unable to reach license server' };
         }

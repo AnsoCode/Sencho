@@ -67,8 +67,8 @@ const getCookieOptions = (req: Request) => ({
 // Middleware
 
 // Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
-// crossOriginEmbedderPolicy: disabled — Monaco editor workers lack COEP headers.
-// hsts: disabled — HSTS must only be set when the app is served over HTTPS.
+// crossOriginEmbedderPolicy: disabled - Monaco editor workers lack COEP headers.
+// hsts: disabled - HSTS must only be set when the app is served over HTTPS.
 //   Enabling it over HTTP permanently breaks browser access for 1 year.
 // contentSecurityPolicy.upgradeInsecureRequests: explicitly set to null.
 //   Helmet 8 merges custom directives with its defaults, which include this
@@ -114,7 +114,7 @@ app.use(helmet({
   },
 }));
 
-// CORS — in production restrict to the configured frontend origin.
+// CORS - in production restrict to the configured frontend origin.
 // In development, mirror the request origin so Vite's dev server works.
 const corsOrigin = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL
@@ -124,6 +124,7 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
 }));
+
 // Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
 // consumed here: express.json() drains the IncomingMessage stream into req.body
 // and http-proxy then pipes an already-ended stream to the remote server.
@@ -239,7 +240,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
   }
 };
 
-// Rate limiter for auth endpoints — prevents brute-force attacks.
+// Rate limiter for auth endpoints - prevents brute-force attacks.
 // Production: 5 attempts per 15-minute window per IP.
 // Development: 100 attempts (so E2E tests and local tooling are not blocked).
 const authRateLimiter = rateLimit({
@@ -360,7 +361,7 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
   }
 });
 
-// Update password endpoint — any authenticated user can change their own password
+// Update password endpoint - any authenticated user can change their own password
 app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const { oldPassword, newPassword } = req.body;
@@ -788,14 +789,14 @@ async function captureLocalNodeFiles(node: Node): Promise<SnapshotNodeData> {
       const composeContent = await fsService.getStackContent(stackName);
       files.push({ filename: 'compose.yaml', content: composeContent });
     } catch {
-      // Stack has no compose file — skip
+      // Stack has no compose file - skip
       continue;
     }
     try {
       const envContent = await fsService.getEnvContent(stackName);
       files.push({ filename: '.env', content: envContent });
     } catch {
-      // No .env file — that's fine
+      // No .env file - that's fine
     }
     stacks.push({ stackName, files });
   }
@@ -844,7 +845,7 @@ async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
         files.push({ filename: '.env', content });
       }
     } catch {
-      // No .env — skip
+      // No .env - skip
     }
     if (files.length > 0) {
       stacks.push({ stackName, files });
@@ -1029,7 +1030,7 @@ app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response)
       try {
         await fsService.backupStackFiles(stackName);
       } catch {
-        // Stack may not exist yet — that's ok
+        // Stack may not exist yet - that's ok
       }
 
       for (const file of files) {
@@ -1206,7 +1207,7 @@ app.get('/api/webhooks/:id/history', authMiddleware, async (req: Request, res: R
   }
 });
 
-// Webhook trigger — public endpoint, authenticated via HMAC signature
+// Webhook trigger - public endpoint, authenticated via HMAC signature
 app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -1218,7 +1219,7 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
       return;
     }
 
-    // Pro gate — trigger only works with an active Pro license
+    // Pro gate - trigger only works with an active Pro license
     if (LicenseService.getInstance().getTier() !== 'pro') {
       res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
       return;
@@ -1242,7 +1243,7 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
     const action = req.body?.action || webhook.action;
     const triggerSource = req.headers['user-agent'] || req.ip || null;
 
-    // Execute asynchronously — return 202 immediately
+    // Execute asynchronously - return 202 immediately
     res.status(202).json({ message: 'Webhook accepted', action });
 
     const atomic = LicenseService.getInstance().getTier() === 'pro';
@@ -1297,6 +1298,18 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(409).json({ error: 'A user with this username already exists' });
       return;
     }
+
+    // Enforce seat limits based on license variant
+    const seatLimits = LicenseService.getInstance().getSeatLimits();
+    if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      return;
+    }
+    if (role === 'viewer' && seatLimits.maxViewers !== null && db.getViewerCount() >= seatLimits.maxViewers) {
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxViewers} viewer account${seatLimits.maxViewers === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      return;
+    }
+
 
     const passwordHash = await bcrypt.hash(password, 10);
     const id = db.addUser({ username, password_hash: passwordHash, role });
@@ -1451,7 +1464,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
       // Mark every response forwarded from a remote node with a sentinel header.
       // The frontend (apiFetch / fetchForNode) checks this before firing the
       // global 'sencho-unauthorized' event: a 401 from a remote means the stored
-      // api_token for that node is invalid — not that the user's own session
+      // api_token for that node is invalid - not that the user's own session
       // expired. Without this distinction, any node with a bad token causes an
       // immediate logout loop.
       proxyRes.headers['x-sencho-proxy'] = '1';
@@ -1854,7 +1867,7 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
         await fsService.access(f);
         existing.push(f);
       } catch {
-        // File does not exist — skip
+        // File does not exist - skip
       }
     }
     return existing;
@@ -2208,7 +2221,7 @@ app.get('/api/stats', async (req: Request, res: Response) => {
     // A container is "managed" if Docker started it from within COMPOSE_DIR.
     // We use com.docker.compose.project.working_dir rather than project name because
     // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
-    // project name of the root folder — causing false "external" classification.
+    // project name of the root folder - causing false "external" classification.
     const isManagedByComposeDir = (c: any): boolean => {
       const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
       if (!workingDir) return false;
@@ -2516,16 +2529,16 @@ const ALLOWED_SETTING_KEYS = new Set([
 // Zod schema for bulk PATCH - all keys optional, present keys fully validated
 import { z } from 'zod';
 const SettingsPatchSchema = z.object({
-  host_cpu_limit:          z.coerce.number().int().min(1).max(100).transform(String),
-  host_ram_limit:          z.coerce.number().int().min(1).max(100).transform(String),
-  host_disk_limit:         z.coerce.number().int().min(1).max(100).transform(String),
-  docker_janitor_gb:       z.coerce.number().min(0).transform(String),
-  global_crash:            z.enum(['0', '1']),
-  global_logs_refresh:     z.enum(['1', '3', '5', '10']),
-  developer_mode:          z.enum(['0', '1']),
-  template_registry_url:   z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
+  host_cpu_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  host_ram_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  host_disk_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  docker_janitor_gb: z.coerce.number().min(0).transform(String),
+  global_crash: z.enum(['0', '1']),
+  global_logs_refresh: z.enum(['1', '3', '5', '10']),
+  developer_mode: z.enum(['0', '1']),
+  template_registry_url: z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
   metrics_retention_hours: z.coerce.number().int().min(1).max(8760).transform(String),
-  log_retention_days:      z.coerce.number().int().min(1).max(365).transform(String),
+  log_retention_days: z.coerce.number().int().min(1).max(365).transform(String),
 }).partial();
 
 app.get('/api/settings', async (req: Request, res: Response) => {
@@ -2953,28 +2966,28 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 // =========================
 
 app.get('/api/image-updates', authMiddleware, (_req: Request, res: Response) => {
-    try {
-        const updates = DatabaseService.getInstance().getStackUpdateStatus();
-        res.json(updates);
-    } catch (error) {
-        console.error('Failed to fetch image update status:', error);
-        res.status(500).json({ error: 'Failed to fetch image update status' });
-    }
+  try {
+    const updates = DatabaseService.getInstance().getStackUpdateStatus();
+    res.json(updates);
+  } catch (error) {
+    console.error('Failed to fetch image update status:', error);
+    res.status(500).json({ error: 'Failed to fetch image update status' });
+  }
 });
 
 app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Response) => {
-    if (!requireAdmin(_req, res)) return;
-    try {
-        const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
-        if (!triggered) {
-            res.status(429).json({ error: 'Rate limited. Please wait at least 10 minutes between manual refreshes.' });
-            return;
-        }
-        res.json({ success: true, message: 'Image update check started in background.' });
-    } catch (error) {
-        console.error('Failed to trigger image update refresh:', error);
-        res.status(500).json({ error: 'Failed to trigger refresh' });
+  if (!requireAdmin(_req, res)) return;
+  try {
+    const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
+    if (!triggered) {
+      res.status(429).json({ error: 'Rate limited. Please wait at least 10 minutes between manual refreshes.' });
+      return;
     }
+    res.json({ success: true, message: 'Image update check started in background.' });
+  } catch (error) {
+    console.error('Failed to trigger image update refresh:', error);
+    res.status(500).json({ error: 'Failed to trigger refresh' });
+  }
 });
 
 // =========================
@@ -3156,11 +3169,11 @@ if (require.main === module) {
 // Exports used by tests (supertest requires the http.Server instance).
 export { app, server };
 
-// Graceful shutdown — allows in-flight requests to finish, then cleanly stops
+// Graceful shutdown - allows in-flight requests to finish, then cleanly stops
 // background services and closes the SQLite connection before the process exits.
 // Docker sends SIGTERM when the container stops; Ctrl-C sends SIGINT in dev.
 const gracefulShutdown = (signal: string) => {
-  console.log(`[Shutdown] ${signal} received — shutting down gracefully…`);
+  console.log(`[Shutdown] ${signal} received - shutting down gracefully…`);
 
   server.close(() => {
     console.log('[Shutdown] HTTP server closed');
@@ -3168,13 +3181,13 @@ const gracefulShutdown = (signal: string) => {
     try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
     try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
     try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
-    console.log('[Shutdown] Done — exiting');
+    console.log('[Shutdown] Done - exiting');
     process.exit(0);
   });
 
   // Force-exit after 10 s if connections refuse to drain
   setTimeout(() => {
-    console.error('[Shutdown] Timed out waiting for connections — forcing exit');
+    console.error('[Shutdown] Timed out waiting for connections - forcing exit');
     process.exit(1);
   }, 10_000).unref();
 };

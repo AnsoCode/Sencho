@@ -3,7 +3,7 @@ title: Multi-Node Management
 description: Connect multiple Sencho instances and manage all your servers from a single dashboard.
 ---
 
-Sencho's multi-node feature lets you manage Docker Compose stacks on multiple servers — all from the same browser tab. Each server runs its own Sencho instance, and your primary instance acts as a transparent proxy to the others.
+Sencho's multi-node feature lets you manage Docker Compose stacks on multiple servers - all from the same browser tab. Each server runs its own Sencho instance, and your primary instance acts as a transparent proxy to the others.
 
 <Frame>
   <img src="/images/multi-node/node-manager.png" alt="Node Manager showing a local and a remote node, both Online" />
@@ -21,7 +21,7 @@ Your primary Sencho installation is always listed as **Local**. It is the defaul
 
 ### Step 1: Generate a token on the remote machine
 
-On the **remote** Sencho instance (the server you want to add), open **Settings → Nodes** and click **Generate Token**. Copy the generated token — you'll only see it once.
+On the **remote** Sencho instance (the server you want to add), open **Settings → Nodes** and click **Generate Token**. Copy the generated token - you'll only see it once.
 
 <Note>
   The token is a long-lived JWT scoped to `node_proxy`. Anyone with this token can fully control that Sencho instance, so treat it like a password.
@@ -55,7 +55,7 @@ The Compose directory path matters on remote nodes too. When you register a remo
 
 ## Switching between nodes
 
-The **node switcher** dropdown in the top-left of the sidebar shows the currently active node. Click it to switch to any registered node. All views — dashboard stats, stack list, editor, resources, logs — immediately reflect the selected node.
+The **node switcher** dropdown in the top-left of the sidebar shows the currently active node. Click it to switch to any registered node. All views - dashboard stats, stack list, editor, resources, logs - immediately reflect the selected node.
 
 <Frame>
   <img src="/images/multi-node/node-manager.png" alt="Node switcher dropdown and node list" />
@@ -77,4 +77,4 @@ Click the **pencil icon** on any remote node row to edit its name, URL, or token
 
 - Node tokens grant full control over the remote Sencho instance. Rotate them if compromised via Settings → Nodes → Generate Token (the old token is invalidated).
 - Use HTTPS between instances in production to prevent token interception.
-- The host console and container exec terminals are blocked for node-proxy tokens — interactive shell access always requires a real browser session on that instance.
+- The host console and container exec terminals are blocked for node-proxy tokens - interactive shell access always requires a real browser session on that instance.

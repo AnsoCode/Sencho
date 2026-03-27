@@ -41,21 +41,21 @@ volumes:
 ```
 
 <Warning>
-  Without a persistent data mount, Sencho will lose all configuration — including registered nodes, alerts, and settings — every time the container restarts.
+  Without a persistent data mount, Sencho will lose all configuration - including registered nodes, alerts, and settings - every time the container restarts.
 </Warning>
 
-### Compose directory — the 1:1 path rule
+### Compose directory - the 1:1 path rule
 
 <Warning>
   This is the most common source of deployment problems. Read carefully.
 </Warning>
 
-When Sencho runs `docker compose up`, it does so on your **host machine**. Docker resolves relative volume paths in your Compose files relative to the **host** path of the stack directory — not the path inside the Sencho container.
+When Sencho runs `docker compose up`, it does so on your **host machine**. Docker resolves relative volume paths in your Compose files relative to the **host** path of the stack directory - not the path inside the Sencho container.
 
 **The rule:** Mount your Compose directory at the **exact same path** inside the container as it exists on your host.
 
 ```yaml
-# ✅ Correct — host path matches container path
+# ✅ Correct - host path matches container path
 volumes:
   - /home/boris/docker:/home/boris/docker
 environment:
@@ -63,7 +63,7 @@ environment:
 ```
 
 ```yaml
-# ❌ Wrong — paths differ, relative volumes will break
+# ❌ Wrong - paths differ, relative volumes will break
 volumes:
   - /home/boris/docker:/app/compose
 environment:
@@ -158,4 +158,4 @@ labels:
 
 ## First boot
 
-After starting Sencho, open it in your browser. If no admin account exists yet, you'll be taken to a setup screen to create one. This only appears once — subsequent visits go directly to the login page.
+After starting Sencho, open it in your browser. If no admin account exists yet, you'll be taken to a setup screen to create one. This only appears once - subsequent visits go directly to the login page.

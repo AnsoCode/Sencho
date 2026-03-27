@@ -32,7 +32,7 @@ Thank you for your interest in contributing to Sencho!
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages
 - Update documentation if your change affects user-facing behavior
 - Add tests for new functionality
-- Keep PRs focused — one feature or fix per PR
+- Keep PRs focused - one feature or fix per PR
 - Update `CHANGELOG.md` under `## [Unreleased]` for user-facing changes
 
 ## Reporting Bugs
@@ -41,7 +41,7 @@ Use the [bug report template](https://github.com/AnsoCode/Sencho/issues/new?temp
 
 ## Code Style
 
-- TypeScript with `strict: true` — no `any` casts or `@ts-ignore`
+- TypeScript with `strict: true` - no `any` casts or `@ts-ignore`
 - ESLint 9 flat config for both backend and frontend
 - Tailwind CSS + shadcn/ui for frontend styling
 - Follow existing patterns in the codebase

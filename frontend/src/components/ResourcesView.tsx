@@ -156,7 +156,7 @@ function FootprintWidget({ usage, onFilter }: FootprintWidgetProps) {
     );
 }
 
-// ── Filter Toggle — Segmented Control ─────────────────────────────────────────
+// ── Filter Toggle - Segmented Control ─────────────────────────────────────────
 
 interface FilterToggleProps {
     value: ResourceFilter;
@@ -429,15 +429,15 @@ export default function ResourcesView() {
     // Derived filtered lists
     const filteredImages = images.filter(img =>
         imageFilter === 'managed' ? img.managedStatus === 'managed' :
-        imageFilter === 'unmanaged' ? img.managedStatus !== 'managed' : true
+            imageFilter === 'unmanaged' ? img.managedStatus !== 'managed' : true
     );
     const filteredVolumes = volumes.filter(vol =>
         volumeFilter === 'managed' ? vol.managedStatus === 'managed' :
-        volumeFilter === 'unmanaged' ? vol.managedStatus !== 'managed' : true
+            volumeFilter === 'unmanaged' ? vol.managedStatus !== 'managed' : true
     );
     const filteredNetworks = networks.filter(net =>
         networkFilter === 'managed' ? net.managedStatus === 'managed' :
-        networkFilter === 'unmanaged' ? net.managedStatus !== 'managed' : true
+            networkFilter === 'unmanaged' ? net.managedStatus !== 'managed' : true
     );
 
     const handleFootprintFilter = (filter: ResourceFilter) => {
@@ -453,7 +453,7 @@ export default function ResourcesView() {
                 <HardDrive className="w-5 h-5 text-muted-foreground" />
                 <h1 className="text-xl font-semibold tracking-tight">Resources Hub</h1>
                 {activeNode?.type === 'remote' && (
-                    <span className="text-sm text-muted-foreground">— {activeNode.name}</span>
+                    <span className="text-sm text-muted-foreground">- {activeNode.name}</span>
                 )}
             </div>
 
@@ -823,7 +823,7 @@ export default function ResourcesView() {
                                     Prune All Docker {confirmPrune?.target}
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This will prune <span className="font-semibold text-foreground">all</span> unused {confirmPrune?.target} from the Docker daemon —
+                                    This will prune <span className="font-semibold text-foreground">all</span> unused {confirmPrune?.target} from the Docker daemon -
                                     including those from <span className="font-semibold text-foreground">external projects not managed by Sencho</span>. This cannot be undone.
                                 </AlertDialogDescription>
                             </>

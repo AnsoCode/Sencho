@@ -10,14 +10,14 @@ A self-hosted Docker Compose management dashboard. Manage your stacks, container
 
 ## Features
 
-- **Stack Management** — Create, edit, start, stop, and remove Docker Compose stacks with a built-in Monaco code editor
-- **Multi-Node Support** — Manage remote Sencho instances through a transparent HTTP/WebSocket proxy (Distributed API model)
-- **App Store** — One-click deployment from LinuxServer.io templates with editable ports, volumes, and environment variables
-- **Resource Hub** — Browse and manage images, volumes, and networks with managed/external/unused classification
-- **Live Logs** — Aggregated real-time log streaming across all containers with search and filtering
-- **Dashboard** — Container stats, CPU/RAM metrics, health checks, and image update notifications
-- **Alerts** — Configurable threshold alerts for CPU, RAM, and disk usage
-- **Terminal** — In-browser host console and container exec via WebSocket
+- **Stack Management** - Create, edit, start, stop, and remove Docker Compose stacks with a built-in Monaco code editor
+- **Multi-Node Support** - Manage remote Sencho instances through a transparent HTTP/WebSocket proxy (Distributed API model)
+- **App Store** - One-click deployment from LinuxServer.io templates with editable ports, volumes, and environment variables
+- **Resource Hub** - Browse and manage images, volumes, and networks with managed/external/unused classification
+- **Live Logs** - Aggregated real-time log streaming across all containers with search and filtering
+- **Dashboard** - Container stats, CPU/RAM metrics, health checks, and image update notifications
+- **Alerts** - Configurable threshold alerts for CPU, RAM, and disk usage
+- **Terminal** - In-browser host console and container exec via WebSocket
 
 ## Quick Start
 

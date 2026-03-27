@@ -40,7 +40,8 @@
           "features/webhooks",
           "features/rbac",
           "features/atomic-deployments",
-          "features/fleet-backups"
+          "features/fleet-backups",
+          "features/licensing"
         ]
       },
       {

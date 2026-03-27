@@ -3,7 +3,7 @@ title: Editor
 description: Edit compose files and environment variables, and manage containers directly from the dashboard.
 ---
 
-Selecting a stack opens the editor view — a split-pane layout with container management on the left and a full Monaco code editor on the right.
+Selecting a stack opens the editor view - a split-pane layout with container management on the left and a full Monaco code editor on the right.
 
 <Frame>
   <img src="/images/editor/editor-overview.png" alt="Editor view showing container panel and Monaco editor" />
@@ -37,9 +37,9 @@ The `.env` editor has the same save/discard controls as the compose editor. Chan
 
 The left panel lists all containers that belong to the selected stack. Each container shows:
 
-- **Status badge** — `running`, `exited`, `starting`, or `unhealthy`
-- **Live stats** — CPU %, RAM usage, and network I/O updated every 1–2 seconds
-- **Port mappings** — host:container port pairs (if any)
+- **Status badge** - `running`, `exited`, `starting`, or `unhealthy`
+- **Live stats** - CPU %, RAM usage, and network I/O updated every 1–2 seconds
+- **Port mappings** - host:container port pairs (if any)
 
 ### Container actions
 
@@ -57,7 +57,7 @@ The log viewer streams output from a single container in real-time using Server-
 
 ### Container terminal (exec)
 
-The terminal modal gives you an interactive bash shell inside the running container — equivalent to `docker exec -it <id> bash`. It uses a full xterm.js emulator with color support and tab completion.
+The terminal modal gives you an interactive bash shell inside the running container - equivalent to `docker exec -it <id> bash`. It uses a full xterm.js emulator with color support and tab completion.
 
 <Warning>
   The container terminal requires the container to have `bash` (or `sh`) installed. Minimal images (e.g. Alpine-based) may need `sh` instead.

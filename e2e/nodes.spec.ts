@@ -8,7 +8,7 @@ import { loginAs } from './helpers';
 test.describe('Node management', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
-    // Settings is inside the User Profile Dropdown — open it first
+    // Settings is inside the User Profile Dropdown - open it first
     await page.getByRole('button', { name: /profile/i }).click();
     await page.getByRole('button', { name: /settings/i }).click();
     await page.getByRole('button', { name: /^nodes$/i }).click();
@@ -28,7 +28,7 @@ test.describe('Node management', () => {
     // Wait for the dialog form to be ready
     await expect(page.locator('#node-name')).toBeVisible({ timeout: 5_000 });
     // The API URL field only renders when type === 'remote'.
-    // #node-type is a Radix UI combobox — click to open, then pick the option.
+    // #node-type is a Radix UI combobox - click to open, then pick the option.
     await page.locator('#node-type').click();
     await page.getByRole('option', { name: /remote/i }).click();
     // Confirm the API URL field is now visible before proceeding

@@ -301,7 +301,7 @@ export default function FleetSnapshots() {
                                         {skipped.map(node => (
                                             <li key={node.nodeId} className="text-sm text-muted-foreground">
                                                 <span className="font-medium">{node.nodeName}</span>
-                                                {' — '}
+                                                {' - '}
                                                 {node.reason}
                                             </li>
                                         ))}

@@ -335,7 +335,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                             <div className="text-[10px] text-muted-foreground mt-1">Stopped</div>
                         </div>
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-bold leading-none">{node.stacks?.length ?? '—'}</div>
+                            <div className="text-lg font-bold leading-none">{node.stacks?.length ?? '-'}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Stacks</div>
                         </div>
                     </div>
@@ -499,7 +499,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const processedNodes = useMemo(() => {
         let filtered = [...nodes];
 
-        // Search (Pro only, but harmless if applied — free users won't see the search bar)
+        // Search (Pro only, but harmless if applied - free users won't see the search bar)
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter(n =>

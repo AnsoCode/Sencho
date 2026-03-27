@@ -4,15 +4,19 @@ import { apiFetch } from '@/lib/api';
 export type LicenseTier = 'community' | 'pro';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
+export type LicenseVariant = 'personal' | 'team' | null;
+
 export interface LicenseInfo {
     tier: LicenseTier;
     status: LicenseStatus;
+    variant: LicenseVariant;
     customerName: string | null;
     productName: string | null;
     maskedKey: string | null;
     validUntil: string | null;
     trialDaysRemaining: number | null;
     instanceId: string;
+    portalUrl: string | null;
 }
 
 interface LicenseContextType {
@@ -22,6 +26,7 @@ interface LicenseContextType {
     refresh: () => Promise<void>;
     activate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
     deactivate: () => Promise<{ success: boolean; error?: string }>;
+    checkout: () => void;
 }
 
 const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
@@ -38,7 +43,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
                 setLicense(data);
             }
         } catch {
-            // Silently fail — license info is non-critical
+            // Silently fail - license info is non-critical
         } finally {
             setLoading(false);
         }
@@ -83,10 +88,14 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
+    const checkout = useCallback(() => {
+        window.open('https://sencho.io/#pricing', '_blank');
+    }, []);
+
     const isPro = license?.tier === 'pro';
 
     return (
-        <LicenseContext.Provider value={{ license, isPro, loading, refresh, activate, deactivate }}>
+        <LicenseContext.Provider value={{ license, isPro, loading, refresh, activate, deactivate, checkout }}>
             {children}
         </LicenseContext.Provider>
     );

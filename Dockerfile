@@ -1,9 +1,9 @@
-# Cross-compilation helper — provides xx-clang, xx-apk, etc.
+# Cross-compilation helper - provides xx-clang, xx-apk, etc.
 # Runs on the BUILD platform; its binaries are copied into build stages below.
 FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 
 # Stage 1: Build Frontend
-# Runs on the BUILD platform (amd64) — frontend has no native modules so the
+# Runs on the BUILD platform (amd64) - frontend has no native modules so the
 # compiled output (JS/CSS/HTML) is entirely platform-agnostic.
 FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
@@ -20,7 +20,7 @@ COPY package.json /app/package.json
 RUN npm run build
 
 # Stage 2: Compile TypeScript
-# Runs on the BUILD platform (amd64) — tsc output is platform-agnostic JS.
+# Runs on the BUILD platform (amd64) - tsc output is platform-agnostic JS.
 FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
 
 WORKDIR /app/backend
@@ -35,7 +35,7 @@ RUN npm config set fetch-retry-maxtimeout 120000 && \
 COPY backend/ ./
 RUN npm run build
 
-# Stage 3: Production dependencies (cross-compiled — NO QEMU execution)
+# Stage 3: Production dependencies (cross-compiled - NO QEMU execution)
 # Runs on the BUILD platform (amd64) but compiles native modules
 # (bcrypt, better-sqlite3, node-pty) for the TARGET platform using
 # tonistiigi/xx + clang as the cross-compiler.
@@ -61,9 +61,9 @@ WORKDIR /app
 # Cross (TARGETARCH != BUILDARCH, e.g. amd64 → arm64):
 #   xx-clang targets the foreign architecture without QEMU. The target sysroot
 #   is populated via xx-apk:
-#     g++           — libstdc++ headers/libs (all three native modules use C++)
-#     musl-dev      — musl libc headers for the target arch
-#     linux-headers — <pty.h> / <termios.h> required by node-pty
+#     g++           - libstdc++ headers/libs (all three native modules use C++)
+#     musl-dev      - musl libc headers for the target arch
+#     linux-headers - <pty.h> / <termios.h> required by node-pty
 RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
       apk add --no-cache python3 make g++; \
     else \
@@ -73,7 +73,7 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 
 COPY backend/package*.json backend/.npmrc ./
 
-# Native: plain npm ci — g++ compiles native modules for the host arch.
+# Native: plain npm ci - g++ compiles native modules for the host arch.
 # Cross:  npm_config_arch tells prebuild-install/node-pre-gyp which pre-built
 #         binary to attempt; CC/CXX/AR route compilation through xx-clang so
 #         the output targets the foreign arch without any QEMU emulation.
@@ -88,7 +88,7 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
     fi
 
 # Stage 4: Production runtime
-# Runs on the TARGET platform — no compilation happens here.
+# Runs on the TARGET platform - no compilation happens here.
 FROM node:20-alpine
 
 # Install Docker CLI, Docker Compose CLI, and Bash for Host Console
@@ -123,7 +123,7 @@ RUN addgroup -S sencho && adduser -S -G sencho sencho \
 #
 # NOTE: USER directive is intentionally absent here. The entrypoint starts as
 # root so it can chown the mounted data volume, then exec's as sencho. Static
-# security scanners (Trivy, Clair) may flag "running as root" — this is a known
+# security scanners (Trivy, Clair) may flag "running as root" - this is a known
 # and accepted trade-off for self-hosted apps with user-supplied volume mounts.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Strip Windows CRLF line endings that can sneak in on Windows dev machines
@@ -135,7 +135,7 @@ RUN sed -i 's/\r//' /usr/local/bin/docker-entrypoint.sh \
 # Expose port
 EXPOSE 3000
 
-# Health check — polls the public /api/health endpoint every 30s
+# Health check - polls the public /api/health endpoint every 30s
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 

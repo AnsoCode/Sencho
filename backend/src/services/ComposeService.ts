@@ -134,7 +134,7 @@ export class ComposeService {
     } catch (deployError) {
       // Atomic: auto-rollback on failure
       if (atomic) {
-        sendOutput('\n=== Deployment failed — rolling back to previous version ===\n');
+        sendOutput('\n=== Deployment failed - rolling back to previous version ===\n');
         try {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
@@ -142,7 +142,7 @@ export class ComposeService {
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);
-          sendOutput('=== Rollback failed — manual intervention may be required ===\n');
+          sendOutput('=== Rollback failed - manual intervention may be required ===\n');
         }
       }
       throw deployError;
@@ -322,7 +322,7 @@ export class ComposeService {
     } catch (updateError) {
       // Atomic: auto-rollback on failure
       if (atomic) {
-        sendOutput('\n=== Update failed — rolling back to previous version ===\n');
+        sendOutput('\n=== Update failed - rolling back to previous version ===\n');
         try {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
@@ -330,7 +330,7 @@ export class ComposeService {
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);
-          sendOutput('=== Rollback failed — manual intervention may be required ===\n');
+          sendOutput('=== Rollback failed - manual intervention may be required ===\n');
         }
       }
       throw updateError;

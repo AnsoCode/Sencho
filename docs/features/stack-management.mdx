@@ -16,7 +16,7 @@ Click **Create Stack** in the left sidebar. Enter a name and click **Create**.
 **Naming rules:**
 - Lowercase letters, numbers, and hyphens only (e.g. `my-app`, `nextcloud`)
 - No spaces or special characters
-- Must be unique — duplicates are rejected
+- Must be unique - duplicates are rejected
 
 Sencho creates a new directory inside `COMPOSE_DIR` with a blank `compose.yaml` file. You'll land in the editor automatically.
 
@@ -34,7 +34,7 @@ Use the **search box** above the list to filter stacks by name.
 
 ## Deploying a stack
 
-Select a stack and click **Deploy** in the stack header. This runs `docker compose up -d` — pulling images if needed and creating or recreating containers.
+Select a stack and click **Deploy** in the stack header. This runs `docker compose up -d` - pulling images if needed and creating or recreating containers.
 
 <Frame>
   <img src="/images/editor/editor-overview.png" alt="Stack editor with control buttons" />
@@ -52,7 +52,7 @@ The stack header exposes four actions:
 | **Delete** | `down` + removes files | Stops and removes containers, then deletes the stack directory. |
 
 <Warning>
-  **Delete** is irreversible. It removes the stack directory — including `compose.yaml`, `.env`, and any bind-mounted files stored there. Back up important files before deleting.
+  **Delete** is irreversible. It removes the stack directory - including `compose.yaml`, `.env`, and any bind-mounted files stored there. Back up important files before deleting.
 </Warning>
 
 ## Stack context menu
@@ -63,8 +63,8 @@ Right-click or use the **⋮** button on any stack in the sidebar to access:
   <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu showing Alerts option" />
 </Frame>
 
-- **Alerts** — configure metric-based alerting rules for this stack
-- **Check for updates** — manually trigger an image update check
+- **Alerts** - configure metric-based alerting rules for this stack
+- **Check for updates** - manually trigger an image update check
 
 ## Converting a `docker run` command
 

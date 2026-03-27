@@ -3,7 +3,7 @@ title: Fleet View
 description: Monitor all your nodes from a single dashboard with real-time health metrics, search, filtering, and container drill-down.
 ---
 
-The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment — local and remote — on one screen. It is available to all tiers, with advanced features unlocked by Sencho Pro.
+The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment - local and remote - on one screen. It is available to all tiers, with advanced features unlocked by Sencho Pro.
 
 <Frame>
   <img src="/images/fleet-view/fleet-overview.png" alt="Fleet View showing health summary cards, toolbar, and node grid" />
@@ -111,7 +111,7 @@ Nodes with CPU or disk usage above 90% automatically receive a red **Critical** 
 
 ## How fleet data is fetched
 
-Fleet View queries all registered nodes in parallel. Each node responds independently — one slow or offline node does not block the others. Local node data comes from the Docker socket and system stats directly. Remote node data is fetched over the Distributed API proxy using each node's Bearer token.
+Fleet View queries all registered nodes in parallel. Each node responds independently - one slow or offline node does not block the others. Local node data comes from the Docker socket and system stats directly. Remote node data is fetched over the Distributed API proxy using each node's Bearer token.
 
 <Note>
   Fleet View always runs on your primary (local) Sencho instance. It is never proxied through a remote node.

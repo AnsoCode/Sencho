@@ -1,5 +1,5 @@
 /**
- * Test DB helper — creates a temporary SQLite database, seeds it with a known
+ * Test DB helper - creates a temporary SQLite database, seeds it with a known
  * admin credential, and sets process.env so DatabaseService uses it.
  *
  * Call this at the top of every test file *before* importing the app,

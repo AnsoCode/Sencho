@@ -33,7 +33,7 @@ describe('GET /api/health', () => {
   });
 
   it('does not require an auth token', async () => {
-    // No cookie, no Authorization header — must still return 200
+    // No cookie, no Authorization header - must still return 200
     const res = await request(app).get('/api/health');
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);

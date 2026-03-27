@@ -11,12 +11,12 @@ Sencho Pro wraps every deployment in a safety net. Before applying changes, it b
 
 ## How it works
 
-1. **Backup** — Before a deploy or update, Sencho copies `compose.yaml` and `.env` files to a `.sencho-backup/` directory inside the stack folder
-2. **Deploy** — Sencho runs the requested compose operation (up, pull + recreate, etc.)
-3. **Health probe** — After deployment, Sencho checks whether any containers exited with a non-zero exit code
-4. **Auto-rollback** — If a crash is detected, Sencho restores the backed-up files and re-deploys automatically
+1. **Backup** - Before a deploy or update, Sencho copies `compose.yaml` and `.env` files to a `.sencho-backup/` directory inside the stack folder
+2. **Deploy** - Sencho runs the requested compose operation (up, pull + recreate, etc.)
+3. **Health probe** - After deployment, Sencho checks whether any containers exited with a non-zero exit code
+4. **Auto-rollback** - If a crash is detected, Sencho restores the backed-up files and re-deploys automatically
 
-This entire sequence happens transparently. You see a single deploy action — Sencho handles the safety logic behind the scenes.
+This entire sequence happens transparently. You see a single deploy action - Sencho handles the safety logic behind the scenes.
 
 ## Manual rollback
 
@@ -30,4 +30,4 @@ Deployments triggered via webhooks also use atomic rollback. Whether you deploy 
 
 ## Community Edition behavior
 
-Community users continue to use the standard deploy flow — no backup is created and no rollback is available. Upgrading to Pro enables atomic deployments immediately with no configuration required.
+Community users continue to use the standard deploy flow - no backup is created and no rollback is available. Upgrading to Pro enables atomic deployments immediately with no configuration required.

@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    // Only run TypeScript sources — exclude the compiled dist/ output.
+    // Only run TypeScript sources - exclude the compiled dist/ output.
     include: ['src/__tests__/**/*.test.ts'],
     exclude: ['dist/**', 'node_modules/**'],
     // Each test file gets its own worker so singletons are fresh between files.
