@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
-import { ProBadge } from './ProBadge';
+import { TierBadge } from './TierBadge';
 
 type Theme = 'light' | 'dark' | 'auto';
 
@@ -16,7 +16,7 @@ interface UserProfileDropdownProps {
 
 export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
     const { logout, user, isAdmin } = useAuth();
-    const { license, isPro } = useLicense();
+    const { license } = useLicense();
 
     return (
         <Popover>
@@ -39,7 +39,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                                     {user?.role ?? 'admin'}
                                 </span>
                                 <span className="text-muted-foreground/40">·</span>
-                                {isPro ? <ProBadge /> : <span>Community</span>}
+                                <TierBadge />
                             </div>
                         </div>
                     </div>

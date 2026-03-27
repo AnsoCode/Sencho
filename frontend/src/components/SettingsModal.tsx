@@ -18,14 +18,14 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard, LifeBuoy, Book, Mail, Bug } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
-import { ProBadge } from './ProBadge';
+import { TierBadge } from './TierBadge';
 import { ProGate } from './ProGate';
 
 interface Agent {
@@ -48,7 +48,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'users' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'about';
+type SectionId = 'account' | 'license' | 'users' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
 
 interface WebhookItem {
     id: number;
@@ -190,7 +190,7 @@ function WebhooksSection({ isPro }: { isPro: boolean }) {
         return (
             <div className="space-y-6">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <ProBadge /></h3>
+                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
                 <ProGate featureName="Webhooks">
@@ -207,7 +207,7 @@ function WebhooksSection({ isPro }: { isPro: boolean }) {
         <div className="space-y-6">
             <div className="flex items-start justify-between pr-8">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <ProBadge /></h3>
+                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
                 <Button size="sm" onClick={() => setShowForm(!showForm)}>
@@ -1019,6 +1019,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         {!isRemote && (
                             <NavButton section="appstore" icon={<Package className="w-4 h-4 mr-2" />} label="App Store" />
                         )}
+                        <NavButton section="support" icon={<LifeBuoy className="w-4 h-4 mr-2" />} label="Support" />
                         <NavButton section="about" icon={<Info className="w-4 h-4 mr-2" />} label="About" />
                     </nav>
                 </div>
@@ -1087,7 +1088,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                             {license?.tier === 'pro' ? 'Sencho Pro' : 'Sencho Community'}
                                         </span>
                                     </div>
-                                    {license?.tier === 'pro' && <ProBadge />}
+                                    <TierBadge />
                                 </div>
 
                                 {license?.status === 'trial' && license.trialDaysRemaining !== null && (
@@ -1525,6 +1526,90 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         <NodeManager />
                     )}
 
+                    {activeSection === 'support' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold tracking-tight">Help & Support</h3>
+                                <p className="text-sm text-muted-foreground">Get help with Sencho based on your plan.</p>
+                            </div>
+
+                            {/* Self-serve channels (all tiers) */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-medium text-muted-foreground">Resources</h4>
+                                <div className="grid gap-3">
+                                    <a href="https://docs.sencho.io" target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                                        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                                            <Book className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium">Documentation</p>
+                                            <p className="text-xs text-muted-foreground">Guides, reference, and tutorials</p>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+                                    </a>
+                                    <a href="https://github.com/AnsoCode/Sencho/issues" target="_blank" rel="noopener noreferrer"
+                                       className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                                        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                                            <Bug className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium">GitHub Issues</p>
+                                            <p className="text-xs text-muted-foreground">Report bugs and request features</p>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Pro support channels */}
+                            {isPro && (
+                                <div className="space-y-3">
+                                    <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        Pro Support <TierBadge />
+                                    </h4>
+                                    <div className="grid gap-3">
+                                        <a href={license?.variant === 'team' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
+                                           className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                                            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                                                <Mail className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium">
+                                                    {license?.variant === 'team' ? 'Priority Email Support' : 'Email Support'}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {license?.variant === 'team'
+                                                        ? 'Direct support with responses within 24 hours'
+                                                        : 'Reach our support team directly'}
+                                                </p>
+                                            </div>
+                                            <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+                                        </a>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Upsell for Community */}
+                            {!isPro && (
+                                <div className="rounded-lg border border-border p-4 bg-muted/30">
+                                    <div className="flex items-start gap-3">
+                                        <Crown className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium">Need faster support?</p>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                Upgrade to Pro for direct email support and priority issue handling.
+                                            </p>
+                                            <Button size="sm" className="mt-3" onClick={() => window.open('https://sencho.io/#pricing', '_blank')}>
+                                                Upgrade to Pro
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {activeSection === 'about' && (
                         <div className="space-y-6">
                             <div>
@@ -1539,7 +1624,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-muted-foreground">Tier</span>
-                                    <div>{license?.tier === 'pro' ? <ProBadge /> : <Badge variant="outline">Community</Badge>}</div>
+                                    <div><TierBadge /></div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm text-muted-foreground">License Status</span>
@@ -1557,28 +1642,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 <h4 className="text-sm font-medium">Links</h4>
                                 <div className="flex flex-col gap-1.5">
                                     <a
-                                        href="https://docs.sencho.io"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        Documentation &rarr;
-                                    </a>
-                                    <a
                                         href="https://github.com/AnsoCode/Sencho/blob/main/CHANGELOG.md"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                                     >
                                         Changelog &rarr;
-                                    </a>
-                                    <a
-                                        href="https://github.com/AnsoCode/Sencho/issues"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        Report an Issue &rarr;
                                     </a>
                                 </div>
                             </div>
