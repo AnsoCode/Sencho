@@ -3,16 +3,70 @@
   "theme": "mint",
   "name": "Sencho",
   "colors": {
-    "primary": "#0F172A",
-    "light": "#3B82F6",
-    "dark": "#0F172A"
+    "primary": "#00BEC7",
+    "light": "#0891B2",
+    "dark": "#22D3EE"
   },
   "logo": {
     "light": "/images/logo/logo-light.png",
     "dark": "/images/logo/logo-dark.png",
-    "href": "/"
+    "href": "https://sencho.io"
   },
   "favicon": "/images/logo/favicon.ico",
+  "appearance": {
+    "default": "dark"
+  },
+  "fonts": {
+    "family": "Geist"
+  },
+  "background": {
+    "decoration": "gradient",
+    "color": {
+      "dark": "#0F172A"
+    }
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/AnsoCode/Sencho"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get Started",
+      "href": "https://sencho.io/#pricing"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/AnsoCode/Sencho"
+    },
+    "links": [
+      {
+        "header": "Product",
+        "items": [
+          { "label": "Website", "href": "https://sencho.io" },
+          { "label": "Pricing", "href": "https://sencho.io/#pricing" },
+          { "label": "Changelog", "href": "https://github.com/AnsoCode/Sencho/releases" }
+        ]
+      },
+      {
+        "header": "Community",
+        "items": [
+          { "label": "GitHub", "href": "https://github.com/AnsoCode/Sencho" },
+          { "label": "Contributing", "href": "https://github.com/AnsoCode/Sencho/blob/main/CONTRIBUTING.md" }
+        ]
+      },
+      {
+        "header": "Legal",
+        "items": [
+          { "label": "Terms of Service", "href": "https://sencho.io/terms" },
+          { "label": "Privacy Policy", "href": "https://sencho.io/privacy" }
+        ]
+      }
+    ]
+  },
   "navigation": {
     "groups": [
       {

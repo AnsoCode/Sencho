@@ -49,3 +49,13 @@ MANUAL_STEPS.md
 
 # Playwright MCP
 .playwright-mcp/
+
+# Frontend build output (served by backend)
+backend/public/
+
+# Auto-generated files
+backend/cookies.txt
+
+# Local-only projects (separate repos)
+demo-video/
+website/
