@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0](https://github.com/AnsoCode/Sencho/compare/v0.8.0...v0.9.0) (2026-03-27)
+
+
+### Added
+
+* RBAC, atomic deployments, fleet backups, and licensing (Pro) ([#185](https://github.com/AnsoCode/Sencho/issues/185)) ([32a7d53](https://github.com/AnsoCode/Sencho/commit/32a7d53b2b1b9b3d2a067433c9e77709ade96697))
+
 ## [0.8.0](https://github.com/AnsoCode/Sencho/compare/v0.7.0...v0.8.0) (2026-03-26)
 
 
