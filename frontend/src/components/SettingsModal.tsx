@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard, LifeBuoy, Book, Mail, Bug } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, Check, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard, LifeBuoy, Book, Mail, Bug, Zap } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
@@ -647,7 +647,7 @@ function UsersSection() {
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { isAdmin } = useAuth();
-    const { license, isPro, activate, deactivate, checkout } = useLicense();
+    const { license, isPro, activate, deactivate } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>('account');
     const [licenseKeyInput, setLicenseKeyInput] = useState('');
@@ -1184,56 +1184,108 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                             )}
 
-                            {/* Subscribe / Activate (not active) */}
-                            {license?.status !== 'active' && (
-                                <div className="space-y-4">
-                                    <div className="space-y-1">
-                                        <Label className="text-base">Subscribe to Sencho Pro</Label>
-                                        <p className="text-xs text-muted-foreground">
-                                            Purchase a license key from our website, then activate it below.
-                                        </p>
-                                    </div>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => checkout()}
-                                    >
-                                        <Crown className="w-4 h-4 mr-2" />
-                                        View Pricing
-                                        <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
-                                    </Button>
+                            {/* Upgrade Cards — Community: show both, Personal Pro: show Team only, Team Pro: none */}
+                            {(license?.tier !== 'pro' || (license?.variant === 'personal' && license?.status === 'active')) && (
+                                <div className="space-y-3">
+                                    <Label className="text-base">Upgrade your plan</Label>
+                                    <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                                        {/* Personal Pro Card — only for Community users */}
+                                        {license?.tier !== 'pro' && (
+                                            <div className="relative border border-border rounded-xl p-4 space-y-3 bg-muted/5">
+                                                <div className="flex items-center gap-2">
+                                                    <Crown className="w-4 h-4 text-amber-500" />
+                                                    <span className="font-semibold text-sm">Personal Pro</span>
+                                                    <Badge variant="secondary" className="text-[10px] font-semibold uppercase px-1.5 py-0">Popular</Badge>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">Professional tools for solo operators.</p>
+                                                <ul className="space-y-1.5">
+                                                    {['Fleet View with drill-down', 'RBAC viewer accounts (1 + 3)', 'Custom webhooks', 'Atomic deployment', 'Fleet-wide backups'].map((f) => (
+                                                        <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                            <Check className="w-3 h-3 shrink-0 text-green-500" />
+                                                            {f}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                <Button
+                                                    size="sm"
+                                                    className="w-full"
+                                                    onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/f75bfb65-443a-46a0-abb1-981e0ff4b382', '_blank')}
+                                                >
+                                                    <Zap className="w-4 h-4 mr-2" />
+                                                    Get Personal Pro
+                                                    <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+                                                </Button>
+                                            </div>
+                                        )}
 
-                                    {/* License key activation */}
-                                    <div className="border-t border-border pt-4 space-y-2">
-                                        <Label className="text-sm text-muted-foreground">Have a license key?</Label>
-                                        <div className="flex gap-2">
-                                            <Input
-                                                placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
-                                                value={licenseKeyInput}
-                                                onChange={(e) => setLicenseKeyInput(e.target.value)}
-                                                className="font-mono"
-                                            />
+                                        {/* Team Pro Card */}
+                                        <div className="border border-border rounded-xl p-4 space-y-3 bg-muted/5">
+                                            <div className="flex items-center gap-2">
+                                                <Users className="w-4 h-4 text-blue-500" />
+                                                <span className="font-semibold text-sm">Team Pro</span>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">For teams managing shared infrastructure.</p>
+                                            <ul className="space-y-1.5">
+                                                {[
+                                                    ...(license?.variant === 'personal' ? ['Everything in Personal Pro'] : ['Everything in Community']),
+                                                    'Unlimited admin accounts',
+                                                    'Unlimited viewer accounts',
+                                                    ...(license?.variant !== 'personal' ? ['Fleet View & webhooks', 'Atomic deployment & backups'] : []),
+                                                    'Team onboarding assistance',
+                                                ].map((f) => (
+                                                    <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                        <Check className="w-3 h-3 shrink-0 text-green-500" />
+                                                        {f}
+                                                    </li>
+                                                ))}
+                                            </ul>
                                             <Button
-                                                variant="outline"
-                                                onClick={async () => {
-                                                    if (!licenseKeyInput.trim()) return;
-                                                    setIsActivating(true);
-                                                    const result = await activate(licenseKeyInput.trim());
-                                                    if (result.success) {
-                                                        toast.success('License activated! Welcome to Sencho Pro.');
-                                                        setLicenseKeyInput('');
-                                                    } else {
-                                                        toast.error(result.error || 'Activation failed');
-                                                    }
-                                                    setIsActivating(false);
-                                                }}
-                                                disabled={isActivating || !licenseKeyInput.trim()}
+                                                size="sm"
+                                                variant={license?.tier !== 'pro' ? 'outline' : 'default'}
+                                                className="w-full"
+                                                onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/b049b824-176a-408d-a9d3-9365c979a61f', '_blank')}
                                             >
-                                                {isActivating
-                                                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Activating...</>
-                                                    : 'Activate'
-                                                }
+                                                <Zap className="w-4 h-4 mr-2" />
+                                                Get Team Pro
+                                                <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
                                             </Button>
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* License key activation — show when not active */}
+                            {license?.status !== 'active' && (
+                                <div className="border-t border-border pt-4 space-y-2">
+                                    <Label className="text-sm text-muted-foreground">Have a license key?</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                                            value={licenseKeyInput}
+                                            onChange={(e) => setLicenseKeyInput(e.target.value)}
+                                            className="font-mono"
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            onClick={async () => {
+                                                if (!licenseKeyInput.trim()) return;
+                                                setIsActivating(true);
+                                                const result = await activate(licenseKeyInput.trim());
+                                                if (result.success) {
+                                                    toast.success('License activated! Welcome to Sencho Pro.');
+                                                    setLicenseKeyInput('');
+                                                } else {
+                                                    toast.error(result.error || 'Activation failed');
+                                                }
+                                                setIsActivating(false);
+                                            }}
+                                            disabled={isActivating || !licenseKeyInput.trim()}
+                                        >
+                                            {isActivating
+                                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Activating...</>
+                                                : 'Activate'
+                                            }
+                                        </Button>
                                     </div>
                                 </div>
                             )}
