@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0](https://github.com/AnsoCode/Sencho/compare/v0.13.2...v0.14.0) (2026-03-28)
+
+
+### Added
+
+* **api-tokens:** add scoped API tokens for CI/CD automation (Team Pro) ([#220](https://github.com/AnsoCode/Sencho/issues/220)) ([8d8118c](https://github.com/AnsoCode/Sencho/commit/8d8118c963a1c3b10872041ea0f645d8f0a65196))
+
 ## [0.13.2](https://github.com/AnsoCode/Sencho/compare/v0.13.1...v0.13.2) (2026-03-28)
 
 
