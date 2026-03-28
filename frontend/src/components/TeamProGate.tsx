@@ -46,7 +46,7 @@ export function TeamProGate({ children, featureName = 'This feature' }: TeamProG
             <div className="text-center max-w-md">
                 <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Team Pro</h3>
                 <p className="text-sm text-muted-foreground">
-                    Unlock team features like SSO authentication, audit logging, and unlimited user accounts with a Sencho Team Pro license.
+                    Unlock team features like SSO authentication, audit logging, API tokens, and unlimited user accounts with a Sencho Team Pro license.
                 </p>
             </div>
             <div className="flex gap-3">

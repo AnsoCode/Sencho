@@ -123,6 +123,20 @@ export interface AuditLogEntry {
     summary: string;
 }
 
+export type ApiTokenScope = 'read-only' | 'deploy-only' | 'full-admin';
+
+export interface ApiToken {
+    id: number;
+    token_hash: string;
+    name: string;
+    scope: ApiTokenScope;
+    user_id: number;
+    created_at: number;
+    last_used_at: number | null;
+    expires_at: number | null;
+    revoked_at: number | null;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -294,6 +308,22 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
       CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'read-only',
+        user_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        expires_at INTEGER,
+        revoked_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -767,6 +797,10 @@ export class DatabaseService {
         return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined;
     }
 
+    public getUserById(id: number): User | undefined {
+        return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+    }
+
     public getUserByProviderIdentity(authProvider: string, providerId: string): User | undefined {
         return this.db.prepare('SELECT * FROM users WHERE auth_provider = ? AND provider_id = ?').get(authProvider, providerId) as User | undefined;
     }
@@ -946,5 +980,40 @@ export class DatabaseService {
     public cleanupOldAuditLogs(daysToKeep = 90): void {
         const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
         this.db.prepare('DELETE FROM audit_log WHERE timestamp < ?').run(cutoff);
+    }
+
+    // --- API Tokens ---
+
+    public addApiToken(token: Omit<ApiToken, 'id' | 'last_used_at' | 'revoked_at'>): number {
+        const result = this.db.prepare(
+            'INSERT INTO api_tokens (token_hash, name, scope, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(token.token_hash, token.name, token.scope, token.user_id, token.created_at, token.expires_at);
+        return result.lastInsertRowid as number;
+    }
+
+    public getApiTokensByUser(userId: number): ApiToken[] {
+        return this.db.prepare(
+            'SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC'
+        ).all(userId) as ApiToken[];
+    }
+
+    public getApiTokenByHash(tokenHash: string): ApiToken | undefined {
+        return this.db.prepare(
+            'SELECT * FROM api_tokens WHERE token_hash = ?'
+        ).get(tokenHash) as ApiToken | undefined;
+    }
+
+    public getApiTokenById(id: number): ApiToken | undefined {
+        return this.db.prepare(
+            'SELECT * FROM api_tokens WHERE id = ?'
+        ).get(id) as ApiToken | undefined;
+    }
+
+    public revokeApiToken(id: number): void {
+        this.db.prepare('UPDATE api_tokens SET revoked_at = ? WHERE id = ?').run(Date.now(), id);
+    }
+
+    public updateApiTokenLastUsed(id: number): void {
+        this.db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(Date.now(), id);
     }
 }

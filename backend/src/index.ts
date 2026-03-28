@@ -203,6 +203,7 @@ declare global {
     interface Request {
       user?: { username: string; role: 'admin' | 'viewer' };
       nodeId: number;
+      apiTokenScope?: 'read-only' | 'deploy-only' | 'full-admin';
     }
   }
 }
@@ -235,6 +236,32 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
     const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string };
+
+    // API token path: scope-based programmatic access
+    if (decoded.scope === 'api_token') {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const apiToken = DatabaseService.getInstance().getApiTokenByHash(tokenHash);
+      if (!apiToken || apiToken.revoked_at) {
+        res.status(401).json({ error: 'API token not found or revoked' });
+        return;
+      }
+      if (apiToken.expires_at && apiToken.expires_at < Date.now()) {
+        res.status(401).json({ error: 'API token has expired' });
+        return;
+      }
+      DatabaseService.getInstance().updateApiTokenLastUsed(apiToken.id);
+      const creator = DatabaseService.getInstance().getUserById(apiToken.user_id);
+      const roleMap: Record<string, 'admin' | 'viewer'> = {
+        'read-only': 'viewer',
+        'deploy-only': 'viewer',
+        'full-admin': 'admin',
+      };
+      req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer' };
+      req.apiTokenScope = apiToken.scope as 'read-only' | 'deploy-only' | 'full-admin';
+      next();
+      return;
+    }
+
     // Accept both user sessions and node proxy tokens. Default role to 'admin' for backward compat with pre-RBAC tokens.
     req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as 'admin' | 'viewer') || 'admin' };
     next();
@@ -647,6 +674,8 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /fleet/snapshot/restore': 'Restored fleet backup',
   'PUT /sso/config': 'Updated SSO configuration',
   'DELETE /sso/config': 'Deleted SSO configuration',
+  'POST /api-tokens': 'Created API token',
+  'DELETE /api-tokens': 'Revoked API token',
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
@@ -727,6 +756,45 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   }
   return true;
 };
+
+// Scope enforcement for API tokens — restricts which endpoints a token can reach.
+const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
+  /^\/api\/stacks\/[^/]+\/up$/,
+  /^\/api\/stacks\/[^/]+\/down$/,
+  /^\/api\/stacks\/[^/]+\/restart$/,
+  /^\/api\/stacks\/[^/]+\/pull$/,
+  /^\/api\/compose\/(up|down|start|stop|restart|pull)$/,
+];
+
+const enforceApiTokenScope = (req: Request, res: Response, next: NextFunction): void => {
+  const scope = req.apiTokenScope;
+  if (!scope) { next(); return; } // Not an API token request
+  if (scope === 'full-admin') { next(); return; }
+
+  if (scope === 'read-only') {
+    if (req.method !== 'GET') {
+      res.status(403).json({ error: 'API token scope "read-only" only allows GET requests.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (scope === 'deploy-only') {
+    if (req.method === 'GET') { next(); return; }
+    const fullPath = `/api${req.path}`;
+    if (req.method === 'POST' && DEPLOY_ALLOWED_PATTERNS.some(p => p.test(fullPath))) {
+      next();
+      return;
+    }
+    res.status(403).json({ error: 'API token scope "deploy-only" does not allow this action.', code: 'SCOPE_DENIED' });
+    return;
+  }
+
+  res.status(403).json({ error: 'Unknown API token scope.', code: 'SCOPE_DENIED' });
+};
+
+app.use('/api', enforceApiTokenScope);
 
 app.get('/api/license', (_req: Request, res: Response): void => {
   try {
@@ -3093,6 +3161,95 @@ app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     console.error('[AuditLog] Failed to fetch audit log:', error);
     res.status(500).json({ error: 'Failed to fetch audit log' });
+  }
+});
+
+// --- API Token Routes (Team Pro, admin-only, local-only) ---
+
+app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const { name, scope } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'Token name is required.' });
+      return;
+    }
+    const validScopes = ['read-only', 'deploy-only', 'full-admin'];
+    if (!scope || !validScopes.includes(scope)) {
+      res.status(400).json({ error: `Scope must be one of: ${validScopes.join(', ')}` });
+      return;
+    }
+
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'No JWT secret configured.' });
+      return;
+    }
+
+    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
+    if (!user) {
+      res.status(500).json({ error: 'User not found.' });
+      return;
+    }
+
+    const rawToken = jwt.sign({ scope: 'api_token', sub: user.username, jti: crypto.randomUUID() }, jwtSecret);
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const id = DatabaseService.getInstance().addApiToken({
+      token_hash: tokenHash,
+      name: name.trim(),
+      scope: scope as 'read-only' | 'deploy-only' | 'full-admin',
+      user_id: user.id,
+      created_at: Date.now(),
+      expires_at: null,
+    });
+
+    res.status(201).json({ id, token: rawToken });
+  } catch (error) {
+    console.error('[ApiTokens] Create error:', error);
+    res.status(500).json({ error: 'Failed to create API token' });
+  }
+});
+
+app.get('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
+    if (!user) { res.status(500).json({ error: 'User not found.' }); return; }
+    const tokens = DatabaseService.getInstance().getApiTokensByUser(user.id);
+    // Never expose token hashes to the client
+    const sanitized = tokens.map(({ token_hash: _hash, ...rest }) => rest);
+    res.json(sanitized);
+  } catch (error) {
+    console.error('[ApiTokens] List error:', error);
+    res.status(500).json({ error: 'Failed to list API tokens' });
+  }
+});
+
+app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid token ID.' }); return; }
+
+    const apiToken = DatabaseService.getInstance().getApiTokenById(id);
+    if (!apiToken) { res.status(404).json({ error: 'API token not found.' }); return; }
+
+    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
+    if (!user || apiToken.user_id !== user.id) {
+      res.status(403).json({ error: 'You can only revoke your own tokens.' });
+      return;
+    }
+
+    DatabaseService.getInstance().revokeApiToken(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ApiTokens] Revoke error:', error);
+    res.status(500).json({ error: 'Failed to revoke API token' });
   }
 });
 

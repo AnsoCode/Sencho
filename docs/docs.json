@@ -97,6 +97,7 @@
           "features/atomic-deployments",
           "features/fleet-backups",
           "features/audit-log",
+          "features/api-tokens",
           "features/sso",
           "features/licensing"
         ]
