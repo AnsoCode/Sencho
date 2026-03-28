@@ -1,0 +1,58 @@
+---
+title: Audit Log
+description: Track all mutating actions across your Sencho instance with a searchable audit trail for team accountability.
+---
+
+<Note>
+  The Audit Log requires a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+</Note>
+
+Sencho Team Pro records every mutating action (deploy, stop, delete, settings changes, user management) with full attribution. The audit log answers the question every team eventually asks: **"Who changed what, and when?"**
+
+## What gets logged
+
+Every `POST`, `PUT`, `DELETE`, and `PATCH` request to the Sencho API is automatically recorded with:
+
+| Field | Description |
+|-------|-------------|
+| **Timestamp** | When the action occurred |
+| **User** | The authenticated username that performed the action |
+| **Method** | HTTP method (`POST`, `PUT`, `DELETE`, `PATCH`) |
+| **Action** | Human-readable summary (e.g., "Deployed stack: nginx-proxy") |
+| **Status** | HTTP response status code |
+| **Node** | Which node the action targeted |
+
+### Example actions tracked
+
+- Stack lifecycle: deploy, stop, start, restart, pull, delete
+- Stack creation and file edits
+- Node management: add, update, delete
+- User management: create, delete, role changes
+- Settings changes
+- System prune operations
+- License activation/deactivation
+- Webhook and notification agent configuration
+- Fleet backup creation, restoration, and deletion
+
+## Viewing the audit log
+
+Navigate to the **Audit** tab in the sidebar (visible to Team Pro admins only).
+
+<Frame>
+  <img src="/images/audit-log.png" alt="Audit Log view showing a timeline of actions" />
+</Frame>
+
+### Filtering
+
+- **Username filter** — Search for actions by a specific user
+- **Method filter** — Filter by HTTP method (POST, PUT, DELETE, PATCH)
+
+Pagination is built in for navigating large audit histories.
+
+## Data retention
+
+Audit log entries are automatically cleaned up after **90 days**. This runs as part of Sencho's periodic maintenance cycle alongside metrics and notification cleanup.
+
+## Security at rest
+
+As of this release, sensitive database values (such as remote node API tokens) are encrypted at rest using AES-256-GCM. The encryption key is stored as a separate file outside the SQLite database, ensuring that database file exposure alone does not compromise secrets.

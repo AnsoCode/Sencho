@@ -95,6 +95,7 @@
           "features/rbac",
           "features/atomic-deployments",
           "features/fleet-backups",
+          "features/audit-log",
           "features/licensing"
         ]
       },
