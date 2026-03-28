@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* **settings/license:** replaced static "View Pricing" button with dynamic upgrade cards — Community users see Personal Pro and Team Pro options with feature highlights; Personal Pro users see Team Pro upgrade only; each card links directly to Lemon Squeezy checkout
+
 * **docs:** comprehensive documentation audit — updated 11 pages with accurate content and 14 fresh screenshots
 * **docs/configuration:** removed JWT_SECRET from required env vars (it's auto-generated), added compose directory reorganization explanation
 * **docs/settings:** added missing License, Users, Webhooks, Support, and About sections; removed obsolete Appearance section

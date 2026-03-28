@@ -26,7 +26,6 @@ interface LicenseContextType {
     refresh: () => Promise<void>;
     activate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
     deactivate: () => Promise<{ success: boolean; error?: string }>;
-    checkout: () => void;
 }
 
 const LicenseContext = createContext<LicenseContextType | undefined>(undefined);
@@ -88,14 +87,10 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const checkout = useCallback(() => {
-        window.open('https://sencho.io/#pricing', '_blank');
-    }, []);
-
     const isPro = license?.tier === 'pro';
 
     return (
-        <LicenseContext.Provider value={{ license, isPro, loading, refresh, activate, deactivate, checkout }}>
+        <LicenseContext.Provider value={{ license, isPro, loading, refresh, activate, deactivate }}>
             {children}
         </LicenseContext.Provider>
     );
