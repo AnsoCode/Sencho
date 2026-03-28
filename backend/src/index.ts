@@ -816,6 +816,10 @@ app.get('/api/license', (_req: Request, res: Response): void => {
 });
 
 app.post('/api/license/activate', async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage licenses.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const { license_key } = req.body;
@@ -836,6 +840,10 @@ app.post('/api/license/activate', async (req: Request, res: Response): Promise<v
 });
 
 app.post('/api/license/deactivate', async (_req: Request, res: Response): Promise<void> => {
+  if (_req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage licenses.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(_req, res)) return;
   try {
     const result = await LicenseService.getInstance().deactivate();
@@ -1605,6 +1613,10 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
 // --- User Management (local-only, admin + Pro gated for creation) ---
 
 app.get('/api/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const users = DatabaseService.getInstance().getUsers();
@@ -1616,6 +1628,10 @@ app.get('/api/users', authMiddleware, async (req: Request, res: Response): Promi
 });
 
 app.post('/api/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requirePro(req, res)) return;
   try {
@@ -1667,6 +1683,10 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
 });
 
 app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -1728,6 +1748,10 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
 });
 
 app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -3077,6 +3101,10 @@ app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Re
 // to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
 // tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
 app.post('/api/system/console-token', authMiddleware, (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot generate console tokens.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
@@ -3096,6 +3124,10 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
 // --- SSO Config Routes (admin + Team Pro, local-only) ---
 
 app.get('/api/sso/config', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3115,6 +3147,10 @@ app.get('/api/sso/config', (req: Request, res: Response): void => {
 });
 
 app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3135,6 +3171,10 @@ app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
 });
 
 app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3154,6 +3194,10 @@ app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
 });
 
 app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3166,6 +3210,10 @@ app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
 });
 
 app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3622,6 +3670,10 @@ app.get('/api/nodes/:id', async (req: Request, res: Response) => {
 
 // Create a new node
 app.post('/api/nodes', async (req: Request, res: Response) => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
@@ -3663,6 +3715,10 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
 
 // Update a node
 app.put('/api/nodes/:id', async (req: Request, res: Response) => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string);
@@ -3689,6 +3745,10 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
 
 // Delete a node
 app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string);

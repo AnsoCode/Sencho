@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* **api-tokens:** harden scope enforcement — fix deploy-only allowlist to match actual routes, add WebSocket scope gating, block API tokens from auth-sensitive endpoints and token self-management, add configurable expiration support (30/60/90/365 days)
+* **api-tokens:** harden scope enforcement — fix deploy-only allowlist to match actual routes, add WebSocket scope gating, block API tokens from all sensitive management endpoints (user management, SSO configuration, node management, license management, console access, password change, node-token generation, and token self-management), add configurable expiration support (30/60/90/365 days)
 
 ## [0.14.0](https://github.com/AnsoCode/Sencho/compare/v0.13.2...v0.14.0) (2026-03-28)
 

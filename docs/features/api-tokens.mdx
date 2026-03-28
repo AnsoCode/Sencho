@@ -17,15 +17,31 @@ Every token is created with one of three permission levels:
 |-------|----------------|
 | **Read Only** | `GET` requests only — view stacks, containers, metrics, and settings |
 | **Deploy Only** | Everything in Read Only, plus stack operations: deploy, down, restart, stop, start, update |
-| **Full Admin** | Unrestricted access — equivalent to an admin user session |
+| **Full Admin** | Full stack and container management — all read and write operations on stacks, containers, images, and system metrics |
 
 Choose the narrowest scope that fits your use case. A CI pipeline that only deploys stacks should use **Deploy Only**, not Full Admin.
+
+### Universal restrictions
+
+Regardless of scope, **all** API tokens are blocked from:
+
+| Category | Description |
+|----------|-------------|
+| **Password management** | Changing user passwords |
+| **User management** | Creating, updating, deleting, or listing user accounts |
+| **SSO configuration** | Viewing, creating, updating, deleting, or testing SSO providers |
+| **Node management** | Adding, updating, or deleting remote nodes |
+| **License management** | Activating or deactivating license keys |
+| **Token management** | Creating, listing, or revoking API tokens |
+| **Console access** | Generating console session tokens for interactive terminals |
+
+These restrictions ensure that API tokens cannot escalate privileges or modify the identity and infrastructure configuration of your Sencho instance. These operations require a human user session (browser login).
 
 ## Creating a token
 
 1. Open **Settings Hub** and navigate to the **API Tokens** tab (visible to Team Pro admins only).
 2. Click **Create Token**.
-3. Enter a descriptive name (e.g., "GitHub Actions deploy") and select a permission scope.
+3. Enter a descriptive name (e.g., "GitHub Actions deploy"), select a permission scope, and optionally choose an expiration period (30, 60, 90 days, or 1 year). Tokens without an expiration must be revoked manually.
 4. Click **Create**. The raw token is displayed **once** — copy it immediately.
 
 <Frame>
