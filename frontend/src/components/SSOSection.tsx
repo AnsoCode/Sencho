@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import { ProGate } from './ProGate';
+import { TeamProGate } from './TeamProGate';
 import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 interface SSOProviderConfig {
@@ -320,7 +320,7 @@ export function SSOSection() {
         try {
             const res = await apiFetch('/sso/config');
             if (res.ok) setConfigs(await res.json());
-        } catch { /* ignore - ProGate will handle non-pro */ }
+        } catch { /* ignore - TeamProGate will handle non-pro */ }
     };
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -329,7 +329,7 @@ export function SSOSection() {
     const getConfig = (provider: string) => configs.find(c => c.provider === provider) || null;
 
     return (
-        <ProGate featureName="SSO Authentication">
+        <TeamProGate featureName="SSO Authentication">
             <div className="space-y-6">
                 <div>
                     <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
@@ -360,6 +360,6 @@ export function SSOSection() {
                     <p>For OIDC providers, set the OAuth callback URL to: <code className="bg-muted px-1 rounded">{'https://<your-sencho-url>/api/auth/sso/oidc/<provider>/callback'}</code></p>
                 </div>
             </div>
-        </ProGate>
+        </TeamProGate>
     );
 }
