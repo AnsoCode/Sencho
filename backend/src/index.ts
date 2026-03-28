@@ -18,7 +18,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
@@ -27,6 +27,7 @@ import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
 import { LicenseService } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
+import { SSOService } from './services/SSOService';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
@@ -65,6 +66,10 @@ const getCookieOptions = (req: Request) => ({
 });
 
 // Middleware
+
+// Trust the first reverse proxy (nginx, Traefik, etc.) for correct req.protocol,
+// req.ip, and secure cookie detection behind a proxy.
+app.set('trust proxy', 1);
 
 // Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
 // crossOriginEmbedderPolicy: disabled - Monaco editor workers lack COEP headers.
@@ -431,6 +436,178 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
   }
 });
 
+// --- SSO Auth Routes (public, under /api/auth/sso/*) ---
+
+// Seed SSO config from environment variables on startup
+SSOService.getInstance().seedFromEnv();
+
+const ssoRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 10 : 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many SSO attempts. Please try again later.' },
+});
+
+// List enabled SSO providers (for login page)
+app.get('/api/auth/sso/providers', (_req: Request, res: Response): void => {
+  try {
+    const providers = SSOService.getInstance().getEnabledProviders();
+    res.json(providers);
+  } catch {
+    res.json([]);
+  }
+});
+
+// LDAP login
+app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      res.status(400).json({ error: 'Username and password are required' });
+      return;
+    }
+
+    const result = await SSOService.getInstance().authenticateLDAP(username, password);
+    if (!result.success || !result.user) {
+      res.status(401).json({ error: result.error || 'Authentication failed' });
+      return;
+    }
+
+    // Provision or find existing user
+    const user = SSOService.getInstance().provisionUser({
+      authProvider: 'ldap',
+      providerId: result.user.providerId,
+      preferredUsername: result.user.preferredUsername,
+      email: result.user.email,
+      role: result.user.role,
+    });
+
+    // Issue JWT (same as local login)
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const token = jwt.sign({ username: user.username, role: user.role }, settings.auth_jwt_secret, { expiresIn: '24h' });
+    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+    res.json({ success: true, message: 'Login successful' });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'LDAP login failed';
+    console.error('[SSO] LDAP login error:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// OIDC: Initiate authorization flow
+app.get('/api/auth/sso/oidc/:provider/authorize', ssoRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const provider = String(req.params.provider);
+    const validProviders = ['oidc_google', 'oidc_github', 'oidc_okta'];
+    if (!validProviders.includes(provider)) {
+      res.status(400).json({ error: 'Invalid SSO provider' });
+      return;
+    }
+
+    const baseUrl = process.env.SSO_CALLBACK_URL || `${req.protocol}://${req.get('host')}`;
+    const callbackUrl = `${baseUrl}/api/auth/sso/oidc/${provider}/callback`;
+
+    const { url, state, codeVerifier } = await SSOService.getInstance().getOIDCAuthorizationUrl(provider, callbackUrl);
+
+    // Store state + codeVerifier in an encrypted short-lived cookie
+    const cryptoSvc = (await import('./services/CryptoService')).CryptoService.getInstance();
+    const statePayload = JSON.stringify({ state, codeVerifier, provider });
+    res.cookie('sencho_sso_state', cryptoSvc.encrypt(statePayload), {
+      httpOnly: true,
+      secure: isSecureRequest(req),
+      sameSite: 'lax', // Must be lax for cross-site IdP redirect
+      maxAge: 5 * 60 * 1000, // 5 minutes
+    });
+
+    res.redirect(url);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'SSO initialization failed';
+    console.error('[SSO] OIDC authorize error:', msg);
+    res.redirect(`/?sso_error=${encodeURIComponent(msg)}`);
+  }
+});
+
+// OIDC: Callback from identity provider
+app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const provider = String(req.params.provider);
+    const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+    const oidcError = req.query.error ? String(req.query.error) : '';
+    const error_description = req.query.error_description ? String(req.query.error_description) : '';
+
+    if (oidcError) {
+      res.redirect(`/?sso_error=${encodeURIComponent(error_description || oidcError)}`);
+      return;
+    }
+
+    if (!code || !state) {
+      res.redirect('/?sso_error=Missing+authorization+code');
+      return;
+    }
+
+    // Read and validate state cookie
+    const stateCookie = req.cookies?.sencho_sso_state;
+    if (!stateCookie) {
+      res.redirect('/?sso_error=SSO+session+expired.+Please+try+again.');
+      return;
+    }
+
+    const cryptoSvc = (await import('./services/CryptoService')).CryptoService.getInstance();
+    let statePayload: { state: string; codeVerifier: string; provider: string };
+    try {
+      statePayload = JSON.parse(cryptoSvc.decrypt(stateCookie));
+    } catch {
+      res.redirect('/?sso_error=Invalid+SSO+session');
+      return;
+    }
+
+    if (statePayload.provider !== provider) {
+      res.redirect('/?sso_error=Provider+mismatch');
+      return;
+    }
+
+    const baseUrl = process.env.SSO_CALLBACK_URL || `${req.protocol}://${req.get('host')}`;
+    const callbackUrl = `${baseUrl}/api/auth/sso/oidc/${provider}/callback`;
+
+    const result = await SSOService.getInstance().handleOIDCCallback(
+      provider, callbackUrl,
+      { code, state },
+      statePayload.state,
+      statePayload.codeVerifier
+    );
+
+    // Clear state cookie
+    res.clearCookie('sencho_sso_state', { httpOnly: true, secure: isSecureRequest(req), sameSite: 'lax' });
+
+    if (!result.success || !result.user) {
+      res.redirect(`/?sso_error=${encodeURIComponent(result.error || 'Authentication failed')}`);
+      return;
+    }
+
+    // Provision or find existing user
+    const user = SSOService.getInstance().provisionUser({
+      authProvider: provider as AuthProvider,
+      providerId: result.user.providerId,
+      preferredUsername: result.user.preferredUsername,
+      email: result.user.email,
+      role: result.user.role,
+    });
+
+    // Issue JWT + cookie (same as local login)
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const token = jwt.sign({ username: user.username, role: user.role }, settings.auth_jwt_secret, { expiresIn: '24h' });
+    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+
+    res.redirect('/');
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'SSO callback failed';
+    console.error('[SSO] OIDC callback error:', msg);
+    res.redirect(`/?sso_error=${encodeURIComponent(msg)}`);
+  }
+});
+
 // Apply authentication middleware to all /api/* routes except /api/auth/*
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   if (req.path.startsWith('/auth/') || /^\/webhooks\/\d+\/trigger$/.test(req.path)) {
@@ -468,6 +645,8 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /fleet/snapshot': 'Created fleet backup',
   'DELETE /fleet/snapshot': 'Deleted fleet backup',
   'POST /fleet/snapshot/restore': 'Restored fleet backup',
+  'PUT /sso/config': 'Updated SSO configuration',
+  'DELETE /sso/config': 'Deleted SSO configuration',
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
@@ -2802,6 +2981,96 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
   } catch (error) {
     console.error('Failed to issue console token:', error);
     res.status(500).json({ error: 'Failed to issue console token' });
+  }
+});
+
+// --- SSO Config Routes (admin + Team Pro, local-only) ---
+
+app.get('/api/sso/config', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const configs = DatabaseService.getInstance().getSSOConfigs();
+    const result = configs.map(c => {
+      const parsed = JSON.parse(c.config_json);
+      // Strip encrypted secrets from response
+      delete parsed.ldapBindPassword;
+      delete parsed.oidcClientSecret;
+      return { ...parsed, provider: c.provider, enabled: c.enabled === 1 };
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('[SSO] Failed to fetch SSO configs:', error);
+    res.status(500).json({ error: 'Failed to fetch SSO configuration' });
+  }
+});
+
+app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const config = SSOService.getInstance().getProviderConfig(String(req.params.provider));
+    if (!config) {
+      res.status(404).json({ error: 'Provider not configured' });
+      return;
+    }
+    // Strip encrypted secrets
+    const result = { ...config };
+    delete result.ldapBindPassword;
+    delete result.oidcClientSecret;
+    res.json(result);
+  } catch (error) {
+    console.error('[SSO] Failed to fetch SSO config:', error);
+    res.status(500).json({ error: 'Failed to fetch SSO configuration' });
+  }
+});
+
+app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const provider = String(req.params.provider);
+    const validProviders = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta'];
+    if (!validProviders.includes(provider)) {
+      res.status(400).json({ error: 'Invalid SSO provider' });
+      return;
+    }
+    const config = { ...req.body, provider } as import('./services/SSOService').SSOProviderConfig;
+    SSOService.getInstance().saveProviderConfig(config);
+    res.json({ success: true, message: 'SSO configuration saved' });
+  } catch (error) {
+    console.error('[SSO] Failed to save SSO config:', error);
+    res.status(500).json({ error: 'Failed to save SSO configuration' });
+  }
+});
+
+app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    SSOService.getInstance().deleteProviderConfig(String(req.params.provider));
+    res.json({ success: true, message: 'SSO configuration deleted' });
+  } catch (error) {
+    console.error('[SSO] Failed to delete SSO config:', error);
+    res.status(500).json({ error: 'Failed to delete SSO configuration' });
+  }
+});
+
+app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const provider = String(req.params.provider);
+    if (provider === 'ldap') {
+      const result = await SSOService.getInstance().testLdapConnection();
+      res.json(result);
+    } else {
+      const result = await SSOService.getInstance().testOidcDiscovery(provider);
+      res.json(result);
+    }
+  } catch (error) {
+    console.error('[SSO] Connection test failed:', error);
+    res.status(500).json({ success: false, error: 'Connection test failed' });
   }
 });
 

@@ -14,6 +14,7 @@ interface AuthContextType {
   user: UserInfo | null;
   isAdmin: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  ssoLdapLogin: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   completeSetup: () => void;
   checkAuth: () => Promise<void>;
@@ -91,6 +92,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const ssoLdapLogin = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await fetch('/api/auth/sso/ldap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setAppStatus('authenticated');
+        await checkAuth();
+        return { success: true };
+      } else {
+        return { success: false, error: data.error || 'LDAP login failed' };
+      }
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', {
@@ -118,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAdmin: user?.role === 'admin',
       login,
+      ssoLdapLogin,
       logout,
       completeSetup,
       checkAuth

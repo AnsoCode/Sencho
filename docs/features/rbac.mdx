@@ -49,6 +49,14 @@ Admins can manage accounts in **Settings → Users**. From there you can:
 - **Edit** an existing user's password or role
 - **Delete** a user account
 
+## SSO auto-provisioning
+
+With a Team Pro license, users can also be created automatically when they log in via SSO (LDAP, Google, GitHub, or Okta). SSO users appear in the Users list alongside local accounts. They are assigned a role based on identity provider group membership or claim mapping.
+
+SSO users cannot log in with a password — they must always authenticate through their identity provider.
+
+To set up identity provider authentication, see [SSO Authentication →](/features/sso).
+
 ## Migration from single-admin setup
 
 When you upgrade to Sencho Pro, your existing single-admin credentials are automatically migrated to the new users table. No manual action is required - your login continues to work as before, and your account is assigned the Admin role.

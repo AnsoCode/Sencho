@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* **sso:** Team Pro SSO/LDAP integration — authenticate via LDAP/Active Directory, Google, GitHub, or Okta alongside existing password login. Auto-provisions new users on first SSO login with configurable role mapping from identity provider groups/claims. All provider credentials encrypted at rest. Configurable via environment variables or Settings UI. OIDC flows use PKCE and state-based CSRF protection. Added `trust proxy` for correct behavior behind reverse proxies.
 * **audit-log:** Team Pro audit logging — records all mutating API actions (deploy, stop, delete, settings changes, user CRUD) with user attribution, timestamp, HTTP method, status code, and node context. Searchable timeline UI with filtering by username and method. 90-day retention with automatic cleanup.
 * **security:** encryption at rest for sensitive database values — node API tokens are now encrypted with AES-256-GCM using a per-instance key stored outside the database. Existing plaintext tokens are automatically migrated on startup.
 

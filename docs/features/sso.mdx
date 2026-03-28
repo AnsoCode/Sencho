@@ -1,0 +1,193 @@
+---
+title: SSO & LDAP Authentication
+description: Authenticate with your existing identity provider — LDAP, Google, GitHub, or Okta.
+---
+
+<Note>
+  SSO requires a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+</Note>
+
+Sencho Team Pro lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication — it does not replace it.
+
+## Supported providers
+
+| Provider | Protocol | Notes |
+|----------|----------|-------|
+| **LDAP / Active Directory** | LDAP bind + search | Works with OpenLDAP, Active Directory, FreeIPA, and any LDAPv3 server |
+| **Google** | OpenID Connect | Google Workspace or personal Google accounts |
+| **GitHub** | OAuth 2.0 | GitHub personal accounts and GitHub orgs |
+| **Okta** | OpenID Connect | Any Okta org or Okta-compatible IdP |
+
+## How it works
+
+### LDAP flow
+
+1. User enters their directory username and password on the Sencho login page
+2. Sencho binds to LDAP with a service account, searches for the user, then verifies their password
+3. If this is their first login, a Sencho account is automatically created
+4. Sencho issues a JWT and the user is logged in — identical to a password login
+
+### OIDC / OAuth flow (Google, GitHub, Okta)
+
+1. User clicks the provider button on the login page (e.g., "Sign in with Google")
+2. Browser redirects to the identity provider for authentication
+3. After granting consent, the provider redirects back to Sencho with an authorization code
+4. Sencho exchanges the code for tokens, verifies the ID token, and reads user information
+5. If this is their first login, a Sencho account is automatically created
+6. Sencho issues a JWT and redirects to the dashboard
+
+All OIDC flows use **PKCE** (Proof Key for Code Exchange) and a **state parameter** for CSRF protection.
+
+## Auto-provisioning
+
+When a user logs in via SSO for the first time, Sencho automatically creates a local account:
+
+- **Username** is derived from their identity provider profile (display name, email prefix, or login handle)
+- **Role** is assigned based on [role mapping](#role-mapping) — defaults to Viewer if no mapping matches
+- **Password** is set to an unusable placeholder — SSO users cannot log in with a password
+- **Seat limits** from your license apply. If admin seats are full, the user is downgraded to Viewer. If all seats are full, login is denied with a clear error message.
+
+On subsequent logins, the existing account is reused. The user's email is updated if it changed at the provider.
+
+## Role mapping
+
+### LDAP group mapping
+
+Set the **Admin Group DN** to a group in your directory. Members of that group get the Admin role; everyone else gets the default role (Viewer).
+
+Example: If your admin group is `cn=sencho-admins,ou=groups,dc=example,dc=com`, set that as the Admin Group DN. Users who are a `member` of that group will be provisioned as Admin.
+
+### OIDC claim mapping
+
+For OIDC providers, configure two fields:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Admin Claim** | The JWT claim name that contains role information | `groups` |
+| **Admin Claim Value** | The value within that claim that grants Admin | `sencho-admins` |
+
+If the user's ID token contains a `groups` claim with the value `sencho-admins`, they get Admin. Otherwise, they get the default role.
+
+<Note>
+  Not all providers include a `groups` claim by default. You may need to configure custom claims in your identity provider's admin console.
+</Note>
+
+## Configuration
+
+SSO can be configured two ways:
+
+1. **Settings UI** — Go to **Settings → SSO** in the Sencho dashboard. Enable providers, enter credentials, and test connections from the UI. Changes take effect immediately without restarting.
+2. **Environment variables** — Set `SSO_*` variables in your Docker Compose file. These seed the database on first boot. After that, the database configuration is authoritative.
+
+### Via Settings UI
+
+Admins can manage SSO providers in **Settings → SSO**. Each provider has:
+
+- An **enable/disable** toggle
+- Provider-specific configuration fields
+- A **Test Connection** button to verify connectivity before saving
+
+<Frame>
+  <img src="/images/sso/sso-settings.png" alt="SSO settings panel showing all four identity providers" />
+</Frame>
+
+Expand a provider card to configure it. Here's the LDAP configuration form:
+
+<Frame>
+  <img src="/images/sso/sso-settings-ldap.png" alt="LDAP configuration form with server URL, bind DN, search base, and role mapping" />
+</Frame>
+
+And an OIDC provider (Google) configuration form:
+
+<Frame>
+  <img src="/images/sso/sso-settings-oidc.png" alt="Google OIDC configuration form with client ID, client secret, and role claim mapping" />
+</Frame>
+
+### Via environment variables
+
+Environment variables are useful for initial deployment or infrastructure-as-code workflows. They seed the SSO configuration on first startup. After that, changes made in the Settings UI take precedence.
+
+## SSO environment variables reference
+
+### LDAP
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_LDAP_ENABLED` | `false` | Enable LDAP authentication |
+| `SSO_LDAP_URL` | — | LDAP server URL (e.g., `ldap://ldap.example.com:389` or `ldaps://ldap.example.com:636`) |
+| `SSO_LDAP_BIND_DN` | — | Service account DN for searching users |
+| `SSO_LDAP_BIND_PASSWORD` | — | Service account password (encrypted at rest in the database) |
+| `SSO_LDAP_SEARCH_BASE` | — | Base DN for user searches (e.g., `ou=users,dc=example,dc=com`) |
+| `SSO_LDAP_SEARCH_FILTER` | `(uid={{username}})` | LDAP filter template. Use `(sAMAccountName={{username}})` for Active Directory |
+| `SSO_LDAP_ADMIN_GROUP_DN` | — | DN of the group whose members receive the Admin role |
+| `SSO_LDAP_DEFAULT_ROLE` | `viewer` | Role assigned to LDAP users not in the admin group |
+| `SSO_LDAP_TLS_REJECT_UNAUTHORIZED` | `true` | Whether to verify the LDAP server's TLS certificate |
+
+### Google OIDC
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_OIDC_GOOGLE_ENABLED` | `false` | Enable Google SSO |
+| `SSO_OIDC_GOOGLE_CLIENT_ID` | — | OAuth client ID from Google Cloud Console |
+| `SSO_OIDC_GOOGLE_CLIENT_SECRET` | — | OAuth client secret (encrypted at rest) |
+
+### GitHub OAuth
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_OIDC_GITHUB_ENABLED` | `false` | Enable GitHub SSO |
+| `SSO_OIDC_GITHUB_CLIENT_ID` | — | OAuth app client ID from GitHub Developer Settings |
+| `SSO_OIDC_GITHUB_CLIENT_SECRET` | — | OAuth app client secret (encrypted at rest) |
+
+### Okta OIDC
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_OIDC_OKTA_ENABLED` | `false` | Enable Okta SSO |
+| `SSO_OIDC_OKTA_ISSUER_URL` | — | Okta issuer URL (e.g., `https://dev-123456.okta.com`) |
+| `SSO_OIDC_OKTA_CLIENT_ID` | — | Okta application client ID |
+| `SSO_OIDC_OKTA_CLIENT_SECRET` | — | Okta client secret (encrypted at rest) |
+
+### General
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_OIDC_ADMIN_CLAIM` | `groups` | JWT claim name inspected for Admin role mapping |
+| `SSO_OIDC_ADMIN_CLAIM_VALUE` | `sencho-admins` | Value in the admin claim that maps to the Admin role |
+| `SSO_DEFAULT_ROLE` | `viewer` | Default role for all SSO users when no mapping matches |
+| `SSO_CALLBACK_URL` | auto-detect | External base URL for OAuth callback URLs (see below) |
+
+## Reverse proxy and callback URLs
+
+<Warning>
+  If Sencho is behind a reverse proxy (nginx, Traefik, Caddy), you **must** set `SSO_CALLBACK_URL` to your external URL. Otherwise, OAuth callbacks will fail.
+</Warning>
+
+Set `SSO_CALLBACK_URL` to the URL users access Sencho from — for example, `https://sencho.example.com`. Sencho uses this to construct the OAuth redirect URI that your identity provider calls back to.
+
+If not set, Sencho auto-detects the URL from the request's `Host` header and protocol, which works for direct access but fails behind proxies that rewrite the host.
+
+## Security
+
+- **PKCE** — All OIDC flows use `code_challenge_method=S256` to prevent authorization code interception
+- **State parameter** — A cryptographic random value protects against CSRF attacks on the OAuth callback
+- **Encrypted secrets** — LDAP bind passwords and OIDC client secrets are encrypted at rest with AES-256-GCM
+- **No local password** — SSO users are created with an unusable password hash. They cannot bypass SSO by using the password login form
+- **Admin-only configuration** — Only Team Pro administrators can enable or configure SSO providers
+
+## Troubleshooting
+
+### LDAP connection refused
+Verify the LDAP server is reachable from the Sencho container. If LDAP is on the host machine, use `host.docker.internal` (Docker Desktop) or the host's LAN IP address — not `localhost`.
+
+### TLS certificate errors
+If your LDAP server uses a self-signed certificate, set `SSO_LDAP_TLS_REJECT_UNAUTHORIZED=false`. For production, install a trusted certificate instead.
+
+### OAuth callback URL mismatch
+The redirect URI registered in your identity provider must exactly match what Sencho sends. Check:
+1. `SSO_CALLBACK_URL` is set to your external URL (e.g., `https://sencho.example.com`)
+2. The callback URL in your provider's settings is `https://sencho.example.com/api/auth/sso/oidc/<provider>/callback`
+3. Protocol matches — don't mix `http` and `https`
+
+### SSO buttons not appearing on login page
+SSO providers only appear on the login page when they are both **configured** and **enabled**. Check Settings → SSO to verify the provider is active.

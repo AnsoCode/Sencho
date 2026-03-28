@@ -27,6 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from './TierBadge';
 import { ProGate } from './ProGate';
+import { SSOSection } from './SSOSection';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -48,7 +49,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'users' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
+type SectionId = 'account' | 'license' | 'users' | 'sso' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
 
 interface WebhookItem {
     id: number;
@@ -656,7 +657,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -996,6 +997,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         )}
                         {!isRemote && isAdmin && (
                             <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" />
+                        )}
+                        {!isRemote && isAdmin && (
+                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" />
                         )}
                         <NavButton
                             section="system"
@@ -1450,6 +1454,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     {activeSection === 'users' && (
                         <UsersSection />
+                    )}
+
+                    {activeSection === 'sso' && (
+                        <SSOSection />
                     )}
 
                     {activeSection === 'developer' && (
