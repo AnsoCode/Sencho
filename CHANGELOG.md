@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0](https://github.com/AnsoCode/Sencho/compare/v0.12.0...v0.13.0) (2026-03-28)
+
+
+### Added
+
+* SSO & LDAP authentication for Team Pro ([#209](https://github.com/AnsoCode/Sencho/issues/209)) ([bd4008f](https://github.com/AnsoCode/Sencho/commit/bd4008f5091122f74967b4debdd4c4f046693f46))
+
 ## [0.12.0](https://github.com/AnsoCode/Sencho/compare/v0.11.0...v0.12.0) (2026-03-28)
 
 
