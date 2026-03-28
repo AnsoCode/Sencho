@@ -16,7 +16,7 @@ Every token is created with one of three permission levels:
 | Scope | Allowed actions |
 |-------|----------------|
 | **Read Only** | `GET` requests only — view stacks, containers, metrics, and settings |
-| **Deploy Only** | Everything in Read Only, plus deploy-related actions (up, down, restart, pull) |
+| **Deploy Only** | Everything in Read Only, plus stack operations: deploy, down, restart, stop, start, update |
 | **Full Admin** | Unrestricted access — equivalent to an admin user session |
 
 Choose the narrowest scope that fits your use case. A CI pipeline that only deploys stacks should use **Deploy Only**, not Full Admin.
@@ -51,8 +51,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
   run: |
     curl -X POST \
       -H "Authorization: Bearer ${{ secrets.SENCHO_TOKEN }}" \
-      https://your-sencho-instance/api/compose/up \
-      -d '{"stack": "my-app"}'
+      https://your-sencho-instance/api/stacks/my-app/deploy
 ```
 </CodeGroup>
 
@@ -75,5 +74,5 @@ Click the trash icon next to any token in the API Tokens settings tab. Revocatio
 
 - **Hashed storage** — Only a SHA-256 hash of the token is stored in the database. The raw token is never persisted.
 - **Audit trail** — All actions performed via API tokens are recorded in the [Audit Log](/features/audit-log) under the creating user's username.
-- **No expiry by default** — Tokens do not expire automatically. Revoke tokens manually when they are no longer needed.
+- **Optional expiry** — Tokens can be created with an expiration period (30 days, 60 days, 90 days, or 1 year). Tokens without an expiry must be revoked manually when no longer needed.
 - **Scope enforcement** — Permission checks happen at the middleware level before any route handler executes, ensuring consistent enforcement across all endpoints.

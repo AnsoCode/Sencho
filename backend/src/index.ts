@@ -253,7 +253,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       const creator = DatabaseService.getInstance().getUserById(apiToken.user_id);
       const roleMap: Record<string, 'admin' | 'viewer'> = {
         'read-only': 'viewer',
-        'deploy-only': 'viewer',
+        'deploy-only': 'admin',
         'full-admin': 'admin',
       };
       req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer' };
@@ -395,6 +395,10 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
 
 // Update password endpoint - any authenticated user can change their own password
 app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot change passwords.', code: 'SCOPE_DENIED' });
+    return;
+  }
   try {
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) {
@@ -448,6 +452,10 @@ app.get('/api/auth/check', authMiddleware, (req: Request, res: Response): void =
 // Generate a long-lived node proxy token for Sencho-to-Sencho authentication
 app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot generate node tokens.', code: 'SCOPE_DENIED' });
+    return;
+  }
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
@@ -759,11 +767,12 @@ const requireAdmin = (req: Request, res: Response): boolean => {
 
 // Scope enforcement for API tokens — restricts which endpoints a token can reach.
 const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
-  /^\/api\/stacks\/[^/]+\/up$/,
+  /^\/api\/stacks\/[^/]+\/deploy$/,
   /^\/api\/stacks\/[^/]+\/down$/,
   /^\/api\/stacks\/[^/]+\/restart$/,
-  /^\/api\/stacks\/[^/]+\/pull$/,
-  /^\/api\/compose\/(up|down|start|stop|restart|pull)$/,
+  /^\/api\/stacks\/[^/]+\/stop$/,
+  /^\/api\/stacks\/[^/]+\/start$/,
+  /^\/api\/stacks\/[^/]+\/update$/,
 ];
 
 const enforceApiTokenScope = (req: Request, res: Response, next: NextFunction): void => {
@@ -1897,9 +1906,41 @@ server.on('upgrade', async (req, socket, head) => {
     // interactive terminal access (host console or container exec).
     const isProxyToken = decoded.scope === 'node_proxy';
 
+    // API token scope enforcement for WebSocket connections
+    let wsApiTokenScope: string | null = null;
+    if (decoded.scope === 'api_token') {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const apiToken = DatabaseService.getInstance().getApiTokenByHash(tokenHash);
+      if (!apiToken || apiToken.revoked_at) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      if (apiToken.expires_at && apiToken.expires_at < Date.now()) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      DatabaseService.getInstance().updateApiTokenLastUsed(apiToken.id);
+      wsApiTokenScope = apiToken.scope;
+    }
+
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
+
+    // Gate WebSocket paths by API token scope
+    if (wsApiTokenScope) {
+      const isLogPath = /^\/api\/stacks\/[^/]+\/logs$/.test(pathname);
+      const isNotifPath = pathname === '/ws/notifications';
+      if (wsApiTokenScope === 'read-only' || wsApiTokenScope === 'deploy-only') {
+        if (!isLogPath && !isNotifPath) {
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
+    }
 
     // Resolve node context from query param
     const nodeIdParam = parsedUrl.searchParams.get('nodeId');
@@ -3167,12 +3208,20 @@ app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => 
 // --- API Token Routes (Team Pro, admin-only, local-only) ---
 
 app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
-    const { name, scope } = req.body;
+    const { name, scope, expires_in } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Token name is required.' });
+      return;
+    }
+    if (name.trim().length > 100) {
+      res.status(400).json({ error: 'Token name must be 100 characters or fewer.' });
       return;
     }
     const validScopes = ['read-only', 'deploy-only', 'full-admin'];
@@ -3180,6 +3229,12 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
       res.status(400).json({ error: `Scope must be one of: ${validScopes.join(', ')}` });
       return;
     }
+    const validExpiry = [30, 60, 90, 365];
+    if (expires_in !== undefined && expires_in !== null && !validExpiry.includes(expires_in)) {
+      res.status(400).json({ error: `expires_in must be one of: ${validExpiry.join(', ')} (days), or null for no expiry.` });
+      return;
+    }
+    const expiresAt = typeof expires_in === 'number' ? Date.now() + expires_in * 24 * 60 * 60 * 1000 : null;
 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
@@ -3203,7 +3258,7 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
       scope: scope as 'read-only' | 'deploy-only' | 'full-admin',
       user_id: user.id,
       created_at: Date.now(),
-      expires_at: null,
+      expires_at: expiresAt,
     });
 
     res.status(201).json({ id, token: rawToken });
@@ -3214,6 +3269,10 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
 });
 
 app.get('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
@@ -3230,6 +3289,10 @@ app.get('/api/api-tokens', authMiddleware, async (req: Request, res: Response): 
 });
 
 app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
