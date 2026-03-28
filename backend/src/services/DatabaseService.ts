@@ -60,11 +60,25 @@ export interface WebhookExecution {
     executed_at: number;
 }
 
+export type AuthProvider = 'local' | 'ldap' | 'oidc_google' | 'oidc_github' | 'oidc_okta';
+
 export interface User {
     id: number;
     username: string;
     password_hash: string;
     role: 'admin' | 'viewer';
+    auth_provider: AuthProvider;
+    provider_id: string | null;
+    email: string | null;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface SSOConfig {
+    id: number;
+    provider: string;
+    enabled: number;
+    config_json: string;
     created_at: number;
     updated_at: number;
 }
@@ -127,6 +141,7 @@ export class DatabaseService {
         this.migrateJsonConfig(dataDir);
         this.migrateAdminToUsersTable();
         this.migrateEncryptNodeTokens();
+        this.migrateSSOColumns();
     }
 
     public static getInstance(): DatabaseService {
@@ -364,6 +379,27 @@ export class DatabaseService {
                 this.db.prepare('UPDATE nodes SET api_token = ? WHERE id = ?').run(encrypted, row.id);
             }
         }
+    }
+
+    private migrateSSOColumns(): void {
+        const maybeAddCol = (table: string, col: string, def: string) => {
+            try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch { /* already exists */ }
+        };
+        maybeAddCol('users', 'auth_provider', "TEXT NOT NULL DEFAULT 'local'");
+        maybeAddCol('users', 'provider_id', 'TEXT DEFAULT NULL');
+        maybeAddCol('users', 'email', 'TEXT DEFAULT NULL');
+
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS sso_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL UNIQUE,
+                enabled INTEGER DEFAULT 0,
+                config_json TEXT NOT NULL DEFAULT '{}',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider, provider_id) WHERE provider_id IS NOT NULL;
+        `);
     }
 
     // --- Agents ---
@@ -720,7 +756,7 @@ export class DatabaseService {
     // --- Users ---
 
     public getUsers(): Omit<User, 'password_hash'>[] {
-        return this.db.prepare('SELECT id, username, role, created_at, updated_at FROM users ORDER BY created_at ASC').all() as Omit<User, 'password_hash'>[];
+        return this.db.prepare('SELECT id, username, role, auth_provider, provider_id, email, created_at, updated_at FROM users ORDER BY created_at ASC').all() as Omit<User, 'password_hash'>[];
     }
 
     public getUser(id: number): User | undefined {
@@ -731,21 +767,26 @@ export class DatabaseService {
         return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined;
     }
 
-    public addUser(user: { username: string; password_hash: string; role: 'admin' | 'viewer' }): number {
+    public getUserByProviderIdentity(authProvider: string, providerId: string): User | undefined {
+        return this.db.prepare('SELECT * FROM users WHERE auth_provider = ? AND provider_id = ?').get(authProvider, providerId) as User | undefined;
+    }
+
+    public addUser(user: { username: string; password_hash: string; role: 'admin' | 'viewer'; auth_provider?: AuthProvider; provider_id?: string | null; email?: string | null }): number {
         const now = Date.now();
         const result = this.db.prepare(
-            'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-        ).run(user.username, user.password_hash, user.role, now, now);
+            'INSERT INTO users (username, password_hash, role, auth_provider, provider_id, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(user.username, user.password_hash, user.role, user.auth_provider ?? 'local', user.provider_id ?? null, user.email ?? null, now, now);
         return result.lastInsertRowid as number;
     }
 
-    public updateUser(id: number, updates: Partial<{ username: string; password_hash: string; role: string }>): void {
+    public updateUser(id: number, updates: Partial<{ username: string; password_hash: string; role: string; email: string }>): void {
         const fields: string[] = [];
         const values: (string | number)[] = [];
 
         if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
         if (updates.password_hash !== undefined) { fields.push('password_hash = ?'); values.push(updates.password_hash); }
         if (updates.role !== undefined) { fields.push('role = ?'); values.push(updates.role); }
+        if (updates.email !== undefined) { fields.push('email = ?'); values.push(updates.email); }
 
         if (fields.length === 0) return;
 
@@ -771,6 +812,35 @@ export class DatabaseService {
         return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'viewer'").get() as { count: number })?.count || 0;
     }
 
+    // --- SSO Config ---
+
+    public getSSOConfigs(): SSOConfig[] {
+        return this.db.prepare('SELECT * FROM sso_config ORDER BY provider ASC').all() as SSOConfig[];
+    }
+
+    public getSSOConfig(provider: string): SSOConfig | undefined {
+        return this.db.prepare('SELECT * FROM sso_config WHERE provider = ?').get(provider) as SSOConfig | undefined;
+    }
+
+    public getEnabledSSOConfigs(): SSOConfig[] {
+        return this.db.prepare('SELECT * FROM sso_config WHERE enabled = 1 ORDER BY provider ASC').all() as SSOConfig[];
+    }
+
+    public upsertSSOConfig(provider: string, enabled: boolean, configJson: string): void {
+        const now = Date.now();
+        const existing = this.getSSOConfig(provider);
+        if (existing) {
+            this.db.prepare('UPDATE sso_config SET enabled = ?, config_json = ?, updated_at = ? WHERE provider = ?')
+                .run(enabled ? 1 : 0, configJson, now, provider);
+        } else {
+            this.db.prepare('INSERT INTO sso_config (provider, enabled, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+                .run(provider, enabled ? 1 : 0, configJson, now, now);
+        }
+    }
+
+    public deleteSSOConfig(provider: string): void {
+        this.db.prepare('DELETE FROM sso_config WHERE provider = ?').run(provider);
+    }
 
     // --- Fleet Snapshots ---
 

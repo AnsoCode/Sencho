@@ -74,7 +74,8 @@
         "pages": [
           "getting-started/introduction",
           "getting-started/quickstart",
-          "getting-started/configuration"
+          "getting-started/configuration",
+          "getting-started/sso-quickstart"
         ]
       },
       {
@@ -96,6 +97,7 @@
           "features/atomic-deployments",
           "features/fleet-backups",
           "features/audit-log",
+          "features/sso",
           "features/licensing"
         ]
       },

@@ -27,6 +27,20 @@ When you point `COMPOSE_DIR` at a directory, Sencho expects each stack to live i
 | `DATA_DIR` | `/app/data` | Directory where Sencho stores its SQLite database, node registry, and cached metrics. |
 | `NODE_ENV` | `production` | Set automatically in the Docker image. Only change this for local development. |
 
+## SSO environment variables
+
+If you use SSO (Team Pro), configure your identity providers via environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SSO_LDAP_ENABLED` | Enable LDAP/AD authentication |
+| `SSO_OIDC_GOOGLE_ENABLED` | Enable Google SSO |
+| `SSO_OIDC_GITHUB_ENABLED` | Enable GitHub SSO |
+| `SSO_OIDC_OKTA_ENABLED` | Enable Okta SSO |
+| `SSO_CALLBACK_URL` | External base URL for OAuth callbacks (required behind reverse proxy) |
+
+For the full SSO configuration reference and setup guides, see [SSO Authentication →](/features/sso).
+
 ## Required volume mounts
 
 ### Docker socket

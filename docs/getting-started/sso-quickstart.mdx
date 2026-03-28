@@ -1,0 +1,153 @@
+---
+title: SSO Setup Guide
+description: Step-by-step instructions for connecting Sencho to your identity provider.
+---
+
+<Note>
+  SSO requires a Sencho **Team Pro** license. You can configure SSO via environment variables (shown below) or from the Settings UI after first boot.
+</Note>
+
+## Google OIDC
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create a new **OAuth 2.0 Client ID** (Application type: Web application)
+3. Add an **Authorized redirect URI**: `https://sencho.example.com/api/auth/sso/oidc/oidc_google/callback`
+4. Copy the **Client ID** and **Client Secret**
+5. Add to your `docker-compose.yml`:
+
+```yaml
+services:
+  sencho:
+    image: saelix/sencho:latest
+    environment:
+      - COMPOSE_DIR=/opt/compose
+      - SSO_OIDC_GOOGLE_ENABLED=true
+      - SSO_OIDC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+      - SSO_OIDC_GOOGLE_CLIENT_SECRET=your-client-secret
+      - SSO_CALLBACK_URL=https://sencho.example.com
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sencho-data:/app/data
+      - /opt/compose:/opt/compose
+```
+
+Restart Sencho. A "Google" button will appear on the login page.
+
+## GitHub OAuth
+
+1. Go to **GitHub → Settings → Developer Settings → [OAuth Apps](https://github.com/settings/developers)**
+2. Click **New OAuth App**
+3. Set:
+   - **Application name**: Sencho
+   - **Homepage URL**: `https://sencho.example.com`
+   - **Authorization callback URL**: `https://sencho.example.com/api/auth/sso/oidc/oidc_github/callback`
+4. Copy the **Client ID** and generate a **Client Secret**
+5. Add to your `docker-compose.yml`:
+
+```yaml
+    environment:
+      - SSO_OIDC_GITHUB_ENABLED=true
+      - SSO_OIDC_GITHUB_CLIENT_ID=your-github-client-id
+      - SSO_OIDC_GITHUB_CLIENT_SECRET=your-github-client-secret
+      - SSO_CALLBACK_URL=https://sencho.example.com
+```
+
+## Okta OIDC
+
+1. In the [Okta Admin Console](https://admin.okta.com), go to **Applications → Create App Integration**
+2. Select **OIDC - OpenID Connect** and **Web Application**
+3. Set the **Sign-in redirect URI** to: `https://sencho.example.com/api/auth/sso/oidc/oidc_okta/callback`
+4. Note your **Okta domain** (e.g., `https://dev-123456.okta.com`)
+5. Copy the **Client ID** and **Client Secret**
+6. Add to your `docker-compose.yml`:
+
+```yaml
+    environment:
+      - SSO_OIDC_OKTA_ENABLED=true
+      - SSO_OIDC_OKTA_ISSUER_URL=https://dev-123456.okta.com
+      - SSO_OIDC_OKTA_CLIENT_ID=your-okta-client-id
+      - SSO_OIDC_OKTA_CLIENT_SECRET=your-okta-client-secret
+      - SSO_CALLBACK_URL=https://sencho.example.com
+```
+
+## LDAP / Active Directory
+
+1. Identify your LDAP server's URL and port (default: `389` for LDAP, `636` for LDAPS)
+2. Create a **read-only service account** (bind DN) that can search the user directory
+3. Determine the **search base** (where users live in the directory tree)
+4. Choose the right **search filter**:
+   - OpenLDAP: `(uid={{username}})`
+   - Active Directory: `(sAMAccountName={{username}})`
+5. Optionally identify an **admin group DN** for role mapping
+6. Add to your `docker-compose.yml`:
+
+```yaml
+    environment:
+      - SSO_LDAP_ENABLED=true
+      - SSO_LDAP_URL=ldap://ldap.example.com:389
+      - SSO_LDAP_BIND_DN=cn=readonly,dc=example,dc=com
+      - SSO_LDAP_BIND_PASSWORD=your-bind-password
+      - SSO_LDAP_SEARCH_BASE=ou=users,dc=example,dc=com
+      - SSO_LDAP_SEARCH_FILTER=(uid={{username}})
+      - SSO_LDAP_ADMIN_GROUP_DN=cn=sencho-admins,ou=groups,dc=example,dc=com
+      - SSO_LDAP_DEFAULT_ROLE=viewer
+```
+
+After starting Sencho, verify the connection in **Settings → SSO → Test Connection**.
+
+<Warning>
+  If your LDAP server is on the Docker host (not in a container), use the host's LAN IP or `host.docker.internal` (Docker Desktop) instead of `localhost`.
+</Warning>
+
+## Role mapping
+
+By default, all SSO users are assigned the **Viewer** role. To grant Admin to specific users:
+
+**For LDAP**: Set `SSO_LDAP_ADMIN_GROUP_DN` to the DN of your admin group. Users who are members of that group will be provisioned as Admin.
+
+**For OIDC**: Set these two variables:
+
+```yaml
+    environment:
+      - SSO_OIDC_ADMIN_CLAIM=groups
+      - SSO_OIDC_ADMIN_CLAIM_VALUE=sencho-admins
+```
+
+This tells Sencho to check the `groups` claim in the OIDC ID token. If it contains `sencho-admins`, the user gets Admin.
+
+## Full docker-compose.yml example with SSO
+
+```yaml
+services:
+  sencho:
+    image: saelix/sencho:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sencho-data:/app/data
+      - /opt/compose:/opt/compose
+    environment:
+      - COMPOSE_DIR=/opt/compose
+      - DATA_DIR=/app/data
+      # Google SSO
+      - SSO_OIDC_GOOGLE_ENABLED=true
+      - SSO_OIDC_GOOGLE_CLIENT_ID=your-google-client-id
+      - SSO_OIDC_GOOGLE_CLIENT_SECRET=your-google-secret
+      # LDAP
+      - SSO_LDAP_ENABLED=true
+      - SSO_LDAP_URL=ldap://ldap.example.com:389
+      - SSO_LDAP_BIND_DN=cn=readonly,dc=example,dc=com
+      - SSO_LDAP_BIND_PASSWORD=your-bind-password
+      - SSO_LDAP_SEARCH_BASE=ou=users,dc=example,dc=com
+      - SSO_LDAP_SEARCH_FILTER=(sAMAccountName={{username}})
+      - SSO_LDAP_ADMIN_GROUP_DN=cn=sencho-admins,ou=groups,dc=example,dc=com
+      # Role mapping & callback
+      - SSO_OIDC_ADMIN_CLAIM=groups
+      - SSO_OIDC_ADMIN_CLAIM_VALUE=sencho-admins
+      - SSO_DEFAULT_ROLE=viewer
+      - SSO_CALLBACK_URL=https://sencho.example.com
+```
+
+For the complete list of environment variables and their defaults, see [SSO & LDAP Authentication →](/features/sso#sso-environment-variables-reference).
