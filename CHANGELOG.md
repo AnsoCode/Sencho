@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2](https://github.com/AnsoCode/Sencho/compare/v0.13.1...v0.13.2) (2026-03-28)
+
+
+### Fixed
+
+* **license:** default 14-day trial to Personal Pro instead of Team Pro ([#216](https://github.com/AnsoCode/Sencho/issues/216)) ([f99abe9](https://github.com/AnsoCode/Sencho/commit/f99abe907d5a39f4f32fb08bf25eda9b00dae88b))
+
 ## [Unreleased]
 
 ### Changed
