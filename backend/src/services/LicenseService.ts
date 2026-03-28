@@ -179,12 +179,12 @@ export class LicenseService {
 
     /**
      * Get the license variant (personal or team) from stored metadata.
-     * Trial licenses default to "team" so users can explore all features.
+     * Trial licenses default to "personal" — Team Pro features require a Team Pro license.
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
         const status = db.getSystemState('license_status');
-        if (status === 'trial') return 'team';
+        if (status === 'trial') return 'personal';
         const variantName = db.getSystemState('license_variant_name');
         if (!variantName) return null;
         const lower = variantName.toLowerCase();
