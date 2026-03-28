@@ -998,7 +998,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         {!isRemote && isAdmin && (
                             <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" />
                         )}
-                        {!isRemote && isAdmin && (
+                        {!isRemote && isAdmin && isPro && license?.variant === 'team' && (
                             <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" />
                         )}
                         <NavButton
