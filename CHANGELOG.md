@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **audit-log:** Team Pro audit logging — records all mutating API actions (deploy, stop, delete, settings changes, user CRUD) with user attribution, timestamp, HTTP method, status code, and node context. Searchable timeline UI with filtering by username and method. 90-day retention with automatic cleanup.
+* **security:** encryption at rest for sensitive database values — node API tokens are now encrypted with AES-256-GCM using a per-instance key stored outside the database. Existing plaintext tokens are automatically migrated on startup.
+
+### Removed
+
+* **database:** dropped 9 legacy SSH/TLS columns from the nodes table (`host`, `port`, `ssh_port`, `ssh_user`, `ssh_password`, `ssh_key`, `tls_ca`, `tls_cert`, `tls_key`) — these were superseded by the Distributed API model in v0.7.0 and have been inert since
+* **frontend:** removed orphaned `MaintenanceModal.tsx` component (dead code, never imported — prune functionality lives in `ResourcesView.tsx`)
+
 ### Changed
 
 * **settings/license:** replaced static "View Pricing" button with dynamic upgrade cards — Community users see Personal Pro and Team Pro options with feature highlights; Personal Pro users see Team Pro upgrade only; each card links directly to Lemon Squeezy checkout

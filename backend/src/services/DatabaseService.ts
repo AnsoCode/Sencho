@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { CryptoService } from './CryptoService';
 
 export interface Agent {
     id?: number;
@@ -96,6 +97,18 @@ export interface FleetSnapshotFile {
     content: string;
 }
 
+export interface AuditLogEntry {
+    id: number;
+    timestamp: number;
+    username: string;
+    method: string;
+    path: string;
+    status_code: number;
+    node_id: number | null;
+    ip_address: string;
+    summary: string;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -113,6 +126,7 @@ export class DatabaseService {
         this.initSchema();
         this.migrateJsonConfig(dataDir);
         this.migrateAdminToUsersTable();
+        this.migrateEncryptNodeTokens();
     }
 
     public static getInstance(): DatabaseService {
@@ -250,6 +264,21 @@ export class DatabaseService {
       );
 
       CREATE INDEX IF NOT EXISTS idx_snapshot_files_snapshot ON fleet_snapshot_files(snapshot_id);
+
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status_code INTEGER NOT NULL DEFAULT 0,
+        node_id INTEGER,
+        ip_address TEXT NOT NULL DEFAULT '',
+        summary TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -261,16 +290,11 @@ export class DatabaseService {
         maybeAddCol('nodes', 'api_url', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'api_token', "TEXT DEFAULT ''");
 
-        // Legacy SSH/TLS columns preserved for DB backward-compat (no longer read or written)
-        maybeAddCol('nodes', 'host', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'port', 'INTEGER DEFAULT 2375');
-        maybeAddCol('nodes', 'ssh_port', 'INTEGER DEFAULT 22');
-        maybeAddCol('nodes', 'ssh_user', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'ssh_password', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'ssh_key', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'tls_ca', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'tls_cert', "TEXT DEFAULT ''");
-        maybeAddCol('nodes', 'tls_key', "TEXT DEFAULT ''");
+        // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
+        const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
+        for (const col of legacyCols) {
+            try { this.db.prepare(`ALTER TABLE nodes DROP COLUMN ${col}`).run(); } catch { /* already dropped or never existed */ }
+        }
 
         // Initialize default global settings if they don't exist
         const stmt = this.db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
@@ -327,6 +351,17 @@ export class DatabaseService {
                 }
             } catch (err) {
                 console.error('Failed to migrate sencho.json:', err);
+            }
+        }
+    }
+
+    private migrateEncryptNodeTokens(): void {
+        const crypto = CryptoService.getInstance();
+        const rows = this.db.prepare("SELECT id, api_token FROM nodes WHERE api_token != '' AND api_token IS NOT NULL").all() as Array<{ id: number; api_token: string }>;
+        for (const row of rows) {
+            if (!crypto.isEncrypted(row.api_token)) {
+                const encrypted = crypto.encrypt(row.api_token);
+                this.db.prepare('UPDATE nodes SET api_token = ? WHERE id = ?').run(encrypted, row.id);
             }
         }
     }
@@ -511,32 +546,39 @@ export class DatabaseService {
 
     // --- Nodes ---
 
+    private decryptNodeRow(row: any): Node {
+        const crypto = CryptoService.getInstance();
+        return {
+            ...row,
+            is_default: row.is_default === 1,
+            api_token: row.api_token ? crypto.decrypt(row.api_token) : '',
+        };
+    }
+
     public getNodes(): Node[] {
         const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes ORDER BY is_default DESC, name ASC');
-        return stmt.all().map((row: any) => ({
-            ...row,
-            is_default: row.is_default === 1
-        }));
+        return stmt.all().map((row: any) => this.decryptNodeRow(row));
     }
 
     public getNode(id: number): Node | undefined {
         const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE id = ?');
         const row = stmt.get(id) as any;
         if (!row) return undefined;
-        return { ...row, is_default: row.is_default === 1 };
+        return this.decryptNodeRow(row);
     }
 
     public getDefaultNode(): Node | undefined {
         const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE is_default = 1 LIMIT 1');
         const row = stmt.get() as any;
         if (!row) return undefined;
-        return { ...row, is_default: row.is_default === 1 };
+        return this.decryptNodeRow(row);
     }
 
     public addNode(node: Omit<Node, 'id' | 'status' | 'created_at'>): number {
         if (node.is_default) {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
+        const crypto = CryptoService.getInstance();
         const stmt = this.db.prepare(
             'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at, api_url, api_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
@@ -548,7 +590,7 @@ export class DatabaseService {
             'unknown',
             Date.now(),
             node.api_url || '',
-            node.api_token || ''
+            node.api_token ? crypto.encrypt(node.api_token) : ''
         );
         return result.lastInsertRowid as number;
     }
@@ -570,7 +612,10 @@ export class DatabaseService {
         if (updates.is_default !== undefined) { fields.push('is_default = ?'); values.push(updates.is_default ? 1 : 0); }
         if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
         if (updates.api_url !== undefined) { fields.push('api_url = ?'); values.push(updates.api_url); }
-        if (updates.api_token !== undefined) { fields.push('api_token = ?'); values.push(updates.api_token); }
+        if (updates.api_token !== undefined) {
+            fields.push('api_token = ?');
+            values.push(updates.api_token ? CryptoService.getInstance().encrypt(updates.api_token) : '');
+        }
 
         if (fields.length === 0) return;
 
@@ -776,5 +821,60 @@ export class DatabaseService {
 
     public getSnapshotCount(): number {
         return (this.db.prepare('SELECT COUNT(*) as count FROM fleet_snapshots').get() as { count: number })?.count || 0;
+    }
+
+    // --- Audit Log ---
+
+    public insertAuditLog(entry: Omit<AuditLogEntry, 'id'>): void {
+        this.db.prepare(
+            'INSERT INTO audit_log (timestamp, username, method, path, status_code, node_id, ip_address, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(entry.timestamp, entry.username, entry.method, entry.path, entry.status_code, entry.node_id, entry.ip_address, entry.summary);
+    }
+
+    public getAuditLogs(filters: {
+        page?: number;
+        limit?: number;
+        username?: string;
+        method?: string;
+        from?: number;
+        to?: number;
+    } = {}): { entries: AuditLogEntry[]; total: number } {
+        const page = filters.page ?? 1;
+        const limit = filters.limit ?? 50;
+        const offset = (page - 1) * limit;
+
+        const conditions: string[] = [];
+        const params: (string | number)[] = [];
+
+        if (filters.username) {
+            conditions.push('username = ?');
+            params.push(filters.username);
+        }
+        if (filters.method) {
+            conditions.push('method = ?');
+            params.push(filters.method);
+        }
+        if (filters.from) {
+            conditions.push('timestamp >= ?');
+            params.push(filters.from);
+        }
+        if (filters.to) {
+            conditions.push('timestamp <= ?');
+            params.push(filters.to);
+        }
+
+        const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const total = (this.db.prepare(`SELECT COUNT(*) as count FROM audit_log ${where}`).get(...params) as { count: number })?.count || 0;
+        const entries = this.db.prepare(
+            `SELECT * FROM audit_log ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+        ).all(...params, limit, offset) as AuditLogEntry[];
+
+        return { entries, total };
+    }
+
+    public cleanupOldAuditLogs(daysToKeep = 90): void {
+        const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
+        this.db.prepare('DELETE FROM audit_log WHERE timestamp < ?').run(cutoff);
     }
 }

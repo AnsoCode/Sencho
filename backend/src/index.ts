@@ -440,12 +440,102 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
+// Audit logging middleware — records all mutating API actions for Team Pro accountability.
+// Runs for POST/PUT/DELETE/PATCH on /api/* routes. Uses res.on('finish') to capture status code.
+const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
+  'POST /stacks': 'Created stack',
+  'DELETE /stacks': 'Deleted stack',
+  'POST /compose/up': 'Deployed stack',
+  'POST /compose/down': 'Stopped stack',
+  'POST /compose/start': 'Started stack',
+  'POST /compose/stop': 'Stopped stack',
+  'POST /compose/restart': 'Restarted stack',
+  'POST /compose/pull': 'Pulled stack images',
+  'POST /system/prune': 'Pruned system resources',
+  'POST /nodes': 'Added node',
+  'PUT /nodes': 'Updated node',
+  'DELETE /nodes': 'Deleted node',
+  'POST /users': 'Created user',
+  'DELETE /users': 'Deleted user',
+  'PUT /users': 'Updated user',
+  'POST /license/activate': 'Activated license',
+  'POST /license/deactivate': 'Deactivated license',
+  'POST /agents': 'Updated notification agent',
+  'POST /webhooks': 'Created webhook',
+  'PUT /webhooks': 'Updated webhook',
+  'DELETE /webhooks': 'Deleted webhook',
+  'PUT /settings': 'Updated settings',
+  'POST /fleet/snapshot': 'Created fleet backup',
+  'DELETE /fleet/snapshot': 'Deleted fleet backup',
+  'POST /fleet/snapshot/restore': 'Restored fleet backup',
+};
+
+function getAuditSummary(method: string, apiPath: string): string {
+  // Try exact prefix matches from most specific to least
+  const normalized = apiPath.replace(/^\//, '');
+  for (const [pattern, summary] of Object.entries(AUDIT_ROUTE_SUMMARIES)) {
+    const [pMethod, pPath] = pattern.split(' ');
+    if (method === pMethod && normalized.startsWith(pPath.replace(/^\//, ''))) {
+      // Extract resource name from path if available (e.g., /stacks/myapp → "myapp")
+      const rest = normalized.slice(pPath.replace(/^\//, '').length).replace(/^\//, '');
+      const resourceName = rest.split('/')[0];
+      return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
+    }
+  }
+  return `${method} /api/${normalized}`;
+}
+
+app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    next();
+    return;
+  }
+
+  const username = req.user?.username || 'unknown';
+  const nodeId = req.nodeId ?? null;
+  const ip = req.ip || req.headers['x-forwarded-for'] as string || '';
+  const apiPath = req.path;
+
+  res.on('finish', () => {
+    try {
+      DatabaseService.getInstance().insertAuditLog({
+        timestamp: Date.now(),
+        username,
+        method: req.method,
+        path: `/api${apiPath}`,
+        status_code: res.statusCode,
+        node_id: nodeId,
+        ip_address: ip,
+        summary: getAuditSummary(req.method, apiPath),
+      });
+    } catch (err) {
+      console.error('[Audit] Failed to write audit log:', err);
+    }
+  });
+
+  next();
+});
+
 // --- License Routes (local-only, never proxied) ---
 
 // Pro feature guard: returns false and sends 403 if not Pro tier.
 const requirePro = (_req: Request, res: Response): boolean => {
   if (LicenseService.getInstance().getTier() !== 'pro') {
     res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+    return false;
+  }
+  return true;
+};
+
+// Team Pro feature guard: requires Pro tier with team variant.
+const requireTeamPro = (_req: Request, res: Response): boolean => {
+  const ls = LicenseService.getInstance();
+  if (ls.getTier() !== 'pro') {
+    res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+    return false;
+  }
+  if (ls.getVariant() !== 'team') {
+    res.status(403).json({ error: 'This feature requires Sencho Team Pro.', code: 'TEAM_PRO_REQUIRED' });
     return false;
   }
   return true;
@@ -2712,6 +2802,28 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
   } catch (error) {
     console.error('Failed to issue console token:', error);
     res.status(500).json({ error: 'Failed to issue console token' });
+  }
+});
+
+// --- Audit Log Routes (Team Pro, local-only) ---
+
+app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const username = req.query.username as string | undefined;
+    const method = req.query.method as string | undefined;
+    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
+    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
+
+    const result = DatabaseService.getInstance().getAuditLogs({ page, limit, username, method, from, to });
+    res.json(result);
+  } catch (error) {
+    console.error('[AuditLog] Failed to fetch audit log:', error);
+    res.status(500).json({ error: 'Failed to fetch audit log' });
   }
 });
 

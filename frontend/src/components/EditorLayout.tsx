@@ -36,6 +36,7 @@ import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
+import { AuditLogView } from './AuditLogView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -73,7 +74,7 @@ const formatBytes = (bytes: number) => {
 
 export default function EditorLayout() {
   const { isAdmin } = useAuth();
-  const { isPro } = useLicense();
+  const { isPro, license } = useLicense();
   const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -118,7 +119,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -1345,6 +1346,19 @@ export default function EditorLayout() {
               <Activity className="w-4 h-4 mr-2" />
               Logs
             </Button>
+            {/* Audit Log Toggle (Team Pro + Admin only) */}
+            {isPro && license?.variant === 'team' && isAdmin && (
+              <Button
+                variant={activeView === 'audit-log' ? 'default' : 'outline'}
+                size="sm"
+                className="rounded-lg"
+                onClick={() => setActiveView(activeView === 'audit-log' ? (selectedFile ? 'editor' : 'dashboard') : 'audit-log')}
+                title="Audit Log"
+              >
+                <ScrollText className="w-4 h-4 mr-2" />
+                Audit
+              </Button>
+            )}
 
             {/* Notifications Popover */}
             <Popover>
@@ -1748,6 +1762,8 @@ export default function EditorLayout() {
                 setActiveView('dashboard');
               }
             }} />
+          ) : activeView === 'audit-log' ? (
+            <AuditLogView />
           ) : (
             <HomeDashboard />
           )}
