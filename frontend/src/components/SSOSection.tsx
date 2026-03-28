@@ -323,6 +323,7 @@ export function SSOSection() {
         } catch { /* ignore - ProGate will handle non-pro */ }
     };
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchConfigs(); }, []);
 
     const getConfig = (provider: string) => configs.find(c => c.provider === provider) || null;

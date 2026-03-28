@@ -46,7 +46,15 @@ export function Login({
   const { login, ssoLdapLogin } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ssoError = params.get('sso_error');
+    if (ssoError) {
+      window.history.replaceState({}, '', window.location.pathname);
+      return ssoError;
+    }
+    return '';
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [loginMode, setLoginMode] = useState<'local' | 'ldap'>('local');
   const [ssoProviders, setSsoProviders] = useState<SSOProvider[]>([]);
@@ -56,15 +64,6 @@ export function Login({
       .then(r => r.ok ? r.json() : [])
       .then((providers: SSOProvider[]) => setSsoProviders(providers))
       .catch(() => {});
-
-    // Check for SSO error in URL params
-    const params = new URLSearchParams(window.location.search);
-    const ssoError = params.get('sso_error');
-    if (ssoError) {
-      setError(ssoError);
-      // Clean up URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
   }, []);
 
   const hasLdap = ssoProviders.some(p => p.type === 'ldap');

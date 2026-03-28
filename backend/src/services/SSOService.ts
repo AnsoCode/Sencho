@@ -51,7 +51,7 @@ const WELL_KNOWN_ISSUERS: Record<string, string> = {
     oidc_github: 'https://github.com',
 };
 
-const LDAP_USERNAME_REGEX = /^[a-zA-Z0-9_@.\-]+$/;
+const LDAP_USERNAME_REGEX = /^[a-zA-Z0-9_@.-]+$/;
 
 export class SSOService {
     private static instance: SSOService;
@@ -347,7 +347,7 @@ export class SSOService {
         }
 
         try {
-            const { client, issuer } = await this.getOIDCClient(provider, config, callbackUrl);
+            const { client } = await this.getOIDCClient(provider, config, callbackUrl);
 
             const tokenSet = await client.callback(callbackUrl, { code: params.code, state: params.state }, {
                 state: expectedState,
@@ -508,7 +508,7 @@ export class SSOService {
         }
 
         // Generate unique username
-        let username = params.preferredUsername.replace(/[^a-zA-Z0-9_\-]/g, '_').substring(0, 50);
+        let username = params.preferredUsername.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
         if (!username) username = 'sso_user';
         if (db.getUserByUsername(username)) {
             const suffix = params.authProvider.replace('oidc_', '');
