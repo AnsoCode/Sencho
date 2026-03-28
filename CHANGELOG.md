@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **API Tokens / Service Accounts (Team Pro):** Generate scoped API tokens for CI/CD pipelines and automation. Three permission levels: read-only, deploy-only, and full-admin. Tokens are hashed at rest (SHA-256) and shown only once at creation. Scope enforcement at middleware level prevents tokens from exceeding their granted permissions.
+
 ### Changed
 
 * 14-day trial now defaults to Personal Pro instead of Team Pro — Team Pro features (SSO, audit log, unlimited accounts) require a Team Pro license

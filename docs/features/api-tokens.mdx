@@ -1,0 +1,79 @@
+---
+title: API Tokens
+description: Generate scoped API tokens for CI/CD pipelines, scripts, and automation workflows with granular permission control.
+---
+
+<Note>
+  API Tokens require a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+</Note>
+
+API tokens let you authenticate external tools — CI/CD pipelines, deployment scripts, monitoring integrations — without sharing user credentials. Each token is scoped to a specific permission level so you can follow the principle of least privilege.
+
+## Permission scopes
+
+Every token is created with one of three permission levels:
+
+| Scope | Allowed actions |
+|-------|----------------|
+| **Read Only** | `GET` requests only — view stacks, containers, metrics, and settings |
+| **Deploy Only** | Everything in Read Only, plus deploy-related actions (up, down, restart, pull) |
+| **Full Admin** | Unrestricted access — equivalent to an admin user session |
+
+Choose the narrowest scope that fits your use case. A CI pipeline that only deploys stacks should use **Deploy Only**, not Full Admin.
+
+## Creating a token
+
+1. Open **Settings Hub** and navigate to the **API Tokens** tab (visible to Team Pro admins only).
+2. Click **Create Token**.
+3. Enter a descriptive name (e.g., "GitHub Actions deploy") and select a permission scope.
+4. Click **Create**. The raw token is displayed **once** — copy it immediately.
+
+<Frame>
+  <img src="/images/api-tokens/api-tokens-overview.png" alt="API Tokens management view in Settings Hub" />
+</Frame>
+
+<Warning>
+  The token value is shown only at creation time. Sencho stores a SHA-256 hash of the token, not the token itself. If you lose it, revoke and create a new one.
+</Warning>
+
+## Using a token
+
+Pass the token as a Bearer token in the `Authorization` header:
+
+<CodeGroup>
+```bash curl
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     https://your-sencho-instance/api/stacks
+```
+
+```yaml GitHub Actions
+- name: Deploy stack
+  run: |
+    curl -X POST \
+      -H "Authorization: Bearer ${{ secrets.SENCHO_TOKEN }}" \
+      https://your-sencho-instance/api/compose/up \
+      -d '{"stack": "my-app"}'
+```
+</CodeGroup>
+
+### Scope enforcement
+
+If a token attempts an action outside its scope, Sencho returns a `403` response with a `SCOPE_DENIED` error code:
+
+```json
+{
+  "error": "API token scope \"read-only\" only allows GET requests.",
+  "code": "SCOPE_DENIED"
+}
+```
+
+## Revoking a token
+
+Click the trash icon next to any token in the API Tokens settings tab. Revocation is immediate — any in-flight or future requests using the revoked token will receive a `401` response.
+
+## Security model
+
+- **Hashed storage** — Only a SHA-256 hash of the token is stored in the database. The raw token is never persisted.
+- **Audit trail** — All actions performed via API tokens are recorded in the [Audit Log](/features/audit-log) under the creating user's username.
+- **No expiry by default** — Tokens do not expire automatically. Revoke tokens manually when they are no longer needed.
+- **Scope enforcement** — Permission checks happen at the middleware level before any route handler executes, ensuring consistent enforcement across all endpoints.
