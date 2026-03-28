@@ -59,6 +59,7 @@ export function ApiTokensSection() {
 
     const [formName, setFormName] = useState('');
     const [formScope, setFormScope] = useState('read-only');
+    const [formExpiry, setFormExpiry] = useState<number | null>(null);
 
     const fetchTokens = async () => {
         try {
@@ -67,7 +68,7 @@ export function ApiTokensSection() {
                 const data: ApiTokenListItem[] = await res.json();
                 setTokens(data.filter(t => !t.revoked_at));
             }
-        } catch { /* ignore */ } finally { setLoading(false); }
+        } catch { toast.error('Failed to load API tokens.'); } finally { setLoading(false); }
     };
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -83,7 +84,7 @@ export function ApiTokensSection() {
             const res = await apiFetch('/api-tokens', {
                 method: 'POST',
                 localOnly: true,
-                body: JSON.stringify({ name: formName.trim(), scope: formScope }),
+                body: JSON.stringify({ name: formName.trim(), scope: formScope, expires_in: formExpiry }),
             });
             if (res.ok) {
                 const data = await res.json();
@@ -91,6 +92,7 @@ export function ApiTokensSection() {
                 setShowForm(false);
                 setFormName('');
                 setFormScope('read-only');
+                setFormExpiry(null);
                 fetchTokens();
                 toast.success('API token created.');
             } else {
@@ -156,6 +158,19 @@ export function ApiTokensSection() {
                                     <SelectItem value="read-only">Read Only — GET requests only</SelectItem>
                                     <SelectItem value="deploy-only">Deploy Only — read + deploy actions</SelectItem>
                                     <SelectItem value="full-admin">Full Admin — unrestricted access</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Expiration</Label>
+                            <Select value={formExpiry === null ? 'never' : String(formExpiry)} onValueChange={v => setFormExpiry(v === 'never' ? null : Number(v))}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="30">30 days</SelectItem>
+                                    <SelectItem value="60">60 days</SelectItem>
+                                    <SelectItem value="90">90 days</SelectItem>
+                                    <SelectItem value="365">1 year</SelectItem>
+                                    <SelectItem value="never">No expiration</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -243,6 +258,11 @@ export function ApiTokensSection() {
                             <span>
                                 Last used: {token.last_used_at ? formatRelative(token.last_used_at) : 'Never'}
                             </span>
+                            {token.expires_at && (
+                                <span className={token.expires_at < Date.now() ? 'text-destructive' : ''}>
+                                    {token.expires_at < Date.now() ? 'Expired' : `Expires ${formatDate(token.expires_at)}`}
+                                </span>
+                            )}
                         </div>
                     </div>
                 ))}
