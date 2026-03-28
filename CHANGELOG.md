@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1](https://github.com/AnsoCode/Sencho/compare/v0.13.0...v0.13.1) (2026-03-28)
+
+
+### Fixed
+
+* gate SSO and Audit behind Team Pro license tier ([#213](https://github.com/AnsoCode/Sencho/issues/213)) ([8d48b0a](https://github.com/AnsoCode/Sencho/commit/8d48b0abff08195a436f98bf8d42c45de51930df))
+
 ## [0.13.0](https://github.com/AnsoCode/Sencho/compare/v0.12.0...v0.13.0) (2026-03-28)
 
 
