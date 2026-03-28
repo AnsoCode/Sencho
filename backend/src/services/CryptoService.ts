@@ -5,7 +5,6 @@ import path from 'path';
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 16;
-const AUTH_TAG_LENGTH = 16;
 const ENCRYPTED_PREFIX = 'enc:';
 
 export class CryptoService {
