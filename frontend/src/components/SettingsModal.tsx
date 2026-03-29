@@ -29,6 +29,7 @@ import { TierBadge } from './TierBadge';
 import { ProGate } from './ProGate';
 import { SSOSection } from './SSOSection';
 import { ApiTokensSection } from './ApiTokensSection';
+import { RegistriesSection } from './RegistriesSection';
 
 interface Agent {
     type: 'discord' | 'slack' | 'webhook';
@@ -50,7 +51,7 @@ interface PatchableSettings {
     log_retention_days?: string;
 }
 
-type SectionId = 'account' | 'license' | 'users' | 'sso' | 'api-tokens' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
+type SectionId = 'account' | 'license' | 'users' | 'sso' | 'api-tokens' | 'registries' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
 
 interface WebhookItem {
     id: number;
@@ -658,7 +659,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1004,6 +1005,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         )}
                         {!isRemote && isAdmin && isPro && license?.variant === 'team' && (
                             <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" />
+                        )}
+                        {!isRemote && isAdmin && isPro && license?.variant === 'team' && (
+                            <NavButton section="registries" icon={<Database className="w-4 h-4 mr-2" />} label="Registries" />
                         )}
                         <NavButton
                             section="system"
@@ -1466,6 +1470,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                     {activeSection === 'api-tokens' && (
                         <ApiTokensSection />
+                    )}
+
+                    {activeSection === 'registries' && (
+                        <RegistriesSection />
                     )}
 
                     {activeSection === 'developer' && (

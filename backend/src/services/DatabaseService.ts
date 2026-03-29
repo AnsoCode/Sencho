@@ -167,6 +167,20 @@ export interface ScheduledTaskRun {
     triggered_by: 'scheduler' | 'manual';
 }
 
+export type RegistryType = 'dockerhub' | 'ghcr' | 'ecr' | 'custom';
+
+export interface Registry {
+    id: number;
+    name: string;
+    url: string;
+    type: RegistryType;
+    username: string;
+    secret: string;
+    aws_region: string | null;
+    created_at: number;
+    updated_at: number;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -186,6 +200,7 @@ export class DatabaseService {
         this.migrateAdminToUsersTable();
         this.migrateEncryptNodeTokens();
         this.migrateSSOColumns();
+        this.migrateRegistries();
     }
 
     public static getInstance(): DatabaseService {
@@ -495,6 +510,22 @@ export class DatabaseService {
                 updated_at INTEGER NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider, provider_id) WHERE provider_id IS NOT NULL;
+        `);
+    }
+
+    private migrateRegistries(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS registries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'custom',
+                username TEXT NOT NULL DEFAULT '',
+                secret TEXT NOT NULL DEFAULT '',
+                aws_region TEXT DEFAULT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
         `);
     }
 
@@ -1081,6 +1112,45 @@ export class DatabaseService {
 
     public updateApiTokenLastUsed(id: number): void {
         this.db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(Date.now(), id);
+    }
+
+    // --- Registries ---
+
+    public getRegistries(): Registry[] {
+        return this.db.prepare('SELECT * FROM registries ORDER BY name ASC').all() as Registry[];
+    }
+
+    public getRegistry(id: number): Registry | undefined {
+        return this.db.prepare('SELECT * FROM registries WHERE id = ?').get(id) as Registry | undefined;
+    }
+
+    public addRegistry(reg: Omit<Registry, 'id'>): number {
+        const result = this.db.prepare(
+            'INSERT INTO registries (name, url, type, username, secret, aws_region, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(reg.name, reg.url, reg.type, reg.username, reg.secret, reg.aws_region, reg.created_at, reg.updated_at);
+        return result.lastInsertRowid as number;
+    }
+
+    public updateRegistry(id: number, updates: Partial<Omit<Registry, 'id' | 'created_at'>>): void {
+        const fields: string[] = [];
+        const values: unknown[] = [];
+
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.url !== undefined) { fields.push('url = ?'); values.push(updates.url); }
+        if (updates.type !== undefined) { fields.push('type = ?'); values.push(updates.type); }
+        if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
+        if (updates.secret !== undefined) { fields.push('secret = ?'); values.push(updates.secret); }
+        if (updates.aws_region !== undefined) { fields.push('aws_region = ?'); values.push(updates.aws_region); }
+        if (updates.updated_at !== undefined) { fields.push('updated_at = ?'); values.push(updates.updated_at); }
+
+        if (fields.length === 0) return;
+
+        values.push(id);
+        this.db.prepare(`UPDATE registries SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteRegistry(id: number): void {
+        this.db.prepare('DELETE FROM registries WHERE id = ?').run(id);
     }
 
     // --- Scheduled Tasks ---

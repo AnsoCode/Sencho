@@ -29,6 +29,7 @@ import { LicenseService } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
+import { RegistryService } from './services/RegistryService';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
@@ -691,6 +692,9 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'PUT /scheduled-tasks': 'Updated scheduled task',
   'DELETE /scheduled-tasks': 'Deleted scheduled task',
   'PATCH /scheduled-tasks': 'Toggled scheduled task',
+  'POST /registries': 'Created registry credential',
+  'PUT /registries': 'Updated registry credential',
+  'DELETE /registries': 'Deleted registry credential',
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
@@ -3661,6 +3665,126 @@ app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => 
   } catch (error) {
     console.error('[ScheduledTasks] Runs error:', error);
     res.status(500).json({ error: 'Failed to fetch task runs' });
+  }
+});
+
+// --- Private Registry Routes (Team Pro, admin-only, local-only) ---
+
+const VALID_REGISTRY_TYPES = ['dockerhub', 'ghcr', 'ecr', 'custom'] as const;
+
+app.get('/api/registries', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    res.json(RegistryService.getInstance().getAll());
+  } catch (error) {
+    console.error('[Registries] List error:', error);
+    res.status(500).json({ error: 'Failed to fetch registries' });
+  }
+});
+
+app.post('/api/registries', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const { name, url, type, username, secret, aws_region } = req.body;
+
+    if (!name || typeof name !== 'string' || name.length > 100) {
+      res.status(400).json({ error: 'Name is required (max 100 characters).' }); return;
+    }
+    if (!url || typeof url !== 'string' || url.length > 500) {
+      res.status(400).json({ error: 'URL is required (max 500 characters).' }); return;
+    }
+    if (!type || !VALID_REGISTRY_TYPES.includes(type)) {
+      res.status(400).json({ error: `Type must be one of: ${VALID_REGISTRY_TYPES.join(', ')}` }); return;
+    }
+    if (!username || typeof username !== 'string') {
+      res.status(400).json({ error: 'Username is required.' }); return;
+    }
+    if (!secret || typeof secret !== 'string') {
+      res.status(400).json({ error: 'Secret/token is required.' }); return;
+    }
+    if (type === 'ecr' && (!aws_region || typeof aws_region !== 'string')) {
+      res.status(400).json({ error: 'AWS region is required for ECR registries.' }); return;
+    }
+
+    const id = RegistryService.getInstance().create({ name, url, type, username, secret, aws_region: aws_region ?? null });
+    res.status(201).json({ id });
+  } catch (error) {
+    console.error('[Registries] Create error:', error);
+    res.status(500).json({ error: 'Failed to create registry' });
+  }
+});
+
+app.put('/api/registries/:id', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+
+    const existing = RegistryService.getInstance().getById(id);
+    if (!existing) { res.status(404).json({ error: 'Registry not found' }); return; }
+
+    const { name, url, type, username, secret, aws_region } = req.body;
+
+    if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
+      res.status(400).json({ error: 'Name must be a string (max 100 characters).' }); return;
+    }
+    if (url !== undefined && (typeof url !== 'string' || url.length > 500)) {
+      res.status(400).json({ error: 'URL must be a string (max 500 characters).' }); return;
+    }
+    if (type !== undefined && !VALID_REGISTRY_TYPES.includes(type)) {
+      res.status(400).json({ error: `Type must be one of: ${VALID_REGISTRY_TYPES.join(', ')}` }); return;
+    }
+    const effectiveType = type ?? existing.type;
+    if (effectiveType === 'ecr' && aws_region !== undefined && (typeof aws_region !== 'string' || !aws_region)) {
+      res.status(400).json({ error: 'AWS region is required for ECR registries.' }); return;
+    }
+
+    RegistryService.getInstance().update(id, { name, url, type, username, secret, aws_region });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Registries] Update error:', error);
+    res.status(500).json({ error: 'Failed to update registry' });
+  }
+});
+
+app.delete('/api/registries/:id', (req: Request, res: Response): void => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+
+    const existing = RegistryService.getInstance().getById(id);
+    if (!existing) { res.status(404).json({ error: 'Registry not found' }); return; }
+
+    RegistryService.getInstance().delete(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Registries] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete registry' });
+  }
+});
+
+app.post('/api/registries/:id/test', async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+
+    const result = await RegistryService.getInstance().testConnection(id);
+    res.json(result);
+  } catch (error) {
+    console.error('[Registries] Test error:', error);
+    res.status(500).json({ error: 'Failed to test registry connection' });
   }
 });
 
