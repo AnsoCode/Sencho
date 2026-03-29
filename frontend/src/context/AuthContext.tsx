@@ -19,7 +19,7 @@ interface PermissionsData {
   globalRole: UserRole;
   globalPermissions: PermissionAction[];
   scopedPermissions: Record<string, PermissionAction[]>;
-  isTeamPro: boolean;
+  isAdmiral: boolean;
 }
 
 interface AuthContextType {

@@ -11,8 +11,8 @@ interface TierBadgeProps {
 
 const tierConfig = {
     community: { icon: Globe, label: 'Community' },
-    pro: { icon: Crown, label: 'Pro' },
-    team: { icon: Users, label: 'Team' },
+    pro: { icon: Crown, label: 'Skipper' },
+    team: { icon: Users, label: 'Admiral' },
 } as const;
 
 function resolveTier(tier: LicenseTier, variant: LicenseVariant, status: LicenseStatus) {

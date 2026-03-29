@@ -4,7 +4,7 @@ description: Store credentials for private Docker registries so Sencho can autom
 ---
 
 <Note>
-  Private Registry Management requires a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+  Private Registry Management requires a Sencho **Admiral** license. Skipper and Community Edition do not include this feature.
 </Note>
 
 Sencho can store credentials for your private Docker registries and inject them automatically whenever it runs `docker compose pull` or `docker compose up`. This means your stacks can reference private images without needing to manually `docker login` on the host.
@@ -20,7 +20,7 @@ Sencho can store credentials for your private Docker registries and inject them 
 
 ## Adding a registry
 
-1. Open **Settings Hub** and navigate to the **Registries** tab (visible to Team Pro admins only).
+1. Open **Settings Hub** and navigate to the **Registries** tab (visible to Admiral admins only).
 2. Click **Add Registry**.
 3. Select the registry type. The URL field auto-fills with the standard endpoint for Docker Hub and GHCR.
 4. Enter a descriptive name, the registry URL, and your credentials.
@@ -107,7 +107,7 @@ AWS ECR uses short-lived authentication tokens (valid for 12 hours) derived from
 - **No persistent Docker login** - Credentials are written to a temporary file for the duration of each operation and immediately deleted afterward.
 - **Secrets never exposed** - The API never returns decrypted secrets. The UI shows only whether a secret is stored.
 - **Audit trail** - Registry create, update, and delete operations are recorded in the [Audit Log](/features/audit-log).
-- **Admin-only access** - Only admin users with a Team Pro license can manage registry credentials.
+- **Admin-only access** - Only admin users with a Admiral license can manage registry credentials.
 
 ## Multi-node behavior
 

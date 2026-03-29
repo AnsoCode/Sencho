@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import { TeamProGate } from './TeamProGate';
+import { AdmiralGate } from './AdmiralGate';
 import { TierBadge } from './TierBadge';
 import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
 
@@ -205,7 +205,7 @@ export function RegistriesSection() {
     };
 
     return (
-        <TeamProGate featureName="Private Registry Management">
+        <AdmiralGate featureName="Private Registry Management">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -379,6 +379,6 @@ export function RegistriesSection() {
                     </div>
                 ))}
             </div>
-        </TeamProGate>
+        </AdmiralGate>
     );
 }

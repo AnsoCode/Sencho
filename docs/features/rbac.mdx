@@ -4,10 +4,10 @@ description: Role-based access control for Sencho - manage admin, viewer, deploy
 ---
 
 <Note>
-  Multi-user support requires a Sencho Pro license. Community Edition supports a single admin account only. Intermediate roles (Deployer, Node Admin) and scoped permissions require **Team Pro**.
+  Multi-user support requires a Sencho Pro license. Community Edition supports a single admin account only. Intermediate roles (Deployer, Node Admin) and scoped permissions require **Admiral**.
 </Note>
 
-Sencho supports role-based access control with four distinct roles. The classic **Admin** and **Viewer** roles are available on all Pro tiers, while **Deployer** and **Node Admin** are exclusive to Team Pro and support scoped permissions per stack or node.
+Sencho supports role-based access control with four distinct roles. The classic **Admin** and **Viewer** roles are available on all Pro tiers, while **Deployer** and **Node Admin** are exclusive to Admiral and support scoped permissions per stack or node.
 
 ## Roles
 
@@ -15,8 +15,8 @@ Sencho supports role-based access control with four distinct roles. The classic 
 |------|-------------|------|
 | **Admin** | Full access to all features — deploy, edit, manage users, configure nodes, and more | Pro |
 | **Viewer** | Read-only access to dashboards, logs, stats, and file contents | Pro |
-| **Deployer** | Can deploy, restart, stop, and start stacks — but cannot edit compose files, delete stacks, or access system settings | Team Pro |
-| **Node Admin** | Full stack and node management within their scope — cannot access system settings, users, or license management | Team Pro |
+| **Deployer** | Can deploy, restart, stop, and start stacks — but cannot edit compose files, delete stacks, or access system settings | Admiral |
+| **Node Admin** | Full stack and node management within their scope — cannot access system settings, users, or license management | Admiral |
 
 ### Permission matrix
 
@@ -39,7 +39,7 @@ Sencho supports role-based access control with four distinct roles. The classic 
 ## Scoped permissions
 
 <Note>
-  Scoped permissions require a **Team Pro** license.
+  Scoped permissions require a **Admiral** license.
 </Note>
 
 Roles can be scoped to specific stacks or nodes. This means you can grant a user the **Deployer** role globally, but also give them **Node Admin** access on a specific node — or limit a viewer to deploy access on only certain stacks.
@@ -64,15 +64,15 @@ Admins can manage accounts in **Settings → Users**. From there you can:
 - **Edit** an existing user's password or role
 - **Delete** a user account
 
-When creating or editing a user on Team Pro, you'll see all four role options in the role selector. On Personal Pro, only Admin and Viewer are available.
+When creating or editing a user on Admiral, you'll see all four role options in the role selector. On Skipper, only Admin and Viewer are available.
 
 <Frame>
-  <img src="/images/rbac/role-selector-dropdown.png" alt="Role selector showing all four roles on Team Pro" />
+  <img src="/images/rbac/role-selector-dropdown.png" alt="Role selector showing all four roles on Admiral" />
 </Frame>
 
 ## Managing scoped permissions
 
-When editing a user on Team Pro, a **Scoped Permissions** section appears below the user form. Here you can:
+When editing a user on Admiral, a **Scoped Permissions** section appears below the user form. Here you can:
 
 1. **View** the user's current scoped assignments
 2. **Add** a new scope by selecting a role, resource type (stack or node), and specific resource
@@ -82,7 +82,7 @@ Each scoped assignment grants the specified role's permissions on the specified 
 
 ## SSO auto-provisioning
 
-With a Team Pro license, users can also be created automatically when they log in via SSO (LDAP, Google, GitHub, or Okta). SSO users appear in the Users list alongside local accounts. They are assigned a role based on identity provider group membership or claim mapping.
+With a Admiral license, users can also be created automatically when they log in via SSO (LDAP, Google, GitHub, or Okta). SSO users appear in the Users list alongside local accounts. They are assigned a role based on identity provider group membership or claim mapping.
 
 SSO users cannot log in with a password — they must always authenticate through their identity provider. After SSO provisioning, an admin can add scoped permissions to SSO users just like local accounts.
 
@@ -97,5 +97,5 @@ When you upgrade to Sencho Pro, your existing single-admin credentials are autom
 | Tier | Admin accounts | Non-admin accounts | Intermediate roles | Scoped permissions |
 |------|---------------|-------------------|-------------------|-------------------|
 | **Community** | 1 | 0 | ❌ | ❌ |
-| **Personal Pro** | 1 | 3 | ❌ | ❌ |
-| **Team Pro** | Unlimited | Unlimited | ✅ | ✅ |
+| **Skipper** | 1 | 3 | ❌ | ❌ |
+| **Admiral** | Unlimited | Unlimited | ✅ | ✅ |

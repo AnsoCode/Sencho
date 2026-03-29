@@ -50,11 +50,11 @@ describe('SSO Config Endpoints (Protected)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/sso/config returns 403 without Team Pro', async () => {
+  it('GET /api/sso/config returns 403 without Admiral', async () => {
     const res = await supertest(app)
       .get('/api/sso/config')
       .set('Authorization', `Bearer ${adminToken}`);
-    // Without a Team Pro license, this should be 403
+    // Without an Admiral license, this should be 403
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('PRO_REQUIRED');
   });
