@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **ui:** redesign top bar into three-zone layout — node pill (left), animated navigation group (center), utilities (right). Replaces flat row of individual buttons with a cohesive tab-style navigation using animated sliding highlight. Includes responsive behavior: icon+text at xl, icons-only at md, sheet drawer on mobile.
+
 ### Fixed
 
 * **scheduled-ops:** fix "Run Now" audit log entry incorrectly showing "Created scheduled task" instead of "Triggered scheduled task"
@@ -30,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 
 * **scheduled-ops:** add screenshots and document Run Now behavior for disabled tasks
+* **settings:** fix settings reference to correctly describe profile dropdown access
 
 ## [0.14.2](https://github.com/AnsoCode/Sencho/compare/v0.14.1...v0.14.2) (2026-03-29)
 

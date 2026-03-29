@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'motion/react';
 
 type Theme = 'light' | 'dark' | 'auto';
@@ -14,9 +14,11 @@ import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
+import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
@@ -30,6 +32,8 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
+import { cn } from '@/lib/utils';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
 import { AppStoreView } from './AppStoreView';
@@ -143,9 +147,63 @@ export default function EditorLayout() {
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
 
+  // Mobile navigation sheet state
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   const openAlertSheet = (stackName: string) => {
     setAlertSheetStack(stackName);
     setAlertSheetOpen(true);
+  };
+
+  // Navigation items (permission-aware, data-driven)
+  const navItems = useMemo(() => {
+    const items: Array<{ value: string; label: string; icon: LucideIcon }> = [
+      { value: 'dashboard', label: 'Home', icon: Home },
+      { value: 'fleet', label: 'Fleet', icon: Radar },
+    ];
+    if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
+    items.push(
+      { value: 'resources', label: 'Resources', icon: HardDrive },
+      { value: 'templates', label: 'App Store', icon: CloudDownload },
+      { value: 'global-observability', label: 'Logs', icon: Activity },
+    );
+    if (isPro && license?.variant === 'team' && isAdmin) {
+      items.push(
+        { value: 'audit-log', label: 'Audit', icon: ScrollText },
+        { value: 'scheduled-ops', label: 'Schedules', icon: Clock },
+      );
+    }
+    return items;
+  }, [isAdmin, isPro, license?.variant]);
+
+  // Only highlight a tab if activeView matches a nav item
+  const navTabValue = navItems.some(i => i.value === activeView) ? activeView : undefined;
+
+  // Reset editor state (extracted from Home button onClick)
+  const resetEditorState = () => {
+    setSelectedFile(null);
+    setContent('');
+    setOriginalContent('');
+    setEnvContent('');
+    setOriginalEnvContent('');
+    setEnvFiles([]);
+    setSelectedEnvFile('');
+    setEnvExists(false);
+    setContainers([]);
+    setIsEditing(false);
+  };
+
+  // Navigation handler with toggle support
+  const handleNavigate = (value: string) => {
+    if (value === activeView) {
+      // Toggle off: return to editor if a file is open, else dashboard
+      setActiveView(selectedFile ? 'editor' : 'dashboard');
+    } else if (value === 'dashboard') {
+      resetEditorState();
+      setActiveView('dashboard');
+    } else {
+      setActiveView(value as typeof activeView);
+    }
   };
 
   // Listen for system dark mode changes (for 'auto' theme)
@@ -1030,9 +1088,9 @@ export default function EditorLayout() {
       {/* Left Sidebar (Stacks) */}
       <div className="w-64 border-r border-border bg-card flex flex-col">
         {/* Branding Header */}
-        <div className="h-16 flex items-center justify-center px-4 border-b border-border">
+        <div className="h-14 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-12 h-12" />
+            <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-10 h-10" />
             <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
           </div>
         </div>
@@ -1251,9 +1309,9 @@ export default function EditorLayout() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Header Bar */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-border gap-4">
-          {/* Node Context Pill - visible only when a remote node is active */}
+        {/* Top Header Bar — Three-zone layout: Node Pill | Navigation | Utilities */}
+        <div className="h-14 flex items-center px-4 border-b border-border gap-3">
+          {/* LEFT ZONE: Node Context Pill */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
@@ -1267,117 +1325,45 @@ export default function EditorLayout() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            {/* Home Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-lg"
-              onClick={() => {
-                setSelectedFile(null);
-                setContent('');
-                setOriginalContent('');
-                setEnvContent('');
-                setOriginalEnvContent('');
-                setEnvFiles([]);
-                setSelectedEnvFile('');
-                setEnvExists(false);
-                setContainers([]);
-                setIsEditing(false);
-                setActiveView('dashboard');
-              }}
-              title="Go to Home Dashboard"
-            >
-              <Home className="w-4 h-4 mr-2" />
-              Home
-            </Button>
-            {/* Fleet Overview Toggle */}
-            <Button
-              variant={activeView === 'fleet' ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setActiveView(activeView === 'fleet' ? (selectedFile ? 'editor' : 'dashboard') : 'fleet')}
-              title="Fleet Overview"
-            >
-              <Radar className="w-4 h-4 mr-2" />
-              Fleet
-            </Button>
-            {/* Console Toggle */}
-            {isAdmin && (
-              <Button
-                variant={activeView === 'host-console' ? 'default' : 'outline'}
-                size="sm"
-                className="rounded-lg"
-                onClick={() => setActiveView(activeView === 'host-console' ? (selectedFile ? 'editor' : 'dashboard') : 'host-console')}
-              >
-                <Terminal className="w-4 h-4 mr-2" />
-                Console
-              </Button>
-            )}
-            {/* Resources Toggle */}
-            <Button
-              variant={activeView === 'resources' ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setActiveView(activeView === 'resources' ? (selectedFile ? 'editor' : 'dashboard') : 'resources')}
-              title="System Resources"
-            >
-              <HardDrive className="w-4 h-4 mr-2" />
-              Resources
-            </Button>
-            {/* App Store Toggle */}
-            <Button
-              variant={activeView === 'templates' ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setActiveView(activeView === 'templates' ? (selectedFile ? 'editor' : 'dashboard') : 'templates')}
-              title="App Store"
-            >
-              <CloudDownload className="w-4 h-4 mr-2" />
-              App Store
-            </Button>
-            {/* Global Observability Toggle */}
-            <Button
-              variant={activeView === 'global-observability' ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => setActiveView(activeView === 'global-observability' ? (selectedFile ? 'editor' : 'dashboard') : 'global-observability')}
-              title="Global Logs"
-            >
-              <Activity className="w-4 h-4 mr-2" />
-              Logs
-            </Button>
-            {/* Audit Log Toggle (Team Pro + Admin only) */}
-            {isPro && license?.variant === 'team' && isAdmin && (
-              <Button
-                variant={activeView === 'audit-log' ? 'default' : 'outline'}
-                size="sm"
-                className="rounded-lg"
-                onClick={() => setActiveView(activeView === 'audit-log' ? (selectedFile ? 'editor' : 'dashboard') : 'audit-log')}
-                title="Audit Log"
-              >
-                <ScrollText className="w-4 h-4 mr-2" />
-                Audit
-              </Button>
-            )}
-            {/* Scheduled Operations Toggle (Team Pro + Admin only) */}
-            {isPro && license?.variant === 'team' && isAdmin && (
-              <Button
-                variant={activeView === 'scheduled-ops' ? 'default' : 'outline'}
-                size="sm"
-                className="rounded-lg"
-                onClick={() => setActiveView(activeView === 'scheduled-ops' ? (selectedFile ? 'editor' : 'dashboard') : 'scheduled-ops')}
-                title="Scheduled Operations"
-              >
-                <Clock className="w-4 h-4 mr-2" />
-                Schedules
-              </Button>
-            )}
 
+          {/* CENTER ZONE: Navigation Group (hidden on mobile) */}
+          <div className="flex-1 hidden md:flex justify-center">
+            <Highlight
+              className="inset-0 rounded-md bg-background shadow-sm"
+              value={navTabValue}
+              controlledItems
+              mode="children"
+              click={false}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            >
+              <div className="inline-flex items-center rounded-lg bg-muted/50 p-1 gap-0.5">
+                {navItems.map(({ value, label, icon: Icon }) => (
+                  <HighlightItem key={value} value={value}>
+                    <button
+                      onClick={() => handleNavigate(value)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                        activeView === value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden xl:inline">{label}</span>
+                    </button>
+                  </HighlightItem>
+                ))}
+              </div>
+            </Highlight>
+          </div>
+
+          {/* Spacer for mobile (when center nav is hidden) */}
+          <div className="flex-1 md:hidden" />
+
+          {/* RIGHT ZONE: Utilities */}
+          <div className="flex-shrink-0 flex items-center gap-2">
             {/* Notifications Popover */}
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-lg relative" title="Notifications">
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg relative" title="Notifications">
                   <Bell className="w-4 h-4" />
                   {notifications.filter(n => !n.is_read).length > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -1425,8 +1411,6 @@ export default function EditorLayout() {
                             </span>
                           </div>
                           <p className="font-medium pr-6">{notif.message}</p>
-
-                          {/* Delete individual notification button */}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1452,7 +1436,38 @@ export default function EditorLayout() {
               setTheme={setTheme}
               onOpenSettings={() => setSettingsModalOpen(true)}
             />
-          </div>{/* end right-side buttons */}
+
+            {/* Mobile Navigation Trigger */}
+            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg md:hidden">
+                  <Menu className="w-4 h-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-64 p-0">
+                <div className="p-4 border-b">
+                  <p className="text-sm font-semibold">Navigation</p>
+                </div>
+                <nav className="flex flex-col p-2 gap-1">
+                  {navItems.map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      onClick={() => { handleNavigate(value); setMobileNavOpen(false); }}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                        activeView === value
+                          ? 'bg-muted font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
 
         {/* Main Workspace */}
