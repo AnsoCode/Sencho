@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0](https://github.com/AnsoCode/Sencho/compare/v0.17.0...v0.18.0) (2026-03-29)
+
+
+### Added
+
+* **rbac:** add Deployer & Node Admin roles with scoped permissions (Team Pro) ([#253](https://github.com/AnsoCode/Sencho/issues/253)) ([8380fba](https://github.com/AnsoCode/Sencho/commit/8380fbad4b617b004e2d2f19595d1490eaa1e005))
+
 ## [Unreleased]
 
 ### Added
