@@ -1,4 +1,4 @@
-import { Crown, Globe, Users } from 'lucide-react';
+import { Compass, Globe, ShipWheel } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useLicense, type LicenseTier, type LicenseVariant, type LicenseStatus } from '@/context/LicenseContext';
 
@@ -11,8 +11,8 @@ interface TierBadgeProps {
 
 const tierConfig = {
     community: { icon: Globe, label: 'Community' },
-    pro: { icon: Crown, label: 'Skipper' },
-    team: { icon: Users, label: 'Admiral' },
+    pro: { icon: Compass, label: 'Skipper' },
+    team: { icon: ShipWheel, label: 'Admiral' },
 } as const;
 
 function resolveTier(tier: LicenseTier, variant: LicenseVariant, status: LicenseStatus) {

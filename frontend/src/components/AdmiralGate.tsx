@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { Crown } from 'lucide-react';
+import { ShipWheel } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicense } from '@/context/LicenseContext';
 
@@ -30,7 +30,7 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
                 </div>
                 <div className="absolute inset-0 flex items-start justify-center pt-8">
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs">
-                        <Crown className="w-3 h-3" />
+                        <ShipWheel className="w-3 h-3" />
                         Upgrade to Admiral to unlock
                     </div>
                 </div>
@@ -41,7 +41,7 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
     return (
         <div className="flex flex-col items-center justify-center h-full gap-6 p-8">
             <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/50 border border-border">
-                <Crown className="w-8 h-8 text-muted-foreground" />
+                <ShipWheel className="w-8 h-8 text-muted-foreground" />
             </div>
             <div className="text-center max-w-md">
                 <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Admiral</h3>
@@ -64,7 +64,7 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
                     size="sm"
                     onClick={() => window.open('https://sencho.io/pricing', '_blank')}
                 >
-                    <Crown className="w-4 h-4 mr-2" />
+                    <ShipWheel className="w-4 h-4 mr-2" />
                     Get Admiral
                 </Button>
             </div>
