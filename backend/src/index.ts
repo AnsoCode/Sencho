@@ -656,7 +656,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
-// Audit logging middleware - records all mutating API actions for Team Pro accountability.
+// Audit logging middleware - records all mutating API actions for Admiral accountability.
 // Runs for POST/PUT/DELETE/PATCH on /api/* routes. Uses res.on('finish') to capture status code.
 const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /stacks': 'Created stack',
@@ -785,15 +785,15 @@ const requirePro = (_req: Request, res: Response): boolean => {
   return true;
 };
 
-// Team Pro feature guard: requires Pro tier with team variant.
-const requireTeamPro = (_req: Request, res: Response): boolean => {
+// Admiral feature guard: requires Pro tier with team variant.
+const requireAdmiral = (_req: Request, res: Response): boolean => {
   const ls = LicenseService.getInstance();
   if (ls.getTier() !== 'pro') {
     res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
     return false;
   }
   if (ls.getVariant() !== 'team') {
-    res.status(403).json({ error: 'This feature requires Sencho Team Pro.', code: 'TEAM_PRO_REQUIRED' });
+    res.status(403).json({ error: 'This feature requires Sencho Admiral.', code: 'ADMIRAL_REQUIRED' });
     return false;
   }
   return true;
@@ -807,7 +807,7 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   return true;
 };
 
-// --- Scoped RBAC Permission Engine (Team Pro) ---
+// --- Scoped RBAC Permission Engine (Admiral) ---
 
 type PermissionAction =
   | 'stack:read' | 'stack:edit' | 'stack:deploy' | 'stack:create' | 'stack:delete'
@@ -838,7 +838,7 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
  * Core permission resolver. Checks if the current user can perform `action` on an optional resource.
  * 1. Admin → always true (backward compat)
  * 2. Check global role permissions
- * 3. If resource specified AND Team Pro → check scoped role_assignments
+ * 3. If resource specified AND Admiral → check scoped role_assignments
  */
 function checkPermission(
   req: Request,
@@ -856,7 +856,7 @@ function checkPermission(
   // Check if the user's global role grants this action
   if (ROLE_PERMISSIONS[globalRole]?.includes(action)) return true;
 
-  // Scoped assignments only apply when a resource is specified and license is Team Pro
+  // Scoped assignments only apply when a resource is specified and license is Admiral
   if (!resourceType || !resourceId) return false;
   if (LicenseService.getInstance().getVariant() !== 'team') return false;
 
@@ -1770,7 +1770,7 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
       return;
     }
-    if ((role === 'deployer' || role === 'node-admin') && !requireTeamPro(req, res)) return;
+    if ((role === 'deployer' || role === 'node-admin') && !requireAdmiral(req, res)) return;
 
     const db = DatabaseService.getInstance();
     const existing = db.getUserByUsername(username);
@@ -1782,11 +1782,11 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
     // Enforce seat limits based on license variant
     const seatLimits = LicenseService.getInstance().getSeatLimits();
     if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
-      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Admiral for unlimited accounts.` });
       return;
     }
     if (role !== 'admin' && seatLimits.maxViewers !== null && db.getNonAdminCount() >= seatLimits.maxViewers) {
-      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxViewers} viewer account${seatLimits.maxViewers === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
+      res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxViewers} viewer account${seatLimits.maxViewers === 1 ? '' : 's'}. Upgrade to Admiral for unlimited accounts.` });
       return;
     }
 
@@ -1837,7 +1837,7 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
         res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
         return;
       }
-      if ((role === 'deployer' || role === 'node-admin') && !requireTeamPro(req, res)) return;
+      if ((role === 'deployer' || role === 'node-admin') && !requireAdmiral(req, res)) return;
       // Prevent demoting yourself
       if (user.username === req.user!.username && role !== user.role) {
         res.status(400).json({ error: 'Cannot change your own role' });
@@ -1902,7 +1902,7 @@ app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response)
   }
 });
 
-// --- Scoped Role Assignments (Team Pro) ---
+// --- Scoped Role Assignments (Admiral) ---
 
 app.get('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): void => {
   if (req.apiTokenScope) {
@@ -1910,7 +1910,7 @@ app.get('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): v
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const userId = parseInt(req.params.id as string, 10);
     const db = DatabaseService.getInstance();
@@ -1932,7 +1932,7 @@ app.post('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): 
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const userId = parseInt(req.params.id as string, 10);
     const { role, resource_type, resource_id } = req.body;
@@ -1980,7 +1980,7 @@ app.delete('/api/users/:id/roles/:assignId', authMiddleware, (req: Request, res:
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const userId = parseInt(req.params.id as string, 10);
     const assignId = parseInt(req.params.assignId as string, 10);
@@ -2025,7 +2025,7 @@ app.get('/api/permissions/me', authMiddleware, (req: Request, res: Response): vo
       globalRole,
       globalPermissions,
       scopedPermissions,
-      isTeamPro: LicenseService.getInstance().getVariant() === 'team',
+      isAdmiral: LicenseService.getInstance().getVariant() === 'team',
     });
   } catch (error) {
     console.error('[Permissions] Error:', error);
@@ -3372,7 +3372,7 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
   }
 });
 
-// --- SSO Config Routes (admin + Team Pro, local-only) ---
+// --- SSO Config Routes (admin + Admiral, local-only) ---
 
 app.get('/api/sso/config', (req: Request, res: Response): void => {
   if (req.apiTokenScope) {
@@ -3380,7 +3380,7 @@ app.get('/api/sso/config', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const configs = DatabaseService.getInstance().getSSOConfigs();
     const result = configs.map(c => {
@@ -3403,7 +3403,7 @@ app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const config = SSOService.getInstance().getProviderConfig(String(req.params.provider));
     if (!config) {
@@ -3427,7 +3427,7 @@ app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const provider = String(req.params.provider);
     const validProviders = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta'];
@@ -3450,7 +3450,7 @@ app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     SSOService.getInstance().deleteProviderConfig(String(req.params.provider));
     res.json({ success: true, message: 'SSO configuration deleted' });
@@ -3466,7 +3466,7 @@ app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): 
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const provider = String(req.params.provider);
     if (provider === 'ldap') {
@@ -3482,11 +3482,11 @@ app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): 
   }
 });
 
-// --- Audit Log Routes (Team Pro, local-only) ---
+// --- Audit Log Routes (Admiral, local-only) ---
 
 app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
 
   try {
     const page = parseInt(req.query.page as string) || 1;
@@ -3504,7 +3504,7 @@ app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-// --- API Token Routes (Team Pro, admin-only, local-only) ---
+// --- API Token Routes (Admiral, admin-only, local-only) ---
 
 app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (req.apiTokenScope) {
@@ -3512,7 +3512,7 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const { name, scope, expires_in } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -3573,7 +3573,7 @@ app.get('/api/api-tokens', authMiddleware, async (req: Request, res: Response): 
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
     if (!user) { res.status(500).json({ error: 'User not found.' }); return; }
@@ -3593,7 +3593,7 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid token ID.' }); return; }
@@ -3615,11 +3615,11 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
   }
 });
 
-// --- Scheduled Operations Routes (Team Pro, admin-only, local-only) ---
+// --- Scheduled Operations Routes (Admiral, admin-only, local-only) ---
 
 app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const tasks = DatabaseService.getInstance().getScheduledTasks();
     res.json(tasks);
@@ -3631,7 +3631,7 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
 
 app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets } = req.body;
 
@@ -3701,7 +3701,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
 
 app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3716,7 +3716,7 @@ app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3790,7 +3790,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3809,7 +3809,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3837,7 +3837,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
 
 app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3859,7 +3859,7 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
 
 app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3878,14 +3878,14 @@ app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => 
   }
 });
 
-// --- Private Registry Routes (Team Pro, admin-only, local-only) ---
+// --- Private Registry Routes (Admiral, admin-only, local-only) ---
 
 const VALID_REGISTRY_TYPES = ['dockerhub', 'ghcr', 'ecr', 'custom'] as const;
 
 app.get('/api/registries', (req: Request, res: Response): void => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     res.json(RegistryService.getInstance().getAll());
   } catch (error) {
@@ -3897,7 +3897,7 @@ app.get('/api/registries', (req: Request, res: Response): void => {
 app.post('/api/registries', (req: Request, res: Response): void => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const { name, url, type, username, secret, aws_region } = req.body;
 
@@ -3931,7 +3931,7 @@ app.post('/api/registries', (req: Request, res: Response): void => {
 app.put('/api/registries/:id', (req: Request, res: Response): void => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
@@ -3966,7 +3966,7 @@ app.put('/api/registries/:id', (req: Request, res: Response): void => {
 app.delete('/api/registries/:id', (req: Request, res: Response): void => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
@@ -3985,7 +3985,7 @@ app.delete('/api/registries/:id', (req: Request, res: Response): void => {
 app.post('/api/registries/:id/test', async (req: Request, res: Response): Promise<void> => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
-  if (!requireTeamPro(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }

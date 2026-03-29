@@ -4,10 +4,10 @@ description: Authenticate with your existing identity provider - LDAP, Google, G
 ---
 
 <Note>
-  SSO requires a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+  SSO requires a Sencho **Admiral** license. Skipper and Community Edition do not include this feature.
 </Note>
 
-Sencho Team Pro lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication - it does not replace it.
+Sencho Admiral lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication - it does not replace it.
 
 ## Supported providers
 
@@ -173,7 +173,7 @@ If not set, Sencho auto-detects the URL from the request's `Host` header and pro
 - **State parameter** - A cryptographic random value protects against CSRF attacks on the OAuth callback
 - **Encrypted secrets** - LDAP bind passwords and OIDC client secrets are encrypted at rest with AES-256-GCM
 - **No local password** - SSO users are created with an unusable password hash. They cannot bypass SSO by using the password login form
-- **Admin-only configuration** - Only Team Pro administrators can enable or configure SSO providers
+- **Admin-only configuration** - Only Admiral administrators can enable or configure SSO providers
 
 ## Troubleshooting
 

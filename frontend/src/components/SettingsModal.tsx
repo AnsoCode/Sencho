@@ -663,7 +663,7 @@ function UsersSection() {
                             </Button>
                         </div>
 
-                        {/* Scoped Permissions (Team Pro, editing only) */}
+                        {/* Scoped Permissions (Admiral, editing only) */}
                         {editingUser && isPro && license?.variant === 'team' && (
                             <div className="border rounded-lg p-4 space-y-3 mt-4">
                                 <h4 className="text-sm font-medium">Scoped Permissions</h4>
@@ -1365,17 +1365,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                             )}
 
-                            {/* Upgrade Cards - Community: show both, Personal Pro: show Team only, Team Pro: none */}
+                            {/* Upgrade Cards - Community: show both, Skipper: show Admiral only, Admiral: none */}
                             {(license?.tier !== 'pro' || (license?.variant === 'personal' && license?.status === 'active')) && (
                                 <div className="space-y-3">
                                     <Label className="text-base">Upgrade your plan</Label>
                                     <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                                        {/* Personal Pro Card - only for Community users */}
+                                        {/* Skipper Card - only for Community users */}
                                         {license?.tier !== 'pro' && (
                                             <div className="relative border border-border rounded-xl p-4 space-y-3 bg-muted/5">
                                                 <div className="flex items-center gap-2">
                                                     <Crown className="w-4 h-4 text-amber-500" />
-                                                    <span className="font-semibold text-sm">Personal Pro</span>
+                                                    <span className="font-semibold text-sm">Skipper</span>
                                                     <Badge variant="secondary" className="text-[10px] font-semibold uppercase px-1.5 py-0">Popular</Badge>
                                                 </div>
                                                 <p className="text-xs text-muted-foreground">Professional tools for solo operators.</p>
@@ -1393,22 +1393,22 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                     onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/f75bfb65-443a-46a0-abb1-981e0ff4b382', '_blank')}
                                                 >
                                                     <Zap className="w-4 h-4 mr-2" />
-                                                    Get Personal Pro
+                                                    Get Skipper
                                                     <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
                                                 </Button>
                                             </div>
                                         )}
 
-                                        {/* Team Pro Card */}
+                                        {/* Admiral Card */}
                                         <div className="border border-border rounded-xl p-4 space-y-3 bg-muted/5">
                                             <div className="flex items-center gap-2">
                                                 <Users className="w-4 h-4 text-blue-500" />
-                                                <span className="font-semibold text-sm">Team Pro</span>
+                                                <span className="font-semibold text-sm">Admiral</span>
                                             </div>
                                             <p className="text-xs text-muted-foreground">For teams managing shared infrastructure.</p>
                                             <ul className="space-y-1.5">
                                                 {[
-                                                    ...(license?.variant === 'personal' ? ['Everything in Personal Pro'] : ['Everything in Community']),
+                                                    ...(license?.variant === 'personal' ? ['Everything in Skipper'] : ['Everything in Community']),
                                                     'Unlimited admin accounts',
                                                     'Unlimited viewer accounts',
                                                     ...(license?.variant !== 'personal' ? ['Fleet View & webhooks', 'Atomic deployment & backups'] : []),
@@ -1427,7 +1427,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                 onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/b049b824-176a-408d-a9d3-9365c979a61f', '_blank')}
                                             >
                                                 <Zap className="w-4 h-4 mr-2" />
-                                                Get Team Pro
+                                                Get Admiral
                                                 <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
                                             </Button>
                                         </div>

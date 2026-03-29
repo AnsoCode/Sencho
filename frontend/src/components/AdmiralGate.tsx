@@ -3,12 +3,12 @@ import { Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicense } from '@/context/LicenseContext';
 
-interface TeamProGateProps {
+interface AdmiralGateProps {
     children: ReactNode;
     featureName?: string;
 }
 
-const DISMISS_KEY = 'sencho-team-upgrade-prompt-dismissed';
+const DISMISS_KEY = 'sencho-admiral-upgrade-prompt-dismissed';
 const DISMISS_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function isDismissedFromStorage(): boolean {
@@ -16,7 +16,7 @@ function isDismissedFromStorage(): boolean {
     return !!dismissedAt && Date.now() - parseInt(dismissedAt, 10) < DISMISS_DURATION_MS;
 }
 
-export function TeamProGate({ children, featureName = 'This feature' }: TeamProGateProps) {
+export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralGateProps) {
     const { isPro, license } = useLicense();
     const [dismissed, setDismissed] = useState(isDismissedFromStorage);
 
@@ -31,7 +31,7 @@ export function TeamProGate({ children, featureName = 'This feature' }: TeamProG
                 <div className="absolute inset-0 flex items-start justify-center pt-8">
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs">
                         <Crown className="w-3 h-3" />
-                        Upgrade to Team Pro to unlock
+                        Upgrade to Admiral to unlock
                     </div>
                 </div>
             </div>
@@ -44,9 +44,9 @@ export function TeamProGate({ children, featureName = 'This feature' }: TeamProG
                 <Crown className="w-8 h-8 text-muted-foreground" />
             </div>
             <div className="text-center max-w-md">
-                <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Team Pro</h3>
+                <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Admiral</h3>
                 <p className="text-sm text-muted-foreground">
-                    Unlock team features like SSO authentication, audit logging, API tokens, and unlimited user accounts with a Sencho Team Pro license.
+                    Unlock team features like SSO authentication, audit logging, API tokens, and unlimited user accounts with a Sencho Admiral license.
                 </p>
             </div>
             <div className="flex gap-3">
@@ -65,7 +65,7 @@ export function TeamProGate({ children, featureName = 'This feature' }: TeamProG
                     onClick={() => window.open('https://sencho.io/pricing', '_blank')}
                 >
                     <Crown className="w-4 h-4 mr-2" />
-                    Get Team Pro
+                    Get Admiral
                 </Button>
             </div>
         </div>

@@ -179,7 +179,7 @@ export class LicenseService {
 
     /**
      * Get the license variant (personal or team) from stored metadata.
-     * Trial licenses default to "personal" - Team Pro features require a Team Pro license.
+     * Trial licenses default to "personal" - Admiral features require an Admiral license.
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();

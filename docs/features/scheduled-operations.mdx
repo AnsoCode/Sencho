@@ -4,8 +4,8 @@ description: Automate recurring Docker operations like stack restarts, fleet sna
 ---
 
 <Note>
-  Scheduled Operations requires a Sencho **Team Pro** license.
-  Personal Pro and Community Edition do not include this feature.
+  Scheduled Operations requires a Sencho **Admiral** license.
+  Skipper and Community Edition do not include this feature.
 </Note>
 
 ## Overview
@@ -26,7 +26,7 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 
 ## Creating a Scheduled Task
 
-1. Navigate to the **Schedules** tab in the top navigation bar (visible to Team Pro admins).
+1. Navigate to the **Schedules** tab in the top navigation bar (visible to Admiral admins).
 2. Click **New Schedule**.
 3. Fill in the form:
    - **Name** - a descriptive label (e.g. "Nightly staging restart").
@@ -92,7 +92,7 @@ Execution history is retained for 30 days.
 
 The Scheduler Service runs in the background and checks for due tasks every 60 seconds. When a task's next run time has passed:
 
-1. The scheduler verifies your Team Pro license is active.
+1. The scheduler verifies your Admiral license is active.
 2. It executes the configured action using the same internal services that power the UI buttons (restart, snapshot, prune).
 3. Results are logged to the execution history.
 4. The next run time is recalculated from the cron expression.

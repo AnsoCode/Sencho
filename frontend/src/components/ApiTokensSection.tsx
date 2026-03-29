@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
-import { TeamProGate } from './TeamProGate';
+import { AdmiralGate } from './AdmiralGate';
 import { TierBadge } from './TierBadge';
 import { Zap, Plus, Copy, Trash2, CheckCircle, RefreshCw, Clock } from 'lucide-react';
 
@@ -123,7 +123,7 @@ export function ApiTokensSection() {
     };
 
     return (
-        <TeamProGate featureName="API Tokens">
+        <AdmiralGate featureName="API Tokens">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -267,6 +267,6 @@ export function ApiTokensSection() {
                     </div>
                 ))}
             </div>
-        </TeamProGate>
+        </AdmiralGate>
     );
 }
