@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, Check, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard, LifeBuoy, Book, Mail, Bug, Zap } from 'lucide-react';
+import { Shield, Activity, Bell, Code, Server, Package, RefreshCw, Database, Info, Crown, CheckCircle, Check, XCircle, Clock, Webhook, Copy, Trash2, Plus, ChevronDown, ChevronRight, History, Users, Pencil, ExternalLink, CreditCard, LifeBuoy, Book, Mail, Bug, Zap, Compass, ShipWheel } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
@@ -1374,7 +1374,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                         {license?.tier !== 'pro' && (
                                             <div className="relative border border-border rounded-xl p-4 space-y-3 bg-muted/5">
                                                 <div className="flex items-center gap-2">
-                                                    <Crown className="w-4 h-4 text-amber-500" />
+                                                    <Compass className="w-4 h-4 text-amber-500" />
                                                     <span className="font-semibold text-sm">Skipper</span>
                                                     <Badge variant="secondary" className="text-[10px] font-semibold uppercase px-1.5 py-0">Popular</Badge>
                                                 </div>
@@ -1402,7 +1402,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                         {/* Admiral Card */}
                                         <div className="border border-border rounded-xl p-4 space-y-3 bg-muted/5">
                                             <div className="flex items-center gap-2">
-                                                <Users className="w-4 h-4 text-blue-500" />
+                                                <ShipWheel className="w-4 h-4 text-blue-500" />
                                                 <span className="font-semibold text-sm">Admiral</span>
                                             </div>
                                             <p className="text-xs text-muted-foreground">For teams managing shared infrastructure.</p>

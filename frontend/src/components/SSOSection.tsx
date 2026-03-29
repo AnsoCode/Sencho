@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
+import { TierBadge } from './TierBadge';
 import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 interface SSOProviderConfig {
@@ -334,7 +335,7 @@ export function SSOSection() {
                 <div>
                     <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
                         <Shield className="w-5 h-5" />
-                        SSO Authentication
+                        SSO Authentication <TierBadge />
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">
                         Connect your identity provider so team members can sign in with their existing credentials.
