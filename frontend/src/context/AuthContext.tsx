@@ -1,10 +1,25 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 
 type AppStatus = 'loading' | 'needsSetup' | 'notAuthenticated' | 'authenticated';
 
+export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin';
+
+export type PermissionAction =
+  | 'stack:read' | 'stack:edit' | 'stack:deploy' | 'stack:create' | 'stack:delete'
+  | 'node:read' | 'node:manage'
+  | 'system:settings' | 'system:users' | 'system:license' | 'system:webhooks'
+  | 'system:tokens' | 'system:console' | 'system:audit' | 'system:registries';
+
 interface UserInfo {
   username: string;
-  role: 'admin' | 'viewer';
+  role: UserRole;
+}
+
+interface PermissionsData {
+  globalRole: UserRole;
+  globalPermissions: PermissionAction[];
+  scopedPermissions: Record<string, PermissionAction[]>;
+  isTeamPro: boolean;
 }
 
 interface AuthContextType {
@@ -13,6 +28,8 @@ interface AuthContextType {
   needsSetup: boolean;
   user: UserInfo | null;
   isAdmin: boolean;
+  permissions: PermissionsData | null;
+  can: (action: PermissionAction, resourceType?: string, resourceId?: string) => boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   ssoLdapLogin: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -25,6 +42,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [appStatus, setAppStatus] = useState<AppStatus>('loading');
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [permissions, setPermissions] = useState<PermissionsData | null>(null);
 
   const checkAuth = async () => {
     try {
@@ -37,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (statusData.needsSetup) {
         setAppStatus('needsSetup');
         setUser(null);
+        setPermissions(null);
         return;
       }
 
@@ -49,12 +68,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await authResponse.json();
         setUser(data.user ?? null);
         setAppStatus('authenticated');
+
+        // Fetch effective permissions
+        try {
+          const permsRes = await fetch('/api/permissions/me', { credentials: 'include' });
+          if (permsRes.ok) {
+            setPermissions(await permsRes.json());
+          }
+        } catch {
+          // Permissions fetch is non-critical — fallback to global role only
+        }
       } else {
         setUser(null);
+        setPermissions(null);
         setAppStatus('notAuthenticated');
       }
     } catch {
       setUser(null);
+      setPermissions(null);
       setAppStatus('notAuthenticated');
     }
   };
@@ -65,6 +96,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('sencho-unauthorized', handleUnauthorized);
     return () => window.removeEventListener('sencho-unauthorized', handleUnauthorized);
   }, []);
+
+  const can = useCallback((action: PermissionAction, resourceType?: string, resourceId?: string): boolean => {
+    if (!permissions) return false;
+
+    // Admins always have full access
+    if (permissions.globalRole === 'admin') return true;
+
+    // Check global role permissions
+    if (permissions.globalPermissions.includes(action)) return true;
+
+    // Check scoped permissions
+    if (resourceType && resourceId) {
+      const key = `${resourceType}:${resourceId}`;
+      return permissions.scopedPermissions[key]?.includes(action) ?? false;
+    }
+
+    return false;
+  }, [permissions]);
 
   const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -125,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Logout error:', error);
     } finally {
       setUser(null);
+      setPermissions(null);
       setAppStatus('notAuthenticated');
     }
   };
@@ -141,6 +191,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       needsSetup: appStatus === 'needsSetup',
       user,
       isAdmin: user?.role === 'admin',
+      permissions,
+      can,
       login,
       ssoLdapLogin,
       logout,

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **rbac:** introduce Deployer and Node Admin intermediate roles with scoped permissions (Team Pro)
+  - Deployer role: can deploy, restart, stop, and start stacks but cannot edit compose files, delete stacks, or access system settings
+  - Node Admin role: full stack and node management but no system settings, user management, or license access
+  - Scoped permissions: assign roles per stack or per node for fine-grained access control
+  - Permission matrix engine with `checkPermission()` for consistent backend enforcement
+  - Frontend `can()` function in AuthContext for consistent UI guards
+  - New API endpoints: `GET/POST/DELETE /api/users/:id/roles` for managing scoped assignments
+  - New API endpoint: `GET /api/permissions/me` for fetching effective permissions
+  - Gated to Team Pro tier — Community and Personal Pro retain binary Admin/Viewer roles
+
 ## [0.17.0](https://github.com/AnsoCode/Sencho/compare/v0.16.0...v0.17.0) (2026-03-29)
 
 

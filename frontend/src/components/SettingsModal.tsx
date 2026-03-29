@@ -23,7 +23,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, type UserRole } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from './TierBadge';
 import { ProGate } from './ProGate';
@@ -380,12 +380,22 @@ function WebhooksSection({ isPro }: { isPro: boolean }) {
 interface UserItem {
     id: number;
     username: string;
-    role: 'admin' | 'viewer';
+    role: UserRole;
+    created_at: number;
+}
+
+interface RoleAssignmentItem {
+    id: number;
+    user_id: number;
+    role: UserRole;
+    resource_type: 'stack' | 'node';
+    resource_id: string;
     created_at: number;
 }
 
 function UsersSection() {
     const { user: currentUser } = useAuth();
+    const { isPro, license } = useLicense();
     const [users, setUsers] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -396,7 +406,7 @@ function UsersSection() {
     const [formUsername, setFormUsername] = useState('');
     const [formPassword, setFormPassword] = useState('');
     const [formConfirmPassword, setFormConfirmPassword] = useState('');
-    const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer');
+    const [formRole, setFormRole] = useState<UserRole>('viewer');
 
     const fetchUsers = async () => {
         try {
@@ -501,6 +511,82 @@ function UsersSection() {
         setFormPassword('');
         setFormConfirmPassword('');
         setShowForm(true);
+        fetchRoleAssignments(u.id);
+        fetchScopeResources();
+    };
+
+    // --- Scoped Role Assignments ---
+    const [roleAssignments, setRoleAssignments] = useState<RoleAssignmentItem[]>([]);
+    const [scopeResourceType, setScopeResourceType] = useState<'stack' | 'node'>('stack');
+    const [scopeResourceId, setScopeResourceId] = useState('');
+    const [scopeRole, setScopeRole] = useState<UserRole>('deployer');
+    const [availableStacks, setAvailableStacks] = useState<string[]>([]);
+    const [availableNodes, setAvailableNodes] = useState<{ id: number; name: string }[]>([]);
+    const [addingScope, setAddingScope] = useState(false);
+
+    const fetchRoleAssignments = async (userId: number) => {
+        try {
+            const res = await apiFetch(`/users/${userId}/roles`, { localOnly: true });
+            if (res.ok) setRoleAssignments(await res.json());
+            else setRoleAssignments([]);
+        } catch { setRoleAssignments([]); }
+    };
+
+    const fetchScopeResources = async () => {
+        try {
+            const [stacksRes, nodesRes] = await Promise.all([
+                apiFetch('/stacks', { localOnly: true }),
+                apiFetch('/nodes', { localOnly: true }),
+            ]);
+            if (stacksRes.ok) {
+                const data = await stacksRes.json();
+                setAvailableStacks(Array.isArray(data) ? data.filter((s: unknown): s is string => typeof s === 'string') : []);
+            }
+            if (nodesRes.ok) {
+                const data = await nodesRes.json();
+                setAvailableNodes(Array.isArray(data) ? data.map((n: { id: number; name: string }) => ({ id: n.id, name: n.name })) : []);
+            }
+        } catch { /* ignore */ }
+    };
+
+    const addRoleAssignment = async () => {
+        if (!editingUser || !scopeResourceId) return;
+        setAddingScope(true);
+        try {
+            const res = await apiFetch(`/users/${editingUser.id}/roles`, {
+                method: 'POST',
+                localOnly: true,
+                body: JSON.stringify({ role: scopeRole, resource_type: scopeResourceType, resource_id: scopeResourceId }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                toast.error(err?.error || err?.message || 'Failed to add scope.');
+                return;
+            }
+            toast.success('Scope added.');
+            setScopeResourceId('');
+            fetchRoleAssignments(editingUser.id);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Something went wrong.';
+            toast.error(msg);
+        } finally { setAddingScope(false); }
+    };
+
+    const removeRoleAssignment = async (assignId: number) => {
+        if (!editingUser) return;
+        try {
+            const res = await apiFetch(`/users/${editingUser.id}/roles/${assignId}`, { method: 'DELETE', localOnly: true });
+            if (!res.ok) {
+                const err = await res.json();
+                toast.error(err?.error || err?.message || 'Failed to remove scope.');
+                return;
+            }
+            toast.success('Scope removed.');
+            fetchRoleAssignments(editingUser.id);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Something went wrong.';
+            toast.error(msg);
+        }
     };
 
     return (
@@ -533,13 +619,19 @@ function UsersSection() {
                             </div>
                             <div className="space-y-2">
                                 <Label>Role</Label>
-                                <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
+                                <Select value={formRole} onValueChange={(v) => setFormRole(v as UserRole)}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="admin">Admin</SelectItem>
                                         <SelectItem value="viewer">Viewer</SelectItem>
+                                        {isPro && license?.variant === 'team' && (
+                                            <>
+                                                <SelectItem value="deployer">Deployer</SelectItem>
+                                                <SelectItem value="node-admin">Node Admin</SelectItem>
+                                            </>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -570,6 +662,83 @@ function UsersSection() {
                                 {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" />Saving...</> : (editingUser ? 'Update User' : 'Create User')}
                             </Button>
                         </div>
+
+                        {/* Scoped Permissions (Team Pro, editing only) */}
+                        {editingUser && isPro && license?.variant === 'team' && (
+                            <div className="border rounded-lg p-4 space-y-3 mt-4">
+                                <h4 className="text-sm font-medium">Scoped Permissions</h4>
+                                <p className="text-xs text-muted-foreground">
+                                    Grant additional permissions on specific stacks or nodes. These supplement the user's global role.
+                                </p>
+
+                                {roleAssignments.length > 0 && (
+                                    <div className="space-y-1">
+                                        {roleAssignments.map((a) => (
+                                            <div key={a.id} className="flex items-center justify-between text-sm bg-muted/50 rounded px-3 py-1.5">
+                                                <span>
+                                                    <Badge variant="outline" className="text-xs mr-2 capitalize">{a.role}</Badge>
+                                                    on <span className="font-medium capitalize">{a.resource_type}</span>: <span className="font-mono text-xs">{a.resource_id}</span>
+                                                </span>
+                                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => removeRoleAssignment(a.id)}>
+                                                    <Trash2 className="w-3 h-3 text-destructive" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="flex items-end gap-2">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Role</Label>
+                                        <Select value={scopeRole} onValueChange={(v) => setScopeRole(v as UserRole)}>
+                                            <SelectTrigger className="h-8 text-xs w-[120px]">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="deployer">Deployer</SelectItem>
+                                                <SelectItem value="node-admin">Node Admin</SelectItem>
+                                                <SelectItem value="admin">Admin</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Resource Type</Label>
+                                        <Select value={scopeResourceType} onValueChange={(v) => { setScopeResourceType(v as 'stack' | 'node'); setScopeResourceId(''); fetchScopeResources(); }}>
+                                            <SelectTrigger className="h-8 text-xs w-[100px]">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="stack">Stack</SelectItem>
+                                                <SelectItem value="node">Node</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1 flex-1">
+                                        <Label className="text-xs">Resource</Label>
+                                        <Select value={scopeResourceId} onValueChange={setScopeResourceId}>
+                                            <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="Select..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {scopeResourceType === 'stack' ? (
+                                                    availableStacks.map((s) => (
+                                                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                    ))
+                                                ) : (
+                                                    availableNodes.map((n) => (
+                                                        <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <Button size="sm" className="h-8" onClick={addRoleAssignment} disabled={addingScope || !scopeResourceId}>
+                                        <Plus className="w-3 h-3 mr-1" />
+                                        Add
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -602,7 +771,7 @@ function UsersSection() {
                                                 {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
                                             </td>
                                             <td className="px-4 py-2.5">
-                                                <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-xs capitalize">
+                                                <Badge variant={u.role === 'admin' ? 'default' : u.role === 'viewer' ? 'secondary' : 'outline'} className="text-xs capitalize">
                                                     {u.role}
                                                 </Badge>
                                             </td>
