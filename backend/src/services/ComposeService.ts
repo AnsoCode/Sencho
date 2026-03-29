@@ -1,10 +1,14 @@
 import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import WebSocket from 'ws';
 import DockerController from './DockerController';
+import { DatabaseService } from './DatabaseService';
 import { FileSystemService } from './FileSystemService';
 import { LogFormatter } from './LogFormatter';
 import { NodeRegistry } from './NodeRegistry';
+import { RegistryService } from './RegistryService';
 
 /**
  * ComposeService - local docker compose CLI execution.
@@ -30,12 +34,13 @@ export class ComposeService {
     args: string[],
     cwd: string,
     ws?: WebSocket,
-    throwOnError = true
+    throwOnError = true,
+    env?: Record<string, string | undefined>
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         cwd,
-        env: {
+        env: env ?? {
           ...process.env,
           PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
         }
@@ -73,6 +78,31 @@ export class ComposeService {
     });
   }
 
+  private async withRegistryAuth<T>(fn: (env: Record<string, string | undefined>) => Promise<T>): Promise<T> {
+    const registries = DatabaseService.getInstance().getRegistries();
+    if (registries.length === 0) {
+      return fn({
+        ...process.env,
+        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      });
+    }
+
+    const dockerConfig = await RegistryService.getInstance().resolveDockerConfig();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sencho-docker-'));
+    const configPath = path.join(tmpDir, 'config.json');
+
+    try {
+      fs.writeFileSync(configPath, JSON.stringify(dockerConfig), { mode: 0o600 });
+      return await fn({
+        ...process.env,
+        DOCKER_CONFIG: tmpDir,
+        PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      });
+    } finally {
+      try { fs.unlinkSync(configPath); fs.rmdirSync(tmpDir); } catch { /* best-effort cleanup */ }
+    }
+  }
+
   async runCommand(stackName: string, action: 'down' | 'start' | 'stop' | 'restart', ws?: WebSocket): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
     await this.execute('docker', ['compose', action], stackDir, ws);
@@ -107,7 +137,9 @@ export class ComposeService {
         console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
       }
 
-      await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+      await this.withRegistryAuth(async (env) => {
+        await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+      });
 
       // Post-Deploy Health Probe
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -138,7 +170,9 @@ export class ComposeService {
         try {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
-          await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+          await this.withRegistryAuth(async (env) => {
+            await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+          });
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);
@@ -289,11 +323,13 @@ export class ComposeService {
         console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
       }
 
-      sendOutput('=== Pulling latest images ===\n');
-      await this.execute('docker', ['compose', 'pull'], stackDir, ws);
+      await this.withRegistryAuth(async (env) => {
+        sendOutput('=== Pulling latest images ===\n');
+        await this.execute('docker', ['compose', 'pull'], stackDir, ws, true, env);
 
-      sendOutput('=== Recreating containers ===\n');
-      await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+        sendOutput('=== Recreating containers ===\n');
+        await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+      });
 
       // Post-Update Health Probe
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -326,7 +362,9 @@ export class ComposeService {
         try {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
-          await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws);
+          await this.withRegistryAuth(async (env) => {
+            await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+          });
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);

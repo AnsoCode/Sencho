@@ -2,6 +2,7 @@ import https from 'https';
 import http from 'http';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
+import { RegistryService } from './RegistryService';
 
 // ─── Image ref parsing ────────────────────────────────────────────────────────
 
@@ -73,15 +74,24 @@ function httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 
 
 // ─── Registry auth ────────────────────────────────────────────────────────────
 
-async function getAuthToken(registry: string, repo: string): Promise<string | null> {
+async function getAuthToken(
+    registry: string,
+    repo: string,
+    credentials?: { username: string; password: string } | null
+): Promise<string | null> {
     try {
+        const basicHeaders: Record<string, string> = {};
+        if (credentials) {
+            basicHeaders['Authorization'] = `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`;
+        }
+
         let tokenUrl: string;
 
         if (registry === 'registry-1.docker.io') {
             tokenUrl = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull`;
         } else {
             // Ping /v2/ to get the WWW-Authenticate challenge
-            const ping = await httpGet(`https://${registry}/v2/`);
+            const ping = await httpGet(`https://${registry}/v2/`, basicHeaders);
             const wwwAuth = ping.headers['www-authenticate'] as string | undefined;
             if (!wwwAuth) return null;
 
@@ -96,7 +106,7 @@ async function getAuthToken(registry: string, repo: string): Promise<string | nu
             tokenUrl = `${realmMatch[1]}?${params.toString()}`;
         }
 
-        const tokenRes = await httpGet(tokenUrl);
+        const tokenRes = await httpGet(tokenUrl, basicHeaders);
         if (tokenRes.statusCode !== 200) return null;
 
         const parsed = JSON.parse(tokenRes.body);
@@ -117,9 +127,14 @@ const MANIFEST_ACCEPT = [
     'application/vnd.oci.image.manifest.v1+json',
 ].join(', ');
 
-async function getRemoteDigest(registry: string, repo: string, tag: string): Promise<string | null> {
+async function getRemoteDigest(
+    registry: string,
+    repo: string,
+    tag: string,
+    credentials?: { username: string; password: string } | null
+): Promise<string | null> {
     try {
-        const token = await getAuthToken(registry, repo);
+        const token = await getAuthToken(registry, repo, credentials);
         const headers: Record<string, string> = { Accept: MANIFEST_ACCEPT };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -259,6 +274,9 @@ export class ImageUpdateService {
         const parsed = parseImageRef(imageRef);
         if (!parsed) return false;
 
+        // Look up stored credentials for this registry
+        const credentials = await RegistryService.getInstance().getAuthForRegistry(parsed.registry);
+
         // Get local digest from RepoDigests
         let localDigest: string | null = null;
         try {
@@ -281,7 +299,7 @@ export class ImageUpdateService {
 
         if (!localDigest) return false; // Locally built or never pulled with a digest
 
-        const remoteDigest = await getRemoteDigest(parsed.registry, parsed.repo, parsed.tag);
+        const remoteDigest = await getRemoteDigest(parsed.registry, parsed.repo, parsed.tag, credentials);
         if (!remoteDigest) return false; // Registry unreachable - no false positives
 
         const hasUpdate = localDigest !== remoteDigest;

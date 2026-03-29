@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **registries:** add private registry credential management (Team Pro). Store encrypted credentials for Docker Hub, GHCR, AWS ECR, and self-hosted registries. Credentials are automatically injected during deploy/pull via temporary DOCKER_CONFIG. ECR short-lived tokens are refreshed on every operation. Image update checks now authenticate against private registries.
+
 ### Changed
 
 * **ui:** redesign top bar into three-zone layout — node pill (left), animated navigation group (center), utilities (right). Replaces flat row of individual buttons with a cohesive tab-style navigation using animated sliding highlight. Includes responsive behavior: icon+text at xl, icons-only at md, sheet drawer on mobile.

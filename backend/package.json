@@ -33,6 +33,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@aws-sdk/client-ecr": "^3.1019.0",
     "@types/cors": "^2.8.19",
     "@types/dockerode": "^4.0.1",
     "@types/express": "^5.0.6",

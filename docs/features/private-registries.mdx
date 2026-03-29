@@ -1,0 +1,114 @@
+---
+title: Private Registries
+description: Store credentials for private Docker registries so Sencho can automatically authenticate during deploy, pull, and image update checks.
+---
+
+<Note>
+  Private Registry Management requires a Sencho **Team Pro** license. Personal Pro and Community Edition do not include this feature.
+</Note>
+
+Sencho can store credentials for your private Docker registries and inject them automatically whenever it runs `docker compose pull` or `docker compose up`. This means your stacks can reference private images without needing to manually `docker login` on the host.
+
+## Supported registry types
+
+| Type | Description | Credentials |
+|------|-------------|-------------|
+| **Docker Hub** | Private Docker Hub organizations and repositories | Username + access token |
+| **GHCR** | GitHub Container Registry (`ghcr.io`) | GitHub username + personal access token (PAT) |
+| **AWS ECR** | Amazon Elastic Container Registry | AWS Access Key ID + Secret Access Key |
+| **Custom** | Any self-hosted Docker V2 registry | Username + password or token |
+
+## Adding a registry
+
+1. Open **Settings Hub** and navigate to the **Registries** tab (visible to Team Pro admins only).
+2. Click **Add Registry**.
+3. Select the registry type. The URL field auto-fills with the standard endpoint for Docker Hub and GHCR.
+4. Enter a descriptive name, the registry URL, and your credentials.
+5. For **ECR** registries, also provide the AWS region (e.g., `us-east-1`).
+6. Click **Add**.
+
+<Frame>
+  <img src="/images/private-registries/registries-with-entry.png" alt="Private Registries management view in Settings Hub showing a configured Docker Hub registry" />
+</Frame>
+
+<Frame>
+  <img src="/images/private-registries/registries-add-form.png" alt="Add Registry form with type selector, credentials, and URL fields" />
+</Frame>
+
+## Testing connectivity
+
+After adding a registry, click the checkmark icon on the registry card to test the connection. Sencho will attempt to authenticate against the registry's `/v2/` endpoint and report success or failure.
+
+For ECR registries, the test verifies that the AWS credentials can successfully obtain an authorization token.
+
+## How credentials are applied
+
+### Deploy and pull operations
+
+When you deploy or update a stack, Sencho:
+
+1. Resolves credentials for all configured registries.
+2. For ECR registries, fetches a fresh authorization token from AWS (ECR tokens are short-lived, lasting 12 hours).
+3. Writes a temporary Docker config file with all registry auth entries.
+4. Sets the `DOCKER_CONFIG` environment variable so `docker compose` uses the temporary config.
+5. Runs the compose operation (pull and/or up).
+6. Cleans up the temporary config file immediately after.
+
+This approach ensures credentials are never persisted on disk beyond the duration of the operation.
+
+### Image update checks
+
+Sencho's background image update checker also uses stored registry credentials. When checking for newer image versions, it passes your credentials to the registry's authentication endpoint so it can compare local and remote digests for private images.
+
+## ECR setup
+
+AWS ECR uses short-lived authentication tokens (valid for 12 hours) derived from your IAM credentials. Sencho handles this automatically:
+
+1. Store your **AWS Access Key ID** and **Secret Access Key** as the username and secret.
+2. Specify the **AWS Region** where your ECR registry lives.
+3. On every deploy or pull, Sencho calls the AWS `GetAuthorizationToken` API to obtain a fresh token.
+
+<Warning>
+  Use an IAM user or role with only the `ecr:GetAuthorizationToken` and `ecr:BatchGetImage` permissions. Avoid using root account credentials.
+</Warning>
+
+### IAM policy example
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchCheckLayerAvailability"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+## Registry URL reference
+
+| Registry | URL to use |
+|----------|-----------|
+| Docker Hub | `https://index.docker.io/v1/` |
+| GHCR | `ghcr.io` |
+| AWS ECR | `{account_id}.dkr.ecr.{region}.amazonaws.com` |
+| Self-hosted | Your registry hostname, e.g. `registry.example.com` |
+
+## Security
+
+- **Encrypted storage** - Registry secrets are encrypted at rest using AES-256-GCM, the same encryption used for remote node tokens and SSO secrets.
+- **No persistent Docker login** - Credentials are written to a temporary file for the duration of each operation and immediately deleted afterward.
+- **Secrets never exposed** - The API never returns decrypted secrets. The UI shows only whether a secret is stored.
+- **Audit trail** - Registry create, update, and delete operations are recorded in the [Audit Log](/features/audit-log).
+- **Admin-only access** - Only admin users with a Team Pro license can manage registry credentials.
+
+## Multi-node behavior
+
+Registry credentials are stored per Sencho instance. When managing remote nodes, each node runs its own Sencho instance with its own registry credentials. Configure private registries on each node that needs access to private images.
