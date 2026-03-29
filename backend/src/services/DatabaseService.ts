@@ -62,16 +62,28 @@ export interface WebhookExecution {
 
 export type AuthProvider = 'local' | 'ldap' | 'oidc_google' | 'oidc_github' | 'oidc_okta';
 
+export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin';
+export type ResourceType = 'stack' | 'node';
+
 export interface User {
     id: number;
     username: string;
     password_hash: string;
-    role: 'admin' | 'viewer';
+    role: UserRole;
     auth_provider: AuthProvider;
     provider_id: string | null;
     email: string | null;
     created_at: number;
     updated_at: number;
+}
+
+export interface RoleAssignment {
+    id: number;
+    user_id: number;
+    role: UserRole;
+    resource_type: ResourceType;
+    resource_id: string;
+    created_at: number;
 }
 
 export interface SSOConfig {
@@ -201,6 +213,7 @@ export class DatabaseService {
         this.migrateEncryptNodeTokens();
         this.migrateSSOColumns();
         this.migrateRegistries();
+        this.migrateRoleAssignments();
     }
 
     public static getInstance(): DatabaseService {
@@ -527,6 +540,25 @@ export class DatabaseService {
                 updated_at INTEGER NOT NULL
             );
         `);
+    }
+
+    private migrateRoleAssignments(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS role_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_role_assignments_user ON role_assignments(user_id);
+            CREATE INDEX IF NOT EXISTS idx_role_assignments_resource ON role_assignments(resource_type, resource_id);
+        `);
+        try {
+            this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_role_assignments_unique ON role_assignments(user_id, role, resource_type, resource_id)');
+        } catch { /* already exists */ }
     }
 
     // --- Agents ---
@@ -902,7 +934,7 @@ export class DatabaseService {
         return this.db.prepare('SELECT * FROM users WHERE auth_provider = ? AND provider_id = ?').get(authProvider, providerId) as User | undefined;
     }
 
-    public addUser(user: { username: string; password_hash: string; role: 'admin' | 'viewer'; auth_provider?: AuthProvider; provider_id?: string | null; email?: string | null }): number {
+    public addUser(user: { username: string; password_hash: string; role: UserRole; auth_provider?: AuthProvider; provider_id?: string | null; email?: string | null }): number {
         const now = Date.now();
         const result = this.db.prepare(
             'INSERT INTO users (username, password_hash, role, auth_provider, provider_id, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -941,6 +973,44 @@ export class DatabaseService {
 
     public getViewerCount(): number {
         return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'viewer'").get() as { count: number })?.count || 0;
+    }
+
+    public getNonAdminCount(): number {
+        return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin'").get() as { count: number })?.count || 0;
+    }
+
+    // --- Role Assignments ---
+
+    public getRoleAssignments(userId: number, resourceType: ResourceType, resourceId: string): RoleAssignment[] {
+        return this.db.prepare(
+            'SELECT * FROM role_assignments WHERE user_id = ? AND resource_type = ? AND resource_id = ?'
+        ).all(userId, resourceType, resourceId) as RoleAssignment[];
+    }
+
+    public getAllRoleAssignments(userId: number): RoleAssignment[] {
+        return this.db.prepare(
+            'SELECT * FROM role_assignments WHERE user_id = ? ORDER BY resource_type, resource_id'
+        ).all(userId) as RoleAssignment[];
+    }
+
+    public addRoleAssignment(assignment: { user_id: number; role: UserRole; resource_type: ResourceType; resource_id: string }): number {
+        const now = Date.now();
+        const result = this.db.prepare(
+            'INSERT INTO role_assignments (user_id, role, resource_type, resource_id, created_at) VALUES (?, ?, ?, ?, ?)'
+        ).run(assignment.user_id, assignment.role, assignment.resource_type, assignment.resource_id, now);
+        return result.lastInsertRowid as number;
+    }
+
+    public getRoleAssignmentById(id: number): RoleAssignment | undefined {
+        return this.db.prepare('SELECT * FROM role_assignments WHERE id = ?').get(id) as RoleAssignment | undefined;
+    }
+
+    public deleteRoleAssignment(id: number): void {
+        this.db.prepare('DELETE FROM role_assignments WHERE id = ?').run(id);
+    }
+
+    public deleteRoleAssignmentsByUser(userId: number): void {
+        this.db.prepare('DELETE FROM role_assignments WHERE user_id = ?').run(userId);
     }
 
     // --- SSO Config ---

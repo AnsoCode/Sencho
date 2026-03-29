@@ -18,7 +18,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node, AuthProvider, ScheduledTask } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, RoleAssignment } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
@@ -204,7 +204,7 @@ app.use(nodeContextMiddleware);
 declare global {
   namespace Express {
     interface Request {
-      user?: { username: string; role: 'admin' | 'viewer' };
+      user?: { username: string; role: UserRole; userId: number };
       nodeId: number;
       apiTokenScope?: 'read-only' | 'deploy-only' | 'full-admin';
     }
@@ -254,19 +254,20 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       }
       DatabaseService.getInstance().updateApiTokenLastUsed(apiToken.id);
       const creator = DatabaseService.getInstance().getUserById(apiToken.user_id);
-      const roleMap: Record<string, 'admin' | 'viewer'> = {
+      const roleMap: Record<string, UserRole> = {
         'read-only': 'viewer',
         'deploy-only': 'admin',
         'full-admin': 'admin',
       };
-      req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer' };
+      req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer', userId: apiToken.user_id };
       req.apiTokenScope = apiToken.scope as 'read-only' | 'deploy-only' | 'full-admin';
       next();
       return;
     }
 
     // Accept both user sessions and node proxy tokens. Default role to 'admin' for backward compat with pre-RBAC tokens.
-    req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as 'admin' | 'viewer') || 'admin' };
+    const dbUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
+    req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as UserRole) || 'admin', userId: dbUser?.id ?? 0 };
     next();
   } catch (err) {
     console.error('[Auth] Token validation failed:', (err as Error).message);
@@ -805,6 +806,80 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   }
   return true;
 };
+
+// --- Scoped RBAC Permission Engine (Team Pro) ---
+
+type PermissionAction =
+  | 'stack:read' | 'stack:edit' | 'stack:deploy' | 'stack:create' | 'stack:delete'
+  | 'node:read' | 'node:manage'
+  | 'system:settings' | 'system:users' | 'system:license' | 'system:webhooks'
+  | 'system:tokens' | 'system:console' | 'system:audit' | 'system:registries';
+
+const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
+  admin: [
+    'stack:read', 'stack:edit', 'stack:deploy', 'stack:create', 'stack:delete',
+    'node:read', 'node:manage',
+    'system:settings', 'system:users', 'system:license', 'system:webhooks',
+    'system:tokens', 'system:console', 'system:audit', 'system:registries',
+  ],
+  'node-admin': [
+    'stack:read', 'stack:edit', 'stack:deploy', 'stack:create', 'stack:delete',
+    'node:read', 'node:manage',
+  ],
+  deployer: [
+    'stack:read', 'stack:deploy',
+  ],
+  viewer: [
+    'stack:read', 'node:read',
+  ],
+};
+
+/**
+ * Core permission resolver. Checks if the current user can perform `action` on an optional resource.
+ * 1. Admin → always true (backward compat)
+ * 2. Check global role permissions
+ * 3. If resource specified AND Team Pro → check scoped role_assignments
+ */
+function checkPermission(
+  req: Request,
+  action: PermissionAction,
+  resourceType?: ResourceType,
+  resourceId?: string,
+): boolean {
+  if (!req.user) return false;
+
+  const globalRole = req.user.role;
+
+  // Admins always have full access
+  if (globalRole === 'admin') return true;
+
+  // Check if the user's global role grants this action
+  if (ROLE_PERMISSIONS[globalRole]?.includes(action)) return true;
+
+  // Scoped assignments only apply when a resource is specified and license is Team Pro
+  if (!resourceType || !resourceId) return false;
+  if (LicenseService.getInstance().getVariant() !== 'team') return false;
+
+  const assignments = DatabaseService.getInstance().getRoleAssignments(req.user.userId, resourceType, resourceId);
+  for (const assignment of assignments) {
+    if (ROLE_PERMISSIONS[assignment.role]?.includes(action)) return true;
+  }
+
+  return false;
+}
+
+/** Generic permission guard — sends 403 if denied. */
+function requirePermission(
+  req: Request,
+  res: Response,
+  action: PermissionAction,
+  resourceType?: ResourceType,
+  resourceId?: string,
+): boolean {
+  if (checkPermission(req, action, resourceType, resourceId)) return true;
+  res.status(403).json({ error: 'Permission denied.', code: 'PERMISSION_DENIED' });
+  return false;
+}
 
 // Scope enforcement for API tokens - restricts which endpoints a token can reach.
 const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
@@ -1690,10 +1765,12 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(400).json({ error: 'Password must be at least 6 characters' });
       return;
     }
-    if (role !== 'admin' && role !== 'viewer') {
-      res.status(400).json({ error: 'Role must be "admin" or "viewer"' });
+    const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin'];
+    if (!validRoles.includes(role)) {
+      res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
       return;
     }
+    if ((role === 'deployer' || role === 'node-admin') && !requireTeamPro(req, res)) return;
 
     const db = DatabaseService.getInstance();
     const existing = db.getUserByUsername(username);
@@ -1708,7 +1785,7 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
       return;
     }
-    if (role === 'viewer' && seatLimits.maxViewers !== null && db.getViewerCount() >= seatLimits.maxViewers) {
+    if (role !== 'admin' && seatLimits.maxViewers !== null && db.getNonAdminCount() >= seatLimits.maxViewers) {
       res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxViewers} viewer account${seatLimits.maxViewers === 1 ? '' : 's'}. Upgrade to Team Pro for unlimited accounts.` });
       return;
     }
@@ -1755,17 +1832,19 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
     }
 
     if (role !== undefined) {
-      if (role !== 'admin' && role !== 'viewer') {
-        res.status(400).json({ error: 'Role must be "admin" or "viewer"' });
+      const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin'];
+      if (!validRoles.includes(role)) {
+        res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
         return;
       }
+      if ((role === 'deployer' || role === 'node-admin') && !requireTeamPro(req, res)) return;
       // Prevent demoting yourself
       if (user.username === req.user!.username && role !== user.role) {
         res.status(400).json({ error: 'Cannot change your own role' });
         return;
       }
       // Prevent removing the last admin
-      if (user.role === 'admin' && role === 'viewer' && db.getAdminCount() <= 1) {
+      if (user.role === 'admin' && role !== 'admin' && db.getAdminCount() <= 1) {
         res.status(400).json({ error: 'Cannot demote the only admin user' });
         return;
       }
@@ -1820,6 +1899,137 @@ app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response)
   } catch (error) {
     console.error('[Users] Delete error:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// --- Scoped Role Assignments (Team Pro) ---
+
+app.get('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const userId = parseInt(req.params.id as string, 10);
+    const db = DatabaseService.getInstance();
+    if (!db.getUser(userId)) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const assignments = db.getAllRoleAssignments(userId);
+    res.json(assignments);
+  } catch (error) {
+    console.error('[Roles] List error:', error);
+    res.status(500).json({ error: 'Failed to fetch role assignments' });
+  }
+});
+
+app.post('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const userId = parseInt(req.params.id as string, 10);
+    const { role, resource_type, resource_id } = req.body;
+
+    const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin'];
+    if (!validRoles.includes(role)) {
+      res.status(400).json({ error: 'Invalid role' });
+      return;
+    }
+    const validResourceTypes: ResourceType[] = ['stack', 'node'];
+    if (!validResourceTypes.includes(resource_type)) {
+      res.status(400).json({ error: 'Invalid resource type' });
+      return;
+    }
+    if (!resource_id || typeof resource_id !== 'string') {
+      res.status(400).json({ error: 'resource_id is required' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    if (!db.getUser(userId)) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    try {
+      const id = db.addRoleAssignment({ user_id: userId, role, resource_type, resource_id });
+      res.status(201).json({ id, user_id: userId, role, resource_type, resource_id });
+    } catch (err: unknown) {
+      if ((err as Error).message?.includes('UNIQUE constraint')) {
+        res.status(409).json({ error: 'This role assignment already exists' });
+        return;
+      }
+      throw err;
+    }
+  } catch (error) {
+    console.error('[Roles] Create error:', error);
+    res.status(500).json({ error: 'Failed to add role assignment' });
+  }
+});
+
+app.delete('/api/users/:id/roles/:assignId', authMiddleware, (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const userId = parseInt(req.params.id as string, 10);
+    const assignId = parseInt(req.params.assignId as string, 10);
+    const db = DatabaseService.getInstance();
+
+    const assignment = db.getRoleAssignmentById(assignId);
+    if (!assignment || assignment.user_id !== userId) {
+      res.status(404).json({ error: 'Role assignment not found' });
+      return;
+    }
+
+    db.deleteRoleAssignment(assignId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Roles] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete role assignment' });
+  }
+});
+
+// Return the current user's effective permissions (any authenticated user)
+app.get('/api/permissions/me', authMiddleware, (req: Request, res: Response): void => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const globalRole = req.user.role;
+    const globalPermissions = ROLE_PERMISSIONS[globalRole] || [];
+    const assignments = db.getAllRoleAssignments(req.user.userId);
+
+    const scopedPermissions: Record<string, PermissionAction[]> = {};
+    for (const a of assignments) {
+      const key = `${a.resource_type}:${a.resource_id}`;
+      const perms = ROLE_PERMISSIONS[a.role] || [];
+      const existing = scopedPermissions[key] || [];
+      scopedPermissions[key] = [...new Set([...existing, ...perms])];
+    }
+
+    res.json({
+      globalRole,
+      globalPermissions,
+      scopedPermissions,
+      isTeamPro: LicenseService.getInstance().getVariant() === 'team',
+    });
+  } catch (error) {
+    console.error('[Permissions] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch permissions' });
   }
 });
 
@@ -2231,9 +2441,9 @@ app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
 });
 
 app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
       return res.status(400).json({ error: 'Invalid stack name' });
     }
@@ -2377,9 +2587,9 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 });
 
 app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
       return res.status(400).json({ error: 'Invalid stack name' });
     }
@@ -2411,7 +2621,7 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requirePermission(req, res, 'stack:create')) return;
   try {
     const { stackName } = req.body;
     if (!stackName || typeof stackName !== 'string') {
@@ -2432,8 +2642,8 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
 });
 
 app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
   const stackName = req.params.name as string;
+  if (!requirePermission(req, res, 'stack:delete', 'stack', stackName)) return;
   try {
     // Stage 1: Tell Docker to clean up ghost networks/containers
     try {
@@ -2511,9 +2721,9 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 
 // End of legacy container routes
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
     res.json({ message: 'Deployed successfully' });
@@ -2525,9 +2735,9 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
 });
 
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
   } catch (error) {
@@ -2536,9 +2746,9 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
@@ -2555,9 +2765,9 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 });
 
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
@@ -2574,9 +2784,9 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 });
 
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
@@ -2594,9 +2804,9 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
 
 // Update stack: pull images and recreate containers
 app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   try {
-    const stackName = req.params.stackName as string;
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
     res.json({ status: 'Update completed' });
@@ -2608,10 +2818,10 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
 
 // Manual rollback endpoint (Pro + Admin)
 app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   if (!requirePro(req, res)) return;
   try {
-    const stackName = req.params.stackName as string;
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const backupInfo = await fsSvc.getBackupInfo(stackName);
     if (!backupInfo.exists) {
@@ -4098,7 +4308,7 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
     return;
   }
-  if (!requireAdmin(req, res)) return;
+  if (!requirePermission(req, res, 'node:manage')) return;
   try {
     const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
 
@@ -4143,9 +4353,10 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
     res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
     return;
   }
-  if (!requireAdmin(req, res)) return;
+  const nodeId = req.params.id as string;
+  if (!requirePermission(req, res, 'node:manage', 'node', nodeId)) return;
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseInt(nodeId);
     const updates = req.body;
 
     if (updates.api_url !== undefined && updates.api_url !== '') {
@@ -4173,9 +4384,10 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
     res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
     return;
   }
-  if (!requireAdmin(req, res)) return;
+  const nodeIdParam = req.params.id as string;
+  if (!requirePermission(req, res, 'node:manage', 'node', nodeIdParam)) return;
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseInt(nodeIdParam);
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
     res.json({ success: true });

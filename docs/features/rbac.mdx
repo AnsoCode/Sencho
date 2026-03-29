@@ -1,70 +1,101 @@
 ---
 title: RBAC & User Management
-description: Role-based access control for Sencho Pro - create admin and viewer accounts to control who can modify your stacks.
+description: Role-based access control for Sencho - manage admin, viewer, deployer, and node admin accounts with scoped permissions.
 ---
 
 <Note>
-  RBAC requires a Sencho Pro license. Community Edition supports a single admin account only.
+  Multi-user support requires a Sencho Pro license. Community Edition supports a single admin account only. Intermediate roles (Deployer, Node Admin) and scoped permissions require **Team Pro**.
 </Note>
 
-Sencho Pro introduces role-based access control with two distinct roles: **Admin** and **Viewer**. This lets you give team members read-only access to your infrastructure without risking accidental changes.
+Sencho supports role-based access control with four distinct roles. The classic **Admin** and **Viewer** roles are available on all Pro tiers, while **Deployer** and **Node Admin** are exclusive to Team Pro and support scoped permissions per stack or node.
 
 ## Roles
 
-| Role | Description |
-|------|-------------|
-| **Admin** | Full access to all features - deploy, edit, manage users, configure nodes, and more |
-| **Viewer** | Read-only access to dashboards, logs, stats, and file contents |
+| Role | Description | Tier |
+|------|-------------|------|
+| **Admin** | Full access to all features — deploy, edit, manage users, configure nodes, and more | Pro |
+| **Viewer** | Read-only access to dashboards, logs, stats, and file contents | Pro |
+| **Deployer** | Can deploy, restart, stop, and start stacks — but cannot edit compose files, delete stacks, or access system settings | Team Pro |
+| **Node Admin** | Full stack and node management within their scope — cannot access system settings, users, or license management | Team Pro |
 
-### What viewers can see
+### Permission matrix
 
-- Dashboard and home metrics
-- Stacks list and stack detail view
-- Compose and `.env` file contents (read-only)
-- Per-container stats and logs
-- Fleet view
-- Resources hub (images, volumes, networks - read-only)
-- Global logs
-- Notifications
+| Action | Admin | Node Admin | Deployer | Viewer |
+|--------|-------|------------|----------|--------|
+| View stacks, logs, stats | ✅ | ✅ | ✅ | ✅ |
+| Deploy / restart / stop / start stacks | ✅ | ✅ | ✅ | ❌ |
+| Edit compose and `.env` files | ✅ | ✅ | ❌ | ❌ |
+| Create and delete stacks | ✅ | ✅ | ❌ | ❌ |
+| View nodes | ✅ | ✅ | ✅ | ✅ |
+| Add / edit / delete nodes | ✅ | ✅ | ❌ | ❌ |
+| System settings | ✅ | ❌ | ❌ | ❌ |
+| User management | ✅ | ❌ | ❌ | ❌ |
+| License management | ✅ | ❌ | ❌ | ❌ |
+| Webhooks | ✅ | ❌ | ❌ | ❌ |
+| API tokens | ✅ | ❌ | ❌ | ❌ |
+| Host console | ✅ | ❌ | ❌ | ❌ |
+| Audit log | ✅ | ❌ | ❌ | ❌ |
 
-### What viewers cannot do
+## Scoped permissions
 
-- Edit compose or environment files
-- Deploy, restart, stop, or start stacks
-- Create or delete stacks
-- Manage users, nodes, webhooks, or alerts
-- Access the host console
-- Prune resources
-- Change settings
+<Note>
+  Scoped permissions require a **Team Pro** license.
+</Note>
+
+Roles can be scoped to specific stacks or nodes. This means you can grant a user the **Deployer** role globally, but also give them **Node Admin** access on a specific node — or limit a viewer to deploy access on only certain stacks.
+
+Scoped permissions **add to** the user's global role. They never reduce it. A user with a global Viewer role plus a scoped Deployer assignment on "my-app" stack can deploy "my-app" but has read-only access to everything else.
+
+### Example scenarios
+
+- A **Viewer** with a scoped **Deployer** assignment on the `frontend` stack can deploy, restart, and stop only that stack.
+- A **Deployer** with a scoped **Node Admin** assignment on node "staging-server" can manage stacks and nodes on that server, plus deploy globally.
+- A **Node Admin** without any scoped assignments can manage all stacks and nodes but has no access to system settings.
 
 ## Managing users
 
 <Frame>
-  <img src="/images/rbac/users-settings.png" alt="Users management panel showing user list with roles" />
+  <img src="/images/rbac/role-selector.png" alt="User Management with role-based access control" />
 </Frame>
 
 Admins can manage accounts in **Settings → Users**. From there you can:
 
-- **Create** a new user with a username, password, and role (Admin or Viewer)
+- **Create** a new user with a username, password, and role
 - **Edit** an existing user's password or role
 - **Delete** a user account
+
+When creating or editing a user on Team Pro, you'll see all four role options in the role selector. On Personal Pro, only Admin and Viewer are available.
+
+<Frame>
+  <img src="/images/rbac/role-selector-dropdown.png" alt="Role selector showing all four roles on Team Pro" />
+</Frame>
+
+## Managing scoped permissions
+
+When editing a user on Team Pro, a **Scoped Permissions** section appears below the user form. Here you can:
+
+1. **View** the user's current scoped assignments
+2. **Add** a new scope by selecting a role, resource type (stack or node), and specific resource
+3. **Remove** an existing scope
+
+Each scoped assignment grants the specified role's permissions on the specified resource only.
 
 ## SSO auto-provisioning
 
 With a Team Pro license, users can also be created automatically when they log in via SSO (LDAP, Google, GitHub, or Okta). SSO users appear in the Users list alongside local accounts. They are assigned a role based on identity provider group membership or claim mapping.
 
-SSO users cannot log in with a password - they must always authenticate through their identity provider.
+SSO users cannot log in with a password — they must always authenticate through their identity provider. After SSO provisioning, an admin can add scoped permissions to SSO users just like local accounts.
 
 To set up identity provider authentication, see [SSO Authentication →](/features/sso).
 
 ## Migration from single-admin setup
 
-When you upgrade to Sencho Pro, your existing single-admin credentials are automatically migrated to the new users table. No manual action is required - your login continues to work as before, and your account is assigned the Admin role.
+When you upgrade to Sencho Pro, your existing single-admin credentials are automatically migrated to the new users table. No manual action is required — your login continues to work as before, and your account is assigned the Admin role.
 
 ## License tiers
 
-| Tier | Admin accounts | Viewer accounts |
-|------|---------------|-----------------|
-| **Community** | 1 | 0 |
-| **Personal Pro** | 1 | 3 |
-| **Team Pro** | Unlimited | Unlimited |
+| Tier | Admin accounts | Non-admin accounts | Intermediate roles | Scoped permissions |
+|------|---------------|-------------------|-------------------|-------------------|
+| **Community** | 1 | 0 | ❌ | ❌ |
+| **Personal Pro** | 1 | 3 | ❌ | ❌ |
+| **Team Pro** | Unlimited | Unlimited | ✅ | ✅ |

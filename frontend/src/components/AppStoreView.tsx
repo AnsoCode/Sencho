@@ -45,7 +45,7 @@ interface AppStoreViewProps {
 }
 
 export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
-    const { isAdmin } = useAuth();
+    const { can } = useAuth();
     const { activeNode } = useNodes();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -473,10 +473,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                 <div className="flex flex-col w-full gap-2">
                                     <Button
                                         onClick={handleDeploy}
-                                        disabled={isDeploying || !stackName.trim() || !isAdmin}
+                                        disabled={isDeploying || !stackName.trim() || !can('stack:create')}
                                         className="w-full"
                                         size="lg"
-                                        title={!isAdmin ? 'Admin access required to deploy' : undefined}
+                                        title={!can('stack:create') ? 'Permission required to deploy' : undefined}
                                     >
                                         {isDeploying ? (
                                             <>

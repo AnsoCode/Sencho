@@ -78,7 +78,7 @@ const formatBytes = (bytes: number) => {
 };
 
 export default function EditorLayout() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
   const { isPro, license } = useLicense();
   const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
@@ -1128,7 +1128,7 @@ export default function EditorLayout() {
         )}
 
         {/* Create Stack Button */}
-        {isAdmin && <div className="p-4">
+        {can('stack:create') && <div className="p-4">
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="w-full rounded-lg">
@@ -1234,7 +1234,7 @@ export default function EditorLayout() {
                                       <Download className="h-4 w-4 mr-2" />
                                       Update
                                     </DropdownMenuItem>
-                                    {isAdmin && (
+                                    {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
                                       <>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
@@ -1282,7 +1282,7 @@ export default function EditorLayout() {
                           <Download className="h-4 w-4 mr-2" />
                           Update
                         </ContextMenuItem>
-                        {isAdmin && (
+                        {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
                           <>
                             <ContextMenuSeparator />
                             <ContextMenuItem
@@ -1490,7 +1490,7 @@ export default function EditorLayout() {
                         {/* Stack Name */}
                         <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
                         {/* Action Bar */}
-                        {isAdmin && (
+                        {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
                               <>
@@ -1712,7 +1712,7 @@ export default function EditorLayout() {
                         </Select>
                       )}
                     </div>
-                    {isAdmin && (
+                    {can('stack:edit', 'stack', stackName) && (
                       <div className="flex gap-2">
                         {!isEditing ? (
                           <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
@@ -1767,7 +1767,7 @@ export default function EditorLayout() {
                             fontSize: 14,
                             padding: { top: 10 },
                             scrollBeyondLastLine: false,
-                            readOnly: !isEditing || !isAdmin,
+                            readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
                           }}
                         />
                       )}
