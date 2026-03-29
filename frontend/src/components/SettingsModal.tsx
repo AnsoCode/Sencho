@@ -1192,12 +1192,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                             )}
 
-                            {/* Upgrade Cards — Community: show both, Personal Pro: show Team only, Team Pro: none */}
+                            {/* Upgrade Cards - Community: show both, Personal Pro: show Team only, Team Pro: none */}
                             {(license?.tier !== 'pro' || (license?.variant === 'personal' && license?.status === 'active')) && (
                                 <div className="space-y-3">
                                     <Label className="text-base">Upgrade your plan</Label>
                                     <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                                        {/* Personal Pro Card — only for Community users */}
+                                        {/* Personal Pro Card - only for Community users */}
                                         {license?.tier !== 'pro' && (
                                             <div className="relative border border-border rounded-xl p-4 space-y-3 bg-muted/5">
                                                 <div className="flex items-center gap-2">
@@ -1262,7 +1262,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                             )}
 
-                            {/* License key activation — show when not active */}
+                            {/* License key activation - show when not active */}
                             {license?.status !== 'active' && (
                                 <div className="border-t border-border pt-4 space-y-2">
                                     <Label className="text-sm text-muted-foreground">Have a license key?</Label>

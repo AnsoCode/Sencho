@@ -1,0 +1,85 @@
+---
+title: Scheduled Operations
+description: Automate recurring Docker operations like stack restarts, fleet snapshots, and system prunes on a cron schedule.
+---
+
+<Note>
+  Scheduled Operations requires a Sencho **Team Pro** license.
+  Personal Pro and Community Edition do not include this feature.
+</Note>
+
+## Overview
+
+Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest - including a full execution history log so you always know what ran and when.
+
+## Supported Actions
+
+| Action | Target | Description |
+|--------|--------|-------------|
+| **Restart Stack** | A specific stack on a specific node | Restarts all containers in the stack via the Docker Engine API |
+| **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
+| **System Prune** | A specific node (or the default node) | Prunes unused containers, images, networks, and volumes |
+
+## Creating a Scheduled Task
+
+1. Navigate to the **Schedules** tab in the top navigation bar (visible to Team Pro admins).
+2. Click **New Schedule**.
+3. Fill in the form:
+   - **Name** - a descriptive label (e.g. "Nightly staging restart").
+   - **Action** - choose Restart Stack, Fleet Snapshot, or System Prune.
+   - **Stack / Node** - if you chose Restart Stack, select the target stack and the node it runs on.
+   - **Cron Expression** - standard 5-field cron format. A human-readable preview appears below the input.
+   - **Enabled** - toggle the task on or off.
+4. Click **Create**.
+
+## Cron Expression Reference
+
+Sencho uses standard 5-field cron expressions:
+
+```
+┌───────────── minute (0–59)
+│ ┌─────────── hour (0–23)
+│ │ ┌───────── day of month (1–31)
+│ │ │ ┌─────── month (1–12)
+│ │ │ │ ┌───── day of week (0–7, 0 and 7 = Sunday)
+│ │ │ │ │
+* * * * *
+```
+
+### Common Examples
+
+| Expression | Description |
+|-----------|-------------|
+| `0 3 * * *` | Every day at 3:00 AM |
+| `0 */6 * * *` | Every 6 hours |
+| `0 3 * * 0` | Every Sunday at 3:00 AM |
+| `30 2 1 * *` | 1st of every month at 2:30 AM |
+| `0 0 * * 1-5` | Midnight on weekdays |
+
+## Managing Tasks
+
+- **Enable/Disable** - Use the toggle switch in the task list to pause or resume a schedule without deleting it.
+- **Edit** - Click the pencil icon to update the task name, schedule, or target.
+- **Delete** - Click the trash icon to permanently remove the task and all its execution history.
+
+## Execution History
+
+Click the history icon on any task to view its execution log. Each entry shows:
+
+- **Timestamp** - when the task ran.
+- **Status** - success or failure.
+- **Duration** - how long the execution took.
+- **Details** - output message or error description.
+
+Execution history is retained for 30 days.
+
+## How It Works
+
+The Scheduler Service runs in the background and checks for due tasks every 60 seconds. When a task's next run time has passed:
+
+1. The scheduler verifies your Team Pro license is active.
+2. It executes the configured action using the same internal services that power the UI buttons (restart, snapshot, prune).
+3. Results are logged to the execution history.
+4. The next run time is recalculated from the cron expression.
+
+If a task is still running from a previous execution, the scheduler skips it to prevent overlap.

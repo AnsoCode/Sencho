@@ -338,7 +338,7 @@ export function SSOSection() {
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">
                         Connect your identity provider so team members can sign in with their existing credentials.
-                        SSO works alongside password authentication — it does not replace it.
+                        SSO works alongside password authentication - it does not replace it.
                     </p>
                 </div>
 

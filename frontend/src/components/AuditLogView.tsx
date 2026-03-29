@@ -43,7 +43,7 @@ export function AuditLogView() {
                 setTotal(data.total);
             }
         } catch {
-            // Silently fail — non-critical view
+            // Silently fail - non-critical view
         } finally {
             setLoading(false);
         }
@@ -79,7 +79,6 @@ export function AuditLogView() {
                         <div className="flex items-center gap-2">
                             <ScrollText className="w-5 h-5" />
                             <CardTitle>Audit Log</CardTitle>
-                            <Badge variant="outline" className="text-xs">Team Pro</Badge>
                         </div>
                         <Button variant="outline" size="sm" onClick={fetchLogs} disabled={loading}>
                             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -163,7 +162,7 @@ export function AuditLogView() {
                                                 {entry.status_code}
                                             </TableCell>
                                             <TableCell className="text-sm text-muted-foreground">
-                                                {entry.node_id ?? '—'}
+                                                {entry.node_id ?? '-'}
                                             </TableCell>
                                         </TableRow>
                                     ))

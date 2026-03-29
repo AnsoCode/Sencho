@@ -432,7 +432,7 @@ export class SSOService {
         let issuer: InstanceType<typeof Issuer>;
 
         if (provider === 'oidc_github') {
-            // GitHub is not a standard OIDC provider — manually configure
+            // GitHub is not a standard OIDC provider - manually configure
             issuer = new Issuer({
                 issuer: 'https://github.com',
                 authorization_endpoint: 'https://github.com/login/oauth/authorize',

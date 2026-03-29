@@ -98,6 +98,7 @@
           "features/fleet-backups",
           "features/audit-log",
           "features/api-tokens",
+          "features/scheduled-operations",
           "features/sso",
           "features/licensing"
         ]

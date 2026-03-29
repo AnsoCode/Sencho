@@ -18,7 +18,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node, AuthProvider } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider, ScheduledTask } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
@@ -28,6 +28,8 @@ import { NodeRegistry } from './services/NodeRegistry';
 import { LicenseService } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
+import { SchedulerService } from './services/SchedulerService';
+import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
@@ -652,7 +654,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   authMiddleware(req, res, next);
 });
 
-// Audit logging middleware — records all mutating API actions for Team Pro accountability.
+// Audit logging middleware - records all mutating API actions for Team Pro accountability.
 // Runs for POST/PUT/DELETE/PATCH on /api/* routes. Uses res.on('finish') to capture status code.
 const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /stacks': 'Created stack',
@@ -684,6 +686,10 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'DELETE /sso/config': 'Deleted SSO configuration',
   'POST /api-tokens': 'Created API token',
   'DELETE /api-tokens': 'Revoked API token',
+  'POST /scheduled-tasks': 'Created scheduled task',
+  'PUT /scheduled-tasks': 'Updated scheduled task',
+  'DELETE /scheduled-tasks': 'Deleted scheduled task',
+  'PATCH /scheduled-tasks': 'Toggled scheduled task',
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
@@ -765,7 +771,7 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   return true;
 };
 
-// Scope enforcement for API tokens — restricts which endpoints a token can reach.
+// Scope enforcement for API tokens - restricts which endpoints a token can reach.
 const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
   /^\/api\/stacks\/[^/]+\/deploy$/,
   /^\/api\/stacks\/[^/]+\/down$/,
@@ -3364,6 +3370,251 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
   }
 });
 
+// --- Scheduled Operations Routes (Team Pro, admin-only, local-only) ---
+
+app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const tasks = DatabaseService.getInstance().getScheduledTasks();
+    res.json(tasks);
+  } catch (error) {
+    console.error('[ScheduledTasks] List error:', error);
+    res.status(500).json({ error: 'Failed to fetch scheduled tasks' });
+  }
+});
+
+app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      res.status(400).json({ error: 'Name is required' }); return;
+    }
+    if (!['stack', 'fleet', 'system'].includes(target_type)) {
+      res.status(400).json({ error: 'Invalid target_type. Must be stack, fleet, or system.' }); return;
+    }
+    if (!['restart', 'snapshot', 'prune'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, or prune.' }); return;
+    }
+    // Validate action-target combos
+    if (action === 'restart' && target_type !== 'stack') {
+      res.status(400).json({ error: 'Restart action requires target_type "stack".' }); return;
+    }
+    if (action === 'snapshot' && target_type !== 'fleet') {
+      res.status(400).json({ error: 'Snapshot action requires target_type "fleet".' }); return;
+    }
+    if (action === 'prune' && target_type !== 'system') {
+      res.status(400).json({ error: 'Prune action requires target_type "system".' }); return;
+    }
+    if (target_type === 'stack' && (!target_id || !node_id)) {
+      res.status(400).json({ error: 'Stack operations require target_id and node_id.' }); return;
+    }
+    // Validate cron expression
+    try { CronExpressionParser.parse(cron_expression); } catch {
+      res.status(400).json({ error: 'Invalid cron expression.' }); return;
+    }
+
+    const scheduler = SchedulerService.getInstance();
+    const now = Date.now();
+    const nextRun = (enabled !== false) ? scheduler.calculateNextRun(cron_expression) : null;
+
+    const id = DatabaseService.getInstance().createScheduledTask({
+      name,
+      target_type,
+      target_id: target_id || null,
+      node_id: node_id != null ? Number(node_id) : null,
+      action,
+      cron_expression,
+      enabled: enabled !== false ? 1 : 0,
+      created_by: req.user?.username || 'admin',
+      created_at: now,
+      updated_at: now,
+      last_run_at: null,
+      next_run_at: nextRun,
+      last_status: null,
+      last_error: null,
+    });
+
+    const task = DatabaseService.getInstance().getScheduledTask(id);
+    res.status(201).json(task);
+  } catch (error) {
+    console.error('[ScheduledTasks] Create error:', error);
+    res.status(500).json({ error: 'Failed to create scheduled task' });
+  }
+});
+
+app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+    const task = DatabaseService.getInstance().getScheduledTask(id);
+    if (!task) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    res.json(task);
+  } catch (error) {
+    console.error('[ScheduledTasks] Get error:', error);
+    res.status(500).json({ error: 'Failed to fetch scheduled task' });
+  }
+});
+
+app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getScheduledTask(id);
+    if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled } = req.body;
+
+    if (target_type && !['stack', 'fleet', 'system'].includes(target_type)) {
+      res.status(400).json({ error: 'Invalid target_type' }); return;
+    }
+    if (action && !['restart', 'snapshot', 'prune'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action' }); return;
+    }
+
+    const finalAction = action || existing.action;
+    const finalTargetType = target_type || existing.target_type;
+    if (finalAction === 'restart' && finalTargetType !== 'stack') {
+      res.status(400).json({ error: 'Restart action requires target_type "stack".' }); return;
+    }
+    if (finalAction === 'snapshot' && finalTargetType !== 'fleet') {
+      res.status(400).json({ error: 'Snapshot action requires target_type "fleet".' }); return;
+    }
+    if (finalAction === 'prune' && finalTargetType !== 'system') {
+      res.status(400).json({ error: 'Prune action requires target_type "system".' }); return;
+    }
+
+    if (cron_expression) {
+      try { CronExpressionParser.parse(cron_expression); } catch {
+        res.status(400).json({ error: 'Invalid cron expression.' }); return;
+      }
+    }
+
+    const updates: Record<string, unknown> = { updated_at: Date.now() };
+    if (name !== undefined) updates.name = name;
+    if (target_type !== undefined) updates.target_type = target_type;
+    if (target_id !== undefined) updates.target_id = target_id || null;
+    if (node_id !== undefined) updates.node_id = node_id != null ? Number(node_id) : null;
+    if (action !== undefined) updates.action = action;
+    if (cron_expression !== undefined) updates.cron_expression = cron_expression;
+    if (enabled !== undefined) updates.enabled = enabled ? 1 : 0;
+
+    // Recalculate next_run if cron changed or if enabling
+    const finalCron = cron_expression || existing.cron_expression;
+    const finalEnabled = enabled !== undefined ? enabled : existing.enabled;
+    if (finalEnabled) {
+      updates.next_run_at = SchedulerService.getInstance().calculateNextRun(finalCron);
+    } else {
+      updates.next_run_at = null;
+    }
+
+    db.updateScheduledTask(id, updates as Partial<Omit<ScheduledTask, 'id'>>);
+    const task = db.getScheduledTask(id);
+    res.json(task);
+  } catch (error) {
+    console.error('[ScheduledTasks] Update error:', error);
+    res.status(500).json({ error: 'Failed to update scheduled task' });
+  }
+});
+
+app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getScheduledTask(id);
+    if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    db.deleteScheduledTask(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ScheduledTasks] Delete error:', error);
+    res.status(500).json({ error: 'Failed to delete scheduled task' });
+  }
+});
+
+app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getScheduledTask(id);
+    if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    const newEnabled = existing.enabled ? 0 : 1;
+    const nextRun = newEnabled ? SchedulerService.getInstance().calculateNextRun(existing.cron_expression) : null;
+
+    db.updateScheduledTask(id, {
+      enabled: newEnabled,
+      next_run_at: nextRun,
+      updated_at: Date.now(),
+    });
+
+    const task = db.getScheduledTask(id);
+    res.json(task);
+  } catch (error) {
+    console.error('[ScheduledTasks] Toggle error:', error);
+    res.status(500).json({ error: 'Failed to toggle scheduled task' });
+  }
+});
+
+app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getScheduledTask(id);
+    if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    await SchedulerService.getInstance().triggerTask(id);
+
+    const task = db.getScheduledTask(id);
+    res.json(task);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Failed to run task';
+    console.error('[ScheduledTasks] Run error:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireTeamPro(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const existing = db.getScheduledTask(id);
+    if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
+    const runs = db.getScheduledTaskRuns(id, limit);
+    res.json(runs);
+  } catch (error) {
+    console.error('[ScheduledTasks] Runs error:', error);
+    res.status(500).json({ error: 'Failed to fetch task runs' });
+  }
+});
+
 // --- System Maintenance Routes (The System Janitor) ---
 
 app.get('/api/system/orphans', async (req: Request, res: Response) => {
@@ -3817,6 +4068,9 @@ async function startServer() {
   // Start Background Image Update Checker
   ImageUpdateService.getInstance().start();
 
+  // Start Scheduled Operations Service
+  SchedulerService.getInstance().start();
+
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
@@ -3841,6 +4095,7 @@ const gracefulShutdown = (signal: string) => {
     try { LicenseService.getInstance().destroy(); } catch { /* already stopped */ }
     try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
     try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
+    try { SchedulerService.getInstance().stop(); } catch { /* already stopped */ }
     try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
     console.log('[Shutdown] Done - exiting');
     process.exit(0);

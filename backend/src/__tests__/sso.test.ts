@@ -242,7 +242,7 @@ describe('SSO Config CRUD (DB layer)', () => {
   });
 });
 
-describe('Database migration — SSO columns', () => {
+describe('Database migration - SSO columns', () => {
   it('users table has auth_provider, provider_id, email columns', async () => {
     const { DatabaseService } = await import('../services/DatabaseService');
     const db = DatabaseService.getInstance();
