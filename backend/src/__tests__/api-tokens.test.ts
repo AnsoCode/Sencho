@@ -178,7 +178,7 @@ describe('API token revocation', () => {
 
     // Revoke by finding the token ID
     const db = DatabaseService.getInstance();
-    const apiToken = db.getApiTokenByHash(tokenHash);
+    const apiToken = db.getApiTokenByHash(tokenHash)!;
     db.revokeApiToken(apiToken.id);
 
     const res = await request(app)
