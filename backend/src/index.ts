@@ -18,7 +18,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, RoleAssignment } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
