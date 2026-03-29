@@ -12,13 +12,17 @@ description: Automate recurring Docker operations like stack restarts, fleet sna
 
 Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest - including a full execution history log so you always know what ran and when.
 
+<Frame>
+  <img src="/images/scheduled-operations/overview.png" alt="Scheduled operations list view showing tasks with status, schedule, and actions" />
+</Frame>
+
 ## Supported Actions
 
 | Action | Target | Description |
 |--------|--------|-------------|
 | **Restart Stack** | A specific stack on a specific node | Restarts all containers in the stack via the Docker Engine API |
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
-| **System Prune** | A specific node (or the default node) | Prunes unused containers, images, networks, and volumes |
+| **System Prune** | A specific node (or the default node) | Prunes selected resources (containers, images, networks, volumes — all by default) |
 
 ## Creating a Scheduled Task
 
@@ -28,9 +32,14 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
    - **Name** - a descriptive label (e.g. "Nightly staging restart").
    - **Action** - choose Restart Stack, Fleet Snapshot, or System Prune.
    - **Stack / Node** - if you chose Restart Stack, select the target stack and the node it runs on.
+   - **Prune Targets** - if you chose System Prune, select which resources to prune (containers, images, networks, volumes). All are selected by default.
    - **Cron Expression** - standard 5-field cron format. A human-readable preview appears below the input.
    - **Enabled** - toggle the task on or off.
 4. Click **Create**.
+
+<Frame>
+  <img src="/images/scheduled-operations/create-dialog.png" alt="Create scheduled task dialog with action, cron expression, and prune target options" />
+</Frame>
 
 ## Cron Expression Reference
 
@@ -59,6 +68,7 @@ Sencho uses standard 5-field cron expressions:
 ## Managing Tasks
 
 - **Enable/Disable** - Use the toggle switch in the task list to pause or resume a schedule without deleting it.
+- **Run Now** - Click the play icon to immediately execute a task. This works even on disabled tasks, allowing you to test a schedule before enabling it. Manual runs are labeled "Manual" in the execution history.
 - **Edit** - Click the pencil icon to update the task name, schedule, or target.
 - **Delete** - Click the trash icon to permanently remove the task and all its execution history.
 
@@ -67,11 +77,16 @@ Sencho uses standard 5-field cron expressions:
 Click the history icon on any task to view its execution log. Each entry shows:
 
 - **Timestamp** - when the task ran.
+- **Source** - whether the run was triggered by the scheduler or manually via Run Now.
 - **Status** - success or failure.
 - **Duration** - how long the execution took.
 - **Details** - output message or error description.
 
 Execution history is retained for 30 days.
+
+<Frame>
+  <img src="/images/scheduled-operations/run-history.png" alt="Execution history showing run source, status, duration, and details with pagination" />
+</Frame>
 
 ## How It Works
 

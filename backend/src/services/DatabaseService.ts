@@ -153,6 +153,7 @@ export interface ScheduledTask {
     next_run_at: number | null;
     last_status: string | null;
     last_error: string | null;
+    prune_targets: string | null;
 }
 
 export interface ScheduledTaskRun {
@@ -163,6 +164,7 @@ export interface ScheduledTaskRun {
     status: 'running' | 'success' | 'failure';
     output: string | null;
     error: string | null;
+    triggered_by: 'scheduler' | 'manual';
 }
 
 export class DatabaseService {
@@ -394,6 +396,10 @@ export class DatabaseService {
         // Distributed API model columns
         maybeAddCol('nodes', 'api_url', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'api_token', "TEXT DEFAULT ''");
+
+        // Scheduled operations migrations
+        maybeAddCol('scheduled_task_runs', 'triggered_by', "TEXT NOT NULL DEFAULT 'scheduler'");
+        maybeAddCol('scheduled_tasks', 'prune_targets', 'TEXT DEFAULT NULL');
 
         // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
         const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
@@ -1133,16 +1139,20 @@ export class DatabaseService {
         ).all(now) as ScheduledTask[];
     }
 
-    public getScheduledTaskRuns(taskId: number, limit = 50): ScheduledTaskRun[] {
-        return this.db.prepare(
-            'SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?'
-        ).all(taskId, limit) as ScheduledTaskRun[];
+    public getScheduledTaskRuns(taskId: number, limit = 20, offset = 0): { runs: ScheduledTaskRun[]; total: number } {
+        const runs = this.db.prepare(
+            'SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?'
+        ).all(taskId, limit, offset) as ScheduledTaskRun[];
+        const { total } = this.db.prepare(
+            'SELECT COUNT(*) as total FROM scheduled_task_runs WHERE task_id = ?'
+        ).get(taskId) as { total: number };
+        return { runs, total };
     }
 
     public createScheduledTaskRun(run: Omit<ScheduledTaskRun, 'id'>): number {
         const result = this.db.prepare(
-            'INSERT INTO scheduled_task_runs (task_id, started_at, completed_at, status, output, error) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(run.task_id, run.started_at, run.completed_at, run.status, run.output, run.error);
+            'INSERT INTO scheduled_task_runs (task_id, started_at, completed_at, status, output, error, triggered_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(run.task_id, run.started_at, run.completed_at, run.status, run.output, run.error, run.triggered_by);
         return result.lastInsertRowid as number;
     }
 
