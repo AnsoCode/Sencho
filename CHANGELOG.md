@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **scheduled-operations:** Team Pro feature for scheduling recurring Docker operations (stack restarts, fleet snapshots, system prunes) via cron expressions with full execution history logging. Includes new SchedulerService, CRUD API endpoints, and a dedicated UI section.
+
 ## [0.14.2](https://github.com/AnsoCode/Sencho/compare/v0.14.1...v0.14.2) (2026-03-29)
 
 
@@ -22,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* **api-tokens:** harden scope enforcement — fix deploy-only allowlist to match actual routes, add WebSocket scope gating, block API tokens from all sensitive management endpoints (user management, SSO configuration, node management, license management, console access, password change, node-token generation, and token self-management), add configurable expiration support (30/60/90/365 days)
+* **api-tokens:** harden scope enforcement - fix deploy-only allowlist to match actual routes, add WebSocket scope gating, block API tokens from all sensitive management endpoints (user management, SSO configuration, node management, license management, console access, password change, node-token generation, and token self-management), add configurable expiration support (30/60/90/365 days)
 
 ## [0.14.0](https://github.com/AnsoCode/Sencho/compare/v0.13.2...v0.14.0) (2026-03-28)
 
@@ -77,20 +83,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* **sso:** Team Pro SSO/LDAP integration — authenticate via LDAP/Active Directory, Google, GitHub, or Okta alongside existing password login. Auto-provisions new users on first SSO login with configurable role mapping from identity provider groups/claims. All provider credentials encrypted at rest. Configurable via environment variables or Settings UI. OIDC flows use PKCE and state-based CSRF protection. Added `trust proxy` for correct behavior behind reverse proxies.
-* **audit-log:** Team Pro audit logging — records all mutating API actions (deploy, stop, delete, settings changes, user CRUD) with user attribution, timestamp, HTTP method, status code, and node context. Searchable timeline UI with filtering by username and method. 90-day retention with automatic cleanup.
-* **security:** encryption at rest for sensitive database values — node API tokens are now encrypted with AES-256-GCM using a per-instance key stored outside the database. Existing plaintext tokens are automatically migrated on startup.
+* **sso:** Team Pro SSO/LDAP integration - authenticate via LDAP/Active Directory, Google, GitHub, or Okta alongside existing password login. Auto-provisions new users on first SSO login with configurable role mapping from identity provider groups/claims. All provider credentials encrypted at rest. Configurable via environment variables or Settings UI. OIDC flows use PKCE and state-based CSRF protection. Added `trust proxy` for correct behavior behind reverse proxies.
+* **audit-log:** Team Pro audit logging - records all mutating API actions (deploy, stop, delete, settings changes, user CRUD) with user attribution, timestamp, HTTP method, status code, and node context. Searchable timeline UI with filtering by username and method. 90-day retention with automatic cleanup.
+* **security:** encryption at rest for sensitive database values - node API tokens are now encrypted with AES-256-GCM using a per-instance key stored outside the database. Existing plaintext tokens are automatically migrated on startup.
 
 ### Removed
 
-* **database:** dropped 9 legacy SSH/TLS columns from the nodes table (`host`, `port`, `ssh_port`, `ssh_user`, `ssh_password`, `ssh_key`, `tls_ca`, `tls_cert`, `tls_key`) — these were superseded by the Distributed API model in v0.7.0 and have been inert since
-* **frontend:** removed orphaned `MaintenanceModal.tsx` component (dead code, never imported — prune functionality lives in `ResourcesView.tsx`)
+* **database:** dropped 9 legacy SSH/TLS columns from the nodes table (`host`, `port`, `ssh_port`, `ssh_user`, `ssh_password`, `ssh_key`, `tls_ca`, `tls_cert`, `tls_key`) - these were superseded by the Distributed API model in v0.7.0 and have been inert since
+* **frontend:** removed orphaned `MaintenanceModal.tsx` component (dead code, never imported - prune functionality lives in `ResourcesView.tsx`)
 
 ### Changed
 
-* **settings/license:** replaced static "View Pricing" button with dynamic upgrade cards — Community users see Personal Pro and Team Pro options with feature highlights; Personal Pro users see Team Pro upgrade only; each card links directly to Lemon Squeezy checkout
+* **settings/license:** replaced static "View Pricing" button with dynamic upgrade cards - Community users see Personal Pro and Team Pro options with feature highlights; Personal Pro users see Team Pro upgrade only; each card links directly to Lemon Squeezy checkout
 
-* **docs:** comprehensive documentation audit — updated 11 pages with accurate content and 14 fresh screenshots
+* **docs:** comprehensive documentation audit - updated 11 pages with accurate content and 14 fresh screenshots
 * **docs/configuration:** removed JWT_SECRET from required env vars (it's auto-generated), added compose directory reorganization explanation
 * **docs/settings:** added missing License, Users, Webhooks, Support, and About sections; removed obsolete Appearance section
 * **docs/editor:** fixed container actions table to match actual UI (Open App, View Live Logs, Open Bash Terminal)

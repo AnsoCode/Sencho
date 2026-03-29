@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from 'sonner';
@@ -37,6 +37,7 @@ import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
+import ScheduledOperationsView from './ScheduledOperationsView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -119,7 +120,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -1359,6 +1360,19 @@ export default function EditorLayout() {
                 Audit
               </Button>
             )}
+            {/* Scheduled Operations Toggle (Team Pro + Admin only) */}
+            {isPro && license?.variant === 'team' && isAdmin && (
+              <Button
+                variant={activeView === 'scheduled-ops' ? 'default' : 'outline'}
+                size="sm"
+                className="rounded-lg"
+                onClick={() => setActiveView(activeView === 'scheduled-ops' ? (selectedFile ? 'editor' : 'dashboard') : 'scheduled-ops')}
+                title="Scheduled Operations"
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                Schedules
+              </Button>
+            )}
 
             {/* Notifications Popover */}
             <Popover>
@@ -1764,6 +1778,8 @@ export default function EditorLayout() {
             }} />
           ) : activeView === 'audit-log' ? (
             <AuditLogView />
+          ) : activeView === 'scheduled-ops' ? (
+            <ScheduledOperationsView />
           ) : (
             <HomeDashboard />
           )}

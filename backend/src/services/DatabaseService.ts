@@ -137,6 +137,34 @@ export interface ApiToken {
     revoked_at: number | null;
 }
 
+export interface ScheduledTask {
+    id: number;
+    name: string;
+    target_type: 'stack' | 'fleet' | 'system';
+    target_id: string | null;
+    node_id: number | null;
+    action: 'restart' | 'snapshot' | 'prune';
+    cron_expression: string;
+    enabled: number;
+    created_by: string;
+    created_at: number;
+    updated_at: number;
+    last_run_at: number | null;
+    next_run_at: number | null;
+    last_status: string | null;
+    last_error: string | null;
+}
+
+export interface ScheduledTaskRun {
+    id: number;
+    task_id: number;
+    started_at: number;
+    completed_at: number | null;
+    status: 'running' | 'success' | 'failure';
+    output: string | null;
+    error: string | null;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -324,6 +352,38 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
       CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        node_id INTEGER,
+        action TEXT NOT NULL,
+        cron_expression TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_run_at INTEGER,
+        next_run_at INTEGER,
+        last_status TEXT,
+        last_error TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'running',
+        output TEXT,
+        error TEXT,
+        FOREIGN KEY(task_id) REFERENCES scheduled_tasks(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task ON scheduled_task_runs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -1015,5 +1075,93 @@ export class DatabaseService {
 
     public updateApiTokenLastUsed(id: number): void {
         this.db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(Date.now(), id);
+    }
+
+    // --- Scheduled Tasks ---
+
+    public getScheduledTasks(): ScheduledTask[] {
+        return this.db.prepare('SELECT * FROM scheduled_tasks ORDER BY created_at DESC').all() as ScheduledTask[];
+    }
+
+    public getScheduledTask(id: number): ScheduledTask | undefined {
+        return this.db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?').get(id) as ScheduledTask | undefined;
+    }
+
+    public createScheduledTask(task: Omit<ScheduledTask, 'id'>): number {
+        const result = this.db.prepare(
+            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(
+            task.name, task.target_type, task.target_id, task.node_id,
+            task.action, task.cron_expression, task.enabled, task.created_by,
+            task.created_at, task.updated_at, task.last_run_at, task.next_run_at,
+            task.last_status, task.last_error
+        );
+        return result.lastInsertRowid as number;
+    }
+
+    public updateScheduledTask(id: number, updates: Partial<Omit<ScheduledTask, 'id'>>): void {
+        const fields: string[] = [];
+        const values: unknown[] = [];
+
+        const map: Record<string, unknown> = {
+            name: updates.name, target_type: updates.target_type, target_id: updates.target_id,
+            node_id: updates.node_id, action: updates.action, cron_expression: updates.cron_expression,
+            enabled: updates.enabled, created_by: updates.created_by, updated_at: updates.updated_at,
+            last_run_at: updates.last_run_at, next_run_at: updates.next_run_at,
+            last_status: updates.last_status, last_error: updates.last_error,
+        };
+
+        for (const [col, val] of Object.entries(map)) {
+            if (val !== undefined) {
+                fields.push(`${col} = ?`);
+                values.push(val);
+            }
+        }
+
+        if (fields.length === 0) return;
+        values.push(id);
+        this.db.prepare(`UPDATE scheduled_tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteScheduledTask(id: number): void {
+        this.db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+    }
+
+    public getDueScheduledTasks(now: number): ScheduledTask[] {
+        return this.db.prepare(
+            'SELECT * FROM scheduled_tasks WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?'
+        ).all(now) as ScheduledTask[];
+    }
+
+    public getScheduledTaskRuns(taskId: number, limit = 50): ScheduledTaskRun[] {
+        return this.db.prepare(
+            'SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?'
+        ).all(taskId, limit) as ScheduledTaskRun[];
+    }
+
+    public createScheduledTaskRun(run: Omit<ScheduledTaskRun, 'id'>): number {
+        const result = this.db.prepare(
+            'INSERT INTO scheduled_task_runs (task_id, started_at, completed_at, status, output, error) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(run.task_id, run.started_at, run.completed_at, run.status, run.output, run.error);
+        return result.lastInsertRowid as number;
+    }
+
+    public updateScheduledTaskRun(id: number, updates: Partial<Omit<ScheduledTaskRun, 'id' | 'task_id'>>): void {
+        const fields: string[] = [];
+        const values: unknown[] = [];
+
+        if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); values.push(updates.completed_at); }
+        if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+        if (updates.output !== undefined) { fields.push('output = ?'); values.push(updates.output); }
+        if (updates.error !== undefined) { fields.push('error = ?'); values.push(updates.error); }
+
+        if (fields.length === 0) return;
+        values.push(id);
+        this.db.prepare(`UPDATE scheduled_task_runs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public cleanupOldTaskRuns(retentionDays = 30): void {
+        const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+        this.db.prepare('DELETE FROM scheduled_task_runs WHERE started_at < ?').run(cutoff);
     }
 }

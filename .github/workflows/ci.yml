@@ -5,12 +5,21 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Screenshot auto-merge commits only touch docs/images/.
+    # Ignoring this path breaks the cascade:
+    #   merge PR → screenshots PR auto-merges → would re-trigger CI → now skipped.
+    # The next real merge will sync everything (rsync --delete does a full mirror).
+    paths-ignore:
+      - 'docs/images/**'
 
 # Cancel previous runs on the same branch/PR
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# ---------------------------------------------------------------------------
+# Build & Validation (runs on PRs and push to main)
+# ---------------------------------------------------------------------------
 jobs:
   backend:
     name: Backend (Build, Test, Lint)
@@ -100,11 +109,16 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: sencho:pr-test
-          exit-code: '0'
+          exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
+        # Findings surface as a visible warning on the job without blocking the PR.
+        # Base-image CVEs are often outside our control - review manually before ignoring.
         continue-on-error: true
 
+  # ---------------------------------------------------------------------------
+  # E2E Tests (runs on PRs and push to main)
+  # ---------------------------------------------------------------------------
   e2e:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
@@ -113,47 +127,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Install root dependencies (Playwright)
-        run: npm ci
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: npm ci
-
-      - name: Build backend
-        working-directory: ./backend
-        run: npm run build
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Create compose directory
-        run: mkdir -p /tmp/compose
-
-      - name: Start backend
-        working-directory: ./backend
-        run: node dist/index.js &
-        env:
-          JWT_SECRET: ci-test-secret-key-not-for-production
-          COMPOSE_DIR: /tmp/compose
-          PORT: 3000
-          NODE_ENV: test
-
-      - name: Start frontend dev server
-        working-directory: ./frontend
-        run: npm run dev &
-
-      - name: Wait for services to be ready
-        run: npx wait-on http://localhost:3000/api/health http://localhost:5173 --timeout 30000
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Start app & install Playwright
+        uses: ./.github/actions/start-app
 
       - name: Run E2E tests
         run: npx playwright test
@@ -171,11 +146,18 @@ jobs:
             test-results/
           retention-days: 7
 
+  # ---------------------------------------------------------------------------
+  # Post-release only: Screenshot refresh
+  # Only runs when release-please merges a "chore(main): release" commit,
+  # so screenshots are refreshed once per release - not on every merge.
+  # ---------------------------------------------------------------------------
   update-screenshots:
     name: Refresh Doc Screenshots
     runs-on: ubuntu-latest
-    # Only on main pushes (merged PRs); skip bot commits to avoid infinite loop
-    if: "github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'docs: refresh screenshots')"
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/main'
+      && startsWith(github.event.head_commit.message, 'chore(main): release')
     needs: [backend, frontend]
     permissions:
       contents: write
@@ -186,47 +168,8 @@ jobs:
         with:
           token: ${{ secrets.DOCS_REPO_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Install root dependencies (Playwright)
-        run: npm ci
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: npm ci
-
-      - name: Build backend
-        working-directory: ./backend
-        run: npm run build
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: Create compose directory
-        run: mkdir -p /tmp/compose
-
-      - name: Start backend
-        working-directory: ./backend
-        run: node dist/index.js &
-        env:
-          JWT_SECRET: ci-test-secret-key-not-for-production
-          COMPOSE_DIR: /tmp/compose
-          PORT: 3000
-          NODE_ENV: test
-
-      - name: Start frontend dev server
-        working-directory: ./frontend
-        run: npm run dev &
-
-      - name: Wait for services to be ready
-        run: npx wait-on http://localhost:3000/api/health http://localhost:5173 --timeout 30000
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Start app & install Playwright
+        uses: ./.github/actions/start-app
 
       - name: Capture screenshots
         run: npx playwright test e2e/screenshots.spec.ts --project=chromium

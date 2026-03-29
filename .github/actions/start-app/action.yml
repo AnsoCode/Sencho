@@ -1,0 +1,70 @@
+name: Start Sencho App
+description: >
+  Shared setup for integration jobs: installs deps, builds backend,
+  starts backend + frontend dev servers, waits for readiness,
+  and installs Playwright browsers.
+
+inputs:
+  jwt-secret:
+    required: false
+    default: 'ci-test-secret-key-not-for-production'
+  compose-dir:
+    required: false
+    default: '/tmp/compose'
+  port:
+    required: false
+    default: '3000'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20'
+
+    - name: Install root dependencies (Playwright)
+      shell: bash
+      run: npm ci
+
+    - name: Install backend dependencies
+      shell: bash
+      run: npm ci
+      working-directory: ./backend
+
+    - name: Build backend
+      shell: bash
+      run: npm run build
+      working-directory: ./backend
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci
+      working-directory: ./frontend
+
+    - name: Create compose directory
+      shell: bash
+      run: mkdir -p ${{ inputs.compose-dir }}
+
+    - name: Start backend
+      shell: bash
+      run: node dist/index.js &
+      working-directory: ./backend
+      env:
+        JWT_SECRET: ${{ inputs.jwt-secret }}
+        COMPOSE_DIR: ${{ inputs.compose-dir }}
+        PORT: ${{ inputs.port }}
+        NODE_ENV: test
+
+    - name: Start frontend dev server
+      shell: bash
+      run: npm run dev &
+      working-directory: ./frontend
+
+    - name: Wait for services to be ready
+      shell: bash
+      run: npx wait-on http://localhost:${{ inputs.port }}/api/health http://localhost:5173 --timeout 30000
+
+    - name: Install Playwright browsers
+      shell: bash
+      run: npx playwright install --with-deps chromium
