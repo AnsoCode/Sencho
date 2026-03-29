@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0](https://github.com/AnsoCode/Sencho/compare/v0.16.0...v0.17.0) (2026-03-29)
+
+
+### Added
+
+* **registries:** add private registry credential management (Team Pro) ([#240](https://github.com/AnsoCode/Sencho/issues/240)) ([244c83a](https://github.com/AnsoCode/Sencho/commit/244c83a0c3102a797658d35d087bf47366f6df75))
+
 ## [0.16.0](https://github.com/AnsoCode/Sencho/compare/v0.15.1...v0.16.0) (2026-03-29)
 
 
