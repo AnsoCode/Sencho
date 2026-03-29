@@ -13,9 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-* **scheduled-operations:** Team Pro feature for scheduling recurring Docker operations (stack restarts, fleet snapshots, system prunes) via cron expressions with full execution history logging. Includes new SchedulerService, CRUD API endpoints, and a dedicated UI section.
+* **scheduled-ops:** fix "Run Now" audit log entry incorrectly showing "Created scheduled task" instead of "Triggered scheduled task"
+* **scheduled-ops:** add `triggered_by` attribution to run records distinguishing scheduler vs manual executions
+* **scheduled-ops:** add pagination to execution history view
+* **scheduled-ops:** make system prune targets configurable (containers, images, networks, volumes)
+
+### Docs
+
+* **scheduled-ops:** add screenshots and document Run Now behavior for disabled tasks
 
 ## [0.14.2](https://github.com/AnsoCode/Sencho/compare/v0.14.1...v0.14.2) (2026-03-29)
 

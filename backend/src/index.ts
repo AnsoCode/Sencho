@@ -686,6 +686,7 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'DELETE /sso/config': 'Deleted SSO configuration',
   'POST /api-tokens': 'Created API token',
   'DELETE /api-tokens': 'Revoked API token',
+  'POST /scheduled-tasks/*/run': 'Triggered scheduled task',
   'POST /scheduled-tasks': 'Created scheduled task',
   'PUT /scheduled-tasks': 'Updated scheduled task',
   'DELETE /scheduled-tasks': 'Deleted scheduled task',
@@ -693,15 +694,45 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
-  // Try exact prefix matches from most specific to least
   const normalized = apiPath.replace(/^\//, '');
-  for (const [pattern, summary] of Object.entries(AUDIT_ROUTE_SUMMARIES)) {
-    const [pMethod, pPath] = pattern.split(' ');
-    if (method === pMethod && normalized.startsWith(pPath.replace(/^\//, ''))) {
-      // Extract resource name from path if available (e.g., /stacks/myapp → "myapp")
-      const rest = normalized.slice(pPath.replace(/^\//, '').length).replace(/^\//, '');
-      const resourceName = rest.split('/')[0];
-      return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
+  const normalizedSegments = normalized.split('/');
+
+  // Sort patterns by segment count descending (most specific first)
+  const sortedEntries = Object.entries(AUDIT_ROUTE_SUMMARIES)
+    .sort((a, b) => b[0].split('/').length - a[0].split('/').length);
+
+  for (const [pattern, summary] of sortedEntries) {
+    const spaceIdx = pattern.indexOf(' ');
+    const pMethod = pattern.slice(0, spaceIdx);
+    const pPath = pattern.slice(spaceIdx + 1).replace(/^\//, '');
+    if (method !== pMethod) continue;
+
+    const patternSegments = pPath.split('/');
+    const hasWildcard = patternSegments.includes('*');
+
+    if (hasWildcard) {
+      // Wildcard matching: exact segment count, '*' matches any single segment
+      if (patternSegments.length > normalizedSegments.length) continue;
+      let match = true;
+      let resourceName = '';
+      for (let i = 0; i < patternSegments.length; i++) {
+        if (patternSegments[i] === '*') {
+          resourceName = resourceName || normalizedSegments[i];
+        } else if (patternSegments[i] !== normalizedSegments[i]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
+      }
+    } else {
+      // Prefix matching (original behavior)
+      if (normalized.startsWith(pPath)) {
+        const rest = normalized.slice(pPath.length).replace(/^\//, '');
+        const resourceName = rest.split('/')[0];
+        return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
+      }
     }
   }
   return `${method} /api/${normalized}`;
@@ -3388,7 +3419,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requireTeamPro(req, res)) return;
   try {
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets } = req.body;
 
     if (!name || typeof name !== 'string') {
       res.status(400).json({ error: 'Name is required' }); return;
@@ -3411,6 +3442,13 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     }
     if (target_type === 'stack' && (!target_id || !node_id)) {
       res.status(400).json({ error: 'Stack operations require target_id and node_id.' }); return;
+    }
+    // Validate prune targets
+    const validPruneTargets = ['containers', 'images', 'networks', 'volumes'];
+    if (prune_targets !== undefined && prune_targets !== null) {
+      if (!Array.isArray(prune_targets) || prune_targets.length === 0 || !prune_targets.every((t: string) => validPruneTargets.includes(t))) {
+        res.status(400).json({ error: 'prune_targets must be a non-empty array of: containers, images, networks, volumes' }); return;
+      }
     }
     // Validate cron expression
     try { CronExpressionParser.parse(cron_expression); } catch {
@@ -3436,6 +3474,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
       next_run_at: nextRun,
       last_status: null,
       last_error: null,
+      prune_targets: prune_targets ? JSON.stringify(prune_targets) : null,
     });
 
     const task = DatabaseService.getInstance().getScheduledTask(id);
@@ -3472,7 +3511,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
 
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets } = req.body;
 
     if (target_type && !['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type' }); return;
@@ -3493,6 +3532,14 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
       res.status(400).json({ error: 'Prune action requires target_type "system".' }); return;
     }
 
+    // Validate prune targets
+    const validPruneTargets = ['containers', 'images', 'networks', 'volumes'];
+    if (prune_targets !== undefined && prune_targets !== null) {
+      if (!Array.isArray(prune_targets) || prune_targets.length === 0 || !prune_targets.every((t: string) => validPruneTargets.includes(t))) {
+        res.status(400).json({ error: 'prune_targets must be a non-empty array of: containers, images, networks, volumes' }); return;
+      }
+    }
+
     if (cron_expression) {
       try { CronExpressionParser.parse(cron_expression); } catch {
         res.status(400).json({ error: 'Invalid cron expression.' }); return;
@@ -3507,6 +3554,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     if (action !== undefined) updates.action = action;
     if (cron_expression !== undefined) updates.cron_expression = cron_expression;
     if (enabled !== undefined) updates.enabled = enabled ? 1 : 0;
+    if (prune_targets !== undefined) updates.prune_targets = prune_targets ? JSON.stringify(prune_targets) : null;
 
     // Recalculate next_run if cron changed or if enabling
     const finalCron = cron_expression || existing.cron_expression;
@@ -3606,9 +3654,10 @@ app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => 
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
 
-    const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
-    const runs = db.getScheduledTaskRuns(id, limit);
-    res.json(runs);
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 20, 100);
+    const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
+    const result = db.getScheduledTaskRuns(id, limit, offset);
+    res.json(result);
   } catch (error) {
     console.error('[ScheduledTasks] Runs error:', error);
     res.status(500).json({ error: 'Failed to fetch task runs' });

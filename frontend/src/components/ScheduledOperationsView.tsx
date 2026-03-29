@@ -10,7 +10,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import cronstrue from 'cronstrue';
@@ -31,6 +32,7 @@ interface ScheduledTask {
   next_run_at: number | null;
   last_status: string | null;
   last_error: string | null;
+  prune_targets: string | null;
 }
 
 interface TaskRun {
@@ -41,6 +43,7 @@ interface TaskRun {
   status: 'running' | 'success' | 'failure';
   output: string | null;
   error: string | null;
+  triggered_by: 'scheduler' | 'manual';
 }
 
 interface NodeOption {
@@ -84,8 +87,12 @@ export default function ScheduledOperationsView() {
   const [formNodeId, setFormNodeId] = useState('');
   const [formCron, setFormCron] = useState('0 3 * * *');
   const [formEnabled, setFormEnabled] = useState(true);
+  const [formPruneTargets, setFormPruneTargets] = useState<string[]>(['containers', 'images', 'networks', 'volumes']);
   const [saving, setSaving] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null);
+  const [runsPage, setRunsPage] = useState(1);
+  const [runsTotal, setRunsTotal] = useState(0);
+  const runsLimit = 20;
 
   // Available stacks and nodes for selection
   const [stacks, setStacks] = useState<string[]>([]);
@@ -142,6 +149,7 @@ export default function ScheduledOperationsView() {
     setFormNodeId('');
     setFormCron('0 3 * * *');
     setFormEnabled(true);
+    setFormPruneTargets(['containers', 'images', 'networks', 'volumes']);
     setDialogOpen(true);
   };
 
@@ -153,6 +161,9 @@ export default function ScheduledOperationsView() {
     setFormNodeId(task.node_id != null ? String(task.node_id) : '');
     setFormCron(task.cron_expression);
     setFormEnabled(task.enabled === 1);
+    setFormPruneTargets(
+      task.prune_targets ? JSON.parse(task.prune_targets) : ['containers', 'images', 'networks', 'volumes']
+    );
     setDialogOpen(true);
   };
 
@@ -171,6 +182,9 @@ export default function ScheduledOperationsView() {
     if (actionOption.targetType === 'stack') {
       body.target_id = formTargetId;
       body.node_id = formNodeId ? parseInt(formNodeId, 10) : null;
+    }
+    if (formAction === 'prune' && formPruneTargets.length > 0) {
+      body.prune_targets = formPruneTargets;
     }
 
     setSaving(true);
@@ -226,13 +240,17 @@ export default function ScheduledOperationsView() {
     }
   };
 
-  const openRuns = async (task: ScheduledTask) => {
+  const openRuns = async (task: ScheduledTask, page = 1) => {
     setRunsTask(task);
+    setRunsPage(page);
     setRunsLoading(true);
+    const offset = (page - 1) * runsLimit;
     try {
-      const res = await apiFetch(`/scheduled-tasks/${task.id}/runs?limit=50`, { localOnly: true });
+      const res = await apiFetch(`/scheduled-tasks/${task.id}/runs?limit=${runsLimit}&offset=${offset}`, { localOnly: true });
       if (res.ok) {
-        setRuns(await res.json());
+        const data = await res.json();
+        setRuns(data.runs);
+        setRunsTotal(data.total);
       }
     } catch {
       // Non-critical
@@ -419,6 +437,27 @@ export default function ScheduledOperationsView() {
               </>
             )}
 
+            {formAction === 'prune' && (
+              <div className="space-y-2">
+                <Label>Prune Targets</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['containers', 'images', 'networks', 'volumes'].map(target => (
+                    <label key={target} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={formPruneTargets.includes(target)}
+                        onCheckedChange={(checked) => {
+                          setFormPruneTargets(prev =>
+                            checked ? [...prev, target] : prev.filter(t => t !== target)
+                          );
+                        }}
+                      />
+                      {target.charAt(0).toUpperCase() + target.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Cron Expression</Label>
               <Input
@@ -437,7 +476,7 @@ export default function ScheduledOperationsView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !formName || !formCron || (targetType === 'stack' && (!formTargetId || !formNodeId))}>
+            <Button onClick={handleSave} disabled={saving || !formName || !formCron || (targetType === 'stack' && (!formTargetId || !formNodeId)) || (formAction === 'prune' && formPruneTargets.length === 0)}>
               {saving ? 'Saving...' : editingTask ? 'Update' : 'Create'}
             </Button>
           </DialogFooter>
@@ -474,10 +513,12 @@ export default function ScheduledOperationsView() {
             ) : runs.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">No executions yet.</div>
             ) : (
+              <>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Time</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Details</TableHead>
@@ -492,6 +533,11 @@ export default function ScheduledOperationsView() {
                       <TableRow key={run.id}>
                         <TableCell className="text-xs font-mono text-muted-foreground">
                           {new Date(run.started_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {run.triggered_by === 'manual' ? 'Manual' : 'Scheduled'}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           {run.status === 'success' ? (
@@ -511,6 +557,22 @@ export default function ScheduledOperationsView() {
                   })}
                 </TableBody>
               </Table>
+              {Math.ceil(runsTotal / runsLimit) > 1 && runsTask && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Page {runsPage} of {Math.ceil(runsTotal / runsLimit)}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage - 1)} disabled={runsPage <= 1}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage + 1)} disabled={runsPage >= Math.ceil(runsTotal / runsLimit)}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              </>
             )}
           </div>
         </SheetContent>

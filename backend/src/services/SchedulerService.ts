@@ -67,6 +67,8 @@ export class SchedulerService {
         }
     }
 
+    // Intentionally allows triggering disabled tasks — useful for testing before enabling a schedule.
+    // Manual triggers are attributed as 'manual' in the run record (see triggered_by column).
     public async triggerTask(taskId: number): Promise<void> {
         const db = DatabaseService.getInstance();
         const task = db.getScheduledTask(taskId);
@@ -74,13 +76,13 @@ export class SchedulerService {
         if (this.runningTasks.has(task.id)) throw new Error('Task is already running');
         this.runningTasks.add(task.id);
         try {
-            await this.executeTask(task);
+            await this.executeTask(task, 'manual');
         } finally {
             this.runningTasks.delete(task.id);
         }
     }
 
-    private async executeTask(task: ScheduledTask): Promise<void> {
+    private async executeTask(task: ScheduledTask, triggeredBy: 'scheduler' | 'manual' = 'scheduler'): Promise<void> {
         const db = DatabaseService.getInstance();
         const runId = db.createScheduledTaskRun({
             task_id: task.id,
@@ -89,6 +91,7 @@ export class SchedulerService {
             status: 'running',
             output: null,
             error: null,
+            triggered_by: triggeredBy,
         });
 
         try {
@@ -297,7 +300,11 @@ export class SchedulerService {
     private async executePrune(task: ScheduledTask): Promise<string> {
         const nodeId = task.node_id ?? NodeRegistry.getInstance().getDefaultNodeId();
         const docker = DockerController.getInstance(nodeId);
-        const targets = ['containers', 'images', 'networks', 'volumes'] as const;
+        const allTargets = ['containers', 'images', 'networks', 'volumes'] as const;
+        type PruneTarget = typeof allTargets[number];
+        const targets: PruneTarget[] = task.prune_targets
+            ? (JSON.parse(task.prune_targets) as string[]).filter((t): t is PruneTarget => allTargets.includes(t as PruneTarget))
+            : [...allTargets];
         const results: string[] = [];
 
         for (const target of targets) {
