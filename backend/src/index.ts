@@ -2316,6 +2316,13 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
+      // Admiral license gate — host console requires Pro (team variant)
+      const ls = LicenseService.getInstance();
+      if (ls.getTier() !== 'pro' || ls.getVariant() !== 'team') {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       const hostConsoleWss = new WebSocketServer({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
         hostConsoleWss.close();
@@ -3362,6 +3369,7 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
     return;
   }
   if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;

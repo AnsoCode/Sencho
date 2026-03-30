@@ -7,6 +7,7 @@ import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
+import { AdmiralGate } from './AdmiralGate';
 import ResourcesView from './ResourcesView';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -161,13 +162,13 @@ export default function EditorLayout() {
       { value: 'dashboard', label: 'Home', icon: Home },
       { value: 'fleet', label: 'Fleet', icon: Radar },
     ];
-    if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
     items.push(
       { value: 'resources', label: 'Resources', icon: HardDrive },
       { value: 'templates', label: 'App Store', icon: CloudDownload },
       { value: 'global-observability', label: 'Logs', icon: Activity },
     );
     if (isPro && license?.variant === 'team') {
+      if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
       if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
       if (isAdmin) items.push({ value: 'scheduled-ops', label: 'Schedules', icon: Clock });
     }
@@ -1479,7 +1480,9 @@ export default function EditorLayout() {
           ) : activeView === 'resources' ? (
             <ResourcesView />
           ) : activeView === 'host-console' ? (
-            <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+            <AdmiralGate featureName="Host Console">
+              <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+            </AdmiralGate>
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
             <ErrorBoundary>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
