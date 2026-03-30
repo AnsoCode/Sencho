@@ -93,7 +93,7 @@ describe('FileSystemService.deleteStack', () => {
     await expect(promise).resolves.toBeUndefined();
     expect(mockSpawn).toHaveBeenCalledWith(
       'docker',
-      expect.arrayContaining(['run', '--rm', '-v', expect.stringContaining(':/cleanup'), 'alpine', 'rm', '-rf', '/cleanup']),
+      expect.arrayContaining(['run', '--rm', '-v', expect.stringContaining(':/cleanup'), 'alpine', 'sh', '-c', 'find /cleanup -mindepth 1 -maxdepth 1 -exec rm -rf {} +']),
       expect.objectContaining({ env: expect.any(Object) }),
     );
   });
