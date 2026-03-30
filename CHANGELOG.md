@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.2](https://github.com/AnsoCode/Sencho/compare/v0.21.1...v0.21.2) (2026-03-30)
+
+
+### Fixed
+
+* **docker:** upgrade Compose v2.40.3 → v5.1.1 to remediate dependency CVEs ([#283](https://github.com/AnsoCode/Sencho/issues/283)) ([36ebd5a](https://github.com/AnsoCode/Sencho/commit/36ebd5a9c1c82b5d7631d32831ac8ac420b0c782))
+
 ## [Unreleased]
 
 ### Security
