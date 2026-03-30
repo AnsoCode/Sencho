@@ -301,14 +301,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
 
                 {/* Sidebar */}
-                <div className="w-[200px] bg-glass border-r border-glass-border flex flex-col p-4 shrink-0">
+                <div className="w-[200px] bg-glass border-r border-glass-border flex flex-col p-4 shrink-0 min-h-0">
                     <div className="font-medium text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
                     {isRemote ? (
                         <div className="text-xs text-muted-foreground mb-5 truncate">{activeNode!.name}</div>
                     ) : (
                         <div className="mb-5" />
                     )}
-                    <nav className="space-y-1.5 flex flex-col">
+                    <nav className="space-y-1.5 flex flex-col flex-1 overflow-y-auto">
                         {/* Account / License */}
                         {!isRemote && (
                             <NavButton section="account" icon={<Shield className="w-4 h-4 mr-2" />} label="Account" />
