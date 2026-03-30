@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.3](https://github.com/AnsoCode/Sencho/compare/v0.19.2...v0.19.3) (2026-03-30)
+
+
+### Fixed
+
+* **docker:** install Docker CLI v29.3.1 from static binaries to resolve CVEs ([#268](https://github.com/AnsoCode/Sencho/issues/268)) ([f9b86e6](https://github.com/AnsoCode/Sencho/commit/f9b86e6f53e83ea0b5e8de7c1c916196d3345aee))
+
 ## [0.19.2](https://github.com/AnsoCode/Sencho/compare/v0.19.1...v0.19.2) (2026-03-30)
 
 
