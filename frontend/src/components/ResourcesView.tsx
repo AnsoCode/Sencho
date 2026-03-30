@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from "@/components/ui/tabs";
+import { springs } from '@/lib/motion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,8 +100,8 @@ function FootprintWidget({ usage, onFilter }: FootprintWidgetProps) {
     const pct = (n: number) => `${Math.max(0, (n / total) * 100).toFixed(1)}%`;
 
     const segments: { bytes: number; color: string; label: string; filter: ResourceFilter | null; hoverClass: string }[] = [
-        { bytes: managedBytes, color: 'bg-emerald-500', label: 'Sencho Managed', filter: 'managed', hoverClass: 'hover:bg-emerald-400' },
-        { bytes: unmanagedBytes, color: 'bg-orange-500', label: 'External Projects', filter: 'unmanaged', hoverClass: 'hover:bg-orange-400' },
+        { bytes: managedBytes, color: 'bg-success', label: 'Sencho Managed', filter: 'managed', hoverClass: 'hover:bg-success/80' },
+        { bytes: unmanagedBytes, color: 'bg-warning', label: 'External Projects', filter: 'unmanaged', hoverClass: 'hover:bg-warning/80' },
         { bytes: reclaimable, color: 'bg-muted-foreground/20', label: 'Reclaimable', filter: null, hoverClass: '' },
     ];
 
@@ -207,16 +208,16 @@ function ManagedBadge({ status, managedBy }: {
 }) {
     if (status === 'managed') {
         return (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-emerald-500/25 bg-emerald-500/8 text-emerald-500 text-[10px] font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-success/25 bg-success/8 text-success text-[10px] font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
                 {managedBy}
             </span>
         );
     }
     if (status === 'unmanaged') {
         return (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-orange-500/25 bg-orange-500/8 text-orange-500 text-[10px] font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-warning/25 bg-warning/8 text-warning text-[10px] font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
                 External
             </span>
         );
@@ -519,7 +520,7 @@ export default function ResourcesView() {
                                 target="networks"
                                 icon={<Network className="w-6 h-6" />}
                                 label="Prune Dead Networks"
-                                accentClass="text-emerald-500"
+                                accentClass="text-success"
                                 onManaged={() => setConfirmPrune({ target: 'networks', scope: 'managed' })}
                                 onAll={() => setConfirmPrune({ target: 'networks', scope: 'all' })}
                             />
@@ -527,7 +528,7 @@ export default function ResourcesView() {
                                 target="containers"
                                 icon={<MonitorX className="w-6 h-6" />}
                                 label="Purge Unmanaged Containers"
-                                accentClass="text-orange-500"
+                                accentClass="text-warning"
                                 onManaged={() => setConfirmPrune({ target: 'containers', scope: 'managed' })}
                                 onAll={() => setConfirmPrune({ target: 'containers', scope: 'all' })}
                             />
@@ -541,28 +542,27 @@ export default function ResourcesView() {
                 defaultValue="images"
                 className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-sm overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
             >
-                <div className="px-4 pt-3 pb-0 border-b bg-muted/10">
-                    <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 bg-transparent gap-1 p-0">
-                        {(['images', 'volumes', 'networks'] as const).map(tab => (
-                            <TabsTrigger
-                                key={tab}
-                                value={tab}
-                                className="capitalize text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-t-md rounded-b-none border-b-2 border-transparent data-[state=active]:border-foreground transition-all duration-200"
-                            >
-                                {tab}
-                            </TabsTrigger>
-                        ))}
-                        <TabsTrigger
-                            value="unmanaged"
-                            className="relative text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-t-md rounded-b-none border-b-2 border-transparent data-[state=active]:border-foreground transition-all duration-200"
-                        >
-                            Unmanaged
-                            {totalOrphansCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-orange-500 text-[9px] text-white font-bold animate-in zoom-in-75 duration-200">
-                                    {totalOrphansCount}
-                                </span>
-                            )}
-                        </TabsTrigger>
+                <div className="px-4 pt-3 pb-0 border-b border-glass-border bg-glass">
+                    <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 gap-1 p-0">
+                        <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                            {(['images', 'volumes', 'networks'] as const).map(tab => (
+                                <TabsHighlightItem key={tab} value={tab}>
+                                    <TabsTrigger value={tab} className="capitalize text-xs">
+                                        {tab}
+                                    </TabsTrigger>
+                                </TabsHighlightItem>
+                            ))}
+                            <TabsHighlightItem value="unmanaged">
+                                <TabsTrigger value="unmanaged" className="relative text-xs">
+                                    Unmanaged
+                                    {totalOrphansCount > 0 && (
+                                        <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-warning text-[9px] text-warning-foreground font-bold animate-in zoom-in-75 duration-200">
+                                            {totalOrphansCount}
+                                        </span>
+                                    )}
+                                </TabsTrigger>
+                            </TabsHighlightItem>
+                        </TabsHighlight>
                     </TabsList>
                 </div>
 
@@ -750,8 +750,8 @@ export default function ResourcesView() {
 
                         {totalOrphansCount === 0 ? (
                             <div className="flex-1 flex flex-col items-center justify-center p-12 text-muted-foreground animate-in fade-in-0 duration-300">
-                                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
-                                    <ShieldCheck className="w-6 h-6 text-emerald-500" />
+                                <div className="w-12 h-12 rounded-full bg-success-muted flex items-center justify-center mb-3">
+                                    <ShieldCheck className="w-6 h-6 text-success" />
                                 </div>
                                 <p className="font-medium text-sm">No unmanaged containers</p>
                                 <p className="text-xs mt-1 opacity-70">All running containers are managed by Sencho.</p>
@@ -765,9 +765,9 @@ export default function ResourcesView() {
                                         style={{ animationDelay: `${gi * 60}ms` }}
                                     >
                                         {/* Project header */}
-                                        <div className="bg-orange-500/8 border-b border-orange-500/15 px-4 py-2 font-medium text-xs flex items-center gap-2">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse shrink-0" />
-                                            <span className="text-orange-600 dark:text-orange-400">External Project:</span>
+                                        <div className="bg-warning/8 border-b border-warning/15 px-4 py-2 font-medium text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse shrink-0" />
+                                            <span className="text-warning">External Project:</span>
                                             <span className="font-mono text-foreground">{project}</span>
                                             <span className="ml-auto text-muted-foreground font-normal">{containers.length} container{containers.length !== 1 ? 's' : ''}</span>
                                         </div>

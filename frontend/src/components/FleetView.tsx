@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
+import { springs } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from './ProGate';
@@ -154,8 +155,8 @@ function ContainerRow({ container, nodeId, onNavigate }: {
     const image = container.Image;
     const status = container.Status ?? '';
 
-    const stateColor = state === 'running' ? 'bg-emerald-500' :
-        state === 'restarting' ? 'bg-amber-500' : 'bg-red-500';
+    const stateColor = state === 'running' ? 'bg-success' :
+        state === 'restarting' ? 'bg-warning' : 'bg-red-500';
 
     return (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors group">
@@ -297,8 +298,8 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
             <div className="p-4 pb-3">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isOnline ? 'bg-emerald-500/10' : 'bg-muted'}`}>
-                            <Server className={`w-4 h-4 ${isOnline ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isOnline ? 'bg-success-muted' : 'bg-muted'}`}>
+                            <Server className={`w-4 h-4 ${isOnline ? 'text-success' : 'text-muted-foreground'}`} />
                         </div>
                         <div className="min-w-0">
                             <h3 className="text-sm font-semibold truncate">{node.name}</h3>
@@ -351,7 +352,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                                 </span>
                                 <span className="font-medium">{node.systemStats.cpu.usage}%</span>
                             </div>
-                            <UsageBar percent={cpuPercent} color={cpuPercent > 80 ? 'bg-red-500' : cpuPercent > 60 ? 'bg-amber-500' : 'bg-emerald-500'} />
+                            <UsageBar percent={cpuPercent} color={cpuPercent > 80 ? 'bg-red-500' : cpuPercent > 60 ? 'bg-warning' : 'bg-success'} />
                         </div>
                         <div>
                             <div className="flex items-center justify-between text-xs mb-1">
@@ -360,7 +361,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                                 </span>
                                 <span className="font-medium">{formatBytes(node.systemStats.memory.used)} / {formatBytes(node.systemStats.memory.total)}</span>
                             </div>
-                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-red-500' : memPercent > 60 ? 'bg-amber-500' : 'bg-blue-500'} />
+                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-red-500' : memPercent > 60 ? 'bg-warning' : 'bg-info'} />
                         </div>
                         {node.systemStats.disk && (
                             <div>
@@ -370,7 +371,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                                     </span>
                                     <span className="font-medium">{formatBytes(node.systemStats.disk.used)} / {formatBytes(node.systemStats.disk.total)}</span>
                                 </div>
-                                <UsageBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-amber-500' : 'bg-violet-500'} />
+                                <UsageBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-warning' : 'bg-violet-500'} />
                             </div>
                         )}
                     </div>
@@ -571,12 +572,18 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
             <Tabs defaultValue="overview">
                 <TabsList>
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    {isPro && (
-                        <TabsTrigger value="snapshots">
-                            <Camera className="w-4 h-4 mr-1.5" />Snapshots
-                        </TabsTrigger>
-                    )}
+                    <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                        <TabsHighlightItem value="overview">
+                            <TabsTrigger value="overview">Overview</TabsTrigger>
+                        </TabsHighlightItem>
+                        {isPro && (
+                            <TabsHighlightItem value="snapshots">
+                                <TabsTrigger value="snapshots">
+                                    <Camera className="w-4 h-4 mr-1.5" />Snapshots
+                                </TabsTrigger>
+                            </TabsHighlightItem>
+                        )}
+                    </TabsHighlight>
                 </TabsList>
 
                 <TabsContent value="overview">

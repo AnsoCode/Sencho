@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion } from 'motion/react';
 
 type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
@@ -13,7 +12,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
-import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
+import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -1084,7 +1084,7 @@ export default function EditorLayout() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
-      <div className="w-64 border-r border-border bg-card flex flex-col">
+      <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-xl flex flex-col">
         {/* Branding Header */}
         <div className="h-14 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
@@ -1113,7 +1113,7 @@ export default function EditorLayout() {
                 {nodes.map(node => (
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-success' :
                         node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                         }`} />
                       {node.name}
@@ -1182,11 +1182,11 @@ export default function EditorLayout() {
                           <CommandItem
                             value={file}
                             onSelect={() => loadFile(file)}
-                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight group ${selectedFile === file ? '!bg-glass-highlight !text-foreground border border-glass-border' : ''}`}
                           >
                             <div className="flex items-center gap-2 w-full">
                               <div
-                                className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
+                                className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-success' :
                                   stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
                                   }`}
                               />
@@ -1194,7 +1194,7 @@ export default function EditorLayout() {
 
                               {stackUpdates[file] && (
                                 <span
-                                  className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                                  className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0"
                                   title="Update available"
                                 />
                               )}
@@ -1312,13 +1312,13 @@ export default function EditorLayout() {
           {/* LEFT ZONE: Node Context Pill */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-info-muted border border-info/20 text-info text-sm font-medium">
+                <span className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0" />
                 {activeNode.name}
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border text-muted-foreground text-sm">
-                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-success shrink-0" />
                 {activeNode?.name ?? 'Local'}
               </div>
             )}
@@ -1327,14 +1327,14 @@ export default function EditorLayout() {
           {/* CENTER ZONE: Navigation Group (hidden on mobile) */}
           <div className="flex-1 hidden md:flex justify-center">
             <Highlight
-              className="inset-0 rounded-md bg-background shadow-sm"
+              className="inset-0 rounded-md bg-glass-highlight"
               value={navTabValue}
               controlledItems
               mode="children"
               click={false}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              transition={springs.snappy}
             >
-              <div className="inline-flex items-center rounded-lg bg-muted/50 p-1 gap-0.5">
+              <div className="inline-flex items-center rounded-lg bg-glass border border-glass-border p-1 gap-0.5">
                 {navItems.map(({ value, label, icon: Icon }) => (
                   <HighlightItem key={value} value={value}>
                     <button
@@ -1454,8 +1454,8 @@ export default function EditorLayout() {
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
                         activeView === value
-                          ? 'bg-muted font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                          ? 'bg-glass-highlight font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-glass-highlight hover:text-foreground'
                       )}
                     >
                       <Icon className="w-4 h-4" />
@@ -1679,19 +1679,15 @@ export default function EditorLayout() {
                   <div className="p-4 border-b border-muted flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
-                        <TabsList className="bg-muted">
-                          <TabsTrigger value="compose" className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                            {activeTab === 'compose' && (
-                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                            )}
-                            <span className="relative z-10">compose.yaml</span>
-                          </TabsTrigger>
-                          <TabsTrigger value="env" disabled={!envExists} className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                            {activeTab === 'env' && (
-                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                            )}
-                            <span className="relative z-10">.env</span>
-                          </TabsTrigger>
+                        <TabsList>
+                          <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                            <TabsHighlightItem value="compose">
+                              <TabsTrigger value="compose">compose.yaml</TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="env">
+                              <TabsTrigger value="env" disabled={!envExists}>.env</TabsTrigger>
+                            </TabsHighlightItem>
+                          </TabsHighlight>
                         </TabsList>
                       </Tabs>
 
@@ -1738,7 +1734,7 @@ export default function EditorLayout() {
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {activeTab === 'env' && (
-                      <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-2 flex items-center gap-2 text-xs text-blue-400">
+                      <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
                         <span>
                           Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
                         </span>
