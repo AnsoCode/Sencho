@@ -227,7 +227,7 @@ export class FileSystemService {
         clearTimeout(timer);
         if (code === 0) resolve();
         else reject(new Error(
-          `Failed to delete stack directory — Docker cleanup exited with code ${code}. ` +
+          `Failed to delete stack directory — Docker cleanup exited with code ${code}${stderr ? ': ' + stderr.trim() : ''}. ` +
           `You may need to manually remove the directory: ${dirPath}`
         ));
       });
