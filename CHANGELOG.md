@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0](https://github.com/AnsoCode/Sencho/compare/v0.18.0...v0.19.0) (2026-03-30)
+
+
+### Added
+
+* **audit-log:** add configurable retention, export, Auditor role, and enhanced filtering ([#258](https://github.com/AnsoCode/Sencho/issues/258)) ([d586ce3](https://github.com/AnsoCode/Sencho/commit/d586ce393af34c8cc34cd046d2d90a70e0d79964))
+
 ## [0.18.0](https://github.com/AnsoCode/Sencho/compare/v0.17.0...v0.18.0) (2026-03-29)
 
 
