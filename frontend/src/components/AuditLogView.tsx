@@ -83,7 +83,7 @@ export function AuditLogView() {
     };
 
     const statusColor = (code: number): string => {
-        if (code >= 200 && code < 300) return 'text-green-500';
+        if (code >= 200 && code < 300) return 'text-success';
         if (code >= 400 && code < 500) return 'text-yellow-500';
         if (code >= 500) return 'text-red-500';
         return 'text-muted-foreground';

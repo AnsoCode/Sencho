@@ -127,7 +127,7 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                 <div className="flex items-center gap-3">
                     <span className="font-medium text-sm">{label}</span>
                     {initialConfig?.enabled && (
-                        <Badge variant="secondary" className="text-xs bg-green-500/10 text-green-500 border-green-500/20">
+                        <Badge variant="secondary" className="text-xs bg-success-muted text-success border-success/20">
                             Active
                         </Badge>
                     )}
@@ -298,7 +298,7 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                             </Button>
                             {testResult && (
                                 testResult.success
-                                    ? <CheckCircle className="w-4 h-4 text-green-500" />
+                                    ? <CheckCircle className="w-4 h-4 text-success" />
                                     : <XCircle className="w-4 h-4 text-red-500" />
                             )}
                         </div>

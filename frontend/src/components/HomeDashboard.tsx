@@ -218,10 +218,10 @@ export default function HomeDashboard() {
         <Card className="rounded-xl border-muted bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Active Containers</CardTitle>
-            <Activity className="h-4 w-4 text-green-500" />
+            <Activity className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-500">{stats.active}</div>
+            <div className="text-3xl font-bold text-success">{stats.active}</div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.managed} managed · {stats.unmanaged} external
             </p>
@@ -264,10 +264,10 @@ export default function HomeDashboard() {
         <Card className="rounded-xl border-muted bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Host CPU</CardTitle>
-            <Cpu className="h-4 w-4 text-blue-500" />
+            <Cpu className="h-4 w-4 text-info" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-500">
+            <div className="text-3xl font-bold text-info">
               {systemStats ? `${systemStats.cpu.usage}%` : '...'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -296,10 +296,10 @@ export default function HomeDashboard() {
         <Card className="rounded-xl border-muted bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Host Disk</CardTitle>
-            <HardDrive className="h-4 w-4 text-orange-500" />
+            <HardDrive className="h-4 w-4 text-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-500">
+            <div className="text-3xl font-bold text-warning">
               {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">

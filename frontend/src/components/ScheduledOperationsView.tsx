@@ -340,7 +340,7 @@ export default function ScheduledOperationsView() {
                     </TableCell>
                     <TableCell>
                       {task.last_status === 'success' ? (
-                        <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Success</Badge>
+                        <Badge className="bg-success-muted text-success border-success/20">Success</Badge>
                       ) : task.last_status === 'failure' ? (
                         <Badge variant="destructive">Failed</Badge>
                       ) : (
@@ -541,7 +541,7 @@ export default function ScheduledOperationsView() {
                         </TableCell>
                         <TableCell>
                           {run.status === 'success' ? (
-                            <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Success</Badge>
+                            <Badge className="bg-success-muted text-success border-success/20">Success</Badge>
                           ) : run.status === 'failure' ? (
                             <Badge variant="destructive">Failed</Badge>
                           ) : (

@@ -365,7 +365,7 @@ export function RegistriesSection() {
                             <span>{reg.username}</span>
                             <span className="flex items-center gap-1">
                                 {reg.has_secret ? (
-                                    <><CheckCircle className="w-3 h-3 text-emerald-500" /> Secret stored</>
+                                    <><CheckCircle className="w-3 h-3 text-success" /> Secret stored</>
                                 ) : (
                                     <><XCircle className="w-3 h-3 text-destructive" /> No secret</>
                                 )}
