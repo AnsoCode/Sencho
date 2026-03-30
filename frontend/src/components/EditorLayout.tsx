@@ -1342,8 +1342,10 @@ export default function EditorLayout() {
                     <button
                       onClick={() => handleNavigate(value)}
                       className={cn(
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                        activeView === value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                        'relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                        activeView === value
+                          ? 'text-foreground after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[2px] after:rounded-full after:bg-brand after:blur-[2px]'
+                          : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
                       <Icon className="w-4 h-4 shrink-0" />
@@ -1495,22 +1497,22 @@ export default function EditorLayout() {
                             {isRunning ? (
                               <>
                                 <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
-                                  <Square className="w-4 h-4 mr-2" />
+                                  <Square className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                   {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
                                 </Button>
                                 <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
-                                  <RotateCw className="w-4 h-4 mr-2" />
+                                  <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                   {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                                 </Button>
                               </>
                             ) : (
                               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
-                                <Play className="w-4 h-4 mr-2" />
+                                <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
                               </Button>
                             )}
                             <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
-                              <CloudDownload className="w-4 h-4 mr-2" />
+                              <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
                             {isPro && backupInfo.exists && (
@@ -1518,7 +1520,7 @@ export default function EditorLayout() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
-                                      <Undo2 className="w-4 h-4 mr-2" />
+                                      <Undo2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                       {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
                                     </Button>
                                   </TooltipTrigger>
@@ -1541,7 +1543,7 @@ export default function EditorLayout() {
                                 setDeleteDialogOpen(true);
                               }}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
+                              <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
                             </Button>
                           </div>
@@ -1666,8 +1668,8 @@ export default function EditorLayout() {
                   </Card>
 
                   {/* Terminal Section */}
-                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
-                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Terminal</h3>
+                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px] shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
+                    <h3 className="text-sm font-medium text-stat-subtitle mb-2">Terminal</h3>
                     <div className="h-[calc(100%-24px)]">
                       <ErrorBoundary>
                         <TerminalComponent stackName={stackName} />

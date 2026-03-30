@@ -105,6 +105,10 @@
   --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.10), 0px 8px 10px -1px hsl(0 0% 0% / 0.10);
   --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.25);
 
+  /* Material simulation — inherent depth */
+  --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.04), 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.04);
+
   /* Motion timing */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -121,24 +125,24 @@
    DARK THEME
 ───────────────────────────────────────────────────────────── */
 .dark {
-  --background: oklch(0.065 0 0);
+  --background: oklch(0.08 0 0);
   --foreground: oklch(0.92 0 0);
-  --card: oklch(0.10 0 0);
+  --card: oklch(0.12 0 0);
   --card-foreground: oklch(0.92 0 0);
-  --popover: oklch(0.12 0 0 / 0.82);
+  --popover: oklch(0.14 0 0 / 0.82);
   --popover-foreground: oklch(0.92 0 0);
   --primary: oklch(1 0 0);
   --primary-foreground: oklch(0.10 0 0);
-  --secondary: oklch(0.10 0 0);
+  --secondary: oklch(0.12 0 0);
   --secondary-foreground: oklch(0.92 0 0);
-  --muted: oklch(0.10 0 0);
+  --muted: oklch(0.12 0 0);
   --muted-foreground: oklch(0.45 0 0);
   --accent: oklch(1 0 0 / 0.06);
   --accent-foreground: oklch(0.92 0 0);
   --destructive: oklch(0.6900 0.2000 23.9100);
   --destructive-foreground: oklch(0.92 0 0);
   --border: oklch(1 0 0 / 0.06);
-  --input: oklch(0.10 0 0);
+  --input: oklch(0.12 0 0);
   --ring: oklch(0.75 0.08 192);
 
   /* Brand - desaturated teal accent */
@@ -147,7 +151,7 @@
   --brand-muted: oklch(0.75 0.08 192 / 0.12);
 
   /* Glass — solid surface system (no blur on static surfaces) */
-  --glass: oklch(0.10 0 0);
+  --glass: oklch(0.12 0 0);
   --glass-border: oklch(1 0 0 / 0.06);
   --glass-highlight: oklch(1 0 0 / 0.06);
 
@@ -201,6 +205,10 @@
 
   /* Shape */
   --radius: 0.5rem;
+
+  /* Material simulation — inherent depth */
+  --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
+  --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.06);
 
   /* Shadows — near-zero, depth comes from surface tone */
   --shadow-x: 0px;
@@ -302,6 +310,8 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+  --shadow-card-bevel: var(--card-bevel);
+  --shadow-btn-glow: var(--button-inner-glow);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -336,7 +346,7 @@
       oklch(0.25 0.05 250 / 0.15),
       transparent
     ),
-    oklch(0.065 0 0);
+    oklch(0.08 0 0);
 }
 
 /* ─────────────────────────────────────────────────────────────
