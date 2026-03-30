@@ -378,7 +378,7 @@ export class ComposeService {
   public async downStack(stackName: string): Promise<void> {
     const stackPath = path.join(this.baseDir, stackName);
     try {
-      await this.execute('docker', ['compose', 'down'], stackPath, undefined, false);
+      await this.execute('docker', ['compose', 'down', '--volumes', '--remove-orphans'], stackPath, undefined, false);
     } catch (error) {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }

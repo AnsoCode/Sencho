@@ -1,5 +1,6 @@
 import path from 'path';
 import { promises as fsPromises } from 'fs';
+import { spawn } from 'child_process';
 import { NodeRegistry } from './NodeRegistry';
 
 /**
@@ -174,12 +175,71 @@ export class FileSystemService {
     try {
       await fsPromises.rm(stackDir, { recursive: true, force: true });
       console.log('Stack deleted successfully:', stackName);
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        console.error('Error deleting stack directory:', error.message);
-        throw new Error(`Failed to delete stack directory: ${error.message}`);
+    } catch (error: unknown) {
+      const fsError = error as NodeJS.ErrnoException;
+      if (fsError.code === 'ENOENT') return;
+
+      if (fsError.code === 'EACCES' || fsError.code === 'EPERM') {
+        console.warn(
+          `[FileSystemService] Permission denied deleting ${stackName}, falling back to Docker-based removal`
+        );
+        await this.forceDeleteViaDocker(stackDir);
+        // Docker removes contents but can't remove its own mount point; clean up the empty shell
+        try {
+          await fsPromises.rmdir(stackDir);
+        } catch {
+          console.warn(`[FileSystemService] Could not remove empty directory ${stackDir} — may need manual cleanup`);
+        }
+        console.log('Stack deleted successfully (via Docker fallback):', stackName);
+      } else {
+        console.error('Error deleting stack directory:', fsError.message);
+        throw new Error(`Failed to delete stack directory: ${fsError.message}`);
       }
     }
+  }
+
+  private forceDeleteViaDocker(dirPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = 30_000;
+      const child = spawn('docker', [
+        'run', '--rm',
+        '-v', `${dirPath}:/cleanup`,
+        'alpine',
+        'rm', '-rf', '/cleanup'
+      ], {
+        env: {
+          ...process.env,
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+        }
+      });
+
+      let stderr = '';
+      child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error(
+          `Docker-based deletion timed out after 30s. You may need to manually remove the directory: ${dirPath}`
+        ));
+      }, timeout);
+
+      child.on('close', (code: number | null) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(
+          `Failed to delete stack directory — Docker cleanup exited with code ${code}. ` +
+          `You may need to manually remove the directory: ${dirPath}`
+        ));
+      });
+
+      child.on('error', (err: Error) => {
+        clearTimeout(timer);
+        reject(new Error(
+          `Failed to delete stack directory — could not run Docker for cleanup: ${err.message}. ` +
+          `You may need to manually remove the directory: ${dirPath}`
+        ));
+      });
+    });
   }
 
   getBaseDir(): string {
