@@ -217,12 +217,12 @@ export default function HomeDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Active Containers</CardTitle>
-            <Activity className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Active Containers</CardTitle>
+            <Activity className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-[rgba(255,255,255,0.92)]">{stats.active}</div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1">
+            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">{stats.active}</div>
+            <p className="text-xs text-stat-subtitle mt-1">
               {stats.managed} managed · {stats.unmanaged} external
             </p>
           </CardContent>
@@ -230,27 +230,27 @@ export default function HomeDashboard() {
 
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Exited Containers</CardTitle>
-            <Square className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Exited Containers</CardTitle>
+            <Square className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-[rgba(255,255,255,0.92)]">{stats.exited}</div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1">Stopped or crashed</p>
+            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">{stats.exited}</div>
+            <p className="text-xs text-stat-subtitle mt-1">Stopped or crashed</p>
           </CardContent>
         </Card>
 
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Docker Network</CardTitle>
-            <Network className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Docker Network</CardTitle>
+            <Network className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-medium text-[rgba(255,255,255,0.92)] whitespace-nowrap">
+            <div className="text-xl font-medium text-stat-value whitespace-nowrap">
               {systemStats?.network
                 ? `${formatBytes(systemStats.network.rxSec)}/s ↓`
                 : '...'}
             </div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1 whitespace-nowrap">
+            <p className="text-xs text-stat-subtitle mt-1 whitespace-nowrap">
               {systemStats?.network
                 ? `${formatBytes(systemStats.network.txSec)}/s ↑`
                 : 'Loading...'}
@@ -263,14 +263,14 @@ export default function HomeDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Host CPU</CardTitle>
-            <Cpu className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Host CPU</CardTitle>
+            <Cpu className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-[rgba(255,255,255,0.92)]">
+            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">
               {systemStats ? `${systemStats.cpu.usage}%` : '...'}
             </div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1">
+            <p className="text-xs text-stat-subtitle mt-1">
               {systemStats ? `${systemStats.cpu.cores} cores` : 'Loading...'}
             </p>
           </CardContent>
@@ -278,14 +278,14 @@ export default function HomeDashboard() {
 
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Host RAM</CardTitle>
-            <MemoryStick className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Host RAM</CardTitle>
+            <MemoryStick className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-[rgba(255,255,255,0.92)]">
+            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">
               {systemStats ? `${systemStats.memory.usagePercent}%` : '...'}
             </div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1">
+            <p className="text-xs text-stat-subtitle mt-1">
               {systemStats
                 ? `${formatBytes(systemStats.memory.used)} / ${formatBytes(systemStats.memory.total)}`
                 : 'Loading...'}
@@ -295,14 +295,14 @@ export default function HomeDashboard() {
 
         <Card className="bg-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-[rgba(255,255,255,0.55)]">Host Disk</CardTitle>
-            <HardDrive className="h-4 w-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="text-sm font-medium text-stat-title">Host Disk</CardTitle>
+            <HardDrive className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-[rgba(255,255,255,0.92)]">
+            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">
               {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
             </div>
-            <p className="text-xs text-[rgba(255,255,255,0.38)] mt-1">
+            <p className="text-xs text-stat-subtitle mt-1">
               {systemStats?.disk
                 ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}`
                 : 'Loading...'}
@@ -315,8 +315,8 @@ export default function HomeDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-[rgba(255,255,255,0.55)]">
-              <Activity className="w-4 h-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
+              <Activity className="w-4 h-4 text-stat-icon" />
               <span>Normalized CPU Usage</span>
             </CardTitle>
             <CardDescription className="text-xs">Total CPU percentage over total host cores.</CardDescription>
@@ -325,9 +325,9 @@ export default function HomeDashboard() {
             {chartData.length > 0 ? (
               <ChartContainer config={chartConfig} className="w-full h-full">
                 <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 11 }} />
-                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, 100]} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Area type="monotone" dataKey="cpu" stroke="var(--color-cpu)" fill="var(--color-cpu)" fillOpacity={0.4} />
                 </AreaChart>
@@ -342,8 +342,8 @@ export default function HomeDashboard() {
 
         <Card className="bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-[rgba(255,255,255,0.55)]">
-              <Activity className="w-4 h-4 text-[rgba(255,255,255,0.28)]" />
+            <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
+              <Activity className="w-4 h-4 text-stat-icon" />
               <span>Normalized RAM Usage</span>
             </CardTitle>
             <CardDescription className="text-xs">Total RAM allocation in GB.</CardDescription>
@@ -352,9 +352,9 @@ export default function HomeDashboard() {
             {chartData.length > 0 ? (
               <ChartContainer config={chartConfig} className="w-full h-full">
                 <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 11 }} />
-                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(1)} GB`} tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
+                  <YAxis tickFormatter={(val) => `${Number(val).toFixed(1)} GB`} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Area type="monotone" dataKey="ram" stroke="var(--color-ram)" fill="var(--color-ram)" fillOpacity={0.4} />
                 </AreaChart>

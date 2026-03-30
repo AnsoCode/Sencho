@@ -1164,7 +1164,7 @@ export default function EditorLayout() {
               className="h-9"
             />
           </div>
-          <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-[rgba(255,255,255,0.35)] px-4 py-2 mt-2 flex-none">STACKS</h3>
+          <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-icon px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
               <CommandList className="max-h-none overflow-visible">
@@ -1185,12 +1185,14 @@ export default function EditorLayout() {
                             className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight group ${selectedFile === file ? '!bg-glass-highlight !text-foreground border border-glass-border' : ''}`}
                           >
                             <div className="flex items-center gap-2 w-full">
-                              <div
-                                className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-success' :
-                                  stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                              <span
+                                className={`font-mono text-[10px] shrink-0 w-[18px] ${stackStatuses[file] === 'running' ? 'text-success' :
+                                  stackStatuses[file] === 'exited' ? 'text-destructive' : 'text-stat-icon'
                                   }`}
-                              />
-                              <span className="flex-1 truncate">{getDisplayName(file)}</span>
+                              >
+                                {stackStatuses[file] === 'running' ? 'UP' : stackStatuses[file] === 'exited' ? 'DN' : '--'}
+                              </span>
+                              <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
 
                               {stackUpdates[file] && (
                                 <span

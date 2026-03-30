@@ -8,24 +8,24 @@
    LIGHT THEME
 ───────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(0.98 0 0);
-  --foreground: oklch(0.10 0 0);
-  --card: oklch(1 0 0 / 0.70);
-  --card-foreground: oklch(0.10 0 0);
-  --popover: oklch(1 0 0 / 0.80);
-  --popover-foreground: oklch(0.10 0 0);
+  --background: oklch(0.97 0 0);
+  --foreground: oklch(0.15 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(1 0 0 / 0.92);
+  --popover-foreground: oklch(0.15 0 0);
   --primary: oklch(0.15 0 0);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0 0 0 / 0.05);
   --secondary-foreground: oklch(0.15 0 0);
   --muted: oklch(0 0 0 / 0.04);
-  --muted-foreground: oklch(0.45 0 0);
+  --muted-foreground: oklch(0.50 0 0);
   --accent: oklch(0 0 0 / 0.06);
   --accent-foreground: oklch(0.15 0 0);
   --destructive: oklch(0.6300 0.1900 23.0300);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0 0 0 / 0.08);
-  --input: oklch(0 0 0 / 0.05);
+  --border: oklch(0 0 0 / 0.10);
+  --input: oklch(0.97 0 0);
   --ring: oklch(0.50 0.14 200);
 
   /* Brand - technical cyan, the signature accent */
@@ -34,9 +34,9 @@
   --brand-muted: oklch(0.50 0.14 200 / 0.12);
 
   /* Glass — frosted surface system */
-  --glass: oklch(1 0 0 / 0.60);
-  --glass-border: oklch(0 0 0 / 0.08);
-  --glass-highlight: oklch(0 0 0 / 0.08);
+  --glass: oklch(1 0 0);
+  --glass-border: oklch(0 0 0 / 0.10);
+  --glass-highlight: oklch(0 0 0 / 0.06);
 
   /* Semantic status colors */
   --success: oklch(0.65 0.17 155);
@@ -57,14 +57,29 @@
   --chart-5: oklch(0.5600 0 0);
 
   /* Sidebar */
-  --sidebar: oklch(1 0 0 / 0.50);
-  --sidebar-foreground: oklch(0.10 0 0);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.15 0 0);
   --sidebar-primary: oklch(0.15 0 0);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0 0 0 / 0.06);
   --sidebar-accent-foreground: oklch(0.15 0 0);
-  --sidebar-border: oklch(0 0 0 / 0.08);
+  --sidebar-border: oklch(0 0 0 / 0.10);
   --sidebar-ring: oklch(0.50 0.14 200);
+
+  /* Stat hierarchy — text brightness tiers */
+  --stat-value: oklch(0.15 0 0);
+  --stat-title: oklch(0.40 0 0);
+  --stat-subtitle: oklch(0.50 0 0);
+  --stat-icon: oklch(0.60 0 0);
+
+  /* Card borders — directional lighting */
+  --card-border: oklch(0 0 0 / 0.08);
+  --card-border-top: oklch(0 0 0 / 0.12);
+  --card-border-hover: oklch(0 0 0 / 0.15);
+
+  /* Chart grid & axis */
+  --chart-grid: oklch(0 0 0 / 0.06);
+  --chart-tick: oklch(0 0 0 / 0.45);
 
   /* Typography */
   --font-sans: 'Geist', sans-serif;
@@ -117,7 +132,7 @@
   --secondary: oklch(0.10 0 0);
   --secondary-foreground: oklch(0.92 0 0);
   --muted: oklch(0.10 0 0);
-  --muted-foreground: oklch(0.40 0 0);
+  --muted-foreground: oklch(0.45 0 0);
   --accent: oklch(1 0 0 / 0.06);
   --accent-foreground: oklch(0.92 0 0);
   --destructive: oklch(0.6900 0.2000 23.9100);
@@ -163,6 +178,21 @@
   --sidebar-accent-foreground: oklch(0.92 0 0);
   --sidebar-border: oklch(1 0 0 / 0.06);
   --sidebar-ring: oklch(0.75 0.08 192);
+
+  /* Stat hierarchy — text brightness tiers */
+  --stat-value: oklch(0.93 0 0);
+  --stat-title: oklch(0.55 0 0);
+  --stat-subtitle: oklch(0.45 0 0);
+  --stat-icon: oklch(0.35 0 0);
+
+  /* Card borders — directional lighting */
+  --card-border: oklch(1 0 0 / 0.07);
+  --card-border-top: oklch(1 0 0 / 0.14);
+  --card-border-hover: oklch(1 0 0 / 0.14);
+
+  /* Chart grid & axis */
+  --chart-grid: oklch(1 0 0 / 0.05);
+  --chart-tick: oklch(1 0 0 / 0.40);
 
   /* Typography */
   --font-sans: 'Geist', sans-serif;
@@ -233,6 +263,18 @@
   --color-glass-border: var(--glass-border);
   --color-glass-highlight: var(--glass-highlight);
 
+  --color-stat-value: var(--stat-value);
+  --color-stat-title: var(--stat-title);
+  --color-stat-subtitle: var(--stat-subtitle);
+  --color-stat-icon: var(--stat-icon);
+
+  --color-card-border: var(--card-border);
+  --color-card-border-top: var(--card-border-top);
+  --color-card-border-hover: var(--card-border-hover);
+
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-tick: var(--chart-tick);
+
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-muted: var(--success-muted);
@@ -275,17 +317,24 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background:
+      radial-gradient(
+        circle at 50% 0%,
+        oklch(0.95 0.02 60 / 0.3),
+        transparent
+      ),
+      var(--background);
   }
 }
 
-/* Dark mode: subtle ambient glow from above on root only */
+/* Dark mode: teal-tinted ambient glow */
 .dark body {
   background:
     radial-gradient(
-      ellipse 80% 50% at 50% -10%,
-      rgba(255, 255, 255, 0.03) 0%,
-      transparent 70%
+      circle at 50% 0%,
+      oklch(0.25 0.05 250 / 0.15),
+      transparent
     ),
     oklch(0.065 0 0);
 }

@@ -134,13 +134,13 @@ function StatCard({ icon: Icon, label, value, sub, alert }: {
     alert?: boolean;
 }) {
     return (
-        <div className={`rounded-xl border bg-card p-4 ${alert ? 'border-red-500/30 bg-red-500/5' : ''}`}>
+        <div className={`rounded-lg border bg-card p-4 ${alert ? 'border-red-500/30 bg-red-500/5' : ''}`}>
             <div className="flex items-center gap-2 mb-2">
-                <Icon className={`w-4 h-4 ${alert ? 'text-red-500' : 'text-muted-foreground'}`} />
-                <span className="text-xs text-muted-foreground">{label}</span>
+                <Icon className={`w-4 h-4 ${alert ? 'text-red-500' : 'text-stat-icon'}`} />
+                <span className="text-xs text-stat-title">{label}</span>
             </div>
-            <div className={`text-2xl font-medium ${alert ? 'text-destructive/70' : ''}`}>{value}</div>
-            {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+            <div className={`text-2xl font-medium tabular-nums tracking-tight ${alert ? 'text-destructive/70' : 'text-stat-value'}`}>{value}</div>
+            {sub && <p className="text-xs text-stat-subtitle mt-1">{sub}</p>}
         </div>
     );
 }
@@ -328,15 +328,15 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                 {isOnline && node.stats && (
                     <div className="grid grid-cols-3 gap-2 mb-3">
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none">{node.stats.active}</div>
+                            <div className="text-lg font-medium leading-none tabular-nums">{node.stats.active}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Running</div>
                         </div>
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none">{node.stats.exited}</div>
+                            <div className="text-lg font-medium leading-none tabular-nums">{node.stats.exited}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Stopped</div>
                         </div>
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none">{node.stacks?.length ?? '-'}</div>
+                            <div className="text-lg font-medium leading-none tabular-nums">{node.stacks?.length ?? '-'}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Stacks</div>
                         </div>
                     </div>
