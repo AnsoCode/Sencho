@@ -304,7 +304,8 @@ export class MonitorService {
             db.cleanupOldMetrics(isNaN(retentionHours) ? 24 : retentionHours);
             const retentionDays = parseInt(settings['log_retention_days'] || '30', 10);
             db.cleanupOldNotifications(isNaN(retentionDays) ? 30 : retentionDays);
-            db.cleanupOldAuditLogs(90);
+            const auditRetentionDays = parseInt(settings['audit_retention_days'] || '90', 10);
+            db.cleanupOldAuditLogs(isNaN(auditRetentionDays) ? 90 : auditRetentionDays);
         } catch (e) {
             console.error('MonitorService: failed to cleanup old data', e);
         }

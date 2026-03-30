@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* **audit-log:** configurable retention period (1–365 days) via Settings → Developer → Data Retention, replacing the hardcoded 90-day limit
+* **audit-log:** one-click CSV and JSON export of the currently filtered audit log dataset (capped at 10,000 entries)
+* **rbac:** new Auditor role — read-only access to the audit log with no administrative privileges, ideal for compliance officers and security reviewers
+* **audit-log:** full-text search across action summaries, API paths, and usernames
+* **audit-log:** date range filter with From/To date pickers in the UI
+* **audit-log:** expandable row details showing full request path, IP address, node ID, and entry ID
+
 * **rbac:** introduce Deployer and Node Admin intermediate roles with scoped permissions (Team Pro)
   - Deployer role: can deploy, restart, stop, and start stacks but cannot edit compose files, delete stacks, or access system settings
   - Node Admin role: full stack and node management but no system settings, user management, or license access
