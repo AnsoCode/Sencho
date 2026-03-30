@@ -209,7 +209,7 @@ export function RegistriesSection() {
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
-                        <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                        <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
                             Private Registries <TierBadge />
                         </h3>
                         <p className="text-sm text-muted-foreground">
@@ -365,7 +365,7 @@ export function RegistriesSection() {
                             <span>{reg.username}</span>
                             <span className="flex items-center gap-1">
                                 {reg.has_secret ? (
-                                    <><CheckCircle className="w-3 h-3 text-emerald-500" /> Secret stored</>
+                                    <><CheckCircle className="w-3 h-3 text-success" /> Secret stored</>
                                 ) : (
                                     <><XCircle className="w-3 h-3 text-destructive" /> No secret</>
                                 )}

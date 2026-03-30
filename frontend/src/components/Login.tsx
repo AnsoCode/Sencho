@@ -107,7 +107,7 @@ export function Login({
             draggable={false}
           />
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-white tracking-tight">Sencho</h1>
+            <h1 className="text-4xl font-medium text-foreground tracking-tight">Sencho</h1>
             <p className="text-base text-zinc-400 mt-2">Docker Compose Management</p>
           </div>
         </div>

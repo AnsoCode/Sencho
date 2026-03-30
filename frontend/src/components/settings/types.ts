@@ -1,0 +1,49 @@
+export interface PatchableSettings {
+    host_cpu_limit?: string;
+    host_ram_limit?: string;
+    host_disk_limit?: string;
+    docker_janitor_gb?: string;
+    global_crash?: '0' | '1';
+    global_logs_refresh?: '1' | '3' | '5' | '10';
+    developer_mode?: '0' | '1';
+    template_registry_url?: string;
+    metrics_retention_hours?: string;
+    log_retention_days?: string;
+    audit_retention_days?: string;
+}
+
+export const DEFAULT_SETTINGS: PatchableSettings = {
+    host_cpu_limit: '90',
+    host_ram_limit: '90',
+    host_disk_limit: '90',
+    global_crash: '1',
+    docker_janitor_gb: '5',
+    global_logs_refresh: '5',
+    developer_mode: '0',
+    template_registry_url: '',
+    metrics_retention_hours: '24',
+    log_retention_days: '30',
+    audit_retention_days: '90',
+};
+
+export type SectionId =
+    | 'account'
+    | 'license'
+    | 'users'
+    | 'sso'
+    | 'api-tokens'
+    | 'registries'
+    | 'system'
+    | 'notifications'
+    | 'webhooks'
+    | 'developer'
+    | 'nodes'
+    | 'appstore'
+    | 'support'
+    | 'about';
+
+export interface Agent {
+    type: 'discord' | 'slack' | 'webhook';
+    url: string;
+    enabled: boolean;
+}

@@ -93,7 +93,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
           cursorAccent: '#000000',
           selectionBackground: 'rgba(255, 255, 255, 0.3)',
         },
-        fontFamily: 'Consolas, "Courier New", monospace',
+        fontFamily: "'Geist Mono', monospace",
         fontSize: 14,
         cursorBlink: true,
       });
@@ -219,7 +219,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
             <TerminalIcon className="w-5 h-5" />
             Bash: {containerName}
             {isConnected && (
-              <span className="ml-2 text-xs bg-green-500/20 text-green-500 px-2 py-0.5 rounded-full">
+              <span className="ml-2 text-xs bg-success/20 text-success px-2 py-0.5 rounded-full">
                 Connected
               </span>
             )}

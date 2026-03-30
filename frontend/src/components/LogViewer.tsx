@@ -61,7 +61,7 @@ export function LogViewer({ containerId, containerName, isOpen, onClose }: LogVi
                 <DialogHeader className="flex flex-row items-center gap-2 pb-2 border-b">
                     <Terminal className="w-5 h-5" />
                     <DialogTitle className="flex-1 text-left font-mono text-sm">
-                        {containerName} {isConnected ? <span className="text-green-500 text-xs ml-2">(connected)</span> : <Loader2 className="inline w-3 h-3 ml-2 animate-spin" />}
+                        {containerName} {isConnected ? <span className="text-success text-xs ml-2">(connected)</span> : <Loader2 className="inline w-3 h-3 ml-2 animate-spin" />}
                     </DialogTitle>
                 </DialogHeader>
 

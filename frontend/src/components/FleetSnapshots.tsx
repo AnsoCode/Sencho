@@ -290,10 +290,10 @@ export default function FleetSnapshots() {
                             const skipped = parseSkippedNodes(selectedSnapshot.skipped_nodes);
                             if (skipped.length === 0) return null;
                             return (
-                                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+                                <div className="rounded-xl border border-warning/30 bg-warning/5 p-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                                        <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                                        <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
+                                        <span className="text-sm font-medium text-warning">
                                             Some nodes were unreachable during snapshot creation:
                                         </span>
                                     </div>
@@ -519,7 +519,7 @@ export default function FleetSnapshots() {
                                         <TableCell>
                                             {skipped.length > 0 ? (
                                                 <span
-                                                    className="flex items-center gap-1 text-amber-500"
+                                                    className="flex items-center gap-1 text-warning"
                                                     title={`Skipped: ${skippedNames}`}
                                                 >
                                                     <AlertTriangle className="w-3.5 h-3.5" />

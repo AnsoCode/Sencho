@@ -311,7 +311,7 @@ export function NodeManager() {
       {/* Header */}
       <div className="flex items-center justify-between pr-8">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-lg font-medium flex items-center gap-2">
             <Server className="w-5 h-5" />
             Nodes
           </h2>
@@ -380,7 +380,7 @@ export function NodeManager() {
           <div className="flex items-center gap-2 rounded-md bg-muted p-2">
             <code className="flex-1 text-xs font-mono truncate text-muted-foreground">{generatedToken}</code>
             <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={copyToken}>
-              {tokenCopied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {tokenCopied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
             </Button>
           </div>
         )}
@@ -490,8 +490,8 @@ export function NodeManager() {
       {/* Connection Test Result */}
       {testResult && (
         <div className="rounded-md border p-4 bg-muted/30 space-y-2">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-green-500" />
+          <h3 className="text-sm font-medium flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-success" />
             Connection Details - {nodes.find(n => n.id === testResult.nodeId)?.name}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">

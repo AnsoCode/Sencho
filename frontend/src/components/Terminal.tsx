@@ -77,7 +77,7 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
             brightCyan: '#56d4dd',
             brightWhite: '#ffffff',
           },
-          fontFamily: "'JetBrains Mono', Consolas, Monaco, monospace",
+          fontFamily: "'Geist Mono', monospace",
           fontSize: 13,
           scrollback: 10000,
         });

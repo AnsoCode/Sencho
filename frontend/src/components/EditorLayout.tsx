@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion } from 'motion/react';
 
 type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
@@ -13,7 +12,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
-import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
+import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -1084,12 +1084,12 @@ export default function EditorLayout() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
-      <div className="w-64 border-r border-border bg-card flex flex-col">
+      <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-md flex flex-col">
         {/* Branding Header */}
         <div className="h-14 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
             <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-10 h-10" />
-            <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
+            <h1 className="text-2xl font-medium tracking-tight">Sencho</h1>
           </div>
         </div>
 
@@ -1113,7 +1113,7 @@ export default function EditorLayout() {
                 {nodes.map(node => (
                   <SelectItem key={node.id} value={node.id.toString()}>
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-green-500' :
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-success' :
                         node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                         }`} />
                       {node.name}
@@ -1129,7 +1129,7 @@ export default function EditorLayout() {
         {can('stack:create') && <div className="p-4">
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full rounded-lg">
+              <Button variant="outline" className="w-full rounded-lg">
                 <Plus className="w-4 h-4 mr-2" />
                 Create Stack
               </Button>
@@ -1164,7 +1164,7 @@ export default function EditorLayout() {
               className="h-9"
             />
           </div>
-          <h3 className="text-sm font-semibold text-muted-foreground px-4 py-2 mt-2 flex-none">STACKS</h3>
+          <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-icon px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
               <CommandList className="max-h-none overflow-visible">
@@ -1182,19 +1182,21 @@ export default function EditorLayout() {
                           <CommandItem
                             value={file}
                             onSelect={() => loadFile(file)}
-                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-muted group ${selectedFile === file ? '!bg-accent !text-accent-foreground' : ''}`}
+                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight group ${selectedFile === file ? '!bg-glass-highlight !text-foreground border border-glass-border' : ''}`}
                           >
                             <div className="flex items-center gap-2 w-full">
-                              <div
-                                className={`w-2 h-2 rounded-full shrink-0 ${stackStatuses[file] === 'running' ? 'bg-green-500' :
-                                  stackStatuses[file] === 'exited' ? 'bg-red-500' : 'bg-gray-400'
+                              <span
+                                className={`font-mono text-[10px] shrink-0 w-[18px] ${stackStatuses[file] === 'running' ? 'text-success' :
+                                  stackStatuses[file] === 'exited' ? 'text-destructive' : 'text-stat-icon'
                                   }`}
-                              />
-                              <span className="flex-1 truncate">{getDisplayName(file)}</span>
+                              >
+                                {stackStatuses[file] === 'running' ? 'UP' : stackStatuses[file] === 'exited' ? 'DN' : '--'}
+                              </span>
+                              <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
 
                               {stackUpdates[file] && (
                                 <span
-                                  className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0"
+                                  className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0"
                                   title="Update available"
                                 />
                               )}
@@ -1312,13 +1314,13 @@ export default function EditorLayout() {
           {/* LEFT ZONE: Node Context Pill */}
           <div className="flex-shrink-0">
             {activeNode?.type === 'remote' ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-info-muted border border-info/20 text-info text-sm font-medium">
+                <span className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0" />
                 {activeNode.name}
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border text-muted-foreground text-sm">
-                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-success shrink-0" />
                 {activeNode?.name ?? 'Local'}
               </div>
             )}
@@ -1327,24 +1329,26 @@ export default function EditorLayout() {
           {/* CENTER ZONE: Navigation Group (hidden on mobile) */}
           <div className="flex-1 hidden md:flex justify-center">
             <Highlight
-              className="inset-0 rounded-md bg-background shadow-sm"
+              className="inset-0 rounded-md bg-accent"
               value={navTabValue}
               controlledItems
               mode="children"
               click={false}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              transition={springs.snappy}
             >
-              <div className="inline-flex items-center rounded-lg bg-muted/50 p-1 gap-0.5">
+              <div className="inline-flex items-center rounded-lg p-1 gap-0.5">
                 {navItems.map(({ value, label, icon: Icon }) => (
                   <HighlightItem key={value} value={value}>
                     <button
                       onClick={() => handleNavigate(value)}
                       className={cn(
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                        activeView === value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                        'relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                        activeView === value
+                          ? 'text-foreground after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[2px] after:rounded-full after:bg-brand after:blur-[2px]'
+                          : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <Icon className="w-4 h-4 shrink-0" />
                       <span className="hidden xl:inline">{label}</span>
                     </button>
                   </HighlightItem>
@@ -1373,7 +1377,7 @@ export default function EditorLayout() {
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
                 <div className="flex items-center justify-between p-4 border-b">
-                  <h4 className="font-semibold">Notifications</h4>
+                  <h4 className="font-medium">Notifications</h4>
                   <div className="flex gap-2">
                     {notifications.filter(n => !n.is_read).length > 0 && (
                       <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
@@ -1444,7 +1448,7 @@ export default function EditorLayout() {
               </SheetTrigger>
               <SheetContent side="right" className="w-64 p-0">
                 <div className="p-4 border-b">
-                  <p className="text-sm font-semibold">Navigation</p>
+                  <p className="text-sm font-medium">Navigation</p>
                 </div>
                 <nav className="flex flex-col p-2 gap-1">
                   {navItems.map(({ value, label, icon: Icon }) => (
@@ -1454,8 +1458,8 @@ export default function EditorLayout() {
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
                         activeView === value
-                          ? 'bg-muted font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                          ? 'bg-glass-highlight font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-glass-highlight hover:text-foreground'
                       )}
                     >
                       <Icon className="w-4 h-4" />
@@ -1486,29 +1490,29 @@ export default function EditorLayout() {
                     <CardHeader className="p-4 pb-2">
                       <div className="flex flex-col gap-3">
                         {/* Stack Name */}
-                        <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
+                        <CardTitle className="text-2xl font-medium">{stackName}</CardTitle>
                         {/* Action Bar */}
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
                               <>
                                 <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
-                                  <Square className="w-4 h-4 mr-2" />
+                                  <Square className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                   {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
                                 </Button>
                                 <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
-                                  <RotateCw className="w-4 h-4 mr-2" />
+                                  <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                   {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                                 </Button>
                               </>
                             ) : (
                               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
-                                <Play className="w-4 h-4 mr-2" />
+                                <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
                               </Button>
                             )}
                             <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
-                              <CloudDownload className="w-4 h-4 mr-2" />
+                              <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
                             {isPro && backupInfo.exists && (
@@ -1516,7 +1520,7 @@ export default function EditorLayout() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
-                                      <Undo2 className="w-4 h-4 mr-2" />
+                                      <Undo2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                       {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
                                     </Button>
                                   </TooltipTrigger>
@@ -1531,15 +1535,15 @@ export default function EditorLayout() {
                             <Button
                               type="button"
                               size="sm"
-                              variant="destructive"
-                              className="rounded-lg"
+                              variant="ghost"
+                              className="rounded-lg text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
                               disabled={loadingAction !== null}
                               onClick={() => {
                                 setStackToDelete(selectedFile);
                                 setDeleteDialogOpen(true);
                               }}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
+                              <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
                             </Button>
                           </div>
@@ -1549,7 +1553,7 @@ export default function EditorLayout() {
                     <CardContent className="p-4 pt-2">
                       {/* Containers List */}
                       <div className="mt-4">
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-3">CONTAINERS</h4>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-3">CONTAINERS</h4>
                         {safeContainers.length === 0 ? (
                           <div className="text-muted-foreground text-sm">No containers running for this stack.</div>
                         ) : (
@@ -1584,7 +1588,7 @@ export default function EditorLayout() {
                                         </HoverCardTrigger>
                                         <HoverCardContent className="flex w-50 flex-col gap-0.5">
                                           <div className="space-y-1">
-                                            <h4 className="text-sm font-semibold">Container Status</h4>
+                                            <h4 className="text-sm font-medium">Container Status</h4>
                                             <p className="text-sm text-muted-foreground">
                                               {container?.Status || 'No status details available'}
                                             </p>
@@ -1664,8 +1668,8 @@ export default function EditorLayout() {
                   </Card>
 
                   {/* Terminal Section */}
-                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
-                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
+                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px] shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
+                    <h3 className="text-sm font-medium text-stat-subtitle mb-2">Terminal</h3>
                     <div className="h-[calc(100%-24px)]">
                       <ErrorBoundary>
                         <TerminalComponent stackName={stackName} />
@@ -1679,19 +1683,15 @@ export default function EditorLayout() {
                   <div className="p-4 border-b border-muted flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
-                        <TabsList className="bg-muted">
-                          <TabsTrigger value="compose" className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                            {activeTab === 'compose' && (
-                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                            )}
-                            <span className="relative z-10">compose.yaml</span>
-                          </TabsTrigger>
-                          <TabsTrigger value="env" disabled={!envExists} className="relative rounded-lg data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                            {activeTab === 'env' && (
-                              <motion.div layoutId="editor-tab-indicator" className="absolute inset-0 rounded-md bg-background shadow-sm" transition={{ type: 'spring', stiffness: 400, damping: 30 }} />
-                            )}
-                            <span className="relative z-10">.env</span>
-                          </TabsTrigger>
+                        <TabsList>
+                          <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                            <TabsHighlightItem value="compose">
+                              <TabsTrigger value="compose">compose.yaml</TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="env">
+                              <TabsTrigger value="env" disabled={!envExists}>.env</TabsTrigger>
+                            </TabsHighlightItem>
+                          </TabsHighlight>
                         </TabsList>
                       </Tabs>
 
@@ -1738,7 +1738,7 @@ export default function EditorLayout() {
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {activeTab === 'env' && (
-                      <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-2 flex items-center gap-2 text-xs text-blue-400">
+                      <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
                         <span>
                           Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
                         </span>
@@ -1762,6 +1762,7 @@ export default function EditorLayout() {
                           }}
                           options={{
                             minimap: { enabled: false },
+                            fontFamily: "'Geist Mono', monospace",
                             fontSize: 14,
                             padding: { top: 10 },
                             scrollBeyondLastLine: false,

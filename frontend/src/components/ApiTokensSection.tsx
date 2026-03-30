@@ -127,7 +127,7 @@ export function ApiTokensSection() {
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
-                        <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                        <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
                             API Tokens <TierBadge />
                         </h3>
                         <p className="text-sm text-muted-foreground">
@@ -185,8 +185,8 @@ export function ApiTokensSection() {
 
                 {/* Token reveal (shown once after creation) */}
                 {newToken && (
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    <div className="bg-success-muted border border-success/30 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2 text-sm font-medium text-success">
                             <CheckCircle className="w-4 h-4" /> Token created - copy it now
                         </div>
                         <p className="text-xs text-muted-foreground">This token will not be shown again. Store it securely.</p>

@@ -183,22 +183,22 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
         if (isRemote) {
             return (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
-                    <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-info-muted border border-info/20 text-sm">
+                    <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
-                        <p className="font-medium text-blue-700 dark:text-blue-400">
-                            Remote node: <span className="font-semibold">{activeNode?.name}</span>
+                        <p className="font-medium text-info">
+                            Remote node: <span className="font-medium">{activeNode?.name}</span>
                         </p>
                         <p className="text-muted-foreground">
                             Alert rules are stored and evaluated on this remote instance. Notifications are dispatched using that node's configured channels.
                         </p>
                         {!agentStatus.hasEnabled && (
-                            <p className="text-amber-600 dark:text-amber-400 font-medium mt-1">
+                            <p className="text-warning font-medium mt-1">
                                 No notification channels are configured on this remote node. Open Settings → Notifications to configure them.
                             </p>
                         )}
                         {agentStatus.hasEnabled && (
-                            <p className="text-green-600 dark:text-green-400 font-medium mt-1">
+                            <p className="text-success font-medium mt-1">
                                 Active channels: {agentStatus.enabledTypes.map(t => agentTypeLabels[t] ?? t).join(', ')}
                             </p>
                         )}
@@ -209,10 +209,10 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
         if (!agentStatus.hasEnabled) {
             return (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
-                    <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-warning-muted border border-warning/20 text-sm">
+                    <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                     <div>
-                        <p className="font-medium text-amber-700 dark:text-amber-400">No notification channels configured</p>
+                        <p className="font-medium text-warning">No notification channels configured</p>
                         <p className="text-muted-foreground mt-0.5">
                             Alert rules will be saved and evaluated, but no notifications will be dispatched. Configure Discord, Slack, or a webhook in{' '}
                             <span className="font-medium">Settings → Notifications</span>.
@@ -223,10 +223,10 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
         }
 
         return (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-success-muted border border-success/20 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                 <div>
-                    <p className="font-medium text-green-700 dark:text-green-400">
+                    <p className="font-medium text-success">
                         Notifications active via {agentStatus.enabledTypes.map(t => agentTypeLabels[t] ?? t).join(', ')}
                     </p>
                 </div>
@@ -251,7 +251,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
                         {/* List Existing Alerts */}
                         <div className="space-y-3">
-                            <h4 className="text-sm font-semibold">Existing Rules</h4>
+                            <h4 className="text-sm font-medium">Existing Rules</h4>
                             {alerts.length === 0 ? (
                                 <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
                                     No active alert rules for this stack.
@@ -261,7 +261,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                                     <div key={alert.id} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg border text-sm">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <span className="font-semibold text-foreground">
+                                                <span className="font-medium text-foreground">
                                                     {metricLabels[alert.metric] || alert.metric} {alert.operator} {alert.threshold}
                                                 </span>
                                                 <div className="text-muted-foreground mt-1">
@@ -287,7 +287,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
                         {/* Add New Alert Form */}
                         {isAdmin && <div className="space-y-4">
-                            <h4 className="text-sm font-semibold">Add New Rule</h4>
+                            <h4 className="text-sm font-medium">Add New Rule</h4>
 
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2">

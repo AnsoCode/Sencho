@@ -46,7 +46,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
                 cursorAccent: '#000000',
                 selectionBackground: 'rgba(255, 255, 255, 0.3)',
             },
-            fontFamily: 'Consolas, "Courier New", monospace',
+            fontFamily: "'Geist Mono', monospace",
             fontSize: 14,
             cursorBlink: true,
         });
@@ -170,7 +170,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
                         </span>
                     )}
                     {isConnected && (
-                        <span className="ml-2 text-xs bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full border border-green-500/20">
+                        <span className="ml-2 text-xs bg-success-muted text-success px-2 py-0.5 rounded-full border border-success/20">
                             Connected
                         </span>
                     )}
