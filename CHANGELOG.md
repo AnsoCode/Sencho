@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0](https://github.com/AnsoCode/Sencho/compare/v0.19.4...v0.20.0) (2026-03-30)
+
+
+### Added
+
+* **ui:** glassmorphism redesign with settings decomposition ([#274](https://github.com/AnsoCode/Sencho/issues/274)) ([7637091](https://github.com/AnsoCode/Sencho/commit/7637091e84838047c462e3dbce38122d4c24d007))
+
 ## [0.19.4](https://github.com/AnsoCode/Sencho/compare/v0.19.3...v0.19.4) (2026-03-30)
 
 
