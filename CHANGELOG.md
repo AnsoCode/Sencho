@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.4](https://github.com/AnsoCode/Sencho/compare/v0.19.3...v0.19.4) (2026-03-30)
+
+
+### Fixed
+
+* **stacks:** avoid resource busy error in Docker fallback deletion ([#271](https://github.com/AnsoCode/Sencho/issues/271)) ([10d1636](https://github.com/AnsoCode/Sencho/commit/10d16361fae2869367a9f757bfc0ab4c3e04ca2c))
+
 ## [0.19.3](https://github.com/AnsoCode/Sencho/compare/v0.19.2...v0.19.3) (2026-03-30)
 
 
