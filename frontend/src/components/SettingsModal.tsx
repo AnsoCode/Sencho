@@ -49,6 +49,7 @@ interface PatchableSettings {
     template_registry_url?: string;
     metrics_retention_hours?: string;
     log_retention_days?: string;
+    audit_retention_days?: string;
 }
 
 type SectionId = 'account' | 'license' | 'users' | 'sso' | 'api-tokens' | 'registries' | 'system' | 'notifications' | 'webhooks' | 'developer' | 'nodes' | 'appstore' | 'support' | 'about';
@@ -91,6 +92,7 @@ const DEFAULT_SETTINGS: PatchableSettings = {
     template_registry_url: '',
     metrics_retention_hours: '24',
     log_retention_days: '30',
+    audit_retention_days: '90',
 };
 
 function WebhooksSection({ isPro }: { isPro: boolean }) {
@@ -630,6 +632,7 @@ function UsersSection() {
                                             <>
                                                 <SelectItem value="deployer">Deployer</SelectItem>
                                                 <SelectItem value="node-admin">Node Admin</SelectItem>
+                                                <SelectItem value="auditor">Auditor</SelectItem>
                                             </>
                                         )}
                                     </SelectContent>
@@ -873,7 +876,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         settings.developer_mode !== serverSettingsRef.current.developer_mode ||
         settings.global_logs_refresh !== serverSettingsRef.current.global_logs_refresh ||
         settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
-        settings.log_retention_days !== serverSettingsRef.current.log_retention_days;
+        settings.log_retention_days !== serverSettingsRef.current.log_retention_days ||
+        settings.audit_retention_days !== serverSettingsRef.current.audit_retention_days;
 
     useEffect(() => {
         if (isOpen) {
@@ -925,6 +929,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 developer_mode: (localData.developer_mode as '0' | '1') ?? DEFAULT_SETTINGS.developer_mode,
                 metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
                 log_retention_days: localData.log_retention_days ?? DEFAULT_SETTINGS.log_retention_days,
+                audit_retention_days: localData.audit_retention_days ?? DEFAULT_SETTINGS.audit_retention_days,
             };
             setSettings(safe);
             serverSettingsRef.current = { ...safe };
@@ -980,6 +985,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             global_logs_refresh: settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
             log_retention_days: settings.log_retention_days,
+            audit_retention_days: settings.audit_retention_days,
         }, setIsSavingDeveloper, true);
         if (ok) toast.success('Developer settings saved.');
     };
@@ -1751,6 +1757,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                                     <span className="text-sm text-muted-foreground w-8">days</span>
                                                 </div>
                                             </div>
+
+                                            {isPro && license?.variant === 'team' && (
+                                                <div className="flex items-center justify-between gap-4 pt-4 border-t border-border">
+                                                    <div className="space-y-0.5">
+                                                        <Label className="text-base">Audit Log Retention</Label>
+                                                        <p className="text-xs text-muted-foreground">How long to keep audit trail entries.</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <Input
+                                                            type="number"
+                                                            min={1}
+                                                            max={365}
+                                                            value={settings.audit_retention_days}
+                                                            onChange={(e) => handleSettingChange('audit_retention_days', e.target.value)}
+                                                            className="w-20"
+                                                        />
+                                                        <span className="text-sm text-muted-foreground w-8">days</span>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

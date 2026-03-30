@@ -832,6 +832,9 @@ const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
   viewer: [
     'stack:read', 'node:read',
   ],
+  auditor: [
+    'stack:read', 'node:read', 'system:audit',
+  ],
 };
 
 /**
@@ -1765,12 +1768,12 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(400).json({ error: 'Password must be at least 6 characters' });
       return;
     }
-    const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin'];
+    const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin', 'auditor'];
     if (!validRoles.includes(role)) {
-      res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
+      res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", "node-admin", or "auditor"' });
       return;
     }
-    if ((role === 'deployer' || role === 'node-admin') && !requireAdmiral(req, res)) return;
+    if ((role === 'deployer' || role === 'node-admin' || role === 'auditor') && !requireAdmiral(req, res)) return;
 
     const db = DatabaseService.getInstance();
     const existing = db.getUserByUsername(username);
@@ -1832,12 +1835,12 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
     }
 
     if (role !== undefined) {
-      const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin'];
+      const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin', 'auditor'];
       if (!validRoles.includes(role)) {
-        res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", or "node-admin"' });
+        res.status(400).json({ error: 'Role must be "admin", "viewer", "deployer", "node-admin", or "auditor"' });
         return;
       }
-      if ((role === 'deployer' || role === 'node-admin') && !requireAdmiral(req, res)) return;
+      if ((role === 'deployer' || role === 'node-admin' || role === 'auditor') && !requireAdmiral(req, res)) return;
       // Prevent demoting yourself
       if (user.username === req.user!.username && role !== user.role) {
         res.status(400).json({ error: 'Cannot change your own role' });
@@ -3177,6 +3180,7 @@ const ALLOWED_SETTING_KEYS = new Set([
   'template_registry_url',
   'metrics_retention_hours',
   'log_retention_days',
+  'audit_retention_days',
 ]);
 
 // Zod schema for bulk PATCH - all keys optional, present keys fully validated
@@ -3192,6 +3196,7 @@ const SettingsPatchSchema = z.object({
   template_registry_url: z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
   metrics_retention_hours: z.coerce.number().int().min(1).max(8760).transform(String),
   log_retention_days: z.coerce.number().int().min(1).max(365).transform(String),
+  audit_retention_days: z.coerce.number().int().min(1).max(365).transform(String),
 }).partial();
 
 app.get('/api/settings', async (req: Request, res: Response) => {
@@ -3485,22 +3490,67 @@ app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): 
 // --- Audit Log Routes (Admiral, local-only) ---
 
 app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
+  if (!requirePermission(req, res, 'system:audit')) return;
 
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const username = req.query.username as string | undefined;
     const method = req.query.method as string | undefined;
+    const search = req.query.search as string | undefined;
     const from = req.query.from ? parseInt(req.query.from as string) : undefined;
     const to = req.query.to ? parseInt(req.query.to as string) : undefined;
 
-    const result = DatabaseService.getInstance().getAuditLogs({ page, limit, username, method, from, to });
+    const result = DatabaseService.getInstance().getAuditLogs({ page, limit, username, method, from, to, search });
     res.json(result);
   } catch (error) {
     console.error('[AuditLog] Failed to fetch audit log:', error);
     res.status(500).json({ error: 'Failed to fetch audit log' });
+  }
+});
+
+app.get('/api/audit-log/export', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  if (!requirePermission(req, res, 'system:audit')) return;
+
+  try {
+    const format = (req.query.format as string) === 'csv' ? 'csv' : 'json';
+    const username = req.query.username as string | undefined;
+    const method = req.query.method as string | undefined;
+    const search = req.query.search as string | undefined;
+    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
+    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
+
+    const result = DatabaseService.getInstance().getAuditLogs({ page: 1, limit: 10000, username, method, from, to, search });
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${timestamp}.json"`);
+      res.json(result.entries);
+    } else {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${timestamp}.csv"`);
+
+      const csvEscape = (val: string | number | null): string => {
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const headers = ['id', 'timestamp', 'username', 'method', 'path', 'status_code', 'node_id', 'ip_address', 'summary'];
+      const rows = result.entries.map(e =>
+        headers.map(h => csvEscape(e[h as keyof typeof e])).join(',')
+      );
+      res.send([headers.join(','), ...rows].join('\n'));
+    }
+  } catch (error) {
+    console.error('[AuditLog] Export failed:', error);
+    res.status(500).json({ error: 'Failed to export audit log' });
   }
 });
 

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 
 type AppStatus = 'loading' | 'needsSetup' | 'notAuthenticated' | 'authenticated';
 
-export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin';
+export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin' | 'auditor';
 
 export type PermissionAction =
   | 'stack:read' | 'stack:edit' | 'stack:deploy' | 'stack:create' | 'stack:delete'

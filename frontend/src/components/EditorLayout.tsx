@@ -167,14 +167,12 @@ export default function EditorLayout() {
       { value: 'templates', label: 'App Store', icon: CloudDownload },
       { value: 'global-observability', label: 'Logs', icon: Activity },
     );
-    if (isPro && license?.variant === 'team' && isAdmin) {
-      items.push(
-        { value: 'audit-log', label: 'Audit', icon: ScrollText },
-        { value: 'scheduled-ops', label: 'Schedules', icon: Clock },
-      );
+    if (isPro && license?.variant === 'team') {
+      if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
+      if (isAdmin) items.push({ value: 'scheduled-ops', label: 'Schedules', icon: Clock });
     }
     return items;
-  }, [isAdmin, isPro, license?.variant]);
+  }, [isAdmin, isPro, license?.variant, can]);
 
   // Only highlight a tab if activeView matches a nav item
   const navTabValue = navItems.some(i => i.value === activeView) ? activeView : undefined;

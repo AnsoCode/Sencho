@@ -62,7 +62,7 @@ export interface WebhookExecution {
 
 export type AuthProvider = 'local' | 'ldap' | 'oidc_google' | 'oidc_github' | 'oidc_okta';
 
-export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin';
+export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin' | 'auditor';
 export type ResourceType = 'stack' | 'node';
 
 export interface User {
@@ -1109,6 +1109,7 @@ export class DatabaseService {
         method?: string;
         from?: number;
         to?: number;
+        search?: string;
     } = {}): { entries: AuditLogEntry[]; total: number } {
         const page = filters.page ?? 1;
         const limit = filters.limit ?? 50;
@@ -1132,6 +1133,11 @@ export class DatabaseService {
         if (filters.to) {
             conditions.push('timestamp <= ?');
             params.push(filters.to);
+        }
+        if (filters.search) {
+            conditions.push('(summary LIKE ? OR path LIKE ? OR username LIKE ?)');
+            const term = `%${filters.search}%`;
+            params.push(term, term, term);
         }
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
