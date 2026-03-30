@@ -23,11 +23,11 @@ const DialogContent = React.forwardRef<
   React.ComponentProps<typeof AnimateDialogContent>
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
-    <AnimateDialogOverlay className="fixed inset-0 z-50 bg-black/80" />
+    <AnimateDialogOverlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
     <AnimateDialogContent
       ref={ref}
       className={cn(
-        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg',
+        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-glass-border bg-card p-6 shadow-lg backdrop-blur-xl sm:rounded-lg',
         className
       )}
       {...props}
