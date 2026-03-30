@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+* **docker:** upgrade base image from `node:20-alpine` to `node:22-alpine` (Node 22.22.2 on Alpine 3.23.3) to remediate 31 CVEs (1 Critical, multiple High/Medium/Low) flagged by Docker Scout against the previous `node:20-alpine` base.
+* **docker:** add `apk upgrade --no-cache` to runtime stage to ensure all Alpine system packages are at their latest patched versions at build time.
+* **deps:** force `dompurify` to 3.3.3 via npm overrides to resolve two Dependabot advisories (Mutation-XSS via Re-Contextualization and Cross-site Scripting) in the transitive dependency pulled by `monaco-editor`.
+
 ### Fixed
 
 * **stacks:** resolve permission denied error when deleting stacks with root-owned files. Sencho now falls back to Docker-based cleanup when the normal deletion fails due to EACCES/EPERM, handling directories created by Docker Compose as root without requiring elevated privileges.

@@ -5,7 +5,7 @@ FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 # Stage 1: Build Frontend
 # Runs on the BUILD platform (amd64) - frontend has no native modules so the
 # compiled output (JS/CSS/HTML) is entirely platform-agnostic.
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -21,7 +21,7 @@ RUN npm run build
 
 # Stage 2: Compile TypeScript
 # Runs on the BUILD platform (amd64) - tsc output is platform-agnostic JS.
-FROM --platform=$BUILDPLATFORM node:20-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS backend-builder
 
 WORKDIR /app/backend
 
@@ -41,7 +41,7 @@ RUN npm run build
 # tonistiigi/xx + clang as the cross-compiler.
 # This avoids the Node.js v20 SIGILL crash that occurs when npm runs
 # under QEMU because QEMU lacks ARMv8.1 LSE atomic instruction support.
-FROM --platform=$BUILDPLATFORM node:20-alpine AS prod-deps
+FROM --platform=$BUILDPLATFORM node:22-alpine AS prod-deps
 
 # Copy xx cross-compilation tools into this stage
 COPY --from=xx / /
@@ -89,10 +89,12 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 
 # Stage 4: Production runtime
 # Runs on the TARGET platform - no compilation happens here.
-FROM node:20-alpine
+FROM node:22-alpine
 
-# Install Docker CLI, Docker Compose CLI, and Bash for Host Console
-RUN apk add --no-cache docker-cli docker-cli-compose bash su-exec
+# Upgrade all Alpine system packages to pick up security patches, then install
+# Docker CLI, Docker Compose CLI, and Bash for Host Console
+RUN apk upgrade --no-cache && \
+    apk add --no-cache docker-cli docker-cli-compose bash su-exec
 
 WORKDIR /app
 
