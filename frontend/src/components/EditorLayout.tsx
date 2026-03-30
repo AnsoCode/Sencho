@@ -1084,12 +1084,12 @@ export default function EditorLayout() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
-      <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-xl flex flex-col">
+      <div className="w-64 border-r border-glass-border bg-sidebar flex flex-col">
         {/* Branding Header */}
         <div className="h-14 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
             <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-10 h-10" />
-            <h1 className="text-2xl font-bold tracking-tight">Sencho</h1>
+            <h1 className="text-2xl font-medium tracking-tight">Sencho</h1>
           </div>
         </div>
 
@@ -1129,7 +1129,7 @@ export default function EditorLayout() {
         {can('stack:create') && <div className="p-4">
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="w-full rounded-lg">
+              <Button variant="outline" className="w-full rounded-lg">
                 <Plus className="w-4 h-4 mr-2" />
                 Create Stack
               </Button>
@@ -1164,7 +1164,7 @@ export default function EditorLayout() {
               className="h-9"
             />
           </div>
-          <h3 className="text-sm font-semibold text-muted-foreground px-4 py-2 mt-2 flex-none">STACKS</h3>
+          <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-[rgba(255,255,255,0.35)] px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
               <CommandList className="max-h-none overflow-visible">
@@ -1327,14 +1327,14 @@ export default function EditorLayout() {
           {/* CENTER ZONE: Navigation Group (hidden on mobile) */}
           <div className="flex-1 hidden md:flex justify-center">
             <Highlight
-              className="inset-0 rounded-md bg-glass-highlight"
+              className="inset-0 rounded-md bg-accent"
               value={navTabValue}
               controlledItems
               mode="children"
               click={false}
               transition={springs.snappy}
             >
-              <div className="inline-flex items-center rounded-lg bg-glass border border-glass-border p-1 gap-0.5">
+              <div className="inline-flex items-center rounded-lg p-1 gap-0.5">
                 {navItems.map(({ value, label, icon: Icon }) => (
                   <HighlightItem key={value} value={value}>
                     <button
@@ -1344,7 +1344,7 @@ export default function EditorLayout() {
                         activeView === value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <Icon className="w-4 h-4 shrink-0" />
                       <span className="hidden xl:inline">{label}</span>
                     </button>
                   </HighlightItem>
@@ -1373,7 +1373,7 @@ export default function EditorLayout() {
               </PopoverTrigger>
               <PopoverContent className="w-80 p-0" align="end">
                 <div className="flex items-center justify-between p-4 border-b">
-                  <h4 className="font-semibold">Notifications</h4>
+                  <h4 className="font-medium">Notifications</h4>
                   <div className="flex gap-2">
                     {notifications.filter(n => !n.is_read).length > 0 && (
                       <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
@@ -1444,7 +1444,7 @@ export default function EditorLayout() {
               </SheetTrigger>
               <SheetContent side="right" className="w-64 p-0">
                 <div className="p-4 border-b">
-                  <p className="text-sm font-semibold">Navigation</p>
+                  <p className="text-sm font-medium">Navigation</p>
                 </div>
                 <nav className="flex flex-col p-2 gap-1">
                   {navItems.map(({ value, label, icon: Icon }) => (
@@ -1486,7 +1486,7 @@ export default function EditorLayout() {
                     <CardHeader className="p-4 pb-2">
                       <div className="flex flex-col gap-3">
                         {/* Stack Name */}
-                        <CardTitle className="text-2xl font-bold">{stackName}</CardTitle>
+                        <CardTitle className="text-2xl font-medium">{stackName}</CardTitle>
                         {/* Action Bar */}
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1549,7 +1549,7 @@ export default function EditorLayout() {
                     <CardContent className="p-4 pt-2">
                       {/* Containers List */}
                       <div className="mt-4">
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-3">CONTAINERS</h4>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-3">CONTAINERS</h4>
                         {safeContainers.length === 0 ? (
                           <div className="text-muted-foreground text-sm">No containers running for this stack.</div>
                         ) : (
@@ -1584,7 +1584,7 @@ export default function EditorLayout() {
                                         </HoverCardTrigger>
                                         <HoverCardContent className="flex w-50 flex-col gap-0.5">
                                           <div className="space-y-1">
-                                            <h4 className="text-sm font-semibold">Container Status</h4>
+                                            <h4 className="text-sm font-medium">Container Status</h4>
                                             <p className="text-sm text-muted-foreground">
                                               {container?.Status || 'No status details available'}
                                             </p>
@@ -1665,7 +1665,7 @@ export default function EditorLayout() {
 
                   {/* Terminal Section */}
                   <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px]">
-                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Terminal</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Terminal</h3>
                     <div className="h-[calc(100%-24px)]">
                       <ErrorBoundary>
                         <TerminalComponent stackName={stackName} />

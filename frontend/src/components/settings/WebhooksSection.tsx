@@ -137,13 +137,13 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
         return (
             <div className="space-y-6">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
+                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
                 <ProGate featureName="Webhooks">
                     <div className="space-y-3">
-                        <div className="h-16 rounded-xl border bg-card" />
-                        <div className="h-16 rounded-xl border bg-card" />
+                        <div className="h-16 rounded-lg border bg-card" />
+                        <div className="h-16 rounded-lg border bg-card" />
                     </div>
                 </ProGate>
             </div>
@@ -154,7 +154,7 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
         <div className="space-y-6">
             <div className="flex items-start justify-between pr-8">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
+                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
                 <Button size="sm" onClick={() => setShowForm(!showForm)}>
@@ -164,7 +164,7 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
 
             {/* Create Form */}
             {showForm && (
-                <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                     <div className="space-y-2">
                         <Label>Name</Label>
                         <Input placeholder="Deploy on push" value={formName} onChange={e => setFormName(e.target.value)} />
@@ -202,7 +202,7 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
 
             {/* Secret reveal (shown once after creation) */}
             {newSecret && (
-                <div className="bg-success-muted border border-success/30 rounded-xl p-4 space-y-3">
+                <div className="bg-success-muted border border-success/30 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-success">
                         <CheckCircle className="w-4 h-4" /> Webhook created - copy your secret now
                     </div>
@@ -220,8 +220,8 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
             {/* Loading state */}
             {loading && (
                 <div className="space-y-3">
-                    <Skeleton className="h-20 w-full rounded-xl" />
-                    <Skeleton className="h-20 w-full rounded-xl" />
+                    <Skeleton className="h-20 w-full rounded-lg" />
+                    <Skeleton className="h-20 w-full rounded-lg" />
                 </div>
             )}
 
@@ -239,7 +239,7 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
                 const triggerUrl = `${window.location.origin}/api/webhooks/${wh.id}/trigger`;
                 const isExpanded = expandedHistory === wh.id;
                 return (
-                    <div key={wh.id} className="border border-glass-border rounded-xl overflow-hidden">
+                    <div key={wh.id} className="border border-glass-border rounded-lg overflow-hidden">
                         <div className="p-4 space-y-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 min-w-0">

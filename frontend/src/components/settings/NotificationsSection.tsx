@@ -98,7 +98,7 @@ export function NotificationsSection() {
     const renderAgentTab = (type: 'discord' | 'slack' | 'webhook', title: string) => (
         <div className="space-y-4 py-4">
             <div className="flex items-center justify-between">
-                <Label htmlFor={`${type}-enabled`} className="font-semibold">Enable {title}</Label>
+                <Label htmlFor={`${type}-enabled`} className="font-medium">Enable {title}</Label>
                 <Switch
                     id={`${type}-enabled`}
                     checked={agents[type].enabled}
@@ -129,10 +129,10 @@ export function NotificationsSection() {
         <div className="space-y-6">
             <div className="flex items-start justify-between pr-8">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight">Notifications & Alerts</h3>
+                    <h3 className="text-lg font-medium tracking-tight">Notifications & Alerts</h3>
                     <p className="text-sm text-muted-foreground">
                         {isRemote
-                            ? <>Configuring notification channels on <span className="font-semibold text-foreground">{activeNode!.name}</span>. Alerts from this remote node will dispatch via these channels.</>
+                            ? <>Configuring notification channels on <span className="font-medium text-foreground">{activeNode!.name}</span>. Alerts from this remote node will dispatch via these channels.</>
                             : 'Configure external integrations for crash alerts.'
                         }
                     </p>

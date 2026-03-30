@@ -24,7 +24,7 @@ function SettingsSkeleton() {
         <div className="space-y-6">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
@@ -40,7 +40,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
         <div className="space-y-6">
             <div className="flex items-start justify-between pr-8">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight">Developer</h3>
+                    <h3 className="text-lg font-medium tracking-tight">Developer</h3>
                     <p className="text-sm text-muted-foreground">Power user settings for real-time observability and data retention.</p>
                 </div>
                 {isRemote && (
@@ -62,7 +62,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
 
             {isLoading ? <SettingsSkeleton /> : (
                 <>
-                    <div className="space-y-6 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
                                 <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
@@ -106,7 +106,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                             <Database className="w-4 h-4 text-muted-foreground" />
                             <span className="text-sm font-medium text-foreground">Data Retention</span>
                         </div>
-                        <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                        <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                             <div className="flex items-center justify-between gap-4">
                                 <div className="space-y-0.5">
                                     <Label className="text-base">Container Metrics Retention</Label>

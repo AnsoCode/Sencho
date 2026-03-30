@@ -233,7 +233,7 @@ export function UsersSection() {
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
-                        <h3 className="text-lg font-semibold tracking-tight">User Management</h3>
+                        <h3 className="text-lg font-medium tracking-tight">User Management</h3>
                         <p className="text-sm text-muted-foreground">Create and manage user accounts with role-based access control.</p>
                     </div>
                     {!showForm && (
@@ -245,7 +245,7 @@ export function UsersSection() {
 
                 {/* Add/Edit Form */}
                 {showForm && (
-                    <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                    <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                         <h4 className="text-sm font-medium">{editingUser ? 'Edit User' : 'New User'}</h4>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -391,7 +391,7 @@ export function UsersSection() {
                 ) : users.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">No users found.</div>
                 ) : (
-                    <div className="border border-glass-border rounded-xl overflow-hidden">
+                    <div className="border border-glass-border rounded-lg overflow-hidden">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="bg-muted/30 border-b border-glass-border">

@@ -301,8 +301,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
 
                 {/* Sidebar */}
-                <div className="w-[200px] bg-glass backdrop-blur-xl border-r border-glass-border flex flex-col p-4 shrink-0">
-                    <div className="font-semibold text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
+                <div className="w-[200px] bg-glass border-r border-glass-border flex flex-col p-4 shrink-0">
+                    <div className="font-medium text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
                     {isRemote ? (
                         <div className="text-xs text-muted-foreground mb-5 truncate">{activeNode!.name}</div>
                     ) : (

@@ -257,7 +257,7 @@ function PruneButton({ target, icon, label, accentClass, onManaged, onAll }: Pru
                 <span className={cn('transition-transform duration-200 group-hover:scale-110', accentClass)}>
                     {icon}
                 </span>
-                <span className="text-xs font-semibold text-center leading-tight text-foreground">{label}</span>
+                <span className="text-xs font-medium text-center leading-tight text-foreground">{label}</span>
                 <span className="text-[10px] text-brand font-mono tracking-wide">Sencho only</span>
             </button>
             {target !== 'containers' && (
@@ -452,7 +452,7 @@ export default function ResourcesView() {
             {/* Header */}
             <div className="flex items-center gap-3">
                 <HardDrive className="w-5 h-5 text-muted-foreground" />
-                <h1 className="text-xl font-semibold tracking-tight">Resources Hub</h1>
+                <h1 className="text-xl font-medium tracking-tight">Resources Hub</h1>
                 {activeNode?.type === 'remote' && (
                     <span className="text-sm text-muted-foreground">- {activeNode.name}</span>
                 )}
@@ -556,7 +556,7 @@ export default function ResourcesView() {
                                 <TabsTrigger value="unmanaged" className="relative text-xs">
                                     Unmanaged
                                     {totalOrphansCount > 0 && (
-                                        <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-warning text-[9px] text-warning-foreground font-bold animate-in zoom-in-75 duration-200">
+                                        <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-warning text-[9px] text-warning-foreground font-medium animate-in zoom-in-75 duration-200">
                                             {totalOrphansCount}
                                         </span>
                                     )}
@@ -726,7 +726,7 @@ export default function ResourcesView() {
 
                     {/* Unmanaged Containers */}
                     <TabsContent value="unmanaged" className="m-0 border-0 p-0 h-full flex flex-col animate-in fade-in-0 duration-200">
-                        <div className="flex justify-between items-center px-4 py-2.5 border-b bg-muted/10 sticky top-0 z-10 backdrop-blur-sm">
+                        <div className="flex justify-between items-center px-4 py-2.5 border-b bg-muted/10 sticky top-0 z-10">
                             <div className="flex items-center gap-2.5">
                                 <input
                                     type="checkbox"
@@ -785,7 +785,7 @@ export default function ResourcesView() {
                                                     />
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-mono text-xs font-semibold truncate">
+                                                            <span className="font-mono text-xs font-medium truncate">
                                                                 {container.Names[0]?.replace(/^\//, '') || container.Id.substring(0, 12)}
                                                             </span>
                                                             <Badge
@@ -823,8 +823,8 @@ export default function ResourcesView() {
                                     Prune All Docker {confirmPrune?.target}
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This will prune <span className="font-semibold text-foreground">all</span> unused {confirmPrune?.target} from the Docker daemon -
-                                    including those from <span className="font-semibold text-foreground">external projects not managed by Sencho</span>. This cannot be undone.
+                                    This will prune <span className="font-medium text-foreground">all</span> unused {confirmPrune?.target} from the Docker daemon -
+                                    including those from <span className="font-medium text-foreground">external projects not managed by Sencho</span>. This cannot be undone.
                                 </AlertDialogDescription>
                             </>
                         ) : (
@@ -832,7 +832,7 @@ export default function ResourcesView() {
                                 <AlertDialogTitle>Prune Sencho-Managed {confirmPrune?.target}</AlertDialogTitle>
                                 <AlertDialogDescription>
                                     Only unused {confirmPrune?.target} belonging to your Sencho stacks will be removed.
-                                    External Docker resources are <span className="font-semibold text-foreground">not affected</span>.
+                                    External Docker resources are <span className="font-medium text-foreground">not affected</span>.
                                 </AlertDialogDescription>
                             </>
                         )}
@@ -856,7 +856,7 @@ export default function ResourcesView() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete {confirmDelete?.type.slice(0, -1)}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Permanently delete <span className="font-mono font-bold text-foreground">{confirmDelete?.name || confirmDelete?.id.substring(0, 12)}</span>? This cannot be undone.
+                            Permanently delete <span className="font-mono font-medium text-foreground">{confirmDelete?.name || confirmDelete?.id.substring(0, 12)}</span>? This cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

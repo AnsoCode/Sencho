@@ -311,7 +311,7 @@ export function NodeManager() {
       {/* Header */}
       <div className="flex items-center justify-between pr-8">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-lg font-medium flex items-center gap-2">
             <Server className="w-5 h-5" />
             Nodes
           </h2>
@@ -490,7 +490,7 @@ export function NodeManager() {
       {/* Connection Test Result */}
       {testResult && (
         <div className="rounded-md border p-4 bg-muted/30 space-y-2">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
+          <h3 className="text-sm font-medium flex items-center gap-2">
             <Wifi className="w-4 h-4 text-success" />
             Connection Details - {nodes.find(n => n.id === testResult.nodeId)?.name}
           </h3>

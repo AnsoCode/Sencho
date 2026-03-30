@@ -21,7 +21,7 @@ function SettingsSkeleton() {
         <div className="space-y-6">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
@@ -58,13 +58,13 @@ export function AppStoreSection({ settings, onSettingChange, isLoading, onSaved 
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-semibold tracking-tight">App Store Registry</h3>
+                <h3 className="text-lg font-medium tracking-tight">App Store Registry</h3>
                 <p className="text-sm text-muted-foreground">Configure the template source used by the App Store.</p>
             </div>
 
             {isLoading ? <SettingsSkeleton /> : (
                 <>
-                    <div className="space-y-6 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
                         <div className="space-y-1">
                             <Label className="text-base">Default Registry</Label>
                             <p className="text-xs text-muted-foreground">

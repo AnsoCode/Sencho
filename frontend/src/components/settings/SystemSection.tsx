@@ -23,7 +23,7 @@ function SettingsSkeleton() {
         <div className="space-y-6">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
@@ -37,7 +37,7 @@ export function SystemSection({ settings, onSettingChange, onSave, isSaving, isL
         <div className="space-y-6">
             <div className="flex items-start justify-between pr-8">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight">System Limits & Watchdog</h3>
+                    <h3 className="text-lg font-medium tracking-tight">System Limits & Watchdog</h3>
                     <p className="text-sm text-muted-foreground">Configure alert thresholds and crash detection.</p>
                 </div>
                 {isRemote && (
@@ -50,7 +50,7 @@ export function SystemSection({ settings, onSettingChange, onSave, isSaving, isL
 
             {isLoading ? <SettingsSkeleton /> : (
                 <>
-                    <div className="space-y-6 bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl">
+                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
                         <div className="space-y-4">
                             <div className="flex justify-between items-center">
                                 <Label className="text-base">Host CPU Alert Threshold</Label>

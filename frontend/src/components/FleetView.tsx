@@ -139,7 +139,7 @@ function StatCard({ icon: Icon, label, value, sub, alert }: {
                 <Icon className={`w-4 h-4 ${alert ? 'text-red-500' : 'text-muted-foreground'}`} />
                 <span className="text-xs text-muted-foreground">{label}</span>
             </div>
-            <div className={`text-2xl font-bold ${alert ? 'text-red-500' : ''}`}>{value}</div>
+            <div className={`text-2xl font-medium ${alert ? 'text-destructive/70' : ''}`}>{value}</div>
             {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
         </div>
     );
@@ -302,7 +302,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                             <Server className={`w-4 h-4 ${isOnline ? 'text-success' : 'text-muted-foreground'}`} />
                         </div>
                         <div className="min-w-0">
-                            <h3 className="text-sm font-semibold truncate">{node.name}</h3>
+                            <h3 className="text-sm font-medium truncate">{node.name}</h3>
                             <div className="flex items-center gap-1.5 mt-0.5">
                                 <Badge variant={isOnline ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4">
                                     {isOnline ? (
@@ -328,15 +328,15 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                 {isOnline && node.stats && (
                     <div className="grid grid-cols-3 gap-2 mb-3">
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-bold leading-none">{node.stats.active}</div>
+                            <div className="text-lg font-medium leading-none">{node.stats.active}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Running</div>
                         </div>
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-bold leading-none">{node.stats.exited}</div>
+                            <div className="text-lg font-medium leading-none">{node.stats.exited}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Stopped</div>
                         </div>
                         <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-bold leading-none">{node.stacks?.length ?? '-'}</div>
+                            <div className="text-lg font-medium leading-none">{node.stacks?.length ?? '-'}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">Stacks</div>
                         </div>
                     </div>
@@ -553,7 +553,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Fleet Overview</h1>
+                    <h1 className="text-2xl font-medium tracking-tight">Fleet Overview</h1>
                     <p className="text-sm text-muted-foreground mt-1">
                         {loading ? 'Loading...' : `${onlineCount} of ${nodes.length} nodes online · ${totalContainers} containers · ${totalStacks} stacks`}
                     </p>

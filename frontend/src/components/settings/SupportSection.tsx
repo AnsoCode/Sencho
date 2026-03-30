@@ -9,7 +9,7 @@ export function SupportSection() {
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-semibold tracking-tight">Help & Support</h3>
+                <h3 className="text-lg font-medium tracking-tight">Help & Support</h3>
                 <p className="text-sm text-muted-foreground">Get help with Sencho based on your plan.</p>
             </div>
 

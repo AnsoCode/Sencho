@@ -187,7 +187,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                     <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
                         <p className="font-medium text-info">
-                            Remote node: <span className="font-semibold">{activeNode?.name}</span>
+                            Remote node: <span className="font-medium">{activeNode?.name}</span>
                         </p>
                         <p className="text-muted-foreground">
                             Alert rules are stored and evaluated on this remote instance. Notifications are dispatched using that node's configured channels.
@@ -251,7 +251,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
                         {/* List Existing Alerts */}
                         <div className="space-y-3">
-                            <h4 className="text-sm font-semibold">Existing Rules</h4>
+                            <h4 className="text-sm font-medium">Existing Rules</h4>
                             {alerts.length === 0 ? (
                                 <div className="text-sm text-muted-foreground p-4 bg-muted/50 rounded-lg text-center">
                                     No active alert rules for this stack.
@@ -261,7 +261,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
                                     <div key={alert.id} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg border text-sm">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <span className="font-semibold text-foreground">
+                                                <span className="font-medium text-foreground">
                                                     {metricLabels[alert.metric] || alert.metric} {alert.operator} {alert.threshold}
                                                 </span>
                                                 <div className="text-muted-foreground mt-1">
@@ -287,7 +287,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
                         {/* Add New Alert Form */}
                         {isAdmin && <div className="space-y-4">
-                            <h4 className="text-sm font-semibold">Add New Rule</h4>
+                            <h4 className="text-sm font-medium">Add New Rule</h4>
 
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2">

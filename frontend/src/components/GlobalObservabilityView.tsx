@@ -286,7 +286,7 @@ export function GlobalObservabilityView() {
                             <div key={log._id} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
                                 <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
                                 <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
-                                <span className={`mr-2 font-bold ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-success'}`}>{log.level}:</span>
+                                <span className={`mr-2 font-medium ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-success'}`}>{log.level}:</span>
                                 <span className={log.source === 'STDERR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
                             </div>
                         ))}

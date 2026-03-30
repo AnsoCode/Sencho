@@ -333,7 +333,7 @@ export function SSOSection() {
         <AdmiralGate featureName="SSO Authentication">
             <div className="space-y-6">
                 <div>
-                    <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
                         <Shield className="w-5 h-5" />
                         SSO Authentication <TierBadge />
                     </h3>

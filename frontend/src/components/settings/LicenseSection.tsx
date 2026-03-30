@@ -20,12 +20,12 @@ export function LicenseSection() {
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-semibold tracking-tight">License</h3>
+                <h3 className="text-lg font-medium tracking-tight">License</h3>
                 <p className="text-sm text-muted-foreground">Manage your Sencho Pro license.</p>
             </div>
 
             {/* Current Tier Display */}
-            <div className="bg-glass border border-glass-border backdrop-blur-sm p-4 rounded-xl space-y-4">
+            <div className="bg-glass border border-glass-border p-4 rounded-lg space-y-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         {license?.tier === 'pro' ? (
@@ -140,11 +140,11 @@ export function LicenseSection() {
                     <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                         {/* Skipper Card - only for Community users */}
                         {license?.tier !== 'pro' && (
-                            <div className="relative border border-glass-border rounded-xl p-4 space-y-3 bg-glass backdrop-blur-sm">
+                            <div className="relative border border-glass-border rounded-lg p-4 space-y-3 bg-glass">
                                 <div className="flex items-center gap-2">
                                     <Compass className="w-4 h-4 text-amber-500" />
-                                    <span className="font-semibold text-sm">Skipper</span>
-                                    <Badge variant="secondary" className="text-[10px] font-semibold uppercase px-1.5 py-0">Popular</Badge>
+                                    <span className="font-medium text-sm">Skipper</span>
+                                    <Badge variant="secondary" className="text-[10px] font-medium uppercase px-1.5 py-0">Popular</Badge>
                                 </div>
                                 <p className="text-xs text-muted-foreground">Professional tools for solo operators.</p>
                                 <ul className="space-y-1.5">
@@ -168,10 +168,10 @@ export function LicenseSection() {
                         )}
 
                         {/* Admiral Card */}
-                        <div className="border border-glass-border rounded-xl p-4 space-y-3 bg-glass backdrop-blur-sm">
+                        <div className="border border-glass-border rounded-lg p-4 space-y-3 bg-glass">
                             <div className="flex items-center gap-2">
                                 <ShipWheel className="w-4 h-4 text-blue-500" />
-                                <span className="font-semibold text-sm">Admiral</span>
+                                <span className="font-medium text-sm">Admiral</span>
                             </div>
                             <p className="text-xs text-muted-foreground">For teams managing shared infrastructure.</p>
                             <ul className="space-y-1.5">
