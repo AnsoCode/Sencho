@@ -49,11 +49,15 @@ The stack header exposes four actions:
 | **Stop** | `docker compose stop` | Stops containers without removing them. State is preserved. |
 | **Restart** | `docker compose restart` | Restarts all containers in the stack. |
 | **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
-| **Delete** | `down` + removes files | Stops and removes containers, then deletes the stack directory. |
+| **Delete** | `down --volumes` + removes files | Stops and removes containers and volumes, then deletes the stack directory. |
 
 <Warning>
   **Delete** is irreversible. It removes the stack directory - including `compose.yaml`, `.env`, and any bind-mounted files stored there. Back up important files before deleting.
 </Warning>
+
+<Note>
+  Stack directories often contain root-owned files — either because Docker Compose creates them, or because the stacks were originally set up outside of Sencho with `sudo`. Sencho handles this automatically: if a normal deletion fails due to permissions, it uses Docker to clean up root-owned files. No manual intervention is needed in the standard setup.
+</Note>
 
 ## Stack context menu
 
