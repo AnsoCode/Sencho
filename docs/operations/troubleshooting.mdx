@@ -69,9 +69,11 @@ If the group is not `docker`, the auto-detection still works - Sencho reads the 
 
 **Symptom:** Clicking Delete on a stack fails with a permission error mentioning `EACCES`.
 
-**Cause:** Docker Compose sometimes creates files inside the stack directory as root (e.g. volume mounts, config caches, plugin data). When Sencho — which runs as a non-root user — tries to remove the directory, the OS denies the operation.
+**Cause:** Stack directories often contain files owned by root — for example when Docker Compose was run with `sudo`, or when containers write config/data files into the stack directory. Since Sencho runs as a non-root user, the OS denies the removal.
 
-**How Sencho handles it:** Starting in v0.20.0, Sencho automatically detects permission errors during deletion and falls back to a Docker-based cleanup. It spawns a short-lived Alpine container that bind-mounts the stack directory and removes the root-owned files. This requires no manual intervention in the standard Docker setup.
+This is especially common when installing Sencho on a server where stacks were originally created outside of Sencho (e.g. via `sudo docker compose up`). Those directories and their contents are root-owned, but Sencho can still delete them.
+
+**How Sencho handles it:** Sencho automatically detects permission errors during deletion and falls back to a Docker-based cleanup. It spawns a short-lived Alpine container that bind-mounts the stack directory and removes the root-owned files. This happens transparently — no manual intervention is needed in the standard Docker setup.
 
 **If automatic cleanup fails:** The error message will include the directory path. Remove it manually:
 

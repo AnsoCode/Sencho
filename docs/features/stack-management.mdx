@@ -56,7 +56,7 @@ The stack header exposes four actions:
 </Warning>
 
 <Note>
-  Docker sometimes creates files inside the stack directory as root (e.g. volumes, config caches). Sencho handles this automatically — if a normal deletion fails due to permissions, it uses Docker itself to clean up root-owned files. No manual intervention is needed in the standard setup.
+  Stack directories often contain root-owned files — either because Docker Compose creates them, or because the stacks were originally set up outside of Sencho with `sudo`. Sencho handles this automatically: if a normal deletion fails due to permissions, it uses Docker to clean up root-owned files. No manual intervention is needed in the standard setup.
 </Note>
 
 ## Stack context menu
