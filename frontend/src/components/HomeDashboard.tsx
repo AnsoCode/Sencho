@@ -288,7 +288,7 @@ export default function HomeDashboard() {
             <MemoryStick className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats ? getValueColor(systemStats.memory.usagePercent) : 'text-stat-value'}`}>
+            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats ? getValueColor(parseFloat(systemStats.memory.usagePercent)) : 'text-stat-value'}`}>
               {systemStats ? `${systemStats.memory.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-stat-subtitle mt-1">
@@ -305,7 +305,7 @@ export default function HomeDashboard() {
             <HardDrive className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats?.disk ? getValueColor(systemStats.disk.usagePercent) : 'text-stat-value'}`}>
+            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats?.disk ? getValueColor(parseFloat(systemStats.disk.usagePercent)) : 'text-stat-value'}`}>
               {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-stat-subtitle mt-1">
