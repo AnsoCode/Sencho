@@ -107,7 +107,8 @@
       {
         "group": "Reference",
         "pages": [
-          "reference/settings"
+          "reference/settings",
+          "reference/security-advisories"
         ]
       },
       {

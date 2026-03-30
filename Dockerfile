@@ -91,12 +91,24 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 # Runs on the TARGET platform - no compilation happens here.
 FROM node:22-alpine
 
-# Pin Docker CLI and Compose versions. Alpine 3.23 ships docker-cli 29.1.3
-# which contains unpatched CVEs (CVE-2026-33186 Critical, CVE-2026-34040 High,
-# CVE-2026-33747 High, CVE-2026-33748 High). Install from official static
-# binaries to get v29.3.1 which includes the fixes.
+# Pin Docker CLI and Compose versions.
+#
+# Docker CLI v29.3.1 — compiled with Go 1.25.8, buildkit 0.28.1, x/crypto 0.48.0.
+# Fixes: CVE-2026-34040, CVE-2026-33997, CVE-2026-33747, CVE-2026-33748,
+#        CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679,
+#        CVE-2025-47913.
+#
+# Compose v5.1.1 — compiled with Go 1.25.8, x/crypto 0.46.0.
+# Upgraded from v2.40.3 (Go 1.24.9 / grpc 1.74.2 / x/crypto 0.38.0) to
+# resolve CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679,
+# CVE-2025-47913.
+#
+# NOTE: CVE-2026-33186 (google.golang.org/grpc ≥1.79.3) remains unpatched —
+# both Docker CLI 29.3.1 and Compose v5.1.1 ship grpc 1.78.0. No upstream
+# release includes the fix yet. This will be resolved when a new Docker CLI
+# or Compose release upgrades grpc.
 ARG DOCKER_VERSION=29.3.1
-ARG COMPOSE_VERSION=v2.40.3
+ARG COMPOSE_VERSION=v5.1.1
 
 # Upgrade all Alpine system packages, install runtime deps, then fetch Docker
 # CLI + Compose plugin from official static binaries.

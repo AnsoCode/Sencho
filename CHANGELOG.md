@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+* **docker:** upgrade Docker Compose from v2.40.3 to v5.1.1 to remediate 5 Go stdlib/x/crypto CVEs (CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679, CVE-2025-47913). Compose v2.40.3 was compiled with Go 1.24.9 and x/crypto 0.38.0; v5.1.1 ships Go 1.25.8 and x/crypto 0.46.0. Docker CLI remains at v29.3.1 (already patched). CVE-2026-33186 (grpc ≥1.79.3) cannot be resolved until upstream Docker/Compose releases upgrade past grpc 1.78.0.
+
 ## [0.21.1](https://github.com/AnsoCode/Sencho/compare/v0.21.0...v0.21.1) (2026-03-30)
 
 
