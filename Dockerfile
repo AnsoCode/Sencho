@@ -91,10 +91,25 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 # Runs on the TARGET platform - no compilation happens here.
 FROM node:22-alpine
 
-# Upgrade all Alpine system packages to pick up security patches, then install
-# Docker CLI, Docker Compose CLI, and Bash for Host Console
+# Pin Docker CLI and Compose versions. Alpine 3.23 ships docker-cli 29.1.3
+# which contains unpatched CVEs (CVE-2026-33186 Critical, CVE-2026-34040 High,
+# CVE-2026-33747 High, CVE-2026-33748 High). Install from official static
+# binaries to get v29.3.1 which includes the fixes.
+ARG DOCKER_VERSION=29.3.1
+ARG COMPOSE_VERSION=v2.40.3
+
+# Upgrade all Alpine system packages, install runtime deps, then fetch Docker
+# CLI + Compose plugin from official static binaries.
 RUN apk upgrade --no-cache && \
-    apk add --no-cache docker-cli docker-cli-compose bash su-exec
+    apk add --no-cache bash su-exec curl && \
+    ARCH=$(uname -m) && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-${DOCKER_VERSION}.tgz" \
+      | tar xz -C /usr/local/bin --strip-components=1 docker/docker && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+      "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${ARCH}" && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+    apk del curl
 
 WORKDIR /app
 
