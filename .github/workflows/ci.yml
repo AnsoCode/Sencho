@@ -195,7 +195,7 @@ jobs:
           GH_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
         run: |
           gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
-            --auto --squash \
+            --squash \
             --repo ${{ github.repository }}
 
   sync-docs:
