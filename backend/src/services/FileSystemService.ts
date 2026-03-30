@@ -205,7 +205,7 @@ export class FileSystemService {
         'run', '--rm',
         '-v', `${dirPath}:/cleanup`,
         'alpine',
-        'rm', '-rf', '/cleanup'
+        'sh', '-c', 'find /cleanup -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
       ], {
         env: {
           ...process.env,
