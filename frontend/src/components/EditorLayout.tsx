@@ -1084,7 +1084,7 @@ export default function EditorLayout() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
-      <div className="w-64 border-r border-glass-border bg-sidebar flex flex-col">
+      <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-md flex flex-col">
         {/* Branding Header */}
         <div className="h-14 flex items-center justify-center px-4 border-b border-border">
           <div className="flex items-center gap-2">
@@ -1533,8 +1533,8 @@ export default function EditorLayout() {
                             <Button
                               type="button"
                               size="sm"
-                              variant="destructive"
-                              className="rounded-lg"
+                              variant="ghost"
+                              className="rounded-lg text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
                               disabled={loadingAction !== null}
                               onClick={() => {
                                 setStackToDelete(selectedFile);
@@ -1760,6 +1760,7 @@ export default function EditorLayout() {
                           }}
                           options={{
                             minimap: { enabled: false },
+                            fontFamily: "'Geist Mono', monospace",
                             fontSize: 14,
                             padding: { top: 10 },
                             scrollBeyondLastLine: false,

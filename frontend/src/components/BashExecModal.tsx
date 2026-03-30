@@ -93,7 +93,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
           cursorAccent: '#000000',
           selectionBackground: 'rgba(255, 255, 255, 0.3)',
         },
-        fontFamily: 'Consolas, "Courier New", monospace',
+        fontFamily: "'Geist Mono', monospace",
         fontSize: 14,
         cursorBlink: true,
       });

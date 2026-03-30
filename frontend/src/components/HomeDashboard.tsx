@@ -71,6 +71,12 @@ export default function HomeDashboard() {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [metrics, setMetrics] = useState<MetricPoint[]>([]);
 
+  const getValueColor = (value: number, warn = 80, crit = 90) => {
+    if (value >= crit) return 'text-destructive/80';
+    if (value >= warn) return 'text-warning/80';
+    return 'text-stat-value';
+  };
+
   // Fetch container stats - re-runs when active node changes so stale data is cleared immediately
   useEffect(() => {
     setStats({ active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 });
@@ -282,7 +288,7 @@ export default function HomeDashboard() {
             <MemoryStick className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">
+            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats ? getValueColor(systemStats.memory.usagePercent) : 'text-stat-value'}`}>
               {systemStats ? `${systemStats.memory.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-stat-subtitle mt-1">
@@ -299,7 +305,7 @@ export default function HomeDashboard() {
             <HardDrive className="h-4 w-4 text-stat-icon" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-medium text-stat-value tabular-nums tracking-tight">
+            <div className={`text-3xl font-medium tabular-nums tracking-tight ${systemStats?.disk ? getValueColor(systemStats.disk.usagePercent) : 'text-stat-value'}`}>
               {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
             </div>
             <p className="text-xs text-stat-subtitle mt-1">
