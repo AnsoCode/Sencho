@@ -1,7 +1,7 @@
 /**
  * Tests for authentication: login, rate limiting, and auth middleware.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { setupTestDb, cleanupTestDb, TEST_USERNAME, TEST_PASSWORD, TEST_JWT_SECRET } from './helpers/setupTestDb';
@@ -96,6 +96,17 @@ describe('authMiddleware', () => {
 // ─── Protected endpoint: console-token ───────────────────────────────────────
 
 describe('POST /api/system/console-token', () => {
+  // Console-token requires Admiral tier — mock LicenseService for the happy-path test
+  beforeAll(async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('pro');
+    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('team');
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns 401 without authentication (was a security bug - C1 fix)', async () => {
     const res = await request(app).post('/api/system/console-token');
     expect(res.status).toBe(401);

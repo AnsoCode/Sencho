@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **host-console:** moved Host Console from Community tier to Admiral tier. The interactive host terminal now requires a Sencho Admiral license — enforced in the UI (nav item hidden, AdmiralGate upgrade prompt), the REST API (`POST /api/system/console-token` returns 403), and the WebSocket upgrade handler (`/api/system/host-console` rejects connections). Community and Skipper users see an upgrade prompt.
+
 ### Security
 
 * **docker:** upgrade base image from `node:20-alpine` to `node:22-alpine` (Node 22.22.2 on Alpine 3.23.3) to remediate 31 CVEs (1 Critical, multiple High/Medium/Low) flagged by Docker Scout against the previous `node:20-alpine` base.

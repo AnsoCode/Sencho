@@ -5,6 +5,10 @@ description: An interactive terminal on your host OS, directly in the browser - 
 
 The **Console** tab opens a full interactive terminal session on the machine running Sencho. It behaves exactly like an SSH session, but without needing an SSH server, client, or key management.
 
+<Note>
+  The Host Console requires a **Sencho Admiral** license. Community and Skipper users see an upgrade prompt instead. [Learn more about licensing](/features/licensing).
+</Note>
+
 <Frame>
   <img src="/images/host-console/host-console-overview.png" alt="Host Console showing a PowerShell prompt inside the Sencho container working directory" />
 </Frame>
@@ -34,12 +38,25 @@ The shell depends on the host OS:
 - **Linux/macOS hosts:** `bash` or `sh`
 - **Windows hosts (Docker Desktop):** PowerShell (as shown in the screenshot - the console opens inside the Sencho container's Windows environment)
 
+## Availability
+
+The Host Console is available to **admin** users on the **Admiral** tier. Access is enforced at every layer:
+
+- **UI:** The Console tab only appears in the navigation bar for Admiral-licensed admin users.
+- **API:** The `POST /api/system/console-token` endpoint returns `403 Forbidden` without an Admiral license.
+- **WebSocket:** The `/api/system/host-console` upgrade handler rejects connections without an Admiral license.
+
+### What Community and Skipper users see
+
+If you are on the Community or Skipper tier, navigating to the Console view shows an upgrade prompt with a link to the [pricing page](https://sencho.io/pricing). The Console tab is hidden from the navigation bar entirely.
+
 ## Security model
 
 The host console has a stricter authentication requirement than other features:
 
 - Requires a valid **browser session** (httpOnly cookie). Node-proxy tokens used for multi-node communication are explicitly blocked.
 - Each session is issued a short-lived **console token** (60-second TTL) before the WebSocket is established.
+- Access is restricted to the **Admiral** license tier, ensuring only teams with appropriate licensing can use interactive shell access.
 - Because the console gives full shell access to the host, you should secure your Sencho instance with HTTPS and a strong password if it is exposed to a network.
 
 <Warning>
