@@ -1,0 +1,70 @@
+---
+title: Security Advisories
+description: Tracked CVEs, remediation status, and dependency security notes for Sencho's Docker image.
+---
+
+Sencho's Docker image bundles the Docker CLI and Docker Compose plugin as statically linked binaries. Because these tools are compiled Go programs, vulnerabilities in Go's standard library or their Go dependencies surface as CVEs against the Sencho image even though Sencho itself contains no Go source code.
+
+This page tracks known CVEs, their resolution status, and the minimum safe versions.
+
+## March 2026 Audit
+
+The following vulnerabilities were identified against the Sencho Docker image built with Docker CLI v29.3.1 and Docker Compose v2.40.3.
+
+### Remediation Summary
+
+Docker Compose was upgraded from **v2.40.3** to **v5.1.1**, which ships Go 1.25.8 and `golang.org/x/crypto` v0.46.0. Docker CLI remains at **v29.3.1**, which was already compiled with Go 1.25.8, BuildKit v0.28.1, and `golang.org/x/crypto` v0.48.0.
+
+### CVE Table
+
+| CVE | Ecosystem | Package | Previous Version | Required Version | Resolved Version | Status |
+|-----|-----------|---------|-----------------|-----------------|-----------------|--------|
+| CVE-2025-68121 | Go | `stdlib` | 1.24.9 | 1.24.13 | 1.25.8 | Fixed |
+| CVE-2025-61726 | Go | `stdlib` | 1.24.9 | 1.24.12 | 1.25.8 | Fixed |
+| CVE-2025-61729 | Go | `stdlib` | 1.24.9 | 1.24.11 | 1.25.8 | Fixed |
+| CVE-2026-25679 | Go | `stdlib` | 1.24.9 | 1.25.8 | 1.25.8 | Fixed |
+| CVE-2025-47913 | Go | `golang.org/x/crypto` | 0.38.0 | 0.43.0 | 0.46.0 (Compose) / 0.48.0 (CLI) | Fixed |
+| CVE-2026-33747 | Go | `github.com/moby/buildkit` | 0.25.1 | 0.28.1 | 0.28.1 | Fixed |
+| CVE-2026-33748 | Go | `github.com/moby/buildkit` | 0.25.1 | 0.28.1 | 0.28.1 | Fixed |
+| CVE-2026-33186 | Go | `google.golang.org/grpc` | 1.74.2 | 1.79.3 | 1.78.0 | Unresolved |
+| CVE-2026-33671 | npm | `picomatch` | 4.0.3 | 4.0.4 | 4.0.4 | Fixed |
+
+### Details
+
+#### Go stdlib (CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679)
+
+These four CVEs affect the Go standard library used to compile Docker CLI and Docker Compose.
+The previous Compose version (v2.40.3) was built with Go 1.24.9.
+Upgrading Compose to v5.1.1 (Go 1.25.8) resolves all four.
+Docker CLI v29.3.1 was already compiled with Go 1.25.8.
+
+#### golang.org/x/crypto (CVE-2025-47913)
+
+The `golang.org/x/crypto` package had a vulnerability fixed in v0.43.0.
+Docker CLI v29.3.1 ships v0.48.0 and Compose v5.1.1 ships v0.46.0 — both above the minimum.
+
+#### BuildKit (CVE-2026-33747, CVE-2026-33748)
+
+Two BuildKit vulnerabilities related to Git URL fragment validation and file writes outside the state directory.
+Both were fixed in BuildKit v0.28.1, which is included in Docker CLI v29.3.1.
+
+#### gRPC (CVE-2026-33186)
+
+<Note>
+  This CVE **cannot be resolved** at this time. Both Docker CLI v29.3.1 and Compose v5.1.1 ship `google.golang.org/grpc` v1.78.0, while the fix requires v1.79.3. No upstream Docker release includes the patched version yet. This will be resolved when a new Docker CLI or Compose release upgrades past grpc v1.78.0.
+</Note>
+
+#### picomatch (CVE-2026-33671)
+
+The npm `picomatch` package v4.0.3 had a vulnerability fixed in v4.0.4.
+All Sencho lock files (frontend, backend, website) already resolve picomatch 4.x to v4.0.4.
+The backend also has picomatch v2.3.2 as a transitive dependency of `micromatch` (used by `http-proxy-middleware` and `chokidar`) — this is a separate major version line and is **not affected** by CVE-2026-33671.
+
+## Pinned Binary Versions
+
+Sencho's Dockerfile pins explicit versions for Docker CLI and Compose rather than relying on Alpine's package manager. This ensures reproducible builds and allows targeted CVE remediation independent of Alpine's release cycle.
+
+| Binary | Current Version | Go Toolchain | Key Dependencies |
+|--------|----------------|-------------|-----------------|
+| Docker CLI | v29.3.1 | Go 1.25.8 | BuildKit 0.28.1, grpc 1.78.0, x/crypto 0.48.0 |
+| Docker Compose | v5.1.1 | Go 1.25.8 | grpc 1.78.0, x/crypto 0.46.0 |
