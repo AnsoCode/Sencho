@@ -1,0 +1,171 @@
+---
+title: API Overview
+description: Authenticate, route requests to nodes, and integrate Sencho into your CI/CD pipelines.
+---
+
+Sencho exposes a REST API for automating stack deployments, managing webhooks, monitoring fleet health, and integrating with CI/CD pipelines. Since Sencho is self-hosted, the API base URL is your own instance.
+
+## Base URL
+
+```
+https://your-sencho-instance:3000/api
+```
+
+Replace with your actual Sencho host and port. All API paths are prefixed with `/api`.
+
+## Authentication
+
+Authenticated endpoints require a **Bearer token** in the `Authorization` header. Generate API tokens from **Settings > API Tokens** in the Sencho dashboard.
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  https://your-sencho-instance:3000/api/stacks
+```
+
+<Note>
+  API Tokens require a Sencho **Admiral** license. Community and Skipper editions do not include this feature.
+</Note>
+
+### Token scopes
+
+Every token is created with one of three permission levels:
+
+| Scope | Allowed actions |
+|-------|----------------|
+| **Read Only** | `GET` requests only — view stacks, containers, and fleet status |
+| **Deploy Only** | Everything in Read Only, plus stack operations: deploy, down, restart, stop, start, update |
+| **Full Admin** | Full stack, container, and node management — all read and write operations |
+
+Regardless of scope, all API tokens are blocked from managing other tokens, users, licenses, and SSO configuration.
+
+## Node routing
+
+Sencho manages multiple nodes (local and remote). To target a specific node, include one of:
+
+- **Header:** `x-node-id: 1`
+- **Query parameter:** `?nodeId=1`
+
+If omitted, the request targets the default node.
+
+```bash
+# Target node ID 2
+curl -H "Authorization: Bearer TOKEN" \
+  -H "x-node-id: 2" \
+  https://your-sencho-instance:3000/api/stacks
+```
+
+## Error format
+
+All error responses follow the same shape:
+
+```json
+{
+  "error": "Human-readable error message",
+  "code": "MACHINE_READABLE_CODE"
+}
+```
+
+The `code` field is present for specific error types:
+
+| Code | Meaning |
+|------|---------|
+| `PRO_REQUIRED` | Endpoint requires a Pro (Skipper or Admiral) license |
+| `ADMIRAL_REQUIRED` | Endpoint requires an Admiral license |
+| `SCOPE_DENIED` | API token scope does not allow this operation |
+
+## Rate limiting
+
+Authentication endpoints (`/api/auth/*`) are rate-limited to **5 requests per 15 minutes** in production. API token-authenticated requests are not rate-limited.
+
+## License tier requirements
+
+Some endpoints are gated by license tier:
+
+| Tier | Gated features |
+|------|---------------|
+| **Pro (Skipper+)** | Webhooks, Fleet snapshots, Stack rollback |
+| **Admiral** | API Tokens, Scheduled Tasks |
+
+Requests to gated endpoints on a lower tier return `403` with the appropriate error code.
+
+## WebSocket endpoints
+
+Sencho also provides real-time streaming via WebSocket connections. These are not part of the OpenAPI spec (OpenAPI does not support WebSocket protocols) but are documented here for completeness.
+
+### Stack log streaming
+
+Stream live logs from a stack's containers.
+
+**URL:** `wss://your-sencho-instance:3000/api/stacks/{stackName}/logs?nodeId={nodeId}`
+
+**Authentication:** Pass the token as a cookie (`sencho_token`) or Bearer token. For WebSocket connections, authentication is verified during the upgrade handshake.
+
+<CodeGroup>
+
+```javascript Node.js
+import WebSocket from "ws";
+
+const ws = new WebSocket(
+  "wss://your-sencho-instance:3000/api/stacks/my-app/logs",
+  { headers: { Cookie: "sencho_token=YOUR_JWT" } }
+);
+
+ws.on("message", (data) => {
+  console.log(data.toString());
+});
+```
+
+```bash cURL (upgrade check)
+curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Cookie: sencho_token=YOUR_JWT" \
+  https://your-sencho-instance:3000/api/stacks/my-app/logs
+```
+
+</CodeGroup>
+
+### Container exec
+
+Open an interactive shell session inside a running container.
+
+**URL:** `wss://your-sencho-instance:3000/ws`
+
+**Authentication:** Cookie-based JWT only. API tokens with `read-only` or `deploy-only` scope are blocked.
+
+<CodeGroup>
+
+```javascript Node.js
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://your-sencho-instance:3000/ws", {
+  headers: { Cookie: "sencho_token=YOUR_JWT" },
+});
+
+ws.on("open", () => {
+  // Initiate exec session
+  ws.send(
+    JSON.stringify({
+      action: "execContainer",
+      containerId: "abc123...",
+    })
+  );
+});
+
+ws.on("message", (data) => {
+  // Terminal output
+  process.stdout.write(data.toString());
+});
+
+// Send terminal input
+ws.send(JSON.stringify({ type: "input", data: "ls -la\n" }));
+
+// Resize terminal
+ws.send(JSON.stringify({ type: "resize", cols: 120, rows: 40 }));
+```
+
+</CodeGroup>
+
+<Warning>
+  Container exec requires a Sencho **Admiral Team** license and is blocked for API tokens and node proxy tokens.
+</Warning>
