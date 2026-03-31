@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **fleet:** "Open in Editor" button in Fleet View's stack drill-down now correctly navigates to the stack editor instead of the dashboard. Also passes the stack name through the callback chain so the correct file is loaded.
 * **scheduled-ops:** `prune_targets` field was silently dropped when creating scheduled tasks due to missing column in the INSERT statement
 
 ### Security
