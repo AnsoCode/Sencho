@@ -71,6 +71,9 @@
     "auth": {
       "method": "bearer",
       "name": "Authorization"
+    },
+    "playground": {
+      "display": "simple"
     }
   },
   "navigation": {
