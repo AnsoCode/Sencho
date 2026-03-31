@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **scheduled-ops:** prune label filter — scheduled system prune operations can be scoped to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`)
 * **scheduled-ops:** CSV export for execution history — one-click download of the full run history from the execution history panel
 
+### Changed
+
+* **multi-node:** show inline warning when configuring a remote node with an HTTP URL — recommends HTTPS or VPN for public internet connections; HTTP remains fully supported for private networks
+
 ### Fixed
 
 * **fleet:** "Open in Editor" button in Fleet View's stack drill-down now correctly navigates to the stack editor instead of the dashboard. Also passes the stack name through the callback chain so the correct file is loaded.

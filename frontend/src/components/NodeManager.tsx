@@ -13,7 +13,7 @@ import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check } from 'lucide-react';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle } from 'lucide-react';
 
 interface NodeFormData {
   name: string;
@@ -273,6 +273,17 @@ export function NodeManager() {
             <p className="text-xs text-muted-foreground">
               The base URL of the Sencho instance running on the remote machine.
             </p>
+            {formData.api_url.startsWith('http://') && (
+              <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 mt-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" strokeWidth={1.5} />
+                  <p className="text-xs text-warning">
+                    This URL uses plain HTTP. If this node is reachable over the public internet, use HTTPS
+                    or a VPN to prevent token interception. HTTP is fine for private networks (LAN, VPN, VPC).
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
