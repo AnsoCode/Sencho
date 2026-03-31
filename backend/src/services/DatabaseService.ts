@@ -166,6 +166,8 @@ export interface ScheduledTask {
     last_status: string | null;
     last_error: string | null;
     prune_targets: string | null;
+    target_services: string | null;
+    prune_label_filter: string | null;
 }
 
 export interface ScheduledTaskRun {
@@ -428,6 +430,8 @@ export class DatabaseService {
         // Scheduled operations migrations
         maybeAddCol('scheduled_task_runs', 'triggered_by', "TEXT NOT NULL DEFAULT 'scheduler'");
         maybeAddCol('scheduled_tasks', 'prune_targets', 'TEXT DEFAULT NULL');
+        maybeAddCol('scheduled_tasks', 'target_services', 'TEXT DEFAULT NULL');
+        maybeAddCol('scheduled_tasks', 'prune_label_filter', 'TEXT DEFAULT NULL');
 
         // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
         const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
@@ -1241,12 +1245,13 @@ export class DatabaseService {
 
     public createScheduledTask(task: Omit<ScheduledTask, 'id'>): number {
         const result = this.db.prepare(
-            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error, prune_targets, target_services, prune_label_filter) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             task.name, task.target_type, task.target_id, task.node_id,
             task.action, task.cron_expression, task.enabled, task.created_by,
             task.created_at, task.updated_at, task.last_run_at, task.next_run_at,
-            task.last_status, task.last_error
+            task.last_status, task.last_error, task.prune_targets, task.target_services,
+            task.prune_label_filter
         );
         return result.lastInsertRowid as number;
     }
@@ -1261,6 +1266,8 @@ export class DatabaseService {
             enabled: updates.enabled, created_by: updates.created_by, updated_at: updates.updated_at,
             last_run_at: updates.last_run_at, next_run_at: updates.next_run_at,
             last_status: updates.last_status, last_error: updates.last_error,
+            prune_targets: updates.prune_targets, target_services: updates.target_services,
+            prune_label_filter: updates.prune_label_filter,
         };
 
         for (const [col, val] of Object.entries(map)) {
@@ -1314,6 +1321,12 @@ export class DatabaseService {
         if (fields.length === 0) return;
         values.push(id);
         this.db.prepare(`UPDATE scheduled_task_runs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public getAllScheduledTaskRuns(taskId: number): ScheduledTaskRun[] {
+        return this.db.prepare(
+            'SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY started_at DESC'
+        ).all(taskId) as ScheduledTaskRun[];
     }
 
     public cleanupOldTaskRuns(retentionDays = 30): void {

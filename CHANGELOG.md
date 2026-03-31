@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **scheduled-ops:** failure notifications — dispatches error alerts through configured notification channels (Discord, Slack, webhook) when a scheduled task fails, with info-level recovery notifications when a previously-failing task succeeds again
+* **scheduled-ops:** per-service restart targeting — scheduled stack restarts can now target specific services rather than restarting the entire stack
+* **scheduled-ops:** prune label filter — scheduled system prune operations can be scoped to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`)
+* **scheduled-ops:** CSV export for execution history — one-click download of the full run history from the execution history panel
+
+### Fixed
+
+* **scheduled-ops:** `prune_targets` field was silently dropped when creating scheduled tasks due to missing column in the INSERT statement
+
 ### Security
 
 * **docker:** upgrade Docker Compose from v2.40.3 to v5.1.1 to remediate 5 Go stdlib/x/crypto CVEs (CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679, CVE-2025-47913). Compose v2.40.3 was compiled with Go 1.24.9 and x/crypto 0.38.0; v5.1.1 ships Go 1.25.8 and x/crypto 0.46.0. Docker CLI remains at v29.3.1 (already patched). CVE-2026-33186 (grpc ≥1.79.3) cannot be resolved until upstream Docker/Compose releases upgrade past grpc 1.78.0.

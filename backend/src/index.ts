@@ -2682,6 +2682,22 @@ app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response)
   }
 });
 
+app.get('/api/stacks/:stackName/services', async (req: Request, res: Response) => {
+  try {
+    const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
+    const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
+    const parsed = YAML.parse(content);
+    const services = parsed?.services ? Object.keys(parsed.services) : [];
+    res.json(services);
+  } catch (error) {
+    console.error('[Stacks] Failed to fetch services:', error);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
 app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -3691,7 +3707,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
 
     if (!name || typeof name !== 'string') {
       res.status(400).json({ error: 'Name is required' }); return;
@@ -3722,6 +3738,24 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
         res.status(400).json({ error: 'prune_targets must be a non-empty array of: containers, images, networks, volumes' }); return;
       }
     }
+    // Validate target_services
+    if (target_services !== undefined && target_services !== null) {
+      if (!Array.isArray(target_services) || target_services.length === 0 || !target_services.every((s: unknown) => typeof s === 'string' && s.length > 0)) {
+        res.status(400).json({ error: 'target_services must be a non-empty array of service name strings' }); return;
+      }
+      if (action !== 'restart' || target_type !== 'stack') {
+        res.status(400).json({ error: 'target_services can only be used with restart action on stack target' }); return;
+      }
+    }
+    // Validate prune_label_filter
+    if (prune_label_filter !== undefined && prune_label_filter !== null) {
+      if (typeof prune_label_filter !== 'string' || prune_label_filter.trim().length === 0) {
+        res.status(400).json({ error: 'prune_label_filter must be a non-empty string' }); return;
+      }
+      if (action !== 'prune') {
+        res.status(400).json({ error: 'prune_label_filter can only be used with prune action' }); return;
+      }
+    }
     // Validate cron expression
     try { CronExpressionParser.parse(cron_expression); } catch {
       res.status(400).json({ error: 'Invalid cron expression.' }); return;
@@ -3747,6 +3781,8 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
       last_status: null,
       last_error: null,
       prune_targets: prune_targets ? JSON.stringify(prune_targets) : null,
+      target_services: target_services ? JSON.stringify(target_services) : null,
+      prune_label_filter: prune_label_filter ? prune_label_filter.trim() : null,
     });
 
     const task = DatabaseService.getInstance().getScheduledTask(id);
@@ -3783,7 +3819,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
 
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
 
     if (target_type && !['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type' }); return;
@@ -3811,6 +3847,24 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
         res.status(400).json({ error: 'prune_targets must be a non-empty array of: containers, images, networks, volumes' }); return;
       }
     }
+    // Validate target_services
+    if (target_services !== undefined && target_services !== null) {
+      if (!Array.isArray(target_services) || target_services.length === 0 || !target_services.every((s: unknown) => typeof s === 'string' && s.length > 0)) {
+        res.status(400).json({ error: 'target_services must be a non-empty array of service name strings' }); return;
+      }
+      if (finalAction !== 'restart' || finalTargetType !== 'stack') {
+        res.status(400).json({ error: 'target_services can only be used with restart action on stack target' }); return;
+      }
+    }
+    // Validate prune_label_filter
+    if (prune_label_filter !== undefined && prune_label_filter !== null) {
+      if (typeof prune_label_filter !== 'string' || prune_label_filter.trim().length === 0) {
+        res.status(400).json({ error: 'prune_label_filter must be a non-empty string' }); return;
+      }
+      if (finalAction !== 'prune') {
+        res.status(400).json({ error: 'prune_label_filter can only be used with prune action' }); return;
+      }
+    }
 
     if (cron_expression) {
       try { CronExpressionParser.parse(cron_expression); } catch {
@@ -3827,6 +3881,8 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     if (cron_expression !== undefined) updates.cron_expression = cron_expression;
     if (enabled !== undefined) updates.enabled = enabled ? 1 : 0;
     if (prune_targets !== undefined) updates.prune_targets = prune_targets ? JSON.stringify(prune_targets) : null;
+    if (target_services !== undefined) updates.target_services = target_services ? JSON.stringify(target_services) : null;
+    if (prune_label_filter !== undefined) updates.prune_label_filter = prune_label_filter ? prune_label_filter.trim() : null;
 
     // Recalculate next_run if cron changed or if enabling
     const finalCron = cron_expression || existing.cron_expression;
@@ -3912,6 +3968,48 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
     const msg = error instanceof Error ? error.message : 'Failed to run task';
     console.error('[ScheduledTasks] Run error:', msg);
     res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
+
+    const db = DatabaseService.getInstance();
+    const task = db.getScheduledTask(id);
+    if (!task) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+
+    const runs = db.getAllScheduledTaskRuns(id);
+
+    const escapeCsv = (val: string): string => {
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    const lines = ['Timestamp,Source,Status,Duration (s),Details'];
+    for (const run of runs) {
+      const timestamp = new Date(run.started_at).toISOString();
+      const source = run.triggered_by === 'manual' ? 'Manual' : 'Scheduled';
+      const status = run.status.charAt(0).toUpperCase() + run.status.slice(1);
+      const duration = run.completed_at && run.started_at
+        ? ((run.completed_at - run.started_at) / 1000).toFixed(1)
+        : '';
+      const details = run.error || run.output || '';
+      lines.push(`${escapeCsv(timestamp)},${escapeCsv(source)},${escapeCsv(status)},${escapeCsv(duration)},${escapeCsv(details)}`);
+    }
+
+    const safeName = task.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="task-${safeName}-history.csv"`);
+    res.send(lines.join('\n'));
+  } catch (error) {
+    console.error('[ScheduledTasks] Export error:', error);
+    res.status(500).json({ error: 'Failed to export task runs' });
   }
 });
 
