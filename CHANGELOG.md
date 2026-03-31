@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **docs:** OpenAPI 3.1 spec covering ~55 public API endpoints across 8 categories (Stacks, Containers, API Tokens, Webhooks, Nodes, Fleet, Scheduled Tasks, Health)
+* **docs:** Interactive API Reference tab in Mintlify documentation powered by native OpenAPI rendering
+* **docs:** API overview page with authentication guide, token scopes, node routing, error format, and WebSocket examples
+
 ## [0.23.0](https://github.com/AnsoCode/Sencho/compare/v0.22.1...v0.23.0) (2026-03-31)
 
 

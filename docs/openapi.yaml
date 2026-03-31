@@ -1,0 +1,2278 @@
+openapi: 3.1.0
+info:
+  title: Sencho API
+  version: 0.23.0
+  description: |
+    REST API for Sencho, a self-hosted Docker Compose management dashboard.
+
+    Sencho exposes a public API for automating stack deployments, managing webhooks,
+    monitoring fleet health, and integrating with CI/CD pipelines.
+
+    ## Authentication
+
+    All authenticated endpoints accept a Bearer token in the `Authorization` header.
+    Generate API tokens from **Settings > API Tokens** in the Sencho dashboard (requires Admiral license).
+
+    ```
+    Authorization: Bearer YOUR_API_TOKEN
+    ```
+
+    ## Node Routing
+
+    Sencho manages multiple nodes (local and remote). To target a specific node,
+    include the `x-node-id` header or `?nodeId=` query parameter. If omitted,
+    the request targets the default node.
+
+    ## License Tiers
+
+    Some endpoints require a Pro or Admiral license. Requests to gated endpoints
+    on Community Edition return `403` with `code: "PRO_REQUIRED"` or `code: "ADMIRAL_REQUIRED"`.
+  contact:
+    name: Sencho
+    url: https://sencho.io
+  license:
+    name: BSL 1.1
+    url: https://github.com/AnsoCode/Sencho/blob/main/LICENSE
+
+servers:
+  - url: "{protocol}://{host}:{port}"
+    description: Your Sencho instance
+    variables:
+      protocol:
+        default: https
+        enum: [http, https]
+      host:
+        default: localhost
+      port:
+        default: "3000"
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Health
+    description: Instance health check
+  - name: Stacks
+    description: Create, read, update, delete, and operate Docker Compose stacks
+  - name: Containers
+    description: List and manage running containers
+  - name: API Tokens
+    description: Manage scoped API tokens (Admiral license required)
+  - name: Webhooks
+    description: Configure and trigger deployment webhooks (Pro license required)
+  - name: Nodes
+    description: Manage local and remote Sencho nodes
+  - name: Fleet
+    description: Multi-node fleet overview and snapshots (Pro license required)
+  - name: Scheduled Tasks
+    description: Configure recurring automated operations (Admiral license required)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: API token generated from Settings > API Tokens. Scopes — `read-only`, `deploy-only`, or `full-admin`.
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: HMAC-SHA256 signature for webhook trigger requests. Compute as `sha256=HMAC(request_body, webhook_secret)`.
+
+  parameters:
+    stackName:
+      name: stackName
+      in: path
+      required: true
+      description: Stack directory name (URL-encoded if it contains special characters).
+      schema:
+        type: string
+        example: my-stack
+    nodeId:
+      name: x-node-id
+      in: header
+      required: false
+      description: Target a specific node by ID. If omitted, the default node is used. Can also be passed as `?nodeId=` query parameter.
+      schema:
+        type: integer
+        example: 1
+    nodeIdQuery:
+      name: nodeId
+      in: query
+      required: false
+      description: Target a specific node by ID (alternative to `x-node-id` header).
+      schema:
+        type: integer
+        example: 1
+    idPath:
+      name: id
+      in: path
+      required: true
+      description: Numeric resource ID.
+      schema:
+        type: integer
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+        code:
+          type: string
+          description: Machine-readable error code (e.g., `PRO_REQUIRED`, `SCOPE_DENIED`).
+          enum: [PRO_REQUIRED, ADMIRAL_REQUIRED, SCOPE_DENIED]
+
+    SuccessMessage:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    SuccessBoolean:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    Container:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: Docker container ID.
+        Names:
+          type: array
+          items:
+            type: string
+          description: Container names (prefixed with `/`).
+        Service:
+          type: string
+          description: Compose service name (if part of a stack).
+        State:
+          type: string
+          description: Container state.
+          enum: [running, exited, paused, restarting, dead, created]
+        Status:
+          type: string
+          description: Human-readable status string (e.g., "Up 2 hours").
+        Ports:
+          type: array
+          items:
+            type: object
+            properties:
+              PrivatePort:
+                type: integer
+              PublicPort:
+                type: integer
+
+    Node:
+      type: object
+      required: [id, name, type, compose_dir, is_default, created_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [local, remote]
+        compose_dir:
+          type: string
+          description: Base directory for Docker Compose stacks on this node.
+        is_default:
+          type: integer
+          enum: [0, 1]
+          description: Whether this is the default node (1 = true).
+        api_url:
+          type: string
+          description: Remote node API URL (only for remote nodes).
+        api_token:
+          type: string
+          description: Redacted API token for remote node authentication.
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+
+    Webhook:
+      type: object
+      required: [id, name, stack_name, action, secret, enabled, created_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        stack_name:
+          type: string
+        action:
+          type: string
+          enum: [deploy, restart, stop, start, pull]
+        secret:
+          type: string
+          description: Masked secret (e.g., `****...****`). Full secret is only returned on creation.
+        enabled:
+          type: integer
+          enum: [0, 1]
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+
+    WebhookExecution:
+      type: object
+      properties:
+        id:
+          type: integer
+        webhook_id:
+          type: integer
+        triggered_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        status:
+          type: string
+        response:
+          type: string
+        error:
+          type: ["string", "null"]
+
+    ApiToken:
+      type: object
+      required: [id, name, scope, user_id, created_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        scope:
+          type: string
+          enum: [read-only, deploy-only, full-admin]
+        user_id:
+          type: integer
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        expires_at:
+          type: ["integer", "null"]
+          description: Unix timestamp (seconds) or null for no expiry.
+        revoked_at:
+          type: ["integer", "null"]
+        last_used_at:
+          type: ["integer", "null"]
+
+    FleetNodeOverview:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [local, remote]
+        status:
+          type: string
+          enum: [online, offline]
+        stats:
+          type: ["object", "null"]
+          description: Container statistics for the node.
+        systemStats:
+          type: ["object", "null"]
+          description: Host system resource statistics.
+        stacks:
+          type: ["integer", "null"]
+          description: Number of stacks on this node.
+
+    FleetSnapshot:
+      type: object
+      required: [id, description, created_by, created_at, node_count, stack_count]
+      properties:
+        id:
+          type: integer
+        description:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        node_count:
+          type: integer
+        stack_count:
+          type: integer
+        skipped_nodes:
+          type: string
+          description: JSON-stringified array of skipped node names.
+
+    FleetSnapshotDetail:
+      allOf:
+        - $ref: "#/components/schemas/FleetSnapshot"
+        - type: object
+          properties:
+            nodes:
+              type: array
+              items:
+                type: object
+                properties:
+                  nodeId:
+                    type: integer
+                  nodeName:
+                    type: string
+                  stacks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        stackName:
+                          type: string
+                        files:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              filename:
+                                type: string
+                              content:
+                                type: string
+
+    ScheduledTask:
+      type: object
+      required: [id, name, target_type, action, cron_expression, enabled, created_by, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        target_type:
+          type: string
+          enum: [stack, fleet, system]
+        target_id:
+          type: ["string", "null"]
+          description: Stack name (when target_type is `stack`).
+        node_id:
+          type: ["integer", "null"]
+          description: Target node ID (when target_type is `stack`).
+        action:
+          type: string
+          enum: [restart, snapshot, prune]
+        cron_expression:
+          type: string
+          description: Standard cron expression (5 fields).
+          example: "0 3 * * *"
+        enabled:
+          type: integer
+          enum: [0, 1]
+        created_by:
+          type: string
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        updated_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        last_run_at:
+          type: ["integer", "null"]
+        next_run_at:
+          type: ["integer", "null"]
+        last_status:
+          type: ["string", "null"]
+        last_error:
+          type: ["string", "null"]
+        prune_targets:
+          type: ["string", "null"]
+          description: JSON-stringified array of prune targets (containers, images, networks, volumes).
+        target_services:
+          type: ["string", "null"]
+          description: JSON-stringified array of service names to restart.
+        prune_label_filter:
+          type: ["string", "null"]
+          description: Docker label filter for prune operations.
+
+    ScheduledTaskRun:
+      type: object
+      required: [id, task_id, started_at, status, triggered_by]
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        started_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        completed_at:
+          type: ["integer", "null"]
+        triggered_by:
+          type: string
+          enum: [scheduled, manual]
+        status:
+          type: string
+          enum: [pending, running, success, failed]
+        output:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+
+  responses:
+    Unauthorized:
+      description: Authentication required. Provide a valid Bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "Authentication required"
+    Forbidden:
+      description: Insufficient permissions or license tier.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "This feature requires Sencho Pro."
+            code: "PRO_REQUIRED"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+paths:
+  # ── Health ──────────────────────────────────────────────
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Health check
+      description: Returns instance health status and uptime. No authentication required. Useful for uptime monitors and Docker HEALTHCHECK.
+      security: []
+      responses:
+        "200":
+          description: Instance is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, uptime]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptime:
+                    type: number
+                    description: Process uptime in seconds.
+
+  # ── Stacks ──────────────────────────────────────────────
+  /api/stacks:
+    get:
+      operationId: listStacks
+      tags: [Stacks]
+      summary: List all stacks
+      description: Returns an array of stack directory names on the target node.
+      parameters:
+        - $ref: "#/components/parameters/nodeId"
+        - $ref: "#/components/parameters/nodeIdQuery"
+      responses:
+        "200":
+          description: Array of stack names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["traefik", "portainer", "monitoring"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createStack
+      tags: [Stacks]
+      summary: Create a new stack
+      description: Creates a new stack directory with a default `compose.yaml` file.
+      parameters:
+        - $ref: "#/components/parameters/nodeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stackName]
+              properties:
+                stackName:
+                  type: string
+                  description: Stack name. Alphanumeric characters, hyphens, and underscores only.
+                  pattern: "^[a-zA-Z0-9_-]+$"
+                  example: my-new-stack
+      responses:
+        "201":
+          description: Stack created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, name]
+                properties:
+                  message:
+                    type: string
+                    example: Stack created successfully
+                  name:
+                    type: string
+                    example: my-new-stack
+        "400":
+          description: Invalid stack name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stack already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Stack already exists
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}:
+    get:
+      operationId: getStack
+      tags: [Stacks]
+      summary: Get stack compose file
+      description: Returns the raw `compose.yaml` content for the specified stack.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Raw compose.yaml content.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid stack name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateStack
+      tags: [Stacks]
+      summary: Update stack compose file
+      description: Overwrites the `compose.yaml` content for the specified stack. Requires `stack:edit` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  description: Full compose.yaml content.
+      responses:
+        "200":
+          description: Stack saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Stack saved successfully
+        "400":
+          description: Invalid stack name or content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteStack
+      tags: [Stacks]
+      summary: Delete stack
+      description: Permanently deletes the stack directory and all its files. Requires `stack:delete` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Stack deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Stack deleted successfully
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/envs:
+    get:
+      operationId: getStackEnvFiles
+      tags: [Stacks]
+      summary: List env file paths
+      description: Returns the list of environment file paths referenced in the stack's compose file (`env_file` directives).
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: List of env file paths.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [envFiles]
+                properties:
+                  envFiles:
+                    type: array
+                    items:
+                      type: string
+                    example: [".env", "config/database.env"]
+        "400":
+          description: Invalid stack name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/env:
+    get:
+      operationId: getStackEnv
+      tags: [Stacks]
+      summary: Get env file content
+      description: Returns the content of an environment file. Defaults to `.env` if no `file` query parameter is specified.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+        - name: file
+          in: query
+          required: false
+          description: Path to a specific env file (must be in the resolved env files list).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Raw env file content (KEY=VALUE format).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid stack name or disallowed file path.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Env file not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Env file not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateStackEnv
+      tags: [Stacks]
+      summary: Update env file
+      description: Overwrites an environment file's content. Requires `stack:edit` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+        - name: file
+          in: query
+          required: false
+          description: Path to a specific env file to update.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  description: Full env file content (KEY=VALUE format).
+      responses:
+        "200":
+          description: Env file saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Env file saved successfully
+        "400":
+          description: Invalid input.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/containers:
+    get:
+      operationId: getStackContainers
+      tags: [Stacks]
+      summary: List stack containers
+      description: Returns all containers belonging to the specified stack.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Array of container objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Container"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/services:
+    get:
+      operationId: getStackServices
+      tags: [Stacks]
+      summary: List stack services
+      description: Returns the service names defined in the stack's compose file.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Array of service names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["web", "db", "redis"]
+        "400":
+          description: Invalid stack name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/deploy:
+    post:
+      operationId: deployStack
+      tags: [Stacks]
+      summary: Deploy stack
+      description: |
+        Runs `docker compose up -d` for the stack. On Pro tier, uses atomic deployment
+        with automatic rollback on failure. Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Stack deployed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Deployed successfully
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: Deployment failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                  rolledBack:
+                    type: boolean
+                    description: Whether the stack was automatically rolled back (Pro tier).
+
+  /api/stacks/{stackName}/down:
+    post:
+      operationId: downStack
+      tags: [Stacks]
+      summary: Tear down stack
+      description: Runs `docker compose down` for the stack, removing containers and networks. Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Command started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: Command started
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/start:
+    post:
+      operationId: startStack
+      tags: [Stacks]
+      summary: Start stack containers
+      description: Starts all stopped containers in the stack via the Docker Engine API. Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Containers started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No containers found for this stack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/stop:
+    post:
+      operationId: stopStack
+      tags: [Stacks]
+      summary: Stop stack containers
+      description: Stops all running containers in the stack via the Docker Engine API. Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Containers stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No containers found for this stack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/restart:
+    post:
+      operationId: restartStack
+      tags: [Stacks]
+      summary: Restart stack containers
+      description: Restarts all containers in the stack via the Docker Engine API. Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Containers restarted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No containers found for this stack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/update:
+    post:
+      operationId: updateStackImages
+      tags: [Stacks]
+      summary: Pull and recreate stack
+      description: |
+        Pulls latest images and recreates containers (`docker compose pull && up -d`).
+        On Pro tier, uses atomic update with automatic rollback on failure.
+        Requires `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Update completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: Update completed
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: Update failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                  rolledBack:
+                    type: boolean
+
+  /api/stacks/{stackName}/rollback:
+    post:
+      operationId: rollbackStack
+      tags: [Stacks]
+      summary: Rollback stack
+      description: Restores the stack to its previous deployment state. Requires Pro license and `stack:deploy` permission.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Stack rolled back.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Stack rolled back successfully.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No backup available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: No backup available for this stack.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/stacks/{stackName}/backup:
+    get:
+      operationId: getStackBackupStatus
+      tags: [Stacks]
+      summary: Check backup status
+      description: Returns whether a deployment backup exists for this stack and when it was created.
+      parameters:
+        - $ref: "#/components/parameters/stackName"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Backup status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exists]
+                properties:
+                  exists:
+                    type: boolean
+                  timestamp:
+                    type: ["integer", "null"]
+                    description: Unix timestamp of the backup, or null if no backup exists.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+
+  # ── Containers ──────────────────────────────────────────
+  /api/containers:
+    get:
+      operationId: listContainers
+      tags: [Containers]
+      summary: List all containers
+      description: Returns all running containers on the target node.
+      parameters:
+        - $ref: "#/components/parameters/nodeId"
+        - $ref: "#/components/parameters/nodeIdQuery"
+      responses:
+        "200":
+          description: Array of container objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Container"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/containers/{id}/logs:
+    get:
+      operationId: streamContainerLogs
+      tags: [Containers]
+      summary: Stream container logs
+      description: |
+        Streams container logs as Server-Sent Events (SSE). The connection remains
+        open and pushes new log lines as `data:` events in real time.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: SSE log stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Each event is a `data:` line containing a JSON-encoded log string.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/containers/{id}/start:
+    post:
+      operationId: startContainer
+      tags: [Containers]
+      summary: Start container
+      description: Starts a stopped container. Requires admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Container started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Container started
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/containers/{id}/stop:
+    post:
+      operationId: stopContainer
+      tags: [Containers]
+      summary: Stop container
+      description: Stops a running container. Requires admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Container stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Container stopped
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/containers/{id}/restart:
+    post:
+      operationId: restartContainer
+      tags: [Containers]
+      summary: Restart container
+      description: Restarts a container. Requires admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+        - $ref: "#/components/parameters/nodeId"
+      responses:
+        "200":
+          description: Container restarted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Container restarted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── API Tokens ──────────────────────────────────────────
+  /api/api-tokens:
+    post:
+      operationId: createApiToken
+      tags: [API Tokens]
+      summary: Create API token
+      description: |
+        Generates a new scoped API token. The full token is only returned in the creation response
+        and cannot be retrieved again. Requires Admiral license and admin role.
+
+        **Note:** API tokens cannot create other API tokens.
+      responses:
+        "201":
+          description: Token created. The `token` field contains the full JWT — save it now, it won't be shown again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, token]
+                properties:
+                  id:
+                    type: integer
+                  token:
+                    type: string
+                    description: Full JWT token. Store securely — this is the only time it's returned.
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scope]
+              properties:
+                name:
+                  type: string
+                  description: Human-readable token name.
+                  maxLength: 100
+                  example: CI/CD Deploy Token
+                scope:
+                  type: string
+                  description: |
+                    Permission scope:
+                    - `read-only` — GET requests only
+                    - `deploy-only` — Read + stack deploy/stop/restart operations
+                    - `full-admin` — All operations (except license, user, and token management)
+                  enum: [read-only, deploy-only, full-admin]
+                expires_in:
+                  type: ["integer", "null"]
+                  description: Token lifetime in days. Use `null` for no expiry.
+                  enum: [30, 60, 90, 365, null]
+                  example: 90
+    get:
+      operationId: listApiTokens
+      tags: [API Tokens]
+      summary: List API tokens
+      description: |
+        Returns all API tokens for the current user. Token hashes are never exposed.
+        Requires Admiral license and admin role.
+
+        **Note:** API tokens cannot list other API tokens.
+      responses:
+        "200":
+          description: Array of token metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiToken"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/api-tokens/{id}:
+    delete:
+      operationId: revokeApiToken
+      tags: [API Tokens]
+      summary: Revoke API token
+      description: |
+        Permanently revokes an API token. Users can only revoke their own tokens.
+        Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Token revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "400":
+          description: Invalid token ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Webhooks ────────────────────────────────────────────
+  /api/webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List webhooks
+      description: Returns all configured webhooks with masked secrets. Requires Pro license.
+      responses:
+        "200":
+          description: Array of webhook objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Webhook"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Create webhook
+      description: |
+        Creates a new webhook for a stack. The webhook secret is auto-generated and only
+        returned in the creation response. Requires Pro license and admin role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, stack_name, action]
+              properties:
+                name:
+                  type: string
+                  example: GitHub Deploy Hook
+                stack_name:
+                  type: string
+                  description: Target stack name.
+                  example: my-app
+                action:
+                  type: string
+                  enum: [deploy, restart, stop, start, pull]
+                  description: Action to execute when the webhook is triggered.
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Webhook created. The `secret` field is the HMAC signing key — save it now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, secret]
+                properties:
+                  id:
+                    type: integer
+                  secret:
+                    type: string
+                    description: HMAC-SHA256 signing secret. Store securely — this is the only time it's returned in full.
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/webhooks/{id}:
+    put:
+      operationId: updateWebhook
+      tags: [Webhooks]
+      summary: Update webhook
+      description: Updates webhook configuration. Requires Pro license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                stack_name:
+                  type: string
+                action:
+                  type: string
+                  enum: [deploy, restart, stop, start, pull]
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Webhook updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      summary: Delete webhook
+      description: Permanently deletes a webhook. Requires Pro license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Webhook deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/webhooks/{id}/history:
+    get:
+      operationId: getWebhookHistory
+      tags: [Webhooks]
+      summary: Get webhook execution history
+      description: Returns the execution log for a webhook. Requires Pro license.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Array of execution records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookExecution"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/webhooks/{id}/trigger:
+    post:
+      operationId: triggerWebhook
+      tags: [Webhooks]
+      summary: Trigger webhook
+      description: |
+        Externally triggers a webhook action. This endpoint is public but requires a valid
+        HMAC-SHA256 signature in the `X-Webhook-Signature` header.
+
+        Compute the signature as: `sha256=` + HMAC-SHA256(raw_request_body, webhook_secret).
+      security:
+        - webhookSignature: []
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  description: Override the default webhook action.
+      responses:
+        "202":
+          description: Webhook accepted and action queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, action]
+                properties:
+                  message:
+                    type: string
+                    example: Webhook accepted
+                  action:
+                    type: string
+                    example: deploy
+        "401":
+          description: Missing or invalid signature.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Webhook not found or disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Nodes ───────────────────────────────────────────────
+  /api/nodes:
+    get:
+      operationId: listNodes
+      tags: [Nodes]
+      summary: List all nodes
+      description: Returns all registered nodes (local and remote).
+      responses:
+        "200":
+          description: Array of node objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createNode
+      tags: [Nodes]
+      summary: Register a new node
+      description: |
+        Adds a new local or remote node. Remote nodes require an API URL pointing to
+        another Sencho instance and an API token for authentication.
+        Requires `node:manage` permission.
+
+        **Note:** API tokens cannot manage nodes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name:
+                  type: string
+                  example: production-server
+                type:
+                  type: string
+                  enum: [local, remote]
+                compose_dir:
+                  type: string
+                  description: Base directory for Compose stacks (defaults to `/app/compose`).
+                is_default:
+                  type: boolean
+                  description: Set as the default node.
+                api_url:
+                  type: string
+                  description: Remote Sencho instance URL (required for remote nodes).
+                  example: https://sencho.example.com:3000
+                api_token:
+                  type: string
+                  description: API token for authenticating with the remote Sencho instance.
+      responses:
+        "200":
+          description: Node created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, id]
+                properties:
+                  success:
+                    type: boolean
+                  id:
+                    type: integer
+                    description: New node ID.
+                  warning:
+                    type: string
+                    description: Warning if the remote URL uses plain HTTP.
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Node name already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/nodes/{id}:
+    get:
+      operationId: getNode
+      tags: [Nodes]
+      summary: Get node details
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Node object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateNode
+      tags: [Nodes]
+      summary: Update node
+      description: Updates node configuration. Requires `node:manage` permission.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                compose_dir:
+                  type: string
+                is_default:
+                  type: boolean
+                api_url:
+                  type: string
+                api_token:
+                  type: string
+      responses:
+        "200":
+          description: Node updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  warning:
+                    type: string
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteNode
+      tags: [Nodes]
+      summary: Delete node
+      description: Removes a node from the fleet. Requires `node:manage` permission.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Node deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/nodes/{id}/test:
+    post:
+      operationId: testNodeConnection
+      tags: [Nodes]
+      summary: Test node connection
+      description: Tests connectivity to a node. For remote nodes, pings the remote Sencho instance's health endpoint.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Connection test result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  error:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Fleet ───────────────────────────────────────────────
+  /api/fleet/overview:
+    get:
+      operationId: getFleetOverview
+      tags: [Fleet]
+      summary: Fleet overview
+      description: Returns an aggregated overview of all nodes including status, container stats, and stack counts.
+      responses:
+        "200":
+          description: Array of fleet node overviews.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FleetNodeOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/fleet/node/{nodeId}/stacks:
+    get:
+      operationId: getFleetNodeStacks
+      tags: [Fleet]
+      summary: List stacks on a fleet node
+      description: Returns stack names from a specific fleet node. Requires Pro license.
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Array of stack names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: Failed to reach remote node.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Remote node not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/fleet/node/{nodeId}/stacks/{stackName}/containers:
+    get:
+      operationId: getFleetNodeStackContainers
+      tags: [Fleet]
+      summary: List containers in a fleet node stack
+      description: Returns containers for a specific stack on a specific fleet node. Requires Pro license.
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/stackName"
+      responses:
+        "200":
+          description: Array of container objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Container"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: Remote node not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/fleet/snapshots:
+    post:
+      operationId: createFleetSnapshot
+      tags: [Fleet]
+      summary: Create fleet snapshot
+      description: Creates a point-in-time backup of all compose files across all nodes. Requires Pro license and admin role.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                  description: Optional description for the snapshot.
+                  example: Pre-migration backup
+      responses:
+        "201":
+          description: Snapshot created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSnapshot"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listFleetSnapshots
+      tags: [Fleet]
+      summary: List fleet snapshots
+      description: Returns paginated fleet snapshots. Requires Pro license.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated snapshot list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshots, total]
+                properties:
+                  snapshots:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FleetSnapshot"
+                  total:
+                    type: integer
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/fleet/snapshots/{id}:
+    get:
+      operationId: getFleetSnapshot
+      tags: [Fleet]
+      summary: Get snapshot details
+      description: Returns full snapshot details including all captured files grouped by node and stack. Requires Pro license.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Snapshot with file contents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetSnapshotDetail"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteFleetSnapshot
+      tags: [Fleet]
+      summary: Delete snapshot
+      description: Permanently deletes a fleet snapshot. Requires Pro license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Snapshot deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/fleet/snapshots/{id}/restore:
+    post:
+      operationId: restoreFleetSnapshot
+      tags: [Fleet]
+      summary: Restore from snapshot
+      description: Restores a specific stack on a specific node from the snapshot. Optionally redeploys after restore. Requires Pro license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodeId, stackName]
+              properties:
+                nodeId:
+                  type: integer
+                  description: Target node ID to restore to.
+                stackName:
+                  type: string
+                  description: Stack to restore.
+                redeploy:
+                  type: boolean
+                  default: false
+                  description: Whether to redeploy the stack after restoring files.
+      responses:
+        "200":
+          description: Stack restored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                message: Stack restored successfully.
+        "400":
+          description: Missing required fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Scheduled Tasks ─────────────────────────────────────
+  /api/scheduled-tasks:
+    get:
+      operationId: listScheduledTasks
+      tags: [Scheduled Tasks]
+      summary: List scheduled tasks
+      description: Returns all scheduled tasks. Requires Admiral license and admin role.
+      responses:
+        "200":
+          description: Array of scheduled task objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledTask"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Create scheduled task
+      description: |
+        Creates a new recurring task. Action-target rules:
+        - `restart` requires `target_type: stack` (with `target_id` and `node_id`)
+        - `snapshot` requires `target_type: fleet`
+        - `prune` requires `target_type: system`
+
+        Requires Admiral license and admin role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, target_type, action, cron_expression]
+              properties:
+                name:
+                  type: string
+                  example: Nightly restart
+                target_type:
+                  type: string
+                  enum: [stack, fleet, system]
+                target_id:
+                  type: string
+                  description: Stack name (required when target_type is `stack`).
+                node_id:
+                  type: integer
+                  description: Target node ID (required when target_type is `stack`).
+                action:
+                  type: string
+                  enum: [restart, snapshot, prune]
+                cron_expression:
+                  type: string
+                  description: Standard 5-field cron expression.
+                  example: "0 3 * * *"
+                enabled:
+                  type: boolean
+                  default: true
+                prune_targets:
+                  type: array
+                  items:
+                    type: string
+                    enum: [containers, images, networks, volumes]
+                  description: Resources to prune (only for `prune` action).
+                target_services:
+                  type: array
+                  items:
+                    type: string
+                  description: Specific services to restart (only for `restart` action).
+                prune_label_filter:
+                  type: string
+                  description: Docker label filter for prune operations.
+      responses:
+        "201":
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledTask"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/scheduled-tasks/{id}:
+    get:
+      operationId: getScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Get scheduled task
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Scheduled task object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledTask"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: updateScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Update scheduled task
+      description: Updates task configuration. Same validation rules as creation apply. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                target_type:
+                  type: string
+                  enum: [stack, fleet, system]
+                target_id:
+                  type: string
+                node_id:
+                  type: integer
+                action:
+                  type: string
+                  enum: [restart, snapshot, prune]
+                cron_expression:
+                  type: string
+                enabled:
+                  type: boolean
+                prune_targets:
+                  type: array
+                  items:
+                    type: string
+                target_services:
+                  type: array
+                  items:
+                    type: string
+                prune_label_filter:
+                  type: string
+      responses:
+        "200":
+          description: Task updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledTask"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Delete scheduled task
+      description: Permanently deletes a scheduled task. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Task deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/scheduled-tasks/{id}/toggle:
+    patch:
+      operationId: toggleScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Toggle task enabled/disabled
+      description: Flips the enabled state of a scheduled task. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Task toggled. Returns updated task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledTask"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/scheduled-tasks/{id}/run:
+    post:
+      operationId: runScheduledTask
+      tags: [Scheduled Tasks]
+      summary: Run task immediately
+      description: Executes the scheduled task immediately, regardless of its cron schedule. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Task executed. Returns updated task with `last_run_at`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledTask"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/scheduled-tasks/{id}/runs:
+    get:
+      operationId: listScheduledTaskRuns
+      tags: [Scheduled Tasks]
+      summary: List task execution history
+      description: Returns paginated execution history for a scheduled task. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Array of task run records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledTaskRun"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/scheduled-tasks/{id}/runs/export:
+    get:
+      operationId: exportScheduledTaskRuns
+      tags: [Scheduled Tasks]
+      summary: Export task history as CSV
+      description: Downloads the execution history for a scheduled task as a CSV file. Requires Admiral license and admin role.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: CSV file download.
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: "CSV with columns: Timestamp, Source, Status, Duration (s), Details"
+        "400":
+          description: Invalid task ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"

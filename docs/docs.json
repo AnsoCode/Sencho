@@ -67,55 +67,169 @@
       }
     ]
   },
+  "api": {
+    "auth": {
+      "method": "bearer",
+      "name": "Authorization"
+    }
+  },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Getting Started",
-        "pages": [
-          "getting-started/introduction",
-          "getting-started/quickstart",
-          "getting-started/configuration",
-          "getting-started/sso-quickstart"
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/introduction",
+              "getting-started/quickstart",
+              "getting-started/configuration",
+              "getting-started/sso-quickstart"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/overview",
+              "features/dashboard",
+              "features/stack-management",
+              "features/editor",
+              "features/resources",
+              "features/app-store",
+              "features/global-observability",
+              "features/host-console",
+              "features/multi-node",
+              "features/fleet-view",
+              "features/alerts-notifications",
+              "features/webhooks",
+              "features/rbac",
+              "features/atomic-deployments",
+              "features/fleet-backups",
+              "features/audit-log",
+              "features/api-tokens",
+              "features/private-registries",
+              "features/scheduled-operations",
+              "features/sso",
+              "features/licensing"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/settings",
+              "reference/security-advisories"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/troubleshooting",
+              "operations/backup"
+            ]
+          }
         ]
       },
       {
-        "group": "Features",
+        "tab": "API Reference",
+        "openapi": "openapi.yaml",
         "pages": [
-          "features/overview",
-          "features/dashboard",
-          "features/stack-management",
-          "features/editor",
-          "features/resources",
-          "features/app-store",
-          "features/global-observability",
-          "features/host-console",
-          "features/multi-node",
-          "features/fleet-view",
-          "features/alerts-notifications",
-          "features/webhooks",
-          "features/rbac",
-          "features/atomic-deployments",
-          "features/fleet-backups",
-          "features/audit-log",
-          "features/api-tokens",
-          "features/private-registries",
-          "features/scheduled-operations",
-          "features/sso",
-          "features/licensing"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/settings",
-          "reference/security-advisories"
-        ]
-      },
-      {
-        "group": "Operations",
-        "pages": [
-          "operations/troubleshooting",
-          "operations/backup"
+          "api-reference/overview",
+          {
+            "group": "Health",
+            "pages": [
+              "GET /api/health"
+            ]
+          },
+          {
+            "group": "Stacks",
+            "pages": [
+              "GET /api/stacks",
+              "POST /api/stacks",
+              "GET /api/stacks/{stackName}",
+              "PUT /api/stacks/{stackName}",
+              "DELETE /api/stacks/{stackName}",
+              "GET /api/stacks/{stackName}/envs",
+              "GET /api/stacks/{stackName}/env",
+              "PUT /api/stacks/{stackName}/env",
+              "GET /api/stacks/{stackName}/containers",
+              "GET /api/stacks/{stackName}/services",
+              "POST /api/stacks/{stackName}/deploy",
+              "POST /api/stacks/{stackName}/down",
+              "POST /api/stacks/{stackName}/start",
+              "POST /api/stacks/{stackName}/stop",
+              "POST /api/stacks/{stackName}/restart",
+              "POST /api/stacks/{stackName}/update",
+              "POST /api/stacks/{stackName}/rollback",
+              "GET /api/stacks/{stackName}/backup"
+            ]
+          },
+          {
+            "group": "Containers",
+            "pages": [
+              "GET /api/containers",
+              "GET /api/containers/{id}/logs",
+              "POST /api/containers/{id}/start",
+              "POST /api/containers/{id}/stop",
+              "POST /api/containers/{id}/restart"
+            ]
+          },
+          {
+            "group": "API Tokens",
+            "pages": [
+              "POST /api/api-tokens",
+              "GET /api/api-tokens",
+              "DELETE /api/api-tokens/{id}"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "GET /api/webhooks",
+              "POST /api/webhooks",
+              "PUT /api/webhooks/{id}",
+              "DELETE /api/webhooks/{id}",
+              "GET /api/webhooks/{id}/history",
+              "POST /api/webhooks/{id}/trigger"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "pages": [
+              "GET /api/nodes",
+              "POST /api/nodes",
+              "GET /api/nodes/{id}",
+              "PUT /api/nodes/{id}",
+              "DELETE /api/nodes/{id}",
+              "POST /api/nodes/{id}/test"
+            ]
+          },
+          {
+            "group": "Fleet",
+            "pages": [
+              "GET /api/fleet/overview",
+              "GET /api/fleet/node/{nodeId}/stacks",
+              "GET /api/fleet/node/{nodeId}/stacks/{stackName}/containers",
+              "POST /api/fleet/snapshots",
+              "GET /api/fleet/snapshots",
+              "GET /api/fleet/snapshots/{id}",
+              "POST /api/fleet/snapshots/{id}/restore",
+              "DELETE /api/fleet/snapshots/{id}"
+            ]
+          },
+          {
+            "group": "Scheduled Tasks",
+            "pages": [
+              "GET /api/scheduled-tasks",
+              "POST /api/scheduled-tasks",
+              "GET /api/scheduled-tasks/{id}",
+              "PUT /api/scheduled-tasks/{id}",
+              "DELETE /api/scheduled-tasks/{id}",
+              "PATCH /api/scheduled-tasks/{id}/toggle",
+              "POST /api/scheduled-tasks/{id}/run",
+              "GET /api/scheduled-tasks/{id}/runs",
+              "GET /api/scheduled-tasks/{id}/runs/export"
+            ]
+          }
         ]
       }
     ]
