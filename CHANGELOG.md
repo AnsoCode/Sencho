@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0](https://github.com/AnsoCode/Sencho/compare/v0.21.2...v0.22.0) (2026-03-31)
+
+
+### Added
+
+* **scheduled-ops:** add failure notifications, granular targeting, and history export ([#286](https://github.com/AnsoCode/Sencho/issues/286)) ([eccdd1b](https://github.com/AnsoCode/Sencho/commit/eccdd1b87903c17af822edb0cdb4236812929bd2))
+
 ## [0.21.2](https://github.com/AnsoCode/Sencho/compare/v0.21.1...v0.21.2) (2026-03-30)
 
 
