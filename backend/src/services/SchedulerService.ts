@@ -5,6 +5,7 @@ import { LicenseService } from './LicenseService';
 import DockerController from './DockerController';
 import { FileSystemService } from './FileSystemService';
 import { NodeRegistry } from './NodeRegistry';
+import { NotificationService } from './NotificationService';
 
 export class SchedulerService {
     private static instance: SchedulerService;
@@ -122,6 +123,12 @@ export class SchedulerService {
                 output,
             });
             console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
+            if (task.last_status === 'failure') {
+                NotificationService.getInstance().dispatchAlert(
+                    'info',
+                    `Scheduled task "${task.name}" (${task.action}) recovered successfully`
+                );
+            }
         } catch (error: unknown) {
             const errMsg = error instanceof Error ? error.message : String(error);
             let nextRun: number | null = null;
@@ -143,6 +150,10 @@ export class SchedulerService {
                 error: errMsg,
             });
             console.error(`[SchedulerService] Task "${task.name}" (id=${task.id}) failed:`, errMsg);
+            NotificationService.getInstance().dispatchAlert(
+                'error',
+                `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`
+            );
         }
     }
 
@@ -155,8 +166,21 @@ export class SchedulerService {
         if (!containers || containers.length === 0) {
             throw new Error(`No containers found for stack "${task.target_id}"`);
         }
-        await Promise.all(containers.map(c => docker.restartContainer(c.Id)));
-        return `Restarted ${containers.length} container(s) in stack "${task.target_id}"`;
+
+        let filtered = containers;
+        if (task.target_services) {
+            const serviceNames: string[] = JSON.parse(task.target_services);
+            filtered = containers.filter(c => c.Service && serviceNames.includes(c.Service));
+            if (filtered.length === 0) {
+                throw new Error(`No containers found matching services [${serviceNames.join(', ')}] in stack "${task.target_id}"`);
+            }
+        }
+
+        await Promise.all(filtered.map(c => docker.restartContainer(c.Id)));
+        const servicesSuffix = task.target_services
+            ? ` (services: ${(JSON.parse(task.target_services) as string[]).join(', ')})`
+            : '';
+        return `Restarted ${filtered.length} container(s) in stack "${task.target_id}"${servicesSuffix}`;
     }
 
     private async executeSnapshot(task: ScheduledTask): Promise<string> {
@@ -305,11 +329,12 @@ export class SchedulerService {
         const targets: PruneTarget[] = task.prune_targets
             ? (JSON.parse(task.prune_targets) as string[]).filter((t): t is PruneTarget => allTargets.includes(t as PruneTarget))
             : [...allTargets];
+        const labelFilter = task.prune_label_filter || undefined;
         const results: string[] = [];
 
         for (const target of targets) {
             try {
-                const result = await docker.pruneSystem(target);
+                const result = await docker.pruneSystem(target, labelFilter);
                 results.push(`${target}: ${result.reclaimedBytes ?? 0} bytes reclaimed`);
             } catch (error: unknown) {
                 const msg = error instanceof Error ? error.message : String(error);
@@ -317,6 +342,7 @@ export class SchedulerService {
             }
         }
 
-        return `System prune completed: ${results.join('; ')}`;
+        const filterSuffix = labelFilter ? ` (label: ${labelFilter})` : '';
+        return `System prune completed${filterSuffix}: ${results.join('; ')}`;
     }
 }

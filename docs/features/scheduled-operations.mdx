@@ -20,9 +20,9 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 
 | Action | Target | Description |
 |--------|--------|-------------|
-| **Restart Stack** | A specific stack on a specific node | Restarts all containers in the stack via the Docker Engine API |
+| **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack via the Docker Engine API |
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
-| **System Prune** | A specific node (or the default node) | Prunes selected resources (containers, images, networks, volumes — all by default) |
+| **System Prune** | A specific node (or the default node) | Prunes selected resources, optionally filtered by Docker label |
 
 ## Creating a Scheduled Task
 
@@ -32,13 +32,35 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
    - **Name** - a descriptive label (e.g. "Nightly staging restart").
    - **Action** - choose Restart Stack, Fleet Snapshot, or System Prune.
    - **Stack / Node** - if you chose Restart Stack, select the target stack and the node it runs on.
+   - **Services** - optionally select specific services within the stack to restart. Leave empty to restart all services.
    - **Prune Targets** - if you chose System Prune, select which resources to prune (containers, images, networks, volumes). All are selected by default.
+   - **Label Filter** - optionally filter prune operations to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`).
    - **Cron Expression** - standard 5-field cron format. A human-readable preview appears below the input.
    - **Enabled** - toggle the task on or off.
 4. Click **Create**.
 
 <Frame>
   <img src="/images/scheduled-operations/create-dialog.png" alt="Create scheduled task dialog with action, cron expression, and prune target options" />
+</Frame>
+
+## Granular Targeting
+
+### Per-Service Restart
+
+When creating a Restart Stack schedule, you can target individual services instead of restarting the entire stack. After selecting a stack, Sencho reads the compose file and displays checkboxes for each defined service. Select the services you want to restart, or leave all unchecked to restart every service in the stack.
+
+<Frame>
+  <img src="/images/scheduled-operations/per-service-restart.png" alt="Service checkboxes displayed when creating a per-service restart schedule" />
+</Frame>
+
+### Prune Label Filter
+
+When creating a System Prune schedule, you can scope the prune to resources matching a specific Docker label. This lets you target resources from a particular stack or project without affecting unrelated containers, images, or volumes.
+
+Enter a label in `key=value` format (e.g. `com.docker.compose.project=mystack`). Leave the field empty to prune all unused resources of the selected types.
+
+<Frame>
+  <img src="/images/scheduled-operations/prune-label-filter.png" alt="Label filter input for scoping prune operations to specific Docker labels" />
 </Frame>
 
 ## Cron Expression Reference
@@ -72,6 +94,18 @@ Sencho uses standard 5-field cron expressions:
 - **Edit** - Click the pencil icon to update the task name, schedule, or target.
 - **Delete** - Click the trash icon to permanently remove the task and all its execution history.
 
+## Failure Notifications
+
+When a scheduled task fails, Sencho automatically dispatches an **error-level alert** through your configured notification channels (Discord, Slack, or custom webhooks). The alert includes the task name, action type, and error message so you can diagnose the issue immediately.
+
+When a previously failing task succeeds again, Sencho sends an **info-level recovery notification** to confirm the issue is resolved. This recovery-only approach avoids notification noise from tasks that succeed on every run.
+
+To configure notification channels, go to **Settings > Notifications**.
+
+<Frame>
+  <img src="/images/scheduled-operations/failure-notification.png" alt="Failure notification alert shown in the notification bell popover" />
+</Frame>
+
 ## Execution History
 
 Click the history icon on any task to view its execution log. Each entry shows:
@@ -84,8 +118,12 @@ Click the history icon on any task to view its execution log. Each entry shows:
 
 Execution history is retained for 30 days.
 
+### Exporting History
+
+Click the download icon in the top-right corner of the execution history panel to export the full history as a CSV file. The export includes all runs within the 30-day retention window — not just the current page.
+
 <Frame>
-  <img src="/images/scheduled-operations/run-history.png" alt="Execution history showing run source, status, duration, and details with pagination" />
+  <img src="/images/scheduled-operations/run-history.png" alt="Execution history showing run source, status, duration, and details with export button" />
 </Frame>
 
 ## How It Works
@@ -95,6 +133,7 @@ The Scheduler Service runs in the background and checks for due tasks every 60 s
 1. The scheduler verifies your Admiral license is active.
 2. It executes the configured action using the same internal services that power the UI buttons (restart, snapshot, prune).
 3. Results are logged to the execution history.
-4. The next run time is recalculated from the cron expression.
+4. On failure, an alert is dispatched via your configured notification channels.
+5. The next run time is recalculated from the cron expression.
 
 If a task is still running from a previous execution, the scheduler skips it to prevent overlap.

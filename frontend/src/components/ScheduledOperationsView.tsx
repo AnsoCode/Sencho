@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api';
 import cronstrue from 'cronstrue';
@@ -33,6 +33,8 @@ interface ScheduledTask {
   last_status: string | null;
   last_error: string | null;
   prune_targets: string | null;
+  target_services: string | null;
+  prune_label_filter: string | null;
 }
 
 interface TaskRun {
@@ -88,6 +90,9 @@ export default function ScheduledOperationsView() {
   const [formCron, setFormCron] = useState('0 3 * * *');
   const [formEnabled, setFormEnabled] = useState(true);
   const [formPruneTargets, setFormPruneTargets] = useState<string[]>(['containers', 'images', 'networks', 'volumes']);
+  const [formTargetServices, setFormTargetServices] = useState<string[]>([]);
+  const [formPruneLabelFilter, setFormPruneLabelFilter] = useState('');
+  const [availableServices, setAvailableServices] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState<number | null>(null);
   const [runsPage, setRunsPage] = useState(1);
@@ -141,6 +146,26 @@ export default function ScheduledOperationsView() {
     fetchNodes();
   }, [fetchTasks, fetchStacks, fetchNodes]);
 
+  useEffect(() => {
+    if (formAction !== 'restart' || !formTargetId) {
+      setAvailableServices([]);
+      return;
+    }
+    let cancelled = false;
+    const fetchServices = async () => {
+      try {
+        const res = await apiFetch(`/stacks/${encodeURIComponent(formTargetId)}/services`);
+        if (res.ok && !cancelled) {
+          setAvailableServices(await res.json());
+        }
+      } catch {
+        // Non-critical
+      }
+    };
+    fetchServices();
+    return () => { cancelled = true; };
+  }, [formAction, formTargetId]);
+
   const openCreate = () => {
     setEditingTask(null);
     setFormName('');
@@ -150,6 +175,8 @@ export default function ScheduledOperationsView() {
     setFormCron('0 3 * * *');
     setFormEnabled(true);
     setFormPruneTargets(['containers', 'images', 'networks', 'volumes']);
+    setFormTargetServices([]);
+    setFormPruneLabelFilter('');
     setDialogOpen(true);
   };
 
@@ -164,6 +191,10 @@ export default function ScheduledOperationsView() {
     setFormPruneTargets(
       task.prune_targets ? JSON.parse(task.prune_targets) : ['containers', 'images', 'networks', 'volumes']
     );
+    setFormTargetServices(
+      task.target_services ? JSON.parse(task.target_services) : []
+    );
+    setFormPruneLabelFilter(task.prune_label_filter || '');
     setDialogOpen(true);
   };
 
@@ -185,6 +216,12 @@ export default function ScheduledOperationsView() {
     }
     if (formAction === 'prune' && formPruneTargets.length > 0) {
       body.prune_targets = formPruneTargets;
+    }
+    if (formAction === 'restart' && formTargetServices.length > 0) {
+      body.target_services = formTargetServices;
+    }
+    if (formAction === 'prune' && formPruneLabelFilter.trim()) {
+      body.prune_label_filter = formPruneLabelFilter.trim();
     }
 
     setSaving(true);
@@ -332,7 +369,11 @@ export default function ScheduledOperationsView() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {task.target_type === 'stack' ? task.target_id : task.target_type}
+                      {task.target_type === 'stack'
+                        ? task.target_services
+                          ? `${task.target_id} (${(JSON.parse(task.target_services) as string[]).join(', ')})`
+                          : task.target_id
+                        : task.target_type}
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">{getCronDescription(task.cron_expression)}</div>
@@ -394,7 +435,7 @@ export default function ScheduledOperationsView() {
 
             <div className="space-y-2">
               <Label>Action</Label>
-              <Select value={formAction} onValueChange={(val) => { setFormAction(val); setFormTargetId(''); setFormNodeId(''); }}>
+              <Select value={formAction} onValueChange={(val) => { setFormAction(val); setFormTargetId(''); setFormNodeId(''); setFormTargetServices([]); setFormPruneLabelFilter(''); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -434,28 +475,60 @@ export default function ScheduledOperationsView() {
                     </SelectContent>
                   </Select>
                 </div>
+                {formAction === 'restart' && formTargetId && availableServices.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Services <span className="text-xs text-muted-foreground">(leave empty for all)</span></Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableServices.map(svc => (
+                        <label key={svc} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox
+                            checked={formTargetServices.includes(svc)}
+                            onCheckedChange={(checked) => {
+                              setFormTargetServices(prev =>
+                                checked ? [...prev, svc] : prev.filter(s => s !== svc)
+                              );
+                            }}
+                          />
+                          <span className="font-mono text-xs">{svc}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
             {formAction === 'prune' && (
-              <div className="space-y-2">
-                <Label>Prune Targets</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['containers', 'images', 'networks', 'volumes'].map(target => (
-                    <label key={target} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <Checkbox
-                        checked={formPruneTargets.includes(target)}
-                        onCheckedChange={(checked) => {
-                          setFormPruneTargets(prev =>
-                            checked ? [...prev, target] : prev.filter(t => t !== target)
-                          );
-                        }}
-                      />
-                      {target.charAt(0).toUpperCase() + target.slice(1)}
-                    </label>
-                  ))}
+              <>
+                <div className="space-y-2">
+                  <Label>Prune Targets</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['containers', 'images', 'networks', 'volumes'].map(target => (
+                      <label key={target} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <Checkbox
+                          checked={formPruneTargets.includes(target)}
+                          onCheckedChange={(checked) => {
+                            setFormPruneTargets(prev =>
+                              checked ? [...prev, target] : prev.filter(t => t !== target)
+                            );
+                          }}
+                        />
+                        {target.charAt(0).toUpperCase() + target.slice(1)}
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+                <div className="space-y-2">
+                  <Label>Label Filter <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    placeholder="e.g. com.docker.compose.project=mystack"
+                    value={formPruneLabelFilter}
+                    onChange={e => setFormPruneLabelFilter(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">Only prune resources matching this Docker label.</p>
+                </div>
+              </>
             )}
 
             <div className="space-y-2">
@@ -505,7 +578,19 @@ export default function ScheduledOperationsView() {
       <Sheet open={!!runsTask} onOpenChange={(open) => { if (!open) setRunsTask(null); }}>
         <SheetContent className="sm:max-w-xl">
           <SheetHeader>
-            <SheetTitle>Execution History - {runsTask?.name}</SheetTitle>
+            <div className="flex items-center justify-between">
+              <SheetTitle>Execution History - {runsTask?.name}</SheetTitle>
+              {runsTask && runs.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open(`/api/scheduled-tasks/${runsTask.id}/runs/export`, '_blank')}
+                  title="Export as CSV"
+                >
+                  <Download className="w-4 h-4" strokeWidth={1.5} />
+                </Button>
+              )}
+            </div>
           </SheetHeader>
           <div className="mt-4">
             {runsLoading ? (

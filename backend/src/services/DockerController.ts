@@ -103,22 +103,34 @@ class DockerController {
     };
   }
 
-  public async pruneSystem(target: 'containers' | 'images' | 'networks' | 'volumes') {
-    let result: any = {};
+  public async pruneSystem(target: 'containers' | 'images' | 'networks' | 'volumes', labelFilter?: string) {
+    let spaceReclaimed = 0;
     if (target === 'containers') {
-      result = await this.docker.pruneContainers();
+      const filters: Record<string, string[]> = {};
+      if (labelFilter) filters.label = [labelFilter];
+      const r = await this.docker.pruneContainers({ filters });
+      spaceReclaimed = r.SpaceReclaimed || 0;
     } else if (target === 'images') {
       // Remove all unused images, not just dangling ones
-      result = await this.docker.pruneImages({ filters: { dangling: { 'false': true } } });
+      const filters: Record<string, string[] | Record<string, boolean>> = { dangling: { 'false': true } };
+      if (labelFilter) filters.label = [labelFilter];
+      const r = await this.docker.pruneImages({ filters });
+      spaceReclaimed = r.SpaceReclaimed || 0;
     } else if (target === 'networks') {
-      result = await this.docker.pruneNetworks();
+      const filters: Record<string, string[]> = {};
+      if (labelFilter) filters.label = [labelFilter];
+      const r = await this.docker.pruneNetworks({ filters });
+      spaceReclaimed = (r as { SpaceReclaimed?: number }).SpaceReclaimed || 0;
     } else if (target === 'volumes') {
-      result = await this.docker.pruneVolumes({ filters: { all: ['true'] } });
+      const filters: Record<string, string[]> = { all: ['true'] };
+      if (labelFilter) filters.label = [labelFilter];
+      const r = await this.docker.pruneVolumes({ filters });
+      spaceReclaimed = r.SpaceReclaimed || 0;
     }
 
     return {
       success: true,
-      reclaimedBytes: result?.SpaceReclaimed || 0
+      reclaimedBytes: spaceReclaimed
     };
   }
 
@@ -346,6 +358,7 @@ class DockerController {
       interface ComposeContainer {
         ID?: string;
         Name?: string;
+        Service?: string;
         State?: string;
         Status?: string;
         Publishers?: { URL?: string, TargetPort?: number, PublishedPort?: number }[];
@@ -387,6 +400,7 @@ class DockerController {
           return {
             Id: c.ID || '',
             Names: ['/' + (c.Name || '')],  // Add leading slash to match Dockerode format
+            Service: c.Service || '',
             State: c.State || 'unknown',
             Status: c.Status || '',
             Ports
