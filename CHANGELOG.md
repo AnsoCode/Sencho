@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0](https://github.com/AnsoCode/Sencho/compare/v0.22.1...v0.23.0) (2026-03-31)
+
+
+### Added
+
+* **multi-node:** warn when configuring remote node with plain HTTP URL ([#292](https://github.com/AnsoCode/Sencho/issues/292)) ([e587256](https://github.com/AnsoCode/Sencho/commit/e587256086997a784007a69d8a7fd56881d0a9b1))
+
 ## [0.22.1](https://github.com/AnsoCode/Sencho/compare/v0.22.0...v0.22.1) (2026-03-31)
 
 
