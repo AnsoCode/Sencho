@@ -189,7 +189,7 @@ function ContainerRow({ container, nodeId, onNavigate }: {
 function StackSection({ stackName, nodeId, onNavigate }: {
     stackName: string;
     nodeId: number;
-    onNavigate: (nodeId: number) => void;
+    onNavigate: (nodeId: number, stackName: string) => void;
 }) {
     const [expanded, setExpanded] = useState(false);
     const [containers, setContainers] = useState<StackContainer[] | null>(null);
@@ -247,7 +247,7 @@ function StackSection({ stackName, nodeId, onNavigate }: {
                                 key={c.Id ?? containerName(c)}
                                 container={c}
                                 nodeId={nodeId}
-                                onNavigate={onNavigate}
+                                onNavigate={(nid) => onNavigate(nid, stackName)}
                             />
                         ))
                     ) : (
@@ -259,7 +259,7 @@ function StackSection({ stackName, nodeId, onNavigate }: {
     );
 }
 
-function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: number) => void }) {
+function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void }) {
     const { isPro } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
@@ -431,7 +431,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
 // --- Main Component ---
 
 interface FleetViewProps {
-    onNavigateToNode: (nodeId: number) => void;
+    onNavigateToNode: (nodeId: number, stackName: string) => void;
 }
 
 export function FleetView({ onNavigateToNode }: FleetViewProps) {

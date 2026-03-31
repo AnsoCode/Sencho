@@ -108,6 +108,7 @@ export default function EditorLayout() {
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
+  const pendingStackLoadRef = useRef<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
@@ -425,6 +426,9 @@ export default function EditorLayout() {
   // Also clears any stale editor/container state that belonged to the previous node.
   useEffect(() => {
     if (!activeNode) return;
+    const pendingStack = pendingStackLoadRef.current;
+    pendingStackLoadRef.current = null;
+
     setSelectedFile(null);
     setContent('');
     setOriginalContent('');
@@ -432,7 +436,13 @@ export default function EditorLayout() {
     setOriginalEnvContent('');
     setContainers([]);
     setIsEditing(false);
-    setActiveView('dashboard');
+
+    if (pendingStack) {
+      loadFile(pendingStack);
+    } else {
+      setActiveView('dashboard');
+    }
+
     refreshStacks();
     fetchImageUpdates();
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1786,11 +1796,15 @@ export default function EditorLayout() {
           ) : activeView === 'global-observability' ? (
             <GlobalObservabilityView />
           ) : activeView === 'fleet' ? (
-            <FleetView onNavigateToNode={(nodeId) => {
+            <FleetView onNavigateToNode={(nodeId, stackName) => {
               const node = nodes.find(n => n.id === nodeId);
               if (node) {
-                setActiveNode(node);
-                setActiveView('dashboard');
+                if (activeNode?.id === nodeId) {
+                  loadFile(stackName);
+                } else {
+                  pendingStackLoadRef.current = stackName;
+                  setActiveNode(node);
+                }
               }
             }} />
           ) : activeView === 'audit-log' ? (
