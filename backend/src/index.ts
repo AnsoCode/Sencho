@@ -4493,7 +4493,14 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
       api_token: api_token || '',
     });
 
-    res.json({ success: true, id });
+    const isPlainHttp = type === 'remote' && api_url && api_url.startsWith('http://');
+    res.json({
+      success: true,
+      id,
+      ...(isPlainHttp && {
+        warning: 'This node uses plain HTTP. Use HTTPS or a VPN for connections over the public internet.'
+      })
+    });
   } catch (error: any) {
     if (error.message?.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'A node with that name already exists' });
@@ -4527,7 +4534,13 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
     // Evict cached Docker connection so it reconnects with new config
     NodeRegistry.getInstance().evictConnection(id);
 
-    res.json({ success: true });
+    const isPlainHttp = updates.api_url && updates.api_url.startsWith('http://');
+    res.json({
+      success: true,
+      ...(isPlainHttp && {
+        warning: 'This node uses plain HTTP. Use HTTPS or a VPN for connections over the public internet.'
+      })
+    });
   } catch (error: any) {
     console.error('Failed to update node:', error);
     res.status(500).json({ error: error.message || 'Failed to update node' });
