@@ -357,16 +357,52 @@ export class SchedulerService {
 
     private async executeUpdate(task: ScheduledTask): Promise<string> {
         if (!task.target_id || task.node_id == null) {
-            throw new Error('Auto-update requires target_id (stack name) and node_id');
+            throw new Error('Auto-update requires target_id (stack name or "*") and node_id');
+        }
+
+        // Resolve target stacks: "*" means all stacks on the node
+        let stackNames: string[];
+        if (task.target_id === '*') {
+            stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
+            if (stackNames.length === 0) {
+                return 'No stacks found on node — skipped.';
+            }
+        } else {
+            stackNames = [task.target_id];
         }
 
         const docker = DockerController.getInstance(task.node_id);
-        const containers = await docker.getContainersByStack(task.target_id);
-        if (!containers || containers.length === 0) {
-            return `No containers found for stack "${task.target_id}" — skipped.`;
+        const imageUpdateService = ImageUpdateService.getInstance();
+        const compose = ComposeService.getInstance(task.node_id);
+        const db = DatabaseService.getInstance();
+        const results: string[] = [];
+
+        for (const stackName of stackNames) {
+            try {
+                const output = await this.executeUpdateForStack(stackName, docker, imageUpdateService, compose, db);
+                results.push(output);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                results.push(`Stack "${stackName}" failed: ${msg}`);
+                console.error(`[SchedulerService] Auto-update failed for stack "${stackName}":`, e);
+            }
         }
 
-        // Collect unique image refs from running containers
+        return results.join('\n');
+    }
+
+    private async executeUpdateForStack(
+        stackName: string,
+        docker: DockerController,
+        imageUpdateService: ImageUpdateService,
+        compose: ComposeService,
+        db: DatabaseService
+    ): Promise<string> {
+        const containers = await docker.getContainersByStack(stackName);
+        if (!containers || containers.length === 0) {
+            return `Stack "${stackName}": no containers found — skipped.`;
+        }
+
         const imageRefs = [...new Set(
             containers
                 .map((c: { Image?: string }) => c.Image)
@@ -374,11 +410,9 @@ export class SchedulerService {
         )];
 
         if (imageRefs.length === 0) {
-            return `No pullable images found for stack "${task.target_id}" — skipped.`;
+            return `Stack "${stackName}": no pullable images — skipped.`;
         }
 
-        // Check each image for updates
-        const imageUpdateService = ImageUpdateService.getInstance();
         let hasUpdate = false;
         const updatedImages: string[] = [];
 
@@ -394,23 +428,17 @@ export class SchedulerService {
         }
 
         if (!hasUpdate) {
-            return `All images up to date for stack "${task.target_id}" — no action taken.`;
+            return `Stack "${stackName}": all images up to date.`;
         }
 
-        // Pull new images and recreate containers
-        const compose = ComposeService.getInstance(task.node_id);
-        await compose.updateStack(task.target_id, undefined, true);
-
-        // Clear the update indicator
-        DatabaseService.getInstance().clearStackUpdateStatus(task.target_id);
-
-        const result = `Auto-updated stack "${task.target_id}" — pulled new images (${updatedImages.join(', ')}) and recreated containers.`;
+        await compose.updateStack(stackName, undefined, true);
+        db.clearStackUpdateStatus(stackName);
 
         NotificationService.getInstance().dispatchAlert(
             'info',
-            `Auto-update: stack "${task.target_id}" updated with new images`
+            `Auto-update: stack "${stackName}" updated with new images`
         );
 
-        return result;
+        return `Stack "${stackName}": updated (${updatedImages.join(', ')}).`;
     }
 }

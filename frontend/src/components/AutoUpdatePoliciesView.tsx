@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { RefreshCw, Plus, Pencil, Trash2, History, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
 import { ProGate } from '@/components/ProGate';
 import cronstrue from 'cronstrue';
 
@@ -114,11 +114,14 @@ function AutoUpdatePoliciesContent() {
     }
   }, []);
 
-  const fetchStacks = useCallback(async () => {
+  const fetchStacks = useCallback(async (nodeId?: string) => {
     try {
-      const res = await apiFetch('/stacks');
+      const res = nodeId
+        ? await fetchForNode('/stacks', parseInt(nodeId, 10))
+        : await apiFetch('/stacks');
       if (res.ok) setStacks(await res.json());
-    } catch { /* Non-critical */ }
+      else setStacks([]);
+    } catch { setStacks([]); }
   }, []);
 
   const fetchNodes = useCallback(async () => {
@@ -136,6 +139,14 @@ function AutoUpdatePoliciesContent() {
     fetchStacks();
     fetchNodes();
   }, [fetchPolicies, fetchStacks, fetchNodes]);
+
+  // Re-fetch stacks when selected node changes in the dialog
+  useEffect(() => {
+    if (dialogOpen && formNodeId) {
+      fetchStacks(formNodeId);
+      setFormTargetId('');
+    }
+  }, [formNodeId, dialogOpen, fetchStacks]);
 
   const openCreate = () => {
     setEditingPolicy(null);
@@ -309,7 +320,7 @@ function AutoUpdatePoliciesContent() {
                 {policies.map((policy) => (
                   <TableRow key={policy.id}>
                     <TableCell className="font-medium">{policy.name}</TableCell>
-                    <TableCell className="font-mono text-sm text-muted-foreground">{policy.target_id}</TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground">{policy.target_id === '*' ? 'All Stacks' : policy.target_id}</TableCell>
                     <TableCell>
                       <div className="text-sm">{getCronDescription(policy.cron_expression)}</div>
                       <div className="text-xs text-muted-foreground font-mono">{policy.cron_expression}</div>
@@ -372,20 +383,6 @@ function AutoUpdatePoliciesContent() {
             </div>
 
             <div className="space-y-2">
-              <Label>Stack</Label>
-              <Select value={formTargetId} onValueChange={setFormTargetId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select stack..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {stacks.map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
               <Label>Node</Label>
               <Select value={formNodeId} onValueChange={setFormNodeId}>
                 <SelectTrigger>
@@ -394,6 +391,21 @@ function AutoUpdatePoliciesContent() {
                 <SelectContent>
                   {nodes.map(n => (
                     <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Stack</Label>
+              <Select value={formTargetId} onValueChange={setFormTargetId} disabled={!formNodeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={formNodeId ? "Select stack..." : "Select a node first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All Stacks</SelectItem>
+                  {stacks.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
