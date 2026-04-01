@@ -22,7 +22,7 @@ import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pe
 import type { LucideIcon } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
 import { ScrollArea } from './ui/scroll-area';

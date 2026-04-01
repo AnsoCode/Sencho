@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import cronstrue from 'cronstrue';
 

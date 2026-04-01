@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ChevronLeft, ChevronRight, Search, ScrollText, RefreshCw, Download, ChevronDown } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 
 interface AuditEntry {
     id: number;

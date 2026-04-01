@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Search, Rocket, Loader2, Info, ExternalLink, Star } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast-store";
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';

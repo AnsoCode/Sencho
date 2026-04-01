@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Trash2, HelpCircle, AlertTriangle, Info, CheckCircle2, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';

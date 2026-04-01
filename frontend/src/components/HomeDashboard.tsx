@@ -8,7 +8,7 @@ import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Activity, Square, ArrowRight, Plus, Cpu, HardDrive, MemoryStick, Network } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 
 interface Stats {

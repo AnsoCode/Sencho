@@ -8,7 +8,7 @@ import {
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import {
     Shield, Activity, Bell, Code, Server, Package,
