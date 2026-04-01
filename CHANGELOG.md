@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.2](https://github.com/AnsoCode/Sencho/compare/v0.24.1...v0.24.2) (2026-04-01)
+
+
+### Fixed
+
+* **security:** enforce stack name validation on all routes ([#314](https://github.com/AnsoCode/Sencho/issues/314)) ([1ab04be](https://github.com/AnsoCode/Sencho/commit/1ab04be235cc0d3020d17dfb3028e4679206b886))
+
 ## [Unreleased]
 
 ### Fixed
