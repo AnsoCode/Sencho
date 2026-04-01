@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { RefreshCw } from 'lucide-react';
 import type { PatchableSettings } from './types';

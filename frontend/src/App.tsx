@@ -33,13 +33,13 @@ function AppContent() {
   );
 }
 
-import { Toaster } from 'sonner';
+import { ToastContainer } from './components/ui/toast';
 
 function App() {
   return (
     <AuthProvider>
       <AppContent />
-      <Toaster position="bottom-right" richColors />
+      <ToastContainer />
     </AuthProvider>
   );
 }
