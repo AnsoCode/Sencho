@@ -10,7 +10,7 @@ export interface Toast {
 }
 
 let toasts: Toast[] = [];
-let listeners: Set<() => void> = new Set();
+const listeners: Set<() => void> = new Set();
 let idCounter = 0;
 
 function notify() {

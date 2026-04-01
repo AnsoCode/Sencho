@@ -81,7 +81,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
   const [hovered, setHovered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remainingRef = useRef(DURATIONS[type]);
-  const startRef = useRef(Date.now());
+  const startRef = useRef(0);
   const config = notificationConfig[type];
   const duration = DURATIONS[type];
 
