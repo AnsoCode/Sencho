@@ -43,6 +43,7 @@ import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
 import ScheduledOperationsView from './ScheduledOperationsView';
+import AutoUpdatePoliciesView from './AutoUpdatePoliciesView';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -126,7 +127,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -168,6 +169,9 @@ export default function EditorLayout() {
       { value: 'templates', label: 'App Store', icon: CloudDownload },
       { value: 'global-observability', label: 'Logs', icon: Activity },
     );
+    if (isPro && isAdmin) {
+      items.push({ value: 'auto-updates', label: 'Auto-Update', icon: RefreshCw });
+    }
     if (isPro && license?.variant === 'team') {
       if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
       if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
@@ -445,6 +449,10 @@ export default function EditorLayout() {
 
     refreshStacks();
     fetchImageUpdates();
+
+    // Poll for image update results every 5 minutes so background checks are picked up
+    const imageUpdateInterval = setInterval(fetchImageUpdates, 5 * 60 * 1000);
+    return () => clearInterval(imageUpdateInterval);
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchNotifications = async () => {
@@ -979,6 +987,7 @@ export default function EditorLayout() {
         setContainers(Array.isArray(conts) ? conts : []);
       }
       await refreshStacks(true);
+      if (action === 'update') fetchImageUpdates();
       if (action === 'deploy' && isPro) {
         try {
           const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
@@ -999,7 +1008,25 @@ export default function EditorLayout() {
       const res = await apiFetch('/image-updates/refresh', { method: 'POST' });
       if (res.ok) {
         toast.success('Checking for image updates...');
-        setTimeout(() => fetchImageUpdates(), 3000);
+        // Poll until the background check completes instead of using a fixed timeout
+        let elapsed = 0;
+        const poll = setInterval(async () => {
+          elapsed += 2000;
+          try {
+            const statusRes = await apiFetch('/image-updates/status');
+            if (statusRes.ok) {
+              const { checking } = await statusRes.json();
+              if (!checking || elapsed >= 60000) {
+                clearInterval(poll);
+                await fetchImageUpdates();
+                if (!checking) toast.success('Image update check complete.');
+              }
+            }
+          } catch {
+            clearInterval(poll);
+            await fetchImageUpdates();
+          }
+        }, 2000);
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Failed to check for updates');
@@ -1809,6 +1836,8 @@ export default function EditorLayout() {
             }} />
           ) : activeView === 'audit-log' ? (
             <AuditLogView />
+          ) : activeView === 'auto-updates' ? (
+            <AutoUpdatePoliciesView />
           ) : activeView === 'scheduled-ops' ? (
             <ScheduledOperationsView />
           ) : (

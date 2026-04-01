@@ -3,7 +3,9 @@ import { DatabaseService } from './DatabaseService';
 import type { ScheduledTask } from './DatabaseService';
 import { LicenseService } from './LicenseService';
 import DockerController from './DockerController';
+import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
+import { ImageUpdateService } from './ImageUpdateService';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 
@@ -47,7 +49,9 @@ export class SchedulerService {
         this.isProcessing = true;
         try {
             const ls = LicenseService.getInstance();
-            if (ls.getTier() !== 'pro' || ls.getVariant() !== 'team') return;
+            const isPro = ls.getTier() === 'pro';
+            const isAdmiral = isPro && ls.getVariant() === 'team';
+            if (!isPro) return; // No scheduled tasks for non-Pro tiers
 
             const db = DatabaseService.getInstance();
             const now = Date.now();
@@ -57,6 +61,8 @@ export class SchedulerService {
             db.cleanupOldTaskRuns(30);
 
             for (const task of dueTasks) {
+                // Skipper users can only run 'update' tasks; other actions require Admiral
+                if (!isAdmiral && task.action !== 'update') continue;
                 if (this.runningTasks.has(task.id)) continue;
                 this.runningTasks.add(task.id);
                 this.executeTask(task).finally(() => this.runningTasks.delete(task.id));
@@ -106,6 +112,9 @@ export class SchedulerService {
                     break;
                 case 'prune':
                     output = await this.executePrune(task);
+                    break;
+                case 'update':
+                    output = await this.executeUpdate(task);
                     break;
             }
 
@@ -344,5 +353,92 @@ export class SchedulerService {
 
         const filterSuffix = labelFilter ? ` (label: ${labelFilter})` : '';
         return `System prune completed${filterSuffix}: ${results.join('; ')}`;
+    }
+
+    private async executeUpdate(task: ScheduledTask): Promise<string> {
+        if (!task.target_id || task.node_id == null) {
+            throw new Error('Auto-update requires target_id (stack name or "*") and node_id');
+        }
+
+        // Resolve target stacks: "*" means all stacks on the node
+        let stackNames: string[];
+        if (task.target_id === '*') {
+            stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
+            if (stackNames.length === 0) {
+                return 'No stacks found on node — skipped.';
+            }
+        } else {
+            stackNames = [task.target_id];
+        }
+
+        const docker = DockerController.getInstance(task.node_id);
+        const imageUpdateService = ImageUpdateService.getInstance();
+        const compose = ComposeService.getInstance(task.node_id);
+        const db = DatabaseService.getInstance();
+        const results: string[] = [];
+
+        for (const stackName of stackNames) {
+            try {
+                const output = await this.executeUpdateForStack(stackName, docker, imageUpdateService, compose, db);
+                results.push(output);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                results.push(`Stack "${stackName}" failed: ${msg}`);
+                console.error(`[SchedulerService] Auto-update failed for stack "${stackName}":`, e);
+            }
+        }
+
+        return results.join('\n');
+    }
+
+    private async executeUpdateForStack(
+        stackName: string,
+        docker: DockerController,
+        imageUpdateService: ImageUpdateService,
+        compose: ComposeService,
+        db: DatabaseService
+    ): Promise<string> {
+        const containers = await docker.getContainersByStack(stackName);
+        if (!containers || containers.length === 0) {
+            return `Stack "${stackName}": no containers found — skipped.`;
+        }
+
+        const imageRefs = [...new Set(
+            containers
+                .map((c: { Image?: string }) => c.Image)
+                .filter((img): img is string => !!img && !img.startsWith('sha256:'))
+        )];
+
+        if (imageRefs.length === 0) {
+            return `Stack "${stackName}": no pullable images — skipped.`;
+        }
+
+        let hasUpdate = false;
+        const updatedImages: string[] = [];
+
+        for (const imageRef of imageRefs) {
+            try {
+                if (await imageUpdateService.checkImage(docker, imageRef)) {
+                    hasUpdate = true;
+                    updatedImages.push(imageRef);
+                }
+            } catch (e) {
+                console.warn(`[SchedulerService] Failed to check image ${imageRef}:`, e);
+            }
+        }
+
+        if (!hasUpdate) {
+            return `Stack "${stackName}": all images up to date.`;
+        }
+
+        await compose.updateStack(stackName, undefined, true);
+        db.clearStackUpdateStatus(stackName);
+
+        NotificationService.getInstance().dispatchAlert(
+            'info',
+            `Auto-update: stack "${stackName}" updated with new images`
+        );
+
+        return `Stack "${stackName}": updated (${updatedImages.join(', ')}).`;
     }
 }

@@ -8,9 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* **auto-update:** Auto-Update Policies — schedule automatic image checks and container updates per stack (Skipper & Admiral)
+* **auto-update:** Dedicated Auto-Update Policies view with create/edit dialog, cron presets, run history, and manual trigger
+* **auto-update:** Extends the existing SchedulerService with a new `update` action type, reusing cron scheduling and run history infrastructure
+* **docs:** Auto-Update Policies feature documentation page
 * **docs:** OpenAPI 3.1 spec covering ~55 public API endpoints across 8 categories (Stacks, Containers, API Tokens, Webhooks, Nodes, Fleet, Scheduled Tasks, Health)
 * **docs:** Interactive API Reference tab in Mintlify documentation powered by native OpenAPI rendering
 * **docs:** API overview page with authentication guide, token scopes, node routing, error format, and WebSocket examples
+
+### Fixed
+
+* **image-updates:** Fix stack name key mismatch — use `com.docker.compose.project.working_dir` label instead of `com.docker.compose.project` so update indicators work when compose files set `name:`
+* **image-updates:** Add 5-minute periodic polling so background check results are picked up without manual refresh
+* **image-updates:** Replace fixed 3-second timeout with polling-based refresh that waits for the check to complete (up to 60s)
+* **image-updates:** Clear update status (blue dot) after a stack is updated via the UI
 
 ## [0.23.0](https://github.com/AnsoCode/Sencho/compare/v0.22.1...v0.23.0) (2026-03-31)
 

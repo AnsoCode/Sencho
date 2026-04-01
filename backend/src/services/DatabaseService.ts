@@ -155,7 +155,7 @@ export interface ScheduledTask {
     target_type: 'stack' | 'fleet' | 'system';
     target_id: string | null;
     node_id: number | null;
-    action: 'restart' | 'snapshot' | 'prune';
+    action: 'restart' | 'snapshot' | 'prune' | 'update';
     cron_expression: string;
     enabled: number;
     created_by: string;
@@ -849,6 +849,10 @@ export class DatabaseService {
             result[row.stack_name] = row.has_update === 1;
         }
         return result;
+    }
+
+    public clearStackUpdateStatus(stackName: string): void {
+        this.db.prepare('DELETE FROM stack_update_status WHERE stack_name = ?').run(stackName);
     }
 
     // --- Webhooks ---

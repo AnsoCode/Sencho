@@ -1,8 +1,10 @@
 import https from 'https';
 import http from 'http';
+import path from 'path';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
 import { RegistryService } from './RegistryService';
+import { NodeRegistry } from './NodeRegistry';
 
 // ─── Image ref parsing ────────────────────────────────────────────────────────
 
@@ -230,14 +232,22 @@ export class ImageUpdateService {
     private async checkNode(nodeId: number, db: DatabaseService) {
         const docker = DockerController.getInstance(nodeId);
         const containers = await docker.getAllContainers();
+        const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(nodeId));
 
         // stackName → set of image refs used by that stack
+        // Key by directory name (matching FileSystemService.getStacks()) rather than
+        // com.docker.compose.project label, which diverges when compose files set `name:`.
         const stackImages = new Map<string, Set<string>>();
 
         for (const c of containers) {
-            const stackName: string | undefined = c.Labels?.['com.docker.compose.project'];
-            if (!stackName) continue;
+            const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+            if (!workingDir) continue;
 
+            // Only consider containers managed under COMPOSE_DIR
+            const resolved = path.resolve(workingDir);
+            if (resolved !== composeDir && !resolved.startsWith(composeDir + path.sep)) continue;
+
+            const stackName = path.basename(resolved);
             const imageRef: string = c.Image ?? '';
             if (!imageRef || imageRef.startsWith('sha256:')) continue;
 
@@ -270,7 +280,7 @@ export class ImageUpdateService {
         }
     }
 
-    private async checkImage(docker: DockerController, imageRef: string): Promise<boolean> {
+    public async checkImage(docker: DockerController, imageRef: string): Promise<boolean> {
         const parsed = parseImageRef(imageRef);
         if (!parsed) return false;
 
