@@ -113,7 +113,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 100 }}
       transition={{ duration: 0.3 }}
-      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-xl bg-white/15 dark:bg-black/15 border border-gray-300/60 dark:border-gray-700/60 overflow-hidden ring-1 ring-gray-200/40 dark:ring-gray-700/40 drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105"
+      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-xl bg-white/15 dark:bg-black/15 border border-gray-300/60 dark:border-gray-700/60 overflow-hidden ring-1 ring-gray-200/40 dark:ring-gray-700/40 drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
