@@ -3,7 +3,9 @@ import { DatabaseService } from './DatabaseService';
 import type { ScheduledTask } from './DatabaseService';
 import { LicenseService } from './LicenseService';
 import DockerController from './DockerController';
+import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
+import { ImageUpdateService } from './ImageUpdateService';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 
@@ -47,7 +49,9 @@ export class SchedulerService {
         this.isProcessing = true;
         try {
             const ls = LicenseService.getInstance();
-            if (ls.getTier() !== 'pro' || ls.getVariant() !== 'team') return;
+            const isPro = ls.getTier() === 'pro';
+            const isAdmiral = isPro && ls.getVariant() === 'team';
+            if (!isPro) return; // No scheduled tasks for non-Pro tiers
 
             const db = DatabaseService.getInstance();
             const now = Date.now();
@@ -57,6 +61,8 @@ export class SchedulerService {
             db.cleanupOldTaskRuns(30);
 
             for (const task of dueTasks) {
+                // Skipper users can only run 'update' tasks; other actions require Admiral
+                if (!isAdmiral && task.action !== 'update') continue;
                 if (this.runningTasks.has(task.id)) continue;
                 this.runningTasks.add(task.id);
                 this.executeTask(task).finally(() => this.runningTasks.delete(task.id));
@@ -106,6 +112,9 @@ export class SchedulerService {
                     break;
                 case 'prune':
                     output = await this.executePrune(task);
+                    break;
+                case 'update':
+                    output = await this.executeUpdate(task);
                     break;
             }
 
@@ -344,5 +353,64 @@ export class SchedulerService {
 
         const filterSuffix = labelFilter ? ` (label: ${labelFilter})` : '';
         return `System prune completed${filterSuffix}: ${results.join('; ')}`;
+    }
+
+    private async executeUpdate(task: ScheduledTask): Promise<string> {
+        if (!task.target_id || task.node_id == null) {
+            throw new Error('Auto-update requires target_id (stack name) and node_id');
+        }
+
+        const docker = DockerController.getInstance(task.node_id);
+        const containers = await docker.getContainersByStack(task.target_id);
+        if (!containers || containers.length === 0) {
+            return `No containers found for stack "${task.target_id}" — skipped.`;
+        }
+
+        // Collect unique image refs from running containers
+        const imageRefs = [...new Set(
+            containers
+                .map((c: { Image?: string }) => c.Image)
+                .filter((img): img is string => !!img && !img.startsWith('sha256:'))
+        )];
+
+        if (imageRefs.length === 0) {
+            return `No pullable images found for stack "${task.target_id}" — skipped.`;
+        }
+
+        // Check each image for updates
+        const imageUpdateService = ImageUpdateService.getInstance();
+        let hasUpdate = false;
+        const updatedImages: string[] = [];
+
+        for (const imageRef of imageRefs) {
+            try {
+                if (await imageUpdateService.checkImage(docker, imageRef)) {
+                    hasUpdate = true;
+                    updatedImages.push(imageRef);
+                }
+            } catch (e) {
+                console.warn(`[SchedulerService] Failed to check image ${imageRef}:`, e);
+            }
+        }
+
+        if (!hasUpdate) {
+            return `All images up to date for stack "${task.target_id}" — no action taken.`;
+        }
+
+        // Pull new images and recreate containers
+        const compose = ComposeService.getInstance(task.node_id);
+        await compose.updateStack(task.target_id, undefined, true);
+
+        // Clear the update indicator
+        DatabaseService.getInstance().clearStackUpdateStatus(task.target_id);
+
+        const result = `Auto-updated stack "${task.target_id}" — pulled new images (${updatedImages.join(', ')}) and recreated containers.`;
+
+        NotificationService.getInstance().dispatchAlert(
+            'info',
+            `Auto-update: stack "${task.target_id}" updated with new images`
+        );
+
+        return result;
     }
 }

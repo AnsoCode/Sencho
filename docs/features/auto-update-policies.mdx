@@ -1,0 +1,115 @@
+---
+title: "Auto-Update Policies"
+description: "Automatically check for and apply container image updates on a schedule."
+---
+
+<Note>
+  Auto-Update Policies require a **Skipper** or **Admiral** license.
+</Note>
+
+## Overview
+
+Auto-Update Policies let you define schedules for Sencho to automatically check your container images for updates and apply them when new versions are available. Think of it as a built-in Watchtower — but integrated directly into your Sencho dashboard with full visibility into what was updated and when.
+
+Each policy targets a specific stack and runs on a cron schedule. When triggered, Sencho:
+
+1. Inspects every container in the target stack
+2. Compares local image digests against the remote registry
+3. If any image has a newer version, pulls the update and recreates the stack with `docker compose up -d`
+4. Records the result in run history for auditability
+
+<Frame>
+  <img src="/images/auto-update-policies/overview.png" alt="Auto-Update Policies view showing the policies list" />
+</Frame>
+
+## Creating a Policy
+
+Navigate to **Auto-Update** in the sidebar and click **New Policy**.
+
+<Frame>
+  <img src="/images/auto-update-policies/create-dialog.png" alt="Create auto-update policy dialog" />
+</Frame>
+
+Fill in the following fields:
+
+| Field | Description |
+|-------|-------------|
+| **Name** | A descriptive name for the policy (e.g., "Nightly media stack update") |
+| **Node** | The node where the target stack runs |
+| **Stack** | The stack to monitor and update |
+| **Schedule** | A cron expression or preset defining how often to check |
+
+### Schedule Presets
+
+For convenience, Sencho offers common schedule presets:
+
+| Preset | Cron Expression | Description |
+|--------|----------------|-------------|
+| Every 6 hours | `0 */6 * * *` | Check four times per day |
+| Every 12 hours | `0 */12 * * *` | Check twice per day |
+| Daily at 3 AM | `0 3 * * *` | Low-traffic window for most users |
+| Daily at midnight | `0 0 * * *` | Start of each day |
+| Weekly (Sunday 3 AM) | `0 3 * * 0` | Minimal disruption for stable stacks |
+| Custom | User-defined | Any valid cron expression |
+
+## Managing Policies
+
+Each policy in the list shows:
+
+- **Name** and target stack
+- **Schedule** in human-readable form (e.g., "Every 6 hours")
+- **Status** — enabled or disabled
+- **Last run** — when it last executed and whether it succeeded
+- **Next run** — when it will execute next
+
+### Available Actions
+
+- **Toggle** — Enable or disable a policy without deleting it
+- **Run Now** — Trigger an immediate check-and-update cycle
+- **Edit** — Modify the policy name, target, or schedule
+- **Delete** — Permanently remove the policy
+
+## Run History
+
+Click the clock icon on any policy to view its run history. Each entry shows:
+
+- **Timestamp** — When the run started
+- **Status** — Success or failure
+- **Output** — Detailed log of what was checked and whether updates were applied
+
+This gives you full auditability over what changed and when.
+
+## How It Works
+
+Under the hood, Auto-Update Policies are built on the same scheduling engine as [Scheduled Operations](/features/scheduled-operations). The key difference is that auto-update policies:
+
+- Are available to **Skipper** tier (Scheduled Operations requires Admiral)
+- Always target a **stack** (not individual containers)
+- Perform a **check-then-update** flow rather than a blind restart
+
+### The Check-Then-Update Flow
+
+1. **Enumerate images** — Sencho lists all unique images used by containers in the target stack
+2. **Check digests** — For each image, Sencho compares the local `RepoDigests` against the remote registry manifest digest
+3. **Conditional update** — Only if at least one image has a newer version does Sencho run `docker compose up -d` to pull and recreate
+4. **Clear indicators** — After a successful update, the blue update indicator dot is automatically cleared
+
+If no updates are found, the run completes with a "No updates available" message and no containers are restarted.
+
+## Relationship to Image Update Detection
+
+Sencho has two complementary features for keeping your images current:
+
+| Feature | Purpose | Tier |
+|---------|---------|------|
+| **Image Update Detection** | Passive — shows a blue dot on stacks with available updates | All tiers |
+| **Auto-Update Policies** | Active — automatically applies updates on a schedule | Skipper+ |
+
+Image Update Detection runs in the background every 6 hours and highlights stacks that have newer images available. Auto-Update Policies take this a step further by automatically applying those updates based on your defined schedule.
+
+## Best Practices
+
+- **Start with longer intervals** — Use "Daily at 3 AM" or "Weekly" for production stacks. Reserve shorter intervals for dev/staging environments.
+- **Pin critical images** — If a stack uses `image: postgres:16.2` (pinned tag), auto-update will only detect updates to that exact tag. Use floating tags like `postgres:16` if you want minor version updates.
+- **Monitor run history** — Check run history periodically to ensure updates are applying cleanly. Failed runs may indicate registry authentication issues or compose file problems.
+- **Combine with notifications** — Sencho sends alert notifications when auto-updates are applied, so you stay informed even when updates happen automatically.

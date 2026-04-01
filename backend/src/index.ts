@@ -807,6 +807,12 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   return true;
 };
 
+// Tier gate for scheduled tasks: 'update' action requires Pro, everything else requires Admiral.
+const requireScheduledTaskTier = (action: string, _req: Request, res: Response): boolean => {
+  if (action === 'update') return requirePro(_req, res);
+  return requireAdmiral(_req, res);
+};
+
 // --- Scoped RBAC Permission Engine (Admiral) ---
 
 type PermissionAction =
@@ -2835,6 +2841,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
   try {
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
+    DatabaseService.getInstance().clearStackUpdateStatus(stackName);
     res.json({ status: 'Update completed' });
   } catch (error) {
     const rolledBack = LicenseService.getInstance().getTier() === 'pro';
@@ -3693,9 +3700,14 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
 
 app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
-    const tasks = DatabaseService.getInstance().getScheduledTasks();
+    let tasks = DatabaseService.getInstance().getScheduledTasks();
+    // Skipper users only see 'update' tasks; Admiral sees all
+    const ls = LicenseService.getInstance();
+    if (ls.getVariant() !== 'team') {
+      tasks = tasks.filter(t => t.action === 'update');
+    }
     res.json(tasks);
   } catch (error) {
     console.error('[ScheduledTasks] List error:', error);
@@ -3705,7 +3717,6 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
 
 app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
 
@@ -3715,12 +3726,17 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     if (!['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type. Must be stack, fleet, or system.' }); return;
     }
-    if (!['restart', 'snapshot', 'prune'].includes(action)) {
-      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, or prune.' }); return;
+    if (!['restart', 'snapshot', 'prune', 'update'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, prune, or update.' }); return;
     }
+    // Tier gate based on action type
+    if (!requireScheduledTaskTier(action, req, res)) return;
     // Validate action-target combos
     if (action === 'restart' && target_type !== 'stack') {
       res.status(400).json({ error: 'Restart action requires target_type "stack".' }); return;
+    }
+    if (action === 'update' && target_type !== 'stack') {
+      res.status(400).json({ error: 'Update action requires target_type "stack".' }); return;
     }
     if (action === 'snapshot' && target_type !== 'fleet') {
       res.status(400).json({ error: 'Snapshot action requires target_type "fleet".' }); return;
@@ -3795,12 +3811,13 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
 
 app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
     const task = DatabaseService.getInstance().getScheduledTask(id);
     if (!task) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(task.action, req, res)) return;
     res.json(task);
   } catch (error) {
     console.error('[ScheduledTasks] Get error:', error);
@@ -3810,7 +3827,7 @@ app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3818,13 +3835,14 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     const db = DatabaseService.getInstance();
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
 
     if (target_type && !['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type' }); return;
     }
-    if (action && !['restart', 'snapshot', 'prune'].includes(action)) {
+    if (action && !['restart', 'snapshot', 'prune', 'update'].includes(action)) {
       res.status(400).json({ error: 'Invalid action' }); return;
     }
 
@@ -3832,6 +3850,9 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     const finalTargetType = target_type || existing.target_type;
     if (finalAction === 'restart' && finalTargetType !== 'stack') {
       res.status(400).json({ error: 'Restart action requires target_type "stack".' }); return;
+    }
+    if (finalAction === 'update' && finalTargetType !== 'stack') {
+      res.status(400).json({ error: 'Update action requires target_type "stack".' }); return;
     }
     if (finalAction === 'snapshot' && finalTargetType !== 'fleet') {
       res.status(400).json({ error: 'Snapshot action requires target_type "fleet".' }); return;
@@ -3904,7 +3925,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3912,6 +3933,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     const db = DatabaseService.getInstance();
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     db.deleteScheduledTask(id);
     res.json({ success: true });
@@ -3923,7 +3945,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3931,6 +3953,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
     const db = DatabaseService.getInstance();
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     const newEnabled = existing.enabled ? 0 : 1;
     const nextRun = newEnabled ? SchedulerService.getInstance().calculateNextRun(existing.cron_expression) : null;
@@ -3951,7 +3974,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
 
 app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3959,6 +3982,7 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
     const db = DatabaseService.getInstance();
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     await SchedulerService.getInstance().triggerTask(id);
 
@@ -3973,7 +3997,7 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
 
 app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -3981,6 +4005,7 @@ app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): v
     const db = DatabaseService.getInstance();
     const task = db.getScheduledTask(id);
     if (!task) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(task.action, req, res)) return;
 
     const runs = db.getAllScheduledTaskRuns(id);
 
@@ -4015,7 +4040,7 @@ app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): v
 
 app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
+  if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4023,6 +4048,7 @@ app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => 
     const db = DatabaseService.getInstance();
     const existing = db.getScheduledTask(id);
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
+    if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 20, 100);
     const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
@@ -4427,6 +4453,10 @@ app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Resp
     console.error('Failed to trigger image update refresh:', error);
     res.status(500).json({ error: 'Failed to trigger refresh' });
   }
+});
+
+app.get('/api/image-updates/status', authMiddleware, (_req: Request, res: Response) => {
+  res.json({ checking: ImageUpdateService.getInstance().isChecking() });
 });
 
 // =========================

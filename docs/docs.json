@@ -111,6 +111,7 @@
               "features/audit-log",
               "features/api-tokens",
               "features/private-registries",
+              "features/auto-update-policies",
               "features/scheduled-operations",
               "features/sso",
               "features/licensing"
