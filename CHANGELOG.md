@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.1](https://github.com/AnsoCode/Sencho/compare/v0.24.0...v0.24.1) (2026-04-01)
+
+
+### Fixed
+
+* **security:** prevent path traversal via env_file resolution ([#311](https://github.com/AnsoCode/Sencho/issues/311)) ([dc545dd](https://github.com/AnsoCode/Sencho/commit/dc545dd61337904e26e18e5e5bed190675432406))
+
 ## [0.24.0](https://github.com/AnsoCode/Sencho/compare/v0.23.0...v0.24.0) (2026-04-01)
 
 
