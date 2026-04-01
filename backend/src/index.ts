@@ -1095,6 +1095,10 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Requ
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      res.status(400).json({ error: 'Invalid stack name' });
+      return;
+    }
     const node = DatabaseService.getInstance().getNode(nodeId);
     if (!node) {
       res.status(404).json({ error: 'Node not found' });
@@ -2459,10 +2463,10 @@ app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
 app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
-    if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const { content } = req.body;
     console.log('PUT /api/stacks/:stackName', { stackName, contentType: typeof content, contentLength: content?.length });
     if (typeof content !== 'string') {
@@ -2606,10 +2610,10 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
-    if (stackName.includes('..') || stackName.includes('/') || stackName.includes('\\')) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const { content } = req.body;
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'Content must be a string' });
@@ -2661,6 +2665,9 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
 app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
   const stackName = req.params.name as string;
   if (!requirePermission(req, res, 'stack:delete', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     // Stage 1: Tell Docker to clean up ghost networks/containers
     try {
@@ -2681,6 +2688,9 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
 app.get('/api/stacks/:stackName/containers', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
     res.json(containers);
@@ -2756,6 +2766,9 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
@@ -2770,6 +2783,9 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
 app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
     res.json({ status: 'Command started' });
@@ -2781,6 +2797,9 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
@@ -2800,6 +2819,9 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
@@ -2819,6 +2841,9 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
@@ -2839,6 +2864,9 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
 app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
@@ -2855,6 +2883,9 @@ app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) 
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   if (!requirePro(req, res)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
   try {
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const backupInfo = await fsSvc.getBackupInfo(stackName);
@@ -2875,6 +2906,9 @@ app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) 
 app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Invalid stack name' });
+    }
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const info = await fsSvc.getBackupInfo(stackName);
     res.json(info);

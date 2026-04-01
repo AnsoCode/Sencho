@@ -85,9 +85,13 @@ components:
       name: stackName
       in: path
       required: true
-      description: Stack directory name (URL-encoded if it contains special characters).
+      description: >
+        Stack directory name. Must match `^[a-zA-Z0-9_-]+$` (alphanumeric characters,
+        hyphens, and underscores only). Returns `400 Invalid stack name` if the name
+        contains path separators, dots, spaces, or other special characters.
       schema:
         type: string
+        pattern: '^[a-zA-Z0-9_-]+$'
         example: my-stack
     nodeId:
       name: x-node-id
