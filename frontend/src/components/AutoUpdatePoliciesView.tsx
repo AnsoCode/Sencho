@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -384,31 +385,30 @@ function AutoUpdatePoliciesContent() {
 
             <div className="space-y-2">
               <Label>Node</Label>
-              <Select value={formNodeId} onValueChange={setFormNodeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select node..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {nodes.map(n => (
-                    <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={nodes.map(n => ({ value: String(n.id), label: n.name }))}
+                value={formNodeId}
+                onValueChange={setFormNodeId}
+                placeholder="Select node..."
+                searchPlaceholder="Search nodes..."
+                emptyText="No nodes found."
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Stack</Label>
-              <Select value={formTargetId} onValueChange={setFormTargetId} disabled={!formNodeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={formNodeId ? "Select stack..." : "Select a node first"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="*">All Stacks</SelectItem>
-                  {stacks.map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={[
+                  { value: '*', label: 'All Stacks' },
+                  ...stacks.map(s => ({ value: s, label: s })),
+                ]}
+                value={formTargetId}
+                onValueChange={setFormTargetId}
+                placeholder={formNodeId ? "Select stack..." : "Select a node first"}
+                searchPlaceholder="Search stacks..."
+                emptyText="No stacks found."
+                disabled={!formNodeId}
+              />
             </div>
 
             <div className="space-y-2">

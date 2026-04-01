@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -13,7 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
+import { Combobox } from '@/components/ui/combobox';
 import cronstrue from 'cronstrue';
 
 interface ScheduledTask {
@@ -118,9 +118,11 @@ export default function ScheduledOperationsView() {
     }
   }, []);
 
-  const fetchStacks = useCallback(async () => {
+  const fetchStacks = useCallback(async (nodeId?: string) => {
     try {
-      const res = await apiFetch('/stacks');
+      const res = nodeId
+        ? await fetchForNode('/stacks', parseInt(nodeId, 10))
+        : await apiFetch('/stacks');
       if (res.ok) {
         setStacks(await res.json());
       }
@@ -166,6 +168,17 @@ export default function ScheduledOperationsView() {
     fetchServices();
     return () => { cancelled = true; };
   }, [formAction, formTargetId]);
+
+  // Re-fetch stacks when node changes
+  useEffect(() => {
+    if (!dialogOpen) return;
+    if (formNodeId) {
+      fetchStacks(formNodeId);
+      setFormTargetId('');
+    } else {
+      setStacks([]);
+    }
+  }, [formNodeId, dialogOpen, fetchStacks]);
 
   const openCreate = () => {
     setEditingTask(null);
@@ -436,45 +449,34 @@ export default function ScheduledOperationsView() {
 
             <div className="space-y-2">
               <Label>Action</Label>
-              <Select value={formAction} onValueChange={(val) => { setFormAction(val); setFormTargetId(''); setFormNodeId(''); setFormTargetServices([]); setFormPruneLabelFilter(''); }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ACTION_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={ACTION_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                value={formAction}
+                onValueChange={(val) => { setFormAction(val); setFormTargetId(''); setFormNodeId(''); setFormTargetServices([]); setFormPruneLabelFilter(''); }}
+                placeholder="Select action..."
+              />
             </div>
 
             {targetType === 'stack' && (
               <>
                 <div className="space-y-2">
-                  <Label>Stack</Label>
-                  <Select value={formTargetId} onValueChange={setFormTargetId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select stack..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {stacks.map(s => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Node</Label>
+                  <Combobox
+                    options={nodes.map(n => ({ value: String(n.id), label: n.name }))}
+                    value={formNodeId}
+                    onValueChange={setFormNodeId}
+                    placeholder="Select node..."
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Node</Label>
-                  <Select value={formNodeId} onValueChange={setFormNodeId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select node..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nodes.map(n => (
-                        <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Stack</Label>
+                  <Combobox
+                    options={stacks.map(s => ({ value: s, label: s }))}
+                    value={formTargetId}
+                    onValueChange={setFormTargetId}
+                    placeholder={formNodeId ? "Select stack..." : "Select a node first"}
+                    disabled={!formNodeId}
+                  />
                 </div>
                 {formAction === 'restart' && formTargetId && availableServices.length > 0 && (
                   <div className="space-y-2">
