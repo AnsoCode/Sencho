@@ -31,7 +31,7 @@ import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CronExpressionParser } from 'cron-parser';
-import { isValidStackName, isValidRemoteUrl } from './utils/validation';
+import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
 import YAML from 'yaml';
 import fs, { promises as fsPromises } from 'fs';
 
@@ -2512,6 +2512,7 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
 
       const addEnvPath = (rawPath: string) => {
         const resolved = path.resolve(stackDir, rawPath);
+        if (!isPathWithinBase(resolved, stackDir)) return;
         envFiles.add(resolved);
       };
 
