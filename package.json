@@ -21,6 +21,6 @@
   },
   "homepage": "https://github.com/AnsoCode/Sencho#readme",
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.59.1"
   }
 }
