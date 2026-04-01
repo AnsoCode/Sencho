@@ -14,7 +14,6 @@ import { RefreshCw, Plus, Pencil, Trash2, History, Play, ChevronLeft, ChevronRig
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { ProGate } from '@/components/ProGate';
-import { TierBadge } from '@/components/TierBadge';
 import cronstrue from 'cronstrue';
 
 interface ScheduledTask {
@@ -269,7 +268,6 @@ function AutoUpdatePoliciesContent() {
             <div className="flex items-center gap-2">
               <RefreshCw className="w-5 h-5" strokeWidth={1.5} />
               <CardTitle>Auto-Update Policies</CardTitle>
-              <TierBadge tier="pro" variant="personal" status="active" />
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={fetchPolicies} disabled={loading}>
