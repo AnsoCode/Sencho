@@ -73,6 +73,19 @@ The `code` field is present for specific error types:
 | `ADMIRAL_REQUIRED` | Endpoint requires an Admiral license |
 | `SCOPE_DENIED` | API token scope does not allow this operation |
 
+## Input validation
+
+All endpoints that accept a `stackName` path parameter validate it against the pattern `^[a-zA-Z0-9_-]+$`. Stack names may only contain **alphanumeric characters, hyphens, and underscores**. Requests with invalid stack names are rejected immediately:
+
+```json
+// 400 Bad Request
+{
+  "error": "Invalid stack name"
+}
+```
+
+This applies to all stack endpoints: read, write, deploy, down, restart, stop, start, update, rollback, backup, delete, and container listing.
+
 ## Rate limiting
 
 Authentication endpoints (`/api/auth/*`) are rate-limited to **5 requests per 15 minutes** in production. API token-authenticated requests are not rate-limited.

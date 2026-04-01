@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **security:** enforce `isValidStackName()` on all routes that accept a `stackName` parameter — 11 routes had no validation and 2 used a weaker manual check; all now use the canonical `^[a-zA-Z0-9_-]+$` regex guard, returning `400 Invalid stack name` on rejection
+
 ## [0.24.1](https://github.com/AnsoCode/Sencho/compare/v0.24.0...v0.24.1) (2026-04-01)
 
 
