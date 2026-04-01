@@ -22,7 +22,7 @@ interface ScheduledTask {
   target_type: 'stack' | 'fleet' | 'system';
   target_id: string | null;
   node_id: number | null;
-  action: 'restart' | 'snapshot' | 'prune' | 'update';
+  action: 'restart' | 'snapshot' | 'prune';
   cron_expression: string;
   enabled: number;
   created_by: string;
@@ -55,7 +55,6 @@ interface NodeOption {
 
 const ACTION_OPTIONS = [
   { value: 'restart', label: 'Restart Stack', targetType: 'stack' as const },
-  { value: 'update', label: 'Auto-Update', targetType: 'stack' as const },
   { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' as const },
   { value: 'prune', label: 'System Prune', targetType: 'system' as const },
 ];
@@ -109,7 +108,8 @@ export default function ScheduledOperationsView() {
     try {
       const res = await apiFetch('/scheduled-tasks', { localOnly: true });
       if (res.ok) {
-        setTasks(await res.json());
+        const all = await res.json();
+        setTasks(all.filter((t: ScheduledTask) => t.action !== 'update'));
       }
     } catch {
       // Non-critical
