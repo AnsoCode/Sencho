@@ -108,8 +108,7 @@ export default function ScheduledOperationsView() {
     try {
       const res = await apiFetch('/scheduled-tasks', { localOnly: true });
       if (res.ok) {
-        const all = await res.json();
-        setTasks(all.filter((t: ScheduledTask) => t.action !== 'update'));
+        setTasks(await res.json());
       }
     } catch {
       // Non-critical
