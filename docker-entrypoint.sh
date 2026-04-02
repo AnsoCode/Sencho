@@ -24,6 +24,8 @@ if [ "$(id -u)" = '0' ]; then
     mkdir -p "$DATA_DIR"
     find "$DATA_DIR" \( \! -user sencho -o \! -group sencho \) \
         -exec chown sencho:sencho '{}' +
+    # Restrict encryption key to owner-only access (rw-------)
+    [ -f "$DATA_DIR/encryption.key" ] && chmod 600 "$DATA_DIR/encryption.key"
     echo "[entrypoint] Data directory ownership ensured: $DATA_DIR"
 
     # 2. Fix Docker socket group access.

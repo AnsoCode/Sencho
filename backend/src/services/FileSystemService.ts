@@ -85,10 +85,8 @@ export class FileSystemService {
 
   async saveStackContent(stackName: string, content: string): Promise<void> {
     const filePath = path.join(this.baseDir, stackName, 'compose.yaml');
-    console.log('Saving to path:', filePath);
     try {
       await fsPromises.writeFile(filePath, content, 'utf-8');
-      console.log('File written successfully');
     } catch (error) {
       console.error('Error writing file:', error);
       throw new Error(`Failed to save stack: ${stackName}`);
@@ -128,10 +126,8 @@ export class FileSystemService {
 
   async saveEnvContent(stackName: string, content: string): Promise<void> {
     const envPath = path.join(this.baseDir, stackName, '.env');
-    console.log('Saving env to path:', envPath);
     try {
       await fsPromises.writeFile(envPath, content, 'utf-8');
-      console.log('Env file written successfully');
     } catch (error) {
       console.error('Error writing env file:', error);
       throw new Error(`Failed to save env file for stack: ${stackName}`);
@@ -163,7 +159,6 @@ export class FileSystemService {
 `;
     try {
       await fsPromises.writeFile(path.join(stackDir, 'compose.yaml'), boilerplate, 'utf-8');
-      console.log('Stack created successfully:', stackName);
     } catch (error) {
       console.error('Error creating stack:', error);
       throw new Error(`Failed to create stack: ${stackName}`);
@@ -174,7 +169,6 @@ export class FileSystemService {
     const stackDir = path.join(this.baseDir, stackName);
     try {
       await fsPromises.rm(stackDir, { recursive: true, force: true });
-      console.log('Stack deleted successfully:', stackName);
     } catch (error: unknown) {
       const fsError = error as NodeJS.ErrnoException;
       if (fsError.code === 'ENOENT') return;
@@ -188,9 +182,8 @@ export class FileSystemService {
         try {
           await fsPromises.rmdir(stackDir);
         } catch {
-          console.warn(`[FileSystemService] Could not remove empty directory ${stackDir} — may need manual cleanup`);
+          console.warn('[FileSystemService] Could not remove empty directory after Docker fallback — may need manual cleanup');
         }
-        console.log('Stack deleted successfully (via Docker fallback):', stackName);
       } else {
         console.error('Error deleting stack directory:', fsError.message);
         throw new Error(`Failed to delete stack directory: ${fsError.message}`);
@@ -251,7 +244,6 @@ export class FileSystemService {
       try {
         await fsPromises.access(this.baseDir);
       } catch {
-        console.log('Creating compose directory:', this.baseDir);
         await fsPromises.mkdir(this.baseDir, { recursive: true });
         return;
       }
@@ -267,13 +259,11 @@ export class FileSystemService {
 
         try {
           await fsPromises.access(stackDir);
-          console.log(`Skipping migration for "${stackName}": directory already exists`);
           continue;
         } catch {
           // Directory doesn't exist, proceed
         }
 
-        console.log(`Migrating stack: ${stackName}`);
         await fsPromises.mkdir(stackDir, { recursive: true });
 
         const oldComposePath = path.join(this.baseDir, item.name);
@@ -285,12 +275,10 @@ export class FileSystemService {
         try {
           await fsPromises.access(oldEnvPath);
           await fsPromises.rename(oldEnvPath, newEnvPath);
-          console.log(`Migrated env file for: ${stackName}`);
         } catch {
           // No env file to migrate
         }
 
-        console.log(`Successfully migrated stack: ${stackName}`);
       }
     } catch (error) {
       console.error('Migration error:', error);

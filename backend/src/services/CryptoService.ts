@@ -17,6 +17,16 @@ export class CryptoService {
 
         if (fs.existsSync(keyPath)) {
             this.key = Buffer.from(fs.readFileSync(keyPath, 'utf-8').trim(), 'hex');
+            // Self-heal permissive file permissions (no-op on Windows)
+            try {
+                const mode = fs.statSync(keyPath).mode & 0o777;
+                if (mode !== 0o600) {
+                    console.warn(`[CryptoService] Fixing permissive key file permissions (was 0o${mode.toString(8)}, set to 0o600)`);
+                    fs.chmodSync(keyPath, 0o600);
+                }
+            } catch {
+                // chmod not supported on this platform (e.g. Windows) — skip
+            }
         } else {
             this.key = crypto.randomBytes(KEY_LENGTH);
             if (!fs.existsSync(dataDir)) {

@@ -175,8 +175,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             toast.error('New passwords do not match');
             return;
         }
-        if (authData.newPassword.length < 6) {
-            toast.error('New password must be at least 6 characters');
+        if (authData.newPassword.length < 8) {
+            toast.error('New password must be at least 8 characters');
             return;
         }
         setIsSavingPassword(true);
