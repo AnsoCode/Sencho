@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0](https://github.com/AnsoCode/Sencho/compare/v0.25.3...v0.26.0) (2026-04-02)
+
+
+### Added
+
+* **stack-management:** add scan stacks folder button ([#332](https://github.com/AnsoCode/Sencho/issues/332)) ([6f74153](https://github.com/AnsoCode/Sencho/commit/6f7415351f648120ab4039f1fcc9a1226cfa52f4))
+
 ## [0.25.3](https://github.com/AnsoCode/Sencho/compare/v0.25.2...v0.25.3) (2026-04-02)
 
 
