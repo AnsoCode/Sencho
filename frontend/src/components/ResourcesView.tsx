@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -1062,19 +1062,14 @@ export default function ResourcesView() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="net-driver" className="text-xs font-medium">Driver</Label>
-                            <Select
+                            <Combobox
+                                options={NETWORK_DRIVERS.map(d => ({ value: d, label: d }))}
                                 value={createNetworkForm.driver}
-                                onValueChange={v => setCreateNetworkForm(f => ({ ...f, driver: v as NetworkDriver }))}
-                            >
-                                <SelectTrigger id="net-driver" className="text-sm">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {NETWORK_DRIVERS.map(d => (
-                                        <SelectItem key={d} value={d}>{d}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                onValueChange={v => setCreateNetworkForm(f => ({ ...f, driver: (v || 'bridge') as NetworkDriver }))}
+                                placeholder="Select driver..."
+                                searchPlaceholder="Search drivers..."
+                                emptyText="No matching driver."
+                            />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">

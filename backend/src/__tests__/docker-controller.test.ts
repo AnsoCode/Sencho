@@ -449,4 +449,109 @@ describe('DockerController - createNetwork', () => {
     const dc = DockerController.getInstance(1);
     await expect(dc.createNetwork({ Name: 'test' })).rejects.toThrow('already exists');
   });
+
+  it('rejects names starting with a dot', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: '.hidden' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('rejects names starting with a hyphen', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: '-leading-dash' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('rejects names with spaces', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: 'has spaces' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('rejects names with slashes (path traversal)', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: 'foo/bar' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('passes IPAM config through to Docker', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'ipam-net' });
+
+    const dc = DockerController.getInstance(1);
+    const options = {
+      Name: 'ipam-test',
+      Driver: 'bridge' as const,
+      IPAM: { Config: [{ Subnet: '10.0.0.0/24', Gateway: '10.0.0.1' }] },
+      Internal: true,
+      Attachable: true,
+    };
+    await dc.createNetwork(options);
+
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith(options);
+  });
+
+  it('passes labels through to Docker', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'labeled-net' });
+
+    const dc = DockerController.getInstance(1);
+    const options = {
+      Name: 'labeled',
+      Labels: { env: 'test', team: 'infra' },
+    };
+    await dc.createNetwork(options);
+
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith(options);
+  });
+
+  it('accepts single-character name', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'single' });
+
+    const dc = DockerController.getInstance(1);
+    await dc.createNetwork({ Name: 'a' });
+
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith({ Name: 'a' });
+  });
+});
+
+// ── inspectNetwork edge cases ─────────────────────────────────────────
+
+describe('DockerController - inspectNetwork edge cases', () => {
+  it('returns network with empty containers map', async () => {
+    const inspectData = {
+      Id: 'empty-net',
+      Name: 'isolated',
+      Driver: 'bridge',
+      Containers: {},
+    };
+    mockDocker.getNetwork.mockReturnValue({ inspect: vi.fn().mockResolvedValue(inspectData) });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.inspectNetwork('empty-net');
+
+    expect(result.Containers).toEqual({});
+  });
+
+  it('returns network with multiple containers', async () => {
+    const inspectData = {
+      Id: 'multi-net',
+      Name: 'busy-network',
+      Driver: 'bridge',
+      Containers: {
+        'c1': { Name: 'web', IPv4Address: '172.20.0.2/16' },
+        'c2': { Name: 'db', IPv4Address: '172.20.0.3/16' },
+        'c3': { Name: 'cache', IPv4Address: '172.20.0.4/16' },
+      },
+    };
+    mockDocker.getNetwork.mockReturnValue({ inspect: vi.fn().mockResolvedValue(inspectData) });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.inspectNetwork('multi-net');
+
+    expect(Object.keys(result.Containers ?? {})).toHaveLength(3);
+  });
+
+  it('propagates Docker daemon connection errors', async () => {
+    mockDocker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockRejectedValue(new Error('Cannot connect to Docker daemon')),
+    });
+
+    const dc = DockerController.getInstance(1);
+    await expect(dc.inspectNetwork('any-id')).rejects.toThrow('Cannot connect to Docker daemon');
+  });
 });
