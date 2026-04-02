@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-description: System design, request flow, database schema, and deployment model.
+description: System design, request flow, and deployment model.
 ---
 
 ## System overview
@@ -12,7 +12,7 @@ Sencho is a self-contained application packaged as a single Docker container:
 - **Database:** SQLite via `better-sqlite3` — no external database required
 - **Container management:** Docker Engine API via the mounted Docker socket, plus Docker Compose CLI for stack operations
 
-There are no external dependencies. No Redis, no PostgreSQL, no message queues. All state lives in a single SQLite file (`sencho.db`) inside the data directory.
+There are no external dependencies. No Redis, no PostgreSQL, no message queues. All state lives in a single SQLite file inside the data directory.
 
 ---
 
@@ -21,10 +21,10 @@ There are no external dependencies. No Redis, no PostgreSQL, no message queues. 
 ### Browser sessions
 
 1. The browser loads the React SPA from the Express static file server
-2. The frontend makes API calls via an `apiFetch` wrapper that injects the active node ID as an `x-node-id` header
-3. Express middleware evaluates the node ID:
-   - **Local node:** The request passes through authentication middleware and hits the local route handler, which communicates with Docker via the mounted socket
-   - **Remote node:** The request is transparently proxied to the remote Sencho instance using `http-proxy-middleware`. The backend strips the `x-node-id` header and injects `Authorization: Bearer <token>` for the remote node
+2. The frontend makes API calls, including which node should handle each request
+3. The backend evaluates which node is targeted:
+   - **Local node:** The request passes through authentication and hits the local route handler, which communicates with Docker via the mounted socket
+   - **Remote node:** The request is securely proxied to the target Sencho instance with appropriate authentication
 4. The response flows back through the same path to the browser
 
 ### API token access
@@ -48,20 +48,7 @@ SSO is supported via LDAP, Google OIDC, GitHub OAuth, and Okta OIDC. SSO users a
 
 ## Database
 
-Sencho stores all state in a single SQLite database using the default journal mode (DELETE/ROLLBACK). The schema includes approximately 20 tables:
-
-| Table group | Tables | Purpose |
-|-------------|--------|---------|
-| **Identity** | `users`, `role_assignments`, `sso_config` | User accounts, RBAC, SSO provider configs |
-| **Nodes** | `nodes` | Local and remote node connection details |
-| **Configuration** | `global_settings` | Key-value application settings |
-| **Automation** | `webhooks`, `webhook_executions`, `scheduled_tasks`, `scheduled_task_runs` | Webhook definitions/history, cron tasks |
-| **Monitoring** | `stack_alerts`, `notification_history`, `container_metrics`, `agents` | Alert rules, notifications, time-series metrics, notification channels |
-| **Fleet** | `fleet_snapshots`, `fleet_snapshot_files` | Multi-node backup snapshots |
-| **Security** | `api_tokens`, `audit_log` | API token hashes, action audit trail |
-| **Updates** | `stack_update_status` | Image update availability tracking |
-| **Registries** | Stored via `RegistryService` | Private container registry credentials (encrypted at rest) |
-| **State** | `system_state` | Internal application state |
+Sencho stores all state in a single SQLite database — no external database required. The schema covers user identity, node configuration, automation rules, monitoring data, and security audit trails. Sensitive values (such as registry credentials and node tokens) are encrypted at rest.
 
 All schema migrations run automatically on startup. See [Upgrading Sencho](/operations/upgrade#automatic-migrations) for details.
 
@@ -78,7 +65,7 @@ This means:
 - No SSH, SFTP, or remote Docker TCP socket connections
 - Each node is fully autonomous and can operate independently
 - The primary instance proxies both HTTP requests and WebSocket connections
-- Node routing is controlled via the `x-node-id` request header (HTTP) or `?nodeId=` query parameter (WebSocket)
+- Node routing is handled automatically by the frontend. API users can target a specific node using a request header or query parameter (see [API Overview](/api-reference/overview))
 
 ---
 
@@ -89,7 +76,7 @@ This means:
 | `/api/stacks/{stackName}/logs` | Live container log streaming | Cookie or query param token |
 | `/ws` | Host console terminal (PTY) | Cookie-based, admin only |
 
-WebSocket connections bypass Express middleware. Authentication is handled manually by parsing cookies and verifying JWTs inside the `upgrade` event handler.
+WebSocket connections are authenticated during the upgrade handshake using the same JWT credentials as HTTP requests.
 
 ---
 

@@ -3,102 +3,28 @@ title: Security Advisories
 description: Tracked CVEs, remediation status, and dependency security notes for Sencho's Docker image.
 ---
 
-Sencho's Docker image bundles the Docker CLI and Docker Compose plugin as statically linked binaries. Because these tools are compiled Go programs, vulnerabilities in Go's standard library or their Go dependencies surface as CVEs against the Sencho image even though Sencho itself contains no Go source code.
-
-This page tracks known CVEs, their resolution status, and the minimum safe versions.
+This page documents security-relevant changes across Sencho releases.
 
 ## April 2026 — Application Security Hardening
 
-A follow-up audit identified three application-level findings. All have been remediated in v0.25.2+.
+Version 0.25.2 includes application security hardening improvements:
 
-### 1. Encryption key file permissions
-
-**Finding:** The encryption key file (`encryption.key` in the data directory) was created with correct permissions (`0600`) on first run, but permissions were not verified on subsequent loads. If the file was copied, restored from backup, or had its permissions changed externally, it could remain world-readable.
-
-**Remediation:**
-- The CryptoService now verifies file permissions on every startup and automatically corrects them to `0600` (owner read/write only) if they are more permissive. A warning is logged when this occurs.
-- The Docker entrypoint now explicitly sets `chmod 600` on the encryption key before dropping privileges.
+- **Stricter file permissions** on sensitive files in the data directory, with automatic correction on startup
+- **Stronger password requirements** aligned with [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) recommendations
+- **Reduced information disclosure** in application logs to prevent leaking sensitive details to logging aggregators
 
 <Note>
-  This is a defense-in-depth measure. In Docker deployments, the non-root `sencho` user and volume isolation already limit exposure. The fix primarily benefits bare-metal or non-containerized deployments.
+  Users on versions prior to 0.25.2 should upgrade promptly. These improvements are applied automatically — no manual action is required.
 </Note>
-
-### 2. Minimum password length increased to 8 characters
-
-**Finding:** The minimum password length was 6 characters, which is below the [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) recommendation of at least 8 characters for memorized secrets.
-
-**Remediation:** The minimum password length has been increased from 6 to 8 characters across all validation points — initial setup, password changes, and user creation/updates.
-
-<Note>
-  Existing users with passwords shorter than 8 characters can still log in. The new minimum only applies when setting or changing a password. Administrators may want to notify users to update short passwords.
-</Note>
-
-### 3. Sensitive data removed from console output
-
-**Finding:** Several `console.log` statements in the backend exposed full filesystem paths (including paths to `.env` files), stack names, and admin usernames in standard output. In containerized deployments, stdout is often collected by logging aggregators, making this an information disclosure risk.
-
-**Remediation:** All path-exposing and data-leaking log statements have been removed from `FileSystemService`, `DatabaseService`, and the stack management routes. Error-level logging (`console.error`) for failure diagnostics has been retained, but without sensitive path or identity details.
 
 ---
 
-## March 2026 Audit
+## Dependency Security
 
-The following vulnerabilities were identified against the Sencho Docker image built with Docker CLI v29.3.1 and Docker Compose v2.40.3.
+Sencho's Docker image bundles Docker CLI and Docker Compose as statically linked Go binaries. Vulnerabilities in Go's standard library or their Go dependencies surface as CVEs against the Sencho image even though Sencho itself contains no Go source code.
 
-### Remediation Summary
-
-Docker Compose was upgraded from **v2.40.3** to **v5.1.1**, which ships Go 1.25.8 and `golang.org/x/crypto` v0.46.0. Docker CLI remains at **v29.3.1**, which was already compiled with Go 1.25.8, BuildKit v0.28.1, and `golang.org/x/crypto` v0.48.0.
-
-### CVE Table
-
-| CVE | Ecosystem | Package | Previous Version | Required Version | Resolved Version | Status |
-|-----|-----------|---------|-----------------|-----------------|-----------------|--------|
-| CVE-2025-68121 | Go | `stdlib` | 1.24.9 | 1.24.13 | 1.25.8 | Fixed |
-| CVE-2025-61726 | Go | `stdlib` | 1.24.9 | 1.24.12 | 1.25.8 | Fixed |
-| CVE-2025-61729 | Go | `stdlib` | 1.24.9 | 1.24.11 | 1.25.8 | Fixed |
-| CVE-2026-25679 | Go | `stdlib` | 1.24.9 | 1.25.8 | 1.25.8 | Fixed |
-| CVE-2025-47913 | Go | `golang.org/x/crypto` | 0.38.0 | 0.43.0 | 0.46.0 (Compose) / 0.48.0 (CLI) | Fixed |
-| CVE-2026-33747 | Go | `github.com/moby/buildkit` | 0.25.1 | 0.28.1 | 0.28.1 | Fixed |
-| CVE-2026-33748 | Go | `github.com/moby/buildkit` | 0.25.1 | 0.28.1 | 0.28.1 | Fixed |
-| CVE-2026-33186 | Go | `google.golang.org/grpc` | 1.74.2 | 1.79.3 | 1.78.0 | Unresolved |
-| CVE-2026-33671 | npm | `picomatch` | 4.0.3 | 4.0.4 | 4.0.4 | Fixed |
-
-### Details
-
-#### Go stdlib (CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679)
-
-These four CVEs affect the Go standard library used to compile Docker CLI and Docker Compose.
-The previous Compose version (v2.40.3) was built with Go 1.24.9.
-Upgrading Compose to v5.1.1 (Go 1.25.8) resolves all four.
-Docker CLI v29.3.1 was already compiled with Go 1.25.8.
-
-#### golang.org/x/crypto (CVE-2025-47913)
-
-The `golang.org/x/crypto` package had a vulnerability fixed in v0.43.0.
-Docker CLI v29.3.1 ships v0.48.0 and Compose v5.1.1 ships v0.46.0 — both above the minimum.
-
-#### BuildKit (CVE-2026-33747, CVE-2026-33748)
-
-Two BuildKit vulnerabilities related to Git URL fragment validation and file writes outside the state directory.
-Both were fixed in BuildKit v0.28.1, which is included in Docker CLI v29.3.1.
-
-#### gRPC (CVE-2026-33186)
+Sencho tracks and remediates these CVEs with each release. Dependency versions are pinned in the Dockerfile for reproducible builds and targeted remediation independent of Alpine's release cycle.
 
 <Note>
-  This CVE **cannot be resolved** at this time. Both Docker CLI v29.3.1 and Compose v5.1.1 ship `google.golang.org/grpc` v1.78.0, while the fix requires v1.79.3. No upstream Docker release includes the patched version yet. This will be resolved when a new Docker CLI or Compose release upgrades past grpc v1.78.0.
+  If you need specific CVE details for compliance or audit purposes, refer to the [GitHub release notes](https://github.com/SaelixCode/sencho/releases) where each release documents dependency changes.
 </Note>
-
-#### picomatch (CVE-2026-33671)
-
-The npm `picomatch` package v4.0.3 had a vulnerability fixed in v4.0.4.
-All Sencho lock files (frontend, backend, website) already resolve picomatch 4.x to v4.0.4.
-The backend also has picomatch v2.3.2 as a transitive dependency of `micromatch` (used by `http-proxy-middleware` and `chokidar`) — this is a separate major version line and is **not affected** by CVE-2026-33671.
-
-## Pinned Binary Versions
-
-Sencho's Dockerfile pins explicit versions for Docker CLI and Compose rather than relying on Alpine's package manager. This ensures reproducible builds and allows targeted CVE remediation independent of Alpine's release cycle.
-
-| Binary | Current Version | Go Toolchain | Key Dependencies |
-|--------|----------------|-------------|-----------------|
-| Docker CLI | v29.3.1 | Go 1.25.8 | BuildKit 0.28.1, grpc 1.78.0, x/crypto 0.48.0 |
-| Docker Compose | v5.1.1 | Go 1.25.8 | grpc 1.78.0, x/crypto 0.46.0 |
