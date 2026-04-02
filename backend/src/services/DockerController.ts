@@ -37,6 +37,15 @@ export interface ClassifiedNetwork {
   managedStatus: 'managed' | 'unmanaged' | 'system';
 }
 
+export interface CreateNetworkOptions {
+  Name: string;
+  Driver?: string;
+  IPAM?: { Config: Array<{ Subnet?: string; Gateway?: string }> };
+  Labels?: Record<string, string>;
+  Internal?: boolean;
+  Attachable?: boolean;
+}
+
 class DockerController {
   private docker: Docker;
   private nodeId: number;
@@ -329,6 +338,18 @@ class DockerController {
   public async removeNetwork(id: string) {
     const network = this.docker.getNetwork(id);
     await network.remove({ force: true });
+  }
+
+  public async inspectNetwork(id: string) {
+    const network = this.docker.getNetwork(id);
+    return await network.inspect();
+  }
+
+  public async createNetwork(options: CreateNetworkOptions) {
+    if (!options.Name || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(options.Name)) {
+      throw new Error('Invalid network name. Use alphanumeric characters, hyphens, underscores, and dots.');
+    }
+    return await this.docker.createNetwork(options);
   }
 
   public async getRunningContainers() {

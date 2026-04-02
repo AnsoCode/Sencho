@@ -21,6 +21,7 @@ const { mockDocker } = vi.hoisted(() => {
     pruneImages: vi.fn().mockResolvedValue({ SpaceReclaimed: 0 }),
     pruneNetworks: vi.fn().mockResolvedValue({}),
     pruneVolumes: vi.fn().mockResolvedValue({ SpaceReclaimed: 0 }),
+    createNetwork: vi.fn(),
   };
   return { mockDocker };
 });
@@ -374,5 +375,78 @@ describe('DockerController - error paths', () => {
 
     const dc = DockerController.getInstance(1);
     await expect(dc.getDiskUsage()).rejects.toThrow('daemon not running');
+  });
+});
+
+// ── inspectNetwork ────────────────────────────────────────────────────
+
+describe('DockerController - inspectNetwork', () => {
+  it('returns full network details from Docker API', async () => {
+    const inspectData = {
+      Id: 'abc123',
+      Name: 'my-network',
+      Driver: 'bridge',
+      Scope: 'local',
+      IPAM: { Config: [{ Subnet: '172.20.0.0/16', Gateway: '172.20.0.1' }] },
+      Containers: {
+        'ctr1': { Name: 'web', IPv4Address: '172.20.0.2/16', MacAddress: '02:42:ac:14:00:02' },
+      },
+    };
+    mockDocker.getNetwork.mockReturnValue({ inspect: vi.fn().mockResolvedValue(inspectData) });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.inspectNetwork('abc123');
+
+    expect(result).toEqual(inspectData);
+    expect(mockDocker.getNetwork).toHaveBeenCalledWith('abc123');
+  });
+
+  it('propagates errors when network not found', async () => {
+    mockDocker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockRejectedValue(new Error('network not found')),
+    });
+
+    const dc = DockerController.getInstance(1);
+    await expect(dc.inspectNetwork('nonexistent')).rejects.toThrow('network not found');
+  });
+});
+
+// ── createNetwork ─────────────────────────────────────────────────────
+
+describe('DockerController - createNetwork', () => {
+  it('creates a network with valid options', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'new-net-123' });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.createNetwork({ Name: 'test-network', Driver: 'bridge' });
+
+    expect(result).toEqual({ id: 'new-net-123' });
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith({ Name: 'test-network', Driver: 'bridge' });
+  });
+
+  it('rejects empty network name', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: '' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('rejects network name with invalid characters', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: '../escape' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('accepts names with hyphens, underscores, and dots', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'ok-123' });
+
+    const dc = DockerController.getInstance(1);
+    await dc.createNetwork({ Name: 'my-net_v2.0' });
+
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith({ Name: 'my-net_v2.0' });
+  });
+
+  it('propagates Docker daemon errors', async () => {
+    mockDocker.createNetwork.mockRejectedValue(new Error('network with name test already exists'));
+
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: 'test' })).rejects.toThrow('already exists');
   });
 });
