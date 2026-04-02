@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **api:** global rate limiter on all `/api/` routes — 100 requests/min per IP in production (configurable via `API_RATE_LIMIT` env var). Auth endpoints retain their existing stricter limits (5 req/15min) which stack independently. Returns `429 Too Many Requests` when exceeded.
+
 ### Fixed
 
 * **security:** enforce `isValidStackName()` on all routes that accept a `stackName` parameter — 11 routes had no validation and 2 used a weaker manual check; all now use the canonical `^[a-zA-Z0-9_-]+$` regex guard, returning `400 Invalid stack name` on rejection

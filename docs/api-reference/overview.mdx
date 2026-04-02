@@ -88,7 +88,19 @@ This applies to all stack endpoints: read, write, deploy, down, restart, stop, s
 
 ## Rate limiting
 
-Authentication endpoints (`/api/auth/*`) are rate-limited to **5 requests per 15 minutes** in production. API token-authenticated requests are not rate-limited.
+All `/api/` endpoints are subject to a global rate limit of **100 requests per minute** per IP address. When exceeded, the server responds with `429 Too Many Requests`:
+
+```json
+{
+  "error": "Too many requests. Please try again shortly."
+}
+```
+
+Authentication endpoints (`/api/auth/*`) have an additional, stricter limit of **5 requests per 15 minutes** to prevent brute-force attacks. Both limits apply independently — a login request counts against both the global limit and the auth limit.
+
+The global rate limit is configurable via the `API_RATE_LIMIT` environment variable (requests per minute, default `100`).
+
+Standard rate limit headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) are included in all API responses.
 
 ## License tier requirements
 

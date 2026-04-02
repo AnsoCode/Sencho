@@ -133,6 +133,21 @@ app.use(cors({
   credentials: true,
 }));
 
+// Global API rate limiter — caps total requests per IP across all /api/ routes.
+// Auth-specific limiters (authRateLimiter, ssoRateLimiter) apply additional,
+// stricter limits on their respective routes and stack independently.
+const globalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.API_RATE_LIMIT || '100', 10)
+    : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again shortly.' },
+});
+
+app.use('/api/', globalApiLimiter);
+
 // Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
 // consumed here: express.json() drains the IncomingMessage stream into req.body
 // and http-proxy then pipes an already-ended stream to the remote server.
