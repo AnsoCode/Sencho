@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.2](https://github.com/AnsoCode/Sencho/compare/v0.25.1...v0.25.2) (2026-04-02)
+
+
+### Fixed
+
+* **security:** harden encryption key permissions, increase password minimum, remove sensitive logs ([#323](https://github.com/AnsoCode/Sencho/issues/323)) ([f317a83](https://github.com/AnsoCode/Sencho/commit/f317a83814fda3a98eb009c1a05a955bfadd6f0d))
+
 ## [0.25.1](https://github.com/AnsoCode/Sencho/compare/v0.25.0...v0.25.1) (2026-04-02)
 
 
