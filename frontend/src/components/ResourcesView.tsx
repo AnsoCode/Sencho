@@ -7,14 +7,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2 } from 'lucide-react';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
+import { useLicense } from '@/context/LicenseContext';
+import { ProGate } from './ProGate';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { lazy, Suspense } from 'react';
+
+const NetworkTopologyView = lazy(() => import('./NetworkTopologyView'));
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
 
@@ -45,7 +56,10 @@ interface DockerVolume {
     managedStatus: 'managed' | 'unmanaged';
 }
 
-interface DockerNetwork {
+const NETWORK_DRIVERS = ['bridge', 'overlay', 'macvlan', 'host', 'none'] as const;
+type NetworkDriver = (typeof NETWORK_DRIVERS)[number];
+
+export interface DockerNetwork {
     Id: string;
     Name: string;
     Driver: string;
@@ -60,6 +74,29 @@ interface UnmanagedContainer {
     State: string;
     Status: string;
     Image: string;
+}
+
+interface NetworkInspectData {
+    Id: string;
+    Name: string;
+    Created: string;
+    Scope: string;
+    Driver: string;
+    Internal: boolean;
+    Attachable: boolean;
+    Labels: Record<string, string>;
+    IPAM: {
+        Driver: string;
+        Config: Array<{ Subnet?: string; Gateway?: string; IPRange?: string }>;
+    };
+    Containers: Record<string, {
+        Name: string;
+        EndpointID: string;
+        MacAddress: string;
+        IPv4Address: string;
+        IPv6Address: string;
+    }>;
+    Options: Record<string, string>;
 }
 
 type ResourceFilter = 'all' | 'managed' | 'unmanaged';
@@ -309,6 +346,8 @@ function TableSkeleton({ cols, rows = 5 }: { cols: number; rows?: number }) {
 export default function ResourcesView() {
     const { isAdmin } = useAuth();
     const { activeNode } = useNodes();
+    const { isPro } = useLicense();
+    const [networkViewMode, setNetworkViewMode] = useState<'list' | 'topology'>('list');
     const [usage, setUsage] = useState<UsageData | null>(null);
     const [images, setImages] = useState<DockerImage[]>([]);
     const [volumes, setVolumes] = useState<DockerVolume[]>([]);
@@ -326,6 +365,13 @@ export default function ResourcesView() {
     // Modal states
     const [confirmPrune, setConfirmPrune] = useState<{ target: PruneTarget; scope: PruneScope } | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<{ type: 'images' | 'volumes' | 'networks'; id: string; name?: string } | null>(null);
+
+    // Network create/inspect state
+    const [showCreateNetwork, setShowCreateNetwork] = useState(false);
+    const [createNetworkForm, setCreateNetworkForm] = useState<{ name: string; driver: NetworkDriver; subnet: string; gateway: string; internal: boolean; attachable: boolean }>({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
+    const [isCreatingNetwork, setIsCreatingNetwork] = useState(false);
+    const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
+    const [isInspectLoading, setIsInspectLoading] = useState(false);
 
     // Unmanaged container state
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
@@ -427,6 +473,51 @@ export default function ResourcesView() {
         }
     };
 
+    const handleCreateNetwork = async () => {
+        setIsCreatingNetwork(true);
+        try {
+            const res = await apiFetch('/system/networks', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: createNetworkForm.name,
+                    driver: createNetworkForm.driver,
+                    subnet: createNetworkForm.subnet || undefined,
+                    gateway: createNetworkForm.gateway || undefined,
+                    internal: createNetworkForm.internal,
+                    attachable: createNetworkForm.attachable,
+                }),
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data?.error || 'Failed to create network');
+            }
+            toast.success(`Network "${createNetworkForm.name}" created`);
+            setShowCreateNetwork(false);
+            setCreateNetworkForm({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
+            await fetchAllData();
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || err?.error || 'Something went wrong.'));
+        } finally {
+            setIsCreatingNetwork(false);
+        }
+    };
+
+    const handleInspectNetwork = async (id: string) => {
+        setIsInspectLoading(true);
+        try {
+            const res = await apiFetch(`/system/networks/${id}`);
+            if (!res.ok) throw new Error('Failed to inspect network');
+            const data = await res.json();
+            setInspectNetwork(data);
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || err?.error || 'Something went wrong.'));
+        } finally {
+            setIsInspectLoading(false);
+        }
+    };
+
     // Derived filtered lists
     const filteredImages = images.filter(img =>
         imageFilter === 'managed' ? img.managedStatus === 'managed' :
@@ -462,7 +553,7 @@ export default function ResourcesView() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                 {/* Disk Footprint */}
-                <Card className="col-span-1 border-border shadow-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                <Card className="col-span-1 border-border shadow-card-bevel animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Docker Disk Footprint
@@ -488,7 +579,7 @@ export default function ResourcesView() {
                 </Card>
 
                 {/* Quick Clean */}
-                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-sm flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
+                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-card-bevel flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Quick Clean
@@ -540,7 +631,7 @@ export default function ResourcesView() {
             {/* Resource Tabs */}
             <Tabs
                 defaultValue="images"
-                className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-sm overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
+                className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-card-bevel overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
             >
                 <div className="px-4 pt-3 pb-0 border-b border-glass-border bg-glass">
                     <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 gap-1 p-0">
@@ -611,8 +702,8 @@ export default function ResourcesView() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
+                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                 </Button>}
                                             </TableCell>
                                         </TableRow>
@@ -658,8 +749,8 @@ export default function ResourcesView() {
                                             <TableCell className="hidden md:table-cell text-xs text-muted-foreground truncate max-w-[300px]">{vol.Mountpoint}</TableCell>
                                             <TableCell><ManagedBadge status={vol.managedStatus} managedBy={vol.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
+                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                 </Button>}
                                             </TableCell>
                                         </TableRow>
@@ -671,15 +762,67 @@ export default function ResourcesView() {
 
                     {/* Networks */}
                     <TabsContent value="networks" className="m-0 border-0 p-0 animate-in fade-in-0 duration-200">
-                        <FilterToggle
-                            value={networkFilter}
-                            onChange={setNetworkFilter}
-                            counts={{
-                                all: networks.length,
-                                managed: networks.filter(n => n.managedStatus === 'managed').length,
-                                unmanaged: networks.filter(n => n.managedStatus !== 'managed').length,
-                            }}
-                        />
+                        <div className="flex items-center justify-between">
+                            {networkViewMode === 'list' && (
+                                <FilterToggle
+                                    value={networkFilter}
+                                    onChange={setNetworkFilter}
+                                    counts={{
+                                        all: networks.length,
+                                        managed: networks.filter(n => n.managedStatus === 'managed').length,
+                                        unmanaged: networks.filter(n => n.managedStatus !== 'managed').length,
+                                    }}
+                                />
+                            )}
+                            <div className="flex items-center gap-2 pr-3">
+                                <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+                                    <button
+                                        onClick={() => setNetworkViewMode('list')}
+                                        className={cn(
+                                            'px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200',
+                                            networkViewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                        )}
+                                    >
+                                        List
+                                    </button>
+                                    <button
+                                        onClick={() => setNetworkViewMode('topology')}
+                                        className={cn(
+                                            'px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 flex items-center gap-1',
+                                            networkViewMode === 'topology' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                        )}
+                                    >
+                                        Topology
+                                        {!isPro && <Badge variant="outline" className="text-[9px] h-4 px-1 border-brand/30 text-brand">Pro</Badge>}
+                                    </button>
+                                </div>
+                                {isAdmin && networkViewMode === 'list' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-xs gap-1.5"
+                                        onClick={() => setShowCreateNetwork(true)}
+                                    >
+                                        <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                        Create Network
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+
+                        {networkViewMode === 'topology' ? (
+                            <div className="p-4">
+                                <ProGate featureName="Network Topology">
+                                    <Suspense fallback={
+                                        <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
+                                            <span className="text-sm">Loading topology...</span>
+                                        </div>
+                                    }>
+                                        <NetworkTopologyView />
+                                    </Suspense>
+                                </ProGate>
+                            </div>
+                        ) : (
                         <Table>
                             <TableHeader>
                                 <TableRow className="hover:bg-transparent">
@@ -688,7 +831,7 @@ export default function ResourcesView() {
                                     <TableHead className="text-[11px]">Driver</TableHead>
                                     <TableHead className="text-[11px]">Scope</TableHead>
                                     <TableHead className="text-[11px]">Status</TableHead>
-                                    <TableHead className="text-right text-[11px]">Action</TableHead>
+                                    <TableHead className="text-right text-[11px]">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             {isLoading ? <TableSkeleton cols={6} /> : (
@@ -707,21 +850,33 @@ export default function ResourcesView() {
                                             <TableCell><Badge variant="outline" className="text-[10px] h-5">{net.Scope}</Badge></TableCell>
                                             <TableCell><ManagedBadge status={net.managedStatus} managedBy={net.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-30"
-                                                    disabled={net.managedStatus === 'system'}
-                                                    onClick={() => setConfirmDelete({ type: 'networks', id: net.Id, name: net.Name })}
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>}
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 hover:text-foreground transition-colors"
+                                                        disabled={isInspectLoading}
+                                                        onClick={() => handleInspectNetwork(net.Id)}
+                                                    >
+                                                        {isInspectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />}
+                                                    </Button>
+                                                    {isAdmin && <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-30"
+                                                        disabled={net.managedStatus === 'system'}
+                                                        onClick={() => setConfirmDelete({ type: 'networks', id: net.Id, name: net.Name })}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                    </Button>}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
                             )}
                         </Table>
+                        )}
                     </TabsContent>
 
                     {/* Unmanaged Containers */}
@@ -743,7 +898,7 @@ export default function ResourcesView() {
                                 onClick={() => setBulkPurgeConfirm(true)}
                                 disabled={selectedOrphans.length === 0 || isActioning}
                             >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                 {isActioning ? 'Purging...' : `Purge Selected (${selectedOrphans.length})`}
                             </Button>
                         </div>
@@ -761,7 +916,7 @@ export default function ResourcesView() {
                                 {Object.entries(orphans).map(([project, containers], gi) => (
                                     <div
                                         key={project}
-                                        className="bg-card rounded-lg border shadow-sm overflow-hidden text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200"
+                                        className="bg-card rounded-lg border shadow-card-bevel overflow-hidden text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200"
                                         style={{ animationDelay: `${gi * 60}ms` }}
                                     >
                                         {/* Project header */}
@@ -886,6 +1041,225 @@ export default function ResourcesView() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Create Network Dialog */}
+            <Dialog open={showCreateNetwork} onOpenChange={setShowCreateNetwork}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create Network</DialogTitle>
+                        <DialogDescription>Create a new Docker network for inter-container communication.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="net-name" className="text-xs font-medium">Name</Label>
+                            <Input
+                                id="net-name"
+                                placeholder="my-network"
+                                className="font-mono text-sm"
+                                value={createNetworkForm.name}
+                                onChange={e => setCreateNetworkForm(f => ({ ...f, name: e.target.value }))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="net-driver" className="text-xs font-medium">Driver</Label>
+                            <Select
+                                value={createNetworkForm.driver}
+                                onValueChange={v => setCreateNetworkForm(f => ({ ...f, driver: v as NetworkDriver }))}
+                            >
+                                <SelectTrigger id="net-driver" className="text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {NETWORK_DRIVERS.map(d => (
+                                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                                <Label htmlFor="net-subnet" className="text-xs font-medium">Subnet <span className="text-muted-foreground">(optional)</span></Label>
+                                <Input
+                                    id="net-subnet"
+                                    placeholder="172.20.0.0/16"
+                                    className="font-mono text-sm"
+                                    value={createNetworkForm.subnet}
+                                    onChange={e => setCreateNetworkForm(f => ({ ...f, subnet: e.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="net-gateway" className="text-xs font-medium">Gateway <span className="text-muted-foreground">(optional)</span></Label>
+                                <Input
+                                    id="net-gateway"
+                                    placeholder="172.20.0.1"
+                                    className="font-mono text-sm"
+                                    value={createNetworkForm.gateway}
+                                    onChange={e => setCreateNetworkForm(f => ({ ...f, gateway: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-6 pt-1">
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="net-internal"
+                                    checked={createNetworkForm.internal}
+                                    onCheckedChange={v => setCreateNetworkForm(f => ({ ...f, internal: v }))}
+                                />
+                                <Label htmlFor="net-internal" className="text-xs cursor-pointer">Internal <span className="text-muted-foreground">(no external access)</span></Label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="net-attachable"
+                                    checked={createNetworkForm.attachable}
+                                    onCheckedChange={v => setCreateNetworkForm(f => ({ ...f, attachable: v }))}
+                                />
+                                <Label htmlFor="net-attachable" className="text-xs cursor-pointer">Attachable</Label>
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" size="sm" onClick={() => setShowCreateNetwork(false)} disabled={isCreatingNetwork}>Cancel</Button>
+                        <Button size="sm" onClick={handleCreateNetwork} disabled={!createNetworkForm.name.trim() || isCreatingNetwork}>
+                            {isCreatingNetwork ? 'Creating...' : 'Create Network'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Network Inspect Sheet */}
+            <Sheet open={!!inspectNetwork} onOpenChange={open => !open && setInspectNetwork(null)}>
+                <SheetContent className="sm:max-w-lg overflow-y-auto">
+                    <SheetHeader>
+                        <SheetTitle className="flex items-center gap-2">
+                            <Network className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+                            {inspectNetwork?.Name}
+                        </SheetTitle>
+                    </SheetHeader>
+                    {inspectNetwork && (
+                        <div className="space-y-6 mt-6">
+                            {/* Overview */}
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Overview</h4>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">ID</span>
+                                        <p className="font-mono text-xs mt-0.5 flex items-center gap-1.5">
+                                            {inspectNetwork.Id.substring(0, 12)}
+                                            <button
+                                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                                onClick={() => { navigator.clipboard.writeText(inspectNetwork.Id); toast.success('ID copied'); }}
+                                            >
+                                                <Copy className="w-3 h-3" strokeWidth={1.5} />
+                                            </button>
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">Driver</span>
+                                        <span className="text-xs mt-0.5 block"><Badge variant="outline" className="text-[10px] h-5">{inspectNetwork.Driver}</Badge></span>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">Scope</span>
+                                        <span className="text-xs mt-0.5 block"><Badge variant="outline" className="text-[10px] h-5">{inspectNetwork.Scope}</Badge></span>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">Created</span>
+                                        <p className="text-xs mt-0.5">{new Date(inspectNetwork.Created).toLocaleString()}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">Internal</span>
+                                        <p className="text-xs mt-0.5">{inspectNetwork.Internal ? 'Yes' : 'No'}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-xs text-muted-foreground">Attachable</span>
+                                        <p className="text-xs mt-0.5">{inspectNetwork.Attachable ? 'Yes' : 'No'}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* IPAM Config */}
+                            {inspectNetwork.IPAM?.Config?.length > 0 && (
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">IPAM Configuration</h4>
+                                    <div className="space-y-2">
+                                        {inspectNetwork.IPAM.Config.map((cfg, i) => (
+                                            <div key={i} className="rounded-lg border border-card-border bg-card p-3 shadow-card-bevel space-y-1.5">
+                                                {cfg.Subnet && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs text-muted-foreground">Subnet</span>
+                                                        <span className="font-mono text-xs tabular-nums">{cfg.Subnet}</span>
+                                                    </div>
+                                                )}
+                                                {cfg.Gateway && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs text-muted-foreground">Gateway</span>
+                                                        <span className="font-mono text-xs tabular-nums">{cfg.Gateway}</span>
+                                                    </div>
+                                                )}
+                                                {cfg.IPRange && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs text-muted-foreground">IP Range</span>
+                                                        <span className="font-mono text-xs tabular-nums">{cfg.IPRange}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Connected Containers */}
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    Connected Containers ({Object.keys(inspectNetwork.Containers || {}).length})
+                                </h4>
+                                {Object.keys(inspectNetwork.Containers || {}).length === 0 ? (
+                                    <p className="text-xs text-muted-foreground py-4 text-center">No containers connected to this network.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {Object.entries(inspectNetwork.Containers).map(([id, container]) => (
+                                            <div key={id} className="rounded-lg border border-card-border border-t-card-border-top bg-card p-3 shadow-card-bevel space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <Container className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+                                                    <span className="text-sm font-medium truncate">{container.Name}</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 pl-5.5">
+                                                    <div>
+                                                        <span className="text-[10px] text-muted-foreground">IPv4</span>
+                                                        <p className="font-mono text-xs tabular-nums">{container.IPv4Address || '—'}</p>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-muted-foreground">MAC</span>
+                                                        <p className="font-mono text-xs tabular-nums">{container.MacAddress || '—'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Labels */}
+                            {inspectNetwork.Labels && Object.keys(inspectNetwork.Labels).length > 0 && (
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Labels</h4>
+                                    <div className="rounded-lg border border-card-border bg-card shadow-card-bevel overflow-hidden">
+                                        <Table>
+                                            <TableBody>
+                                                {Object.entries(inspectNetwork.Labels).map(([key, val]) => (
+                                                    <TableRow key={key} className="hover:bg-muted/30">
+                                                        <TableCell className="font-mono text-xs py-1.5 text-muted-foreground">{key}</TableCell>
+                                                        <TableCell className="font-mono text-xs py-1.5 text-right">{val}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </SheetContent>
+            </Sheet>
         </div>
     );
 }

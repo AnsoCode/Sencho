@@ -62,11 +62,63 @@ Lists all Docker volumes. Columns: name, driver, mount point, size, and managed 
 
 ### Networks
 
-Lists all Docker networks. Columns: name, driver, scope (`local`, `global`, `swarm`), and managed status.
+Lists all Docker networks. Columns: ID, name, driver, scope (`local`, `global`, `swarm`), and managed status.
 
-**Filter buttons:** `All` · `Managed` · `External` · `System`
+**Filter buttons:** `All` · `Managed` · `External`
 
 System networks (like `bridge`, `host`, `none`) are shown but cannot be deleted.
+
+<Frame>
+  <img src="/images/networks/networks-list.png" alt="Networks list view with filter, inspect, and create actions" />
+</Frame>
+
+#### Create network
+
+Click **+ Create Network** (admin only) to open the creation dialog.
+
+<Frame>
+  <img src="/images/networks/create-network.png" alt="Create Network dialog with name, driver, subnet, and gateway fields" />
+</Frame>
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Name** | Yes | Alphanumeric, hyphens, underscores, and dots |
+| **Driver** | No | `bridge` (default), `overlay`, `macvlan`, `host`, or `none` |
+| **Subnet** | No | CIDR notation, e.g. `172.20.0.0/16` |
+| **Gateway** | No | Gateway IP, e.g. `172.20.0.1` |
+| **Internal** | No | Isolates the network from external access |
+| **Attachable** | No | Allows containers to be manually attached |
+
+#### Inspect network
+
+Click the eye icon on any network row to open a detail panel showing:
+
+- **Overview** — ID, driver, scope, creation date, internal/attachable flags
+- **IPAM configuration** — Subnet, gateway, and IP range
+- **Connected containers** — Container name, IPv4 address, and MAC address
+- **Labels** — All Docker labels applied to the network
+
+<Frame>
+  <img src="/images/networks/network-inspect.png" alt="Network inspect panel showing IPAM config and connected containers" />
+</Frame>
+
+#### Network topology <span style={{fontSize: '0.75em', color: 'var(--brand)'}}>Pro</span>
+
+Switch to the **Topology** view to see an interactive graph of your Docker networks and the containers connected to them. System networks (`bridge`, `host`, `none`) are excluded for clarity.
+
+<Frame>
+  <img src="/images/networks/network-topology.png" alt="Network topology visualization showing containers connected to networks" />
+</Frame>
+
+- **Network nodes** — Dashed border cards showing network name and driver, color-coded by status (managed, external, system)
+- **Container nodes** — Cards showing container name with IP addresses per network
+- **Edges** — Animated connections between networks and their containers
+- Pan, zoom, and drag nodes to explore the topology
+- A mini map in the bottom-right provides an overview
+
+<Note>
+  Network Topology requires a Sencho Pro license (Skipper or Admiral). Community users see an upgrade prompt.
+</Note>
 
 ### Unmanaged
 

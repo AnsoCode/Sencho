@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
-import DockerController, { globalDockerNetwork } from './services/DockerController';
+import DockerController, { globalDockerNetwork, type CreateNetworkOptions } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import bcrypt from 'bcrypt';
@@ -4402,6 +4402,75 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Failed to delete network:', error);
     res.status(500).json({ error: error.message || 'Failed to delete network' });
+  }
+});
+
+app.get('/api/system/networks/topology', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const allNetworks = await dockerController.getNetworks();
+    const userNetworks = allNetworks.filter((n: any) => n.managedStatus !== 'system');
+
+    const inspected = await Promise.all(
+      userNetworks.map(async (net: any) => {
+        try {
+          const detail = await dockerController.inspectNetwork(net.Id);
+          const containers = Object.entries(detail.Containers || {}).map(([id, c]: [string, any]) => ({
+            id,
+            name: c.Name,
+            ip: c.IPv4Address,
+          }));
+          return { ...net, containers };
+        } catch {
+          return { ...net, containers: [] };
+        }
+      })
+    );
+
+    res.json(inspected);
+  } catch (error: any) {
+    console.error('Failed to fetch network topology:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch network topology' });
+  }
+});
+
+app.get('/api/system/networks/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    if (!id) return res.status(400).json({ error: 'Network ID is required' });
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const networkInfo = await dockerController.inspectNetwork(id);
+    res.json(networkInfo);
+  } catch (error: any) {
+    console.error('Failed to inspect network:', error);
+    res.status(500).json({ error: error.message || 'Failed to inspect network' });
+  }
+});
+
+app.post('/api/system/networks', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { name, driver, subnet, gateway, labels, internal, attachable } = req.body;
+    if (!name) return res.status(400).json({ error: 'Network name is required' });
+
+    const options: CreateNetworkOptions = { Name: name };
+
+    if (driver) options.Driver = driver;
+    if (subnet || gateway) {
+      options.IPAM = { Config: [{}] };
+      if (subnet) options.IPAM.Config[0].Subnet = subnet;
+      if (gateway) options.IPAM.Config[0].Gateway = gateway;
+    }
+    if (labels && typeof labels === 'object') options.Labels = labels;
+    if (internal) options.Internal = true;
+    if (attachable) options.Attachable = true;
+
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const network = await dockerController.createNetwork(options);
+    res.status(201).json({ success: true, message: 'Network created', id: network.id });
+  } catch (error: any) {
+    console.error('Failed to create network:', error);
+    res.status(500).json({ error: error.message || 'Failed to create network' });
   }
 });
 
