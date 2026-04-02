@@ -1,0 +1,85 @@
+---
+title: Stack Labels
+description: Organize your stacks with colored labels for quick filtering, grouping, and bulk actions.
+---
+
+<Note>
+  Stack Labels require a Sencho **Skipper** or **Admiral** license.
+</Note>
+
+Stack Labels let you tag your Docker Compose stacks with custom colored labels like `production`, `staging`, or `media-server`. Once labeled, you can filter your stack list, identify stacks at a glance, and run bulk actions on entire groups.
+
+## Creating labels
+
+There are two ways to create a label:
+
+### From the stack context menu
+
+1. Right-click any stack in the sidebar (or click the three-dot menu)
+2. Select **Labels**
+3. Click **Create new label** at the bottom of the popover
+4. Enter a name and pick a color from the palette
+5. Click **Create** — the label is immediately assigned to that stack
+
+### From Settings
+
+1. Open **Settings → Labels**
+2. Click **New Label**
+3. Enter a name and pick a color
+4. Click **Create**
+
+Labels created in Settings are available for assignment but not attached to any stack yet.
+
+## Assigning labels to stacks
+
+1. Right-click a stack in the sidebar
+2. Select **Labels**
+3. Check or uncheck labels to assign or remove them
+
+A stack can have multiple labels. Changes save immediately.
+
+## Filtering by label
+
+### Sidebar
+
+When you have labels, a pill bar appears between the search box and the stack list. Click a label pill to filter — only stacks with that label are shown. Click multiple pills to see stacks matching **any** of the selected labels. Click an active pill again to deselect it.
+
+### Fleet View
+
+Label filter pills appear in the Fleet View toolbar alongside the existing Status and Type filters. Selecting a label filters to nodes that contain stacks with that label.
+
+## Bulk actions
+
+Right-click a label pill in the sidebar to access bulk actions:
+
+| Action | Effect |
+|--------|--------|
+| **Deploy all** | Runs deploy on every stack with that label |
+| **Stop all** | Stops every stack with that label |
+| **Restart all** | Restarts every stack with that label |
+
+A confirmation dialog shows which stacks will be affected before executing.
+
+## Managing labels
+
+Open **Settings → Labels** to view, edit, and delete your labels.
+
+- **Edit**: Change a label's name or color
+- **Delete**: Removes the label and unassigns it from all stacks
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Labels aren't visible in the sidebar">
+    Labels require a **Skipper** or **Admiral** license. Verify your license tier in **Settings → License**. Labels also only appear when at least one label has been created.
+  </Accordion>
+  <Accordion title="Labels disappeared after a downgrade">
+    If you downgrade from Skipper/Admiral to Community, the label UI is hidden but your data is preserved. Upgrading again will restore all labels and assignments.
+  </Accordion>
+  <Accordion title="Bulk action failed for some stacks">
+    If a stack was deleted from disk but still had a label assignment, it will be skipped during bulk actions. The results toast will indicate how many stacks failed. Remove orphaned assignments by re-opening **Settings → Labels**.
+  </Accordion>
+  <Accordion title="Duplicate label name error">
+    Label names must be unique per node. If you see a &ldquo;label with that name already exists&rdquo; error, choose a different name or edit the existing label.
+  </Accordion>
+</AccordionGroup>
