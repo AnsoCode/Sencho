@@ -18,8 +18,10 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
+import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
@@ -132,6 +134,9 @@ export default function EditorLayout() {
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
+  const [labels, setLabels] = useState<StackLabel[]>([]);
+  const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
+  const [activeLabelFilters, setActiveLabelFilters] = useState<Set<number>>(new Set());
 
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
@@ -268,6 +273,7 @@ export default function EditorLayout() {
         }
       }
       setStackStatuses(statuses);
+      refreshLabels();
       return fileList;
     } catch (error) {
       console.error('Failed to refresh stacks:', error);
@@ -275,6 +281,20 @@ export default function EditorLayout() {
       return [];
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshLabels = async () => {
+    if (!isPro) return;
+    try {
+      const [labelsRes, assignmentsRes] = await Promise.all([
+        apiFetch('/labels'),
+        apiFetch('/labels/assignments'),
+      ]);
+      if (labelsRes.ok) setLabels(await labelsRes.json());
+      if (assignmentsRes.ok) setStackLabelMap(await assignmentsRes.json());
+    } catch {
+      // Labels are non-critical; fail silently
     }
   };
 
@@ -1128,7 +1148,12 @@ export default function EditorLayout() {
 
   // Filter files based on search query
   const filteredFiles = files.filter(file => {
-    return file.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!file.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (activeLabelFilters.size > 0) {
+      const fileLabels = stackLabelMap[file] || [];
+      if (!fileLabels.some(l => activeLabelFilters.has(l.id))) return false;
+    }
+    return true;
   });
 
   // Get display name for stack (now just returns the name as-is since no extension)
@@ -1252,6 +1277,26 @@ export default function EditorLayout() {
               className="h-9"
             />
           </div>
+          {isPro && labels.length > 0 && (
+            <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
+              {labels.map(label => (
+                <LabelPill
+                  key={label.id}
+                  label={label}
+                  size="sm"
+                  active={activeLabelFilters.has(label.id)}
+                  onClick={() => {
+                    setActiveLabelFilters(prev => {
+                      const next = new Set(prev);
+                      if (next.has(label.id)) next.delete(label.id);
+                      else next.add(label.id);
+                      return next;
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
           <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-icon px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
@@ -1281,6 +1326,13 @@ export default function EditorLayout() {
                                 {stackStatuses[file] === 'running' ? 'UP' : stackStatuses[file] === 'exited' ? 'DN' : '--'}
                               </span>
                               <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
+                              {isPro && stackLabelMap[file]?.length > 0 && (
+                                <span className="flex items-center gap-0.5 shrink-0 ml-1">
+                                  {stackLabelMap[file].map(l => (
+                                    <LabelDot key={l.id} color={l.color} />
+                                  ))}
+                                </span>
+                              )}
 
                               {stackUpdates[file] && (
                                 <span
@@ -1301,6 +1353,19 @@ export default function EditorLayout() {
                                       <BellRing className="h-4 w-4 mr-2" />
                                       Alerts
                                     </DropdownMenuItem>
+                                    {isPro && (
+                                      <LabelAssignPopover
+                                        stackName={file}
+                                        allLabels={labels}
+                                        assignedLabelIds={(stackLabelMap[file] || []).map(l => l.id)}
+                                        onLabelsChanged={refreshLabels}
+                                      >
+                                        <DropdownMenuItem onSelect={e => e.preventDefault()}>
+                                          <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                                          Labels
+                                        </DropdownMenuItem>
+                                      </LabelAssignPopover>
+                                    )}
                                     <DropdownMenuItem onClick={() => checkUpdatesForStack()}>
                                       <RefreshCw className="h-4 w-4 mr-2" />
                                       Check for updates
@@ -1349,6 +1414,19 @@ export default function EditorLayout() {
                           <BellRing className="h-4 w-4 mr-2" />
                           Alerts
                         </ContextMenuItem>
+                        {isPro && (
+                          <LabelAssignPopover
+                            stackName={file}
+                            allLabels={labels}
+                            assignedLabelIds={(stackLabelMap[file] || []).map(l => l.id)}
+                            onLabelsChanged={refreshLabels}
+                          >
+                            <ContextMenuItem onSelect={e => e.preventDefault()}>
+                              <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                              Labels
+                            </ContextMenuItem>
+                          </LabelAssignPopover>
+                        )}
                         <ContextMenuItem onClick={() => checkUpdatesForStack()}>
                           <RefreshCw className="h-4 w-4 mr-2" />
                           Check for updates
