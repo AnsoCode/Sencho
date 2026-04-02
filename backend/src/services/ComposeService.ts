@@ -99,7 +99,10 @@ export class ComposeService {
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       });
     } finally {
-      try { fs.unlinkSync(configPath); fs.rmdirSync(tmpDir); } catch { /* best-effort cleanup */ }
+      try { fs.unlinkSync(configPath); fs.rmdirSync(tmpDir); } catch (e) {
+        // Best-effort cleanup: temp config dir may already be removed or locked
+        console.warn('[ComposeService] Could not clean up temp Docker config dir:', (e as Error).message);
+      }
     }
   }
 

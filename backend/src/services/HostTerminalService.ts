@@ -7,7 +7,8 @@ function getUnixShell() {
     try {
         execSync('which bash', { stdio: 'ignore' });
         return 'bash';
-    } catch {
+    } catch (e) {
+        console.warn('[HostTerminalService] bash not found, falling back to sh:', (e as Error).message);
         return 'sh';
     }
 }

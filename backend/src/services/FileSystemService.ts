@@ -275,8 +275,11 @@ export class FileSystemService {
         try {
           await fsPromises.access(oldEnvPath);
           await fsPromises.rename(oldEnvPath, newEnvPath);
-        } catch {
-          // No env file to migrate
+        } catch (e: unknown) {
+          const code = (e as NodeJS.ErrnoException)?.code;
+          if (code !== 'ENOENT') {
+            console.warn(`[FileSystemService] Could not migrate env file for ${stackName}:`, (e as Error).message);
+          }
         }
 
       }
@@ -300,8 +303,11 @@ export class FileSystemService {
       try {
         await fsPromises.access(src);
         await fsPromises.copyFile(src, path.join(backupDir, file));
-      } catch {
-        // File doesn't exist, skip
+      } catch (e: unknown) {
+        const code = (e as NodeJS.ErrnoException)?.code;
+        if (code !== 'ENOENT') {
+          console.warn(`[FileSystemService] Could not back up ${file}:`, (e as Error).message);
+        }
       }
     }
 
@@ -310,8 +316,11 @@ export class FileSystemService {
     try {
       await fsPromises.access(envSrc);
       await fsPromises.copyFile(envSrc, path.join(backupDir, '.env'));
-    } catch {
-      // No .env to backup
+    } catch (e: unknown) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        console.warn('[FileSystemService] Could not back up .env:', (e as Error).message);
+      }
     }
 
     // Write timestamp marker
@@ -343,7 +352,8 @@ export class FileSystemService {
       try {
         const ts = await fsPromises.readFile(tsFile, 'utf-8');
         return { exists: true, timestamp: parseInt(ts, 10) || null };
-      } catch {
+      } catch (e) {
+        console.warn('[FileSystemService] Backup timestamp file unreadable:', (e as Error).message);
         return { exists: true, timestamp: null };
       }
     } catch {

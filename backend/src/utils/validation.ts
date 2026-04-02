@@ -18,7 +18,8 @@ export function isValidRemoteUrl(
   let url: URL;
   try {
     url = new URL(raw);
-  } catch {
+  } catch (e) {
+    console.warn('[Validation] URL parse failure:', (e as Error).message, '— input:', raw);
     return {
       valid: false,
       reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:3000)',

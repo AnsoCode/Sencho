@@ -651,7 +651,10 @@ class DockerController {
     // Destroy the Docker stats stream when the WebSocket closes to prevent
     // orphaned streams polling the daemon after client disconnect.
     ws.on('close', () => {
-      try { (stats as any).destroy(); } catch { /* stream already ended */ }
+      try { (stats as any).destroy(); } catch (e) {
+        // Stream already ended before client disconnected
+        console.warn('[DockerController] Stats stream already ended on WS close:', (e as Error).message);
+      }
     });
   }
 
@@ -723,8 +726,9 @@ class DockerController {
 
             case 'resize':
               if (msg.rows && msg.cols) {
-                exec.resize({ h: msg.rows, w: msg.cols }).catch(() => {
-                  // Ignore resize errors (exec may have ended)
+                exec.resize({ h: msg.rows, w: msg.cols }).catch((e: Error) => {
+                  // Exec may have ended before resize completes
+                  console.warn('[DockerController] Exec resize failed (exec may have ended):', e.message);
                 });
               }
               break;
@@ -733,8 +737,9 @@ class DockerController {
               // Keep-alive, no-op
               break;
           }
-        } catch {
-          // Non-JSON or malformed message - ignore
+        } catch (e) {
+          // Non-JSON or malformed WebSocket message
+          console.warn('[DockerController] Ignoring malformed exec WS message:', (e as Error).message);
         }
       });
 
@@ -742,8 +747,9 @@ class DockerController {
       ws.on('close', () => {
         try {
           stream.destroy();
-        } catch {
-          // Ignore destroy errors
+        } catch (e) {
+          // Stream already destroyed before WS close
+          console.warn('[DockerController] Exec stream already destroyed on WS close:', (e as Error).message);
         }
       });
 

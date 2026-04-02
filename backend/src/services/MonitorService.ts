@@ -180,7 +180,9 @@ export class MonitorService {
                                 totalReclaimableBytes += bytes;
                             }
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        console.warn('[MonitorService] Failed to parse Docker system df output:', e);
+                    }
                 }
 
                 const reclaimGb = totalReclaimableBytes / (1024 * 1024 * 1024);
