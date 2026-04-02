@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **security:** use raw request bytes for webhook HMAC signature verification instead of re-serialized JSON — prevents signature mismatches from serialization differences
+* **security:** use NIST-recommended 12-byte IV for AES-256-GCM encryption (backward compatible with existing 16-byte IVs)
+* **security:** add 1-year default expiry to node proxy JWT tokens — previously issued without expiry
+* **security:** pattern-based env var filtering in host console — blocks variables containing SECRET, PASSWORD, TOKEN, KEY, or CREDENTIAL (previously only filtered 4 explicit keys)
+* **security:** deny CORS when `FRONTEND_URL` is unset in production — previously fell back to allowing all origins
+
 ## [0.25.0](https://github.com/AnsoCode/Sencho/compare/v0.24.2...v0.25.0) (2026-04-02)
 
 
@@ -17,16 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **security:** enforce stack name validation on all routes ([#314](https://github.com/AnsoCode/Sencho/issues/314)) ([1ab04be](https://github.com/AnsoCode/Sencho/commit/1ab04be235cc0d3020d17dfb3028e4679206b886))
-
-## [Unreleased]
-
-### Added
-
-* **api:** global rate limiter on all `/api/` routes — 100 requests/min per IP in production (configurable via `API_RATE_LIMIT` env var). Auth endpoints retain their existing stricter limits (5 req/15min) which stack independently. Returns `429 Too Many Requests` when exceeded.
-
-### Fixed
-
-* **security:** enforce `isValidStackName()` on all routes that accept a `stackName` parameter — 11 routes had no validation and 2 used a weaker manual check; all now use the canonical `^[a-zA-Z0-9_-]+$` regex guard, returning `400 Invalid stack name` on rejection
 
 ## [0.24.1](https://github.com/AnsoCode/Sencho/compare/v0.24.0...v0.24.1) (2026-04-01)
 

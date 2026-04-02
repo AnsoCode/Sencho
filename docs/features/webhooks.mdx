@@ -127,5 +127,6 @@ Each webhook tracks its last 100 executions. Click **Recent executions** on any 
 - Webhook secrets are 64-character hex strings generated with `crypto.randomBytes(32)`
 - Signature validation uses `crypto.timingSafeEqual` to prevent timing attacks
 - Secrets are shown only once at creation - API responses return masked values
+- Signature verification uses the raw request bytes, not re-serialized JSON, to prevent serialization-induced mismatches
 - Webhook trigger endpoints are public (no session cookie required) but protected by HMAC signature validation
 - Each webhook targets a single stack - there is no way to execute arbitrary commands

@@ -18,9 +18,14 @@ export class HostTerminalService {
 
         // Strip sensitive backend secrets from the PTY environment so they are not
         // visible to the console user via `env` / `printenv`.
-        const SENSITIVE_KEYS = ['JWT_SECRET', 'AUTH_PASSWORD', 'AUTH_PASSWORD_HASH', 'DATABASE_URL'];
+        // Pattern-based filtering: block any env var containing sensitive keywords.
+        // Explicit fallback set catches vars that don't match patterns (e.g. DATABASE_URL).
+        const SENSITIVE_PATTERNS = /SECRET|PASSWORD|TOKEN|KEY|CREDENTIAL/i;
+        const SENSITIVE_KEYS = new Set(['DATABASE_URL']);
         const safeEnv = Object.fromEntries(
-            Object.entries(process.env as Record<string, string>).filter(([k]) => !SENSITIVE_KEYS.includes(k))
+            Object.entries(process.env as Record<string, string>).filter(
+                ([k]) => !SENSITIVE_PATTERNS.test(k) && !SENSITIVE_KEYS.has(k)
+            )
         );
 
         const ptyProcess = pty.spawn(shell, [], {

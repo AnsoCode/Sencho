@@ -57,6 +57,7 @@ The host console has a stricter authentication requirement than other features:
 - Requires a valid **browser session** (httpOnly cookie). Node-proxy tokens used for multi-node communication are explicitly blocked.
 - Each session is issued a short-lived **console token** (60-second TTL) before the WebSocket is established.
 - Access is restricted to the **Admiral** license tier, ensuring only teams with appropriate licensing can use interactive shell access.
+- Sensitive environment variables (names containing SECRET, PASSWORD, TOKEN, KEY, or CREDENTIAL, plus `DATABASE_URL`) are automatically stripped from the console environment so they cannot be read via `env` or `printenv`.
 - Because the console gives full shell access to the host, you should secure your Sencho instance with HTTPS and a strong password if it is exposed to a network.
 
 <Warning>
