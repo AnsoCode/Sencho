@@ -81,9 +81,10 @@ Click the **pencil icon** on any remote node row to edit its name, URL, or token
 
 ### Token security
 
-Node tokens are long-lived JWTs that grant full control over the remote Sencho instance. Treat them like passwords:
+Node tokens are JWTs with a default **1-year expiry** that grant full control over the remote Sencho instance. Treat them like passwords:
 
 - **Rotate immediately** if a token is compromised: Settings → Nodes → Generate Token on the remote instance. The old token is invalidated instantly.
+- Tokens **expire after 1 year** by default. Generate a new token on the remote instance to renew access.
 - Tokens are **encrypted at rest** using AES-256-GCM in Sencho's SQLite database. Even if the database file is extracted, the tokens cannot be read without the instance's encryption key.
 - Tokens are scoped to `node_proxy` — they cannot access the host console or container exec terminals. Interactive shell access always requires a real browser session on that specific instance.
 

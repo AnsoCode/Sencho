@@ -124,8 +124,8 @@ app.use(helmet({
 
 // CORS - in production restrict to the configured frontend origin.
 // In development, mirror the request origin so Vite's dev server works.
-const corsOrigin = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? (process.env.FRONTEND_URL || false)
   : true;
 
 app.use(cors({
@@ -147,6 +147,13 @@ const globalApiLimiter = rateLimit({
 });
 
 app.use('/api/', globalApiLimiter);
+
+// JSON body parser that also captures the raw bytes for HMAC verification.
+const jsonParser = express.json({
+  verify: (req, _res, buf) => {
+    (req as unknown as { rawBody: Buffer }).rawBody = buf;
+  },
+});
 
 // Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
 // consumed here: express.json() drains the IncomingMessage stream into req.body
@@ -175,7 +182,7 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       return;
     }
   }
-  express.json()(req, res, next);
+  jsonParser(req, res, next);
 });
 app.use(cookieParser());
 
@@ -222,6 +229,7 @@ declare global {
       user?: { username: string; role: UserRole; userId: number };
       nodeId: number;
       apiTokenScope?: 'read-only' | 'deploy-only' | 'full-admin';
+      rawBody?: Buffer;
     }
   }
 }
@@ -482,8 +490,8 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
       res.status(500).json({ error: 'No JWT secret configured on this instance.' });
       return;
     }
-    // No expiry - this token is managed by the admin who pastes it into the main dashboard
-    const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret);
+    // Default 1-year expiry — admin should rotate tokens periodically
+    const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret, { expiresIn: '365d' });
     res.json({ token });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to generate node token' });
@@ -1730,7 +1738,7 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
       return;
     }
 
-    const rawBody = JSON.stringify(req.body ?? {});
+    const rawBody = req.rawBody?.toString('utf-8') ?? JSON.stringify(req.body ?? {});
     const svc = WebhookService.getInstance();
     if (!svc.validateSignature(rawBody, webhook.secret, signature)) {
       res.status(401).json({ error: 'Invalid signature' });

@@ -4,7 +4,7 @@ import path from 'path';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
-const IV_LENGTH = 16;
+const IV_LENGTH = 12; // NIST SP 800-38D recommended length for GCM
 const ENCRYPTED_PREFIX = 'enc:';
 
 export class CryptoService {
