@@ -24,8 +24,9 @@ export class CryptoService {
                     console.warn(`[CryptoService] Fixing permissive key file permissions (was 0o${mode.toString(8)}, set to 0o600)`);
                     fs.chmodSync(keyPath, 0o600);
                 }
-            } catch {
+            } catch (e) {
                 // chmod not supported on this platform (e.g. Windows) — skip
+                console.warn('[CryptoService] Could not enforce key file permissions (platform may not support chmod):', (e as Error).message);
             }
         } else {
             this.key = crypto.randomBytes(KEY_LENGTH);

@@ -63,7 +63,9 @@ export function Login({
     fetch('/api/auth/sso/providers', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((providers: SSOProvider[]) => setSsoProviders(providers))
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('[Login] SSO provider discovery failed:', e);
+      });
   }, []);
 
   const hasLdap = ssoProviders.some(p => p.type === 'ldap');

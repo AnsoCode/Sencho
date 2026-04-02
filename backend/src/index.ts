@@ -517,7 +517,8 @@ app.get('/api/auth/sso/providers', (_req: Request, res: Response): void => {
   try {
     const providers = SSOService.getInstance().getEnabledProviders();
     res.json(providers);
-  } catch {
+  } catch (e) {
+    console.warn('[SSO] Failed to list enabled providers, returning empty list:', (e as Error).message);
     res.json([]);
   }
 });
@@ -621,7 +622,8 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
     let statePayload: { state: string; codeVerifier: string; provider: string };
     try {
       statePayload = JSON.parse(cryptoSvc.decrypt(stateCookie));
-    } catch {
+    } catch (e) {
+      console.error('[SSO] Failed to decrypt SSO state cookie:', (e as Error).message);
       res.redirect('/?sso_error=Invalid+SSO+session');
       return;
     }
@@ -1295,8 +1297,8 @@ async function captureLocalNodeFiles(node: Node): Promise<SnapshotNodeData> {
     try {
       const composeContent = await fsService.getStackContent(stackName);
       files.push({ filename: 'compose.yaml', content: composeContent });
-    } catch {
-      // Stack has no compose file - skip
+    } catch (e) {
+      console.warn(`[Fleet Snapshot] Could not read compose file for stack "${stackName}", skipping:`, (e as Error).message);
       continue;
     }
     try {
@@ -1339,7 +1341,8 @@ async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
         const content = await composeRes.text();
         files.push({ filename: 'compose.yaml', content });
       }
-    } catch {
+    } catch (e) {
+      console.warn(`[Fleet Snapshot] Failed to fetch remote compose for stack "${stackName}":`, (e as Error).message);
       continue;
     }
     try {
@@ -1536,8 +1539,9 @@ app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response)
       // Backup current files before restore
       try {
         await fsService.backupStackFiles(stackName);
-      } catch {
-        // Stack may not exist yet - that's ok
+      } catch (e) {
+        // Stack may not exist yet before first restore — that's ok
+        console.warn(`[Fleet Snapshot] Pre-restore backup failed for stack "${stackName}" (may not exist yet):`, (e as Error).message);
       }
 
       for (const file of files) {
@@ -2617,7 +2621,11 @@ app.get('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 
     try {
       await fsService.access(envPath);
-    } catch {
+    } catch (e: unknown) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        console.error('[Sencho] Unexpected error checking env file existence:', (e as Error).message);
+      }
       return res.status(404).json({ error: 'Env file not found' });
     }
 
@@ -3830,7 +3838,8 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
       }
     }
     // Validate cron expression
-    try { CronExpressionParser.parse(cron_expression); } catch {
+    try { CronExpressionParser.parse(cron_expression); } catch (e) {
+      console.warn('[Scheduler] Invalid cron expression rejected:', cron_expression, (e as Error).message);
       res.status(400).json({ error: 'Invalid cron expression.' }); return;
     }
 
@@ -3945,7 +3954,8 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
 
     if (cron_expression) {
-      try { CronExpressionParser.parse(cron_expression); } catch {
+      try { CronExpressionParser.parse(cron_expression); } catch (e) {
+        console.warn('[Scheduler] Invalid cron expression rejected:', cron_expression, (e as Error).message);
         res.status(400).json({ error: 'Invalid cron expression.' }); return;
       }
     }
@@ -4733,11 +4743,21 @@ const gracefulShutdown = (signal: string) => {
 
   server.close(() => {
     console.log('[Shutdown] HTTP server closed');
-    try { LicenseService.getInstance().destroy(); } catch { /* already stopped */ }
-    try { MonitorService.getInstance().stop(); } catch { /* already stopped */ }
-    try { ImageUpdateService.getInstance().stop(); } catch { /* already stopped */ }
-    try { SchedulerService.getInstance().stop(); } catch { /* already stopped */ }
-    try { DatabaseService.getInstance().getDb().close(); } catch { /* already closed */ }
+    try { LicenseService.getInstance().destroy(); } catch (e) {
+      console.warn('[Shutdown] LicenseService cleanup failed:', (e as Error).message);
+    }
+    try { MonitorService.getInstance().stop(); } catch (e) {
+      console.warn('[Shutdown] MonitorService cleanup failed:', (e as Error).message);
+    }
+    try { ImageUpdateService.getInstance().stop(); } catch (e) {
+      console.warn('[Shutdown] ImageUpdateService cleanup failed:', (e as Error).message);
+    }
+    try { SchedulerService.getInstance().stop(); } catch (e) {
+      console.warn('[Shutdown] SchedulerService cleanup failed:', (e as Error).message);
+    }
+    try { DatabaseService.getInstance().getDb().close(); } catch (e) {
+      console.warn('[Shutdown] Database close failed:', (e as Error).message);
+    }
     console.log('[Shutdown] Done - exiting');
     process.exit(0);
   });

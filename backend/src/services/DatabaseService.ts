@@ -436,7 +436,12 @@ export class DatabaseService {
         // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
         const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
         for (const col of legacyCols) {
-            try { this.db.prepare(`ALTER TABLE nodes DROP COLUMN ${col}`).run(); } catch { /* already dropped or never existed */ }
+            try { this.db.prepare(`ALTER TABLE nodes DROP COLUMN ${col}`).run(); } catch (e: unknown) {
+                // Expected: column already dropped or never existed
+                if (!String((e as Error)?.message).includes('no such column')) {
+                    console.warn(`[DatabaseService] Unexpected error dropping legacy column "${col}":`, (e as Error).message);
+                }
+            }
         }
 
         // Initialize default global settings if they don't exist
@@ -511,7 +516,12 @@ export class DatabaseService {
 
     private migrateSSOColumns(): void {
         const maybeAddCol = (table: string, col: string, def: string) => {
-            try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch { /* already exists */ }
+            try { this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch (e: unknown) {
+                // Expected: column already exists
+                if (!String((e as Error)?.message).includes('duplicate column')) {
+                    console.warn(`[DatabaseService] Unexpected error adding column "${col}" to "${table}":`, (e as Error).message);
+                }
+            }
         };
         maybeAddCol('users', 'auth_provider', "TEXT NOT NULL DEFAULT 'local'");
         maybeAddCol('users', 'provider_id', 'TEXT DEFAULT NULL');
@@ -562,7 +572,9 @@ export class DatabaseService {
         `);
         try {
             this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_role_assignments_unique ON role_assignments(user_id, role, resource_type, resource_id)');
-        } catch { /* already exists */ }
+        } catch (e) {
+            console.warn('[DatabaseService] Could not create role_assignments unique index:', (e as Error).message);
+        }
     }
 
     // --- Agents ---
