@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **resources:** Network topology visualization (Pro) — interactive graph of networks and connected containers using React Flow
 * **resources:** List/Topology view toggle on the Networks tab
 
+### Fixed
+
+* **resources:** Network topology now correctly classifies networks as managed/unmanaged/system instead of showing all as unmanaged
+* **resources:** Network inspect returns proper 404 status when a network no longer exists instead of generic 500
+* **resources:** Network create route validates driver against allowed values and rejects array-typed labels
+* **resources:** Replaced all `any` types in network routes with proper `unknown` narrowing
+
 ## [0.26.0](https://github.com/AnsoCode/Sencho/compare/v0.25.3...v0.26.0) (2026-04-02)
 
 

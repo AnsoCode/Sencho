@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
-import DockerController, { globalDockerNetwork, type CreateNetworkOptions } from './services/DockerController';
+import DockerController, { globalDockerNetwork, type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import bcrypt from 'bcrypt';
@@ -4407,19 +4407,19 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks/topology', async (req: Request, res: Response) => {
   try {
+    const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     const dockerController = DockerController.getInstance(req.nodeId);
-    const allNetworks = await dockerController.getNetworks();
-    const userNetworks = allNetworks.filter((n: any) => n.managedStatus !== 'system');
+    const { networks } = await dockerController.getClassifiedResources(knownStacks);
+    const userNetworks = networks.filter(n => n.managedStatus !== 'system');
 
     const inspected = await Promise.all(
-      userNetworks.map(async (net: any) => {
+      userNetworks.map(async (net) => {
         try {
           const detail = await dockerController.inspectNetwork(net.Id);
-          const containers = Object.entries(detail.Containers || {}).map(([id, c]: [string, any]) => ({
-            id,
-            name: c.Name,
-            ip: c.IPv4Address,
-          }));
+          const containers = Object.entries(detail.Containers || {}).map(([id, c]) => {
+            const info = c as { Name: string; IPv4Address: string };
+            return { id, name: info.Name, ip: info.IPv4Address };
+          });
           return { ...net, containers };
         } catch {
           return { ...net, containers: [] };
@@ -4428,9 +4428,10 @@ app.get('/api/system/networks/topology', async (req: Request, res: Response) => 
     );
 
     res.json(inspected);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Failed to fetch network topology';
     console.error('Failed to fetch network topology:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch network topology' });
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -4441,9 +4442,13 @@ app.get('/api/system/networks/:id', async (req: Request, res: Response) => {
     const dockerController = DockerController.getInstance(req.nodeId);
     const networkInfo = await dockerController.inspectNetwork(id);
     res.json(networkInfo);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to inspect network:', error);
-    res.status(500).json({ error: error.message || 'Failed to inspect network' });
+    const err = error as Record<string, unknown>;
+    const status = (typeof err.statusCode === 'number' ? err.statusCode : null)
+      || (error instanceof Error && error.message.includes('404') ? 404 : 500);
+    const msg = error instanceof Error ? error.message : 'Failed to inspect network';
+    res.status(status).json({ error: msg });
   }
 });
 
@@ -4455,22 +4460,27 @@ app.post('/api/system/networks', async (req: Request, res: Response) => {
 
     const options: CreateNetworkOptions = { Name: name };
 
-    if (driver) options.Driver = driver;
+    const VALID_DRIVERS: NetworkDriver[] = ['bridge', 'overlay', 'macvlan', 'host', 'none'];
+    if (driver) {
+      if (!VALID_DRIVERS.includes(driver)) return res.status(400).json({ error: 'Invalid network driver' });
+      options.Driver = driver;
+    }
     if (subnet || gateway) {
       options.IPAM = { Config: [{}] };
       if (subnet) options.IPAM.Config[0].Subnet = subnet;
       if (gateway) options.IPAM.Config[0].Gateway = gateway;
     }
-    if (labels && typeof labels === 'object') options.Labels = labels;
+    if (labels && typeof labels === 'object' && !Array.isArray(labels)) options.Labels = labels;
     if (internal) options.Internal = true;
     if (attachable) options.Attachable = true;
 
     const dockerController = DockerController.getInstance(req.nodeId);
     const network = await dockerController.createNetwork(options);
     res.status(201).json({ success: true, message: 'Network created', id: network.id });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Failed to create network';
     console.error('Failed to create network:', error);
-    res.status(500).json({ error: error.message || 'Failed to create network' });
+    res.status(500).json({ error: msg });
   }
 });
 

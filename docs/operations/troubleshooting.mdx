@@ -181,6 +181,84 @@ DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash',
 
 ---
 
+## Network creation fails with "name is required"
+
+**Symptom:** Clicking Create in the Create Network dialog returns an error about a missing name.
+
+**Cause:** The network name field was left empty or contains only whitespace.
+
+**Fix:** Enter a valid network name. Names must be non-empty and can contain letters, numbers, hyphens (`-`), underscores (`_`), and dots (`.`). Names cannot start with a dot or hyphen.
+
+---
+
+## Network creation fails with "invalid name"
+
+**Symptom:** You enter a network name but the API rejects it as invalid.
+
+**Cause:** The name contains characters that are not allowed, or starts with a special character.
+
+**Allowed characters:** Letters, numbers, hyphens, underscores, and dots. The name must start with a letter, number, or underscore.
+
+**Examples:**
+
+| Name | Valid? | Reason |
+|------|--------|--------|
+| `my-network` | Yes | |
+| `app_net.v2` | Yes | |
+| `.hidden` | No | Cannot start with a dot |
+| `-leading` | No | Cannot start with a hyphen |
+| `my network` | No | Spaces not allowed |
+| `net/work` | No | Slashes not allowed |
+
+---
+
+## Cannot delete a system network (bridge, host, none)
+
+**Symptom:** The delete button is missing or disabled for certain networks.
+
+**Expected behavior:** Docker system networks (`bridge`, `host`, `none`) cannot be deleted — they are created by the Docker daemon and are required for normal operation. Sencho intentionally hides the delete action for these networks.
+
+If you need to clean up unused *user-created* networks, use the **Prune Networks** button at the top of the Networks tab.
+
+---
+
+## Network inspect shows "Network not found"
+
+**Symptom:** Clicking the inspect (eye) icon on a network row returns a "not found" error.
+
+**Cause:** The network was deleted between the time the list loaded and when you clicked inspect. This can happen if another user or an external tool removed the network.
+
+**Fix:** Refresh the Resources page to reload the current network list.
+
+---
+
+## Network topology is empty
+
+**Symptom:** The Topology tab shows "No user-created networks found" even though you have running containers.
+
+**Possible causes:**
+
+- **All containers are on system networks only.** The topology view excludes Docker's built-in `bridge`, `host`, and `none` networks. If your containers only use the default bridge, they won't appear. Create a custom network in your compose file to see them in the topology.
+- **No containers are connected.** Networks with zero connected containers still appear as nodes, but if you have no user-created networks at all, the view will be empty.
+
+**Fix:** Define custom networks in your compose files:
+
+```yaml
+networks:
+  frontend:
+  backend:
+
+services:
+  web:
+    networks: [frontend, backend]
+  api:
+    networks: [backend]
+```
+
+After deploying, the topology will show these networks and their connected containers.
+
+---
+
 ## Checking the health endpoint
 
 Sencho exposes a health endpoint for monitoring and container health checks:
