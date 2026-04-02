@@ -31,7 +31,7 @@ This is your actual application data. It lives entirely outside Sencho and you a
 ### Simple file copy
 
 ```bash
-# Stop Sencho to ensure the SQLite WAL is flushed (recommended but not strictly required)
+# Stop Sencho to ensure no active transactions (recommended but not strictly required)
 docker stop sencho
 
 # Copy the data directory
@@ -43,6 +43,10 @@ cp -r /opt/compose /path/to/backup/compose-$(date +%Y%m%d)
 # Restart
 docker start sencho
 ```
+
+<Note>
+  Sencho uses SQLite's default journal mode (not WAL), so you will not see `-wal` or `-shm` sidecar files alongside `sencho.db`. If a `-journal` file exists when you copy, it indicates an interrupted write — SQLite will automatically resolve it the next time the database is opened.
+</Note>
 
 ### SQLite online backup (without stopping)
 

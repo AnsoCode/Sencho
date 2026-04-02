@@ -1,0 +1,82 @@
+---
+title: Upgrading Sencho
+description: How to update Sencho, what happens during upgrades, and the version policy.
+---
+
+## Upgrade steps
+
+Upgrading Sencho is a two-command process. Pull the latest image and recreate the container:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Or if you're running with `docker run`:
+
+```bash
+docker pull saelix/sencho:latest
+docker stop sencho && docker rm sencho
+# Re-run your original docker run command
+```
+
+Sencho will apply any necessary database migrations automatically on startup. No manual steps are required.
+
+---
+
+## Automatic migrations
+
+Sencho handles all schema changes internally. When the application starts, it runs a series of migration checks:
+
+- **Schema evolution** — New columns are added via `ALTER TABLE ADD COLUMN`. If a column already exists, the operation is silently skipped.
+- **Legacy config migration** — If upgrading from a very early version that used a `sencho.json` file, the settings are automatically imported into SQLite.
+- **Admin account migration** — Legacy admin credentials stored in `global_settings` are migrated to the `users` table.
+- **Encryption migration** — Unencrypted node API tokens are automatically encrypted at rest using AES-256-GCM.
+- **SSO columns** — SSO provider fields are added to the users table if not present.
+- **Registry tables** — Private registry storage tables are created if they don't exist.
+- **RBAC tables** — Role assignment tables are created for granular permissions.
+- **Legacy cleanup** — Obsolete columns from pre-0.7 versions (SSH/TLS fields) are dropped.
+
+You never need to run SQL commands, migration scripts, or any manual database operations.
+
+---
+
+## Backup before upgrading
+
+Always back up your data directory before upgrading. If something goes wrong, restoring from backup is the only recovery path — Sencho does not support downgrading or rolling back database migrations.
+
+```bash
+sqlite3 /path/to/sencho-data/sencho.db ".backup '/path/to/backup/sencho-pre-upgrade.db'"
+```
+
+See the [Backup & Restore guide](/operations/backup) for full backup procedures.
+
+---
+
+## Pinning a specific version
+
+If you prefer to control exactly which version you run, pin the image tag in your `docker-compose.yml`:
+
+```yaml
+image: saelix/sencho:0.25.3
+```
+
+Check [GitHub Releases](https://github.com/AnsoCode/Sencho/releases) for available versions and changelogs.
+
+---
+
+## Version policy
+
+Sencho follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
+
+| Change type | Version bump | Example |
+|-------------|-------------|---------|
+| Bug fixes, performance improvements | Patch | 0.25.0 → 0.25.1 |
+| New features | Minor | 0.25.x → 0.26.0 |
+| Breaking changes | Major | 0.x.y → 1.0.0 |
+
+<Note>
+  While the version is below 1.0, minor releases (0.x.0) may occasionally include breaking changes. These are always documented in the release notes. Once Sencho reaches 1.0, breaking changes will only occur in major releases.
+</Note>
+
+Breaking changes are marked with `BREAKING CHANGE` in the [release notes](https://github.com/AnsoCode/Sencho/releases). Subscribe to the repository's releases to be notified of new versions.

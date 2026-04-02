@@ -1,0 +1,105 @@
+---
+title: Architecture Overview
+description: System design, request flow, database schema, and deployment model.
+---
+
+## System overview
+
+Sencho is a self-contained application packaged as a single Docker container:
+
+- **Frontend:** React 19 single-page application built with Vite and served as static files
+- **Backend:** Express.js (Node.js 22) REST API with WebSocket support
+- **Database:** SQLite via `better-sqlite3` — no external database required
+- **Container management:** Docker Engine API via the mounted Docker socket, plus Docker Compose CLI for stack operations
+
+There are no external dependencies. No Redis, no PostgreSQL, no message queues. All state lives in a single SQLite file (`sencho.db`) inside the data directory.
+
+---
+
+## Request flow
+
+### Browser sessions
+
+1. The browser loads the React SPA from the Express static file server
+2. The frontend makes API calls via an `apiFetch` wrapper that injects the active node ID as an `x-node-id` header
+3. Express middleware evaluates the node ID:
+   - **Local node:** The request passes through authentication middleware and hits the local route handler, which communicates with Docker via the mounted socket
+   - **Remote node:** The request is transparently proxied to the remote Sencho instance using `http-proxy-middleware`. The backend strips the `x-node-id` header and injects `Authorization: Bearer <token>` for the remote node
+4. The response flows back through the same path to the browser
+
+### API token access
+
+External integrations (CI/CD pipelines, scripts) authenticate with Bearer tokens instead of cookies. The same route handlers process both authentication methods — the middleware accepts JWT tokens from either cookies or the `Authorization` header.
+
+---
+
+## Authentication model
+
+| Method | Used by | Token storage |
+|--------|---------|--------------|
+| HTTP-only cookie (JWT) | Browser sessions | Set by Express on login, sent automatically |
+| Bearer token (JWT) | API integrations, node-to-node proxy | Passed in `Authorization` header |
+
+API tokens have scopes that restrict their access: `read-only`, `deploy-only`, or `full-admin`. Tokens are hashed before storage.
+
+SSO is supported via LDAP, Google OIDC, GitHub OAuth, and Okta OIDC. SSO users are mapped to local accounts on first login.
+
+---
+
+## Database
+
+Sencho stores all state in a single SQLite database using the default journal mode (DELETE/ROLLBACK). The schema includes approximately 20 tables:
+
+| Table group | Tables | Purpose |
+|-------------|--------|---------|
+| **Identity** | `users`, `role_assignments`, `sso_config` | User accounts, RBAC, SSO provider configs |
+| **Nodes** | `nodes` | Local and remote node connection details |
+| **Configuration** | `global_settings` | Key-value application settings |
+| **Automation** | `webhooks`, `webhook_executions`, `scheduled_tasks`, `scheduled_task_runs` | Webhook definitions/history, cron tasks |
+| **Monitoring** | `stack_alerts`, `notification_history`, `container_metrics`, `agents` | Alert rules, notifications, time-series metrics, notification channels |
+| **Fleet** | `fleet_snapshots`, `fleet_snapshot_files` | Multi-node backup snapshots |
+| **Security** | `api_tokens`, `audit_log` | API token hashes, action audit trail |
+| **Updates** | `stack_update_status` | Image update availability tracking |
+| **Registries** | Stored via `RegistryService` | Private container registry credentials (encrypted at rest) |
+| **State** | `system_state` | Internal application state |
+
+All schema migrations run automatically on startup. See [Upgrading Sencho](/operations/upgrade#automatic-migrations) for details.
+
+---
+
+## Multi-node architecture
+
+Sencho uses a **Distributed API** model for managing multiple hosts:
+
+- **Local node:** Communicates directly with the Docker Engine via the mounted socket (`/var/run/docker.sock`)
+- **Remote nodes:** Each remote host runs its own independent Sencho instance. The primary instance acts as a transparent HTTP proxy, routing requests to remote instances using stored API URLs and long-lived JWT tokens
+
+This means:
+- No SSH, SFTP, or remote Docker TCP socket connections
+- Each node is fully autonomous and can operate independently
+- The primary instance proxies both HTTP requests and WebSocket connections
+- Node routing is controlled via the `x-node-id` request header (HTTP) or `?nodeId=` query parameter (WebSocket)
+
+---
+
+## WebSocket channels
+
+| Path | Purpose | Auth |
+|------|---------|------|
+| `/api/stacks/{stackName}/logs` | Live container log streaming | Cookie or query param token |
+| `/ws` | Host console terminal (PTY) | Cookie-based, admin only |
+
+WebSocket connections bypass Express middleware. Authentication is handled manually by parsing cookies and verifying JWTs inside the `upgrade` event handler.
+
+---
+
+## Build and deployment
+
+The Docker image uses a multi-stage build:
+
+1. **Frontend build stage** — Compiles the React SPA with Vite
+2. **Backend build stage** — Compiles TypeScript to JavaScript
+3. **Native module stage** — Cross-compiles native dependencies (`bcrypt`, `better-sqlite3`, `node-pty`) for the target architecture
+4. **Production stage** — Alpine-based Node.js 22 runtime with Docker CLI and Docker Compose installed
+
+The final image supports both `linux/amd64` and `linux/arm64` architectures and is published to [Docker Hub](https://hub.docker.com/r/saelix/sencho) as `saelix/sencho`.

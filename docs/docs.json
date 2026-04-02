@@ -121,14 +121,18 @@
             "group": "Reference",
             "pages": [
               "reference/settings",
-              "reference/security-advisories"
+              "reference/security-advisories",
+              "reference/architecture",
+              "reference/development"
             ]
           },
           {
             "group": "Operations",
             "pages": [
               "operations/troubleshooting",
-              "operations/backup"
+              "operations/backup",
+              "operations/upgrade",
+              "operations/self-hosting"
             ]
           }
         ]
@@ -232,6 +236,24 @@
               "POST /api/scheduled-tasks/{id}/run",
               "GET /api/scheduled-tasks/{id}/runs",
               "GET /api/scheduled-tasks/{id}/runs/export"
+            ]
+          },
+          {
+            "group": "Registries",
+            "pages": [
+              "GET /api/registries",
+              "POST /api/registries",
+              "PUT /api/registries/{id}",
+              "DELETE /api/registries/{id}",
+              "POST /api/registries/{id}/test"
+            ]
+          },
+          {
+            "group": "Image Updates",
+            "pages": [
+              "GET /api/image-updates",
+              "POST /api/image-updates/refresh",
+              "GET /api/image-updates/status"
             ]
           }
         ]

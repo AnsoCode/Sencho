@@ -162,6 +162,41 @@ server {
 }
 ```
 
+### Nginx with SSL (Let's Encrypt)
+
+```nginx
+server {
+    listen 80;
+    server_name sencho.yourdomain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name sencho.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/sencho.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sencho.yourdomain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+Use [Certbot](https://certbot.eff.org/) to obtain and auto-renew certificates: `certbot --nginx -d sencho.yourdomain.com`.
+
 ### Traefik (Docker labels)
 
 ```yaml
@@ -171,9 +206,35 @@ labels:
   - "traefik.http.services.sencho.loadbalancer.server.port=3000"
 ```
 
+### Traefik with SSL (Let's Encrypt)
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.sencho.rule=Host(`sencho.yourdomain.com`)"
+  - "traefik.http.routers.sencho.entrypoints=websecure"
+  - "traefik.http.routers.sencho.tls.certresolver=letsencrypt"
+  - "traefik.http.services.sencho.loadbalancer.server.port=3000"
+  # HTTP to HTTPS redirect
+  - "traefik.http.routers.sencho-http.rule=Host(`sencho.yourdomain.com`)"
+  - "traefik.http.routers.sencho-http.entrypoints=web"
+  - "traefik.http.routers.sencho-http.middlewares=redirect-to-https"
+  - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+```
+
 <Note>
   Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends. No extra configuration needed.
 </Note>
+
+### Caddy
+
+```
+sencho.yourdomain.com {
+    reverse_proxy localhost:3000
+}
+```
+
+Caddy automatically obtains and renews SSL certificates via Let's Encrypt. WebSocket connections are forwarded without additional configuration.
 
 ## First boot
 

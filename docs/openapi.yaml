@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sencho API
-  version: 0.23.0
+  version: 0.25.3
   description: |
     REST API for Sencho, a self-hosted Docker Compose management dashboard.
 
@@ -66,6 +66,10 @@ tags:
     description: Multi-node fleet overview and snapshots (Pro license required)
   - name: Scheduled Tasks
     description: Configure recurring automated operations (Admiral license required)
+  - name: Registries
+    description: Manage private container registry credentials (Admiral license required). These endpoints are only accessible via browser sessions — API tokens receive `SCOPE_DENIED`.
+  - name: Image Updates
+    description: Check for available container image updates across stacks
 
 components:
   securitySchemes:
@@ -419,6 +423,69 @@ components:
           type: ["string", "null"]
         error:
           type: ["string", "null"]
+
+    Registry:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: GitHub Container Registry
+        url:
+          type: string
+          example: ghcr.io
+        type:
+          type: string
+          enum: [dockerhub, ghcr, ecr, custom]
+        username:
+          type: string
+        aws_region:
+          type: ["string", "null"]
+          description: AWS region (only present for ECR registries).
+        created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+
+    RegistryCreate:
+      type: object
+      required: [name, url, type, username, secret]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: GitHub Container Registry
+        url:
+          type: string
+          maxLength: 500
+          example: ghcr.io
+        type:
+          type: string
+          enum: [dockerhub, ghcr, ecr, custom]
+        username:
+          type: string
+          example: my-user
+        secret:
+          type: string
+          description: Password, token, or access key. Write-only — never returned in GET responses.
+        aws_region:
+          type: string
+          description: Required when `type` is `ecr`.
+          example: us-east-1
+
+    ImageUpdateStatus:
+      type: object
+      properties:
+        stack_name:
+          type: string
+          description: Name of the stack.
+        has_updates:
+          type: integer
+          enum: [0, 1]
+          description: Whether any images in this stack have newer versions available.
+        last_checked:
+          type: ["integer", "null"]
+          description: Unix timestamp of the last check.
 
   responses:
     Unauthorized:
@@ -2280,3 +2347,231 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  # ── Registries ──────────────────────────────────────────
+  /api/registries:
+    get:
+      operationId: listRegistries
+      tags: [Registries]
+      summary: List registries
+      description: |
+        Returns all configured private container registries. Secrets are never included in the response.
+        Requires Admiral license and admin role. API tokens receive `SCOPE_DENIED`.
+      responses:
+        "200":
+          description: Array of registry objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Registry"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createRegistry
+      tags: [Registries]
+      summary: Create registry
+      description: |
+        Adds a new private container registry. The secret is encrypted at rest using AES-256-GCM.
+        Requires Admiral license and admin role. API tokens receive `SCOPE_DENIED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryCreate"
+      responses:
+        "201":
+          description: Registry created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: integer
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/registries/{id}:
+    put:
+      operationId: updateRegistry
+      tags: [Registries]
+      summary: Update registry
+      description: |
+        Updates an existing registry. All fields are optional — only provided fields are changed.
+        Requires Admiral license and admin role. API tokens receive `SCOPE_DENIED`.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryCreate"
+      responses:
+        "200":
+          description: Registry updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteRegistry
+      tags: [Registries]
+      summary: Delete registry
+      description: |
+        Removes a registry and its encrypted credentials.
+        Requires Admiral license and admin role. API tokens receive `SCOPE_DENIED`.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Registry deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessBoolean"
+        "400":
+          description: Invalid registry ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/registries/{id}/test:
+    post:
+      operationId: testRegistry
+      tags: [Registries]
+      summary: Test registry connection
+      description: |
+        Tests connectivity and authentication against a configured registry.
+        Requires Admiral license and admin role. API tokens receive `SCOPE_DENIED`.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Test result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Invalid registry ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Image Updates ───────────────────────────────────────
+  /api/image-updates:
+    get:
+      operationId: getImageUpdates
+      tags: [Image Updates]
+      summary: Get image update status
+      description: Returns the update availability status for all stacks.
+      responses:
+        "200":
+          description: Array of update status objects per stack.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImageUpdateStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/image-updates/refresh:
+    post:
+      operationId: refreshImageUpdates
+      tags: [Image Updates]
+      summary: Trigger image update check
+      description: |
+        Triggers a background check for newer image versions across all stacks.
+        Rate limited to one refresh per 10 minutes. Requires admin role.
+      responses:
+        "200":
+          description: Refresh started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Image update check started in background.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          description: Rate limited — wait at least 10 minutes between refreshes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/image-updates/status:
+    get:
+      operationId: getImageUpdateCheckStatus
+      tags: [Image Updates]
+      summary: Check if update scan is running
+      description: Returns whether an image update check is currently in progress.
+      responses:
+        "200":
+          description: Check status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checking]
+                properties:
+                  checking:
+                    type: boolean
+                    description: "`true` if a scan is currently running."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
