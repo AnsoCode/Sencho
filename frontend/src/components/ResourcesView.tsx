@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container } from 'lucide-react';
+import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2 } from 'lucide-react';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
@@ -56,7 +56,7 @@ interface DockerVolume {
     managedStatus: 'managed' | 'unmanaged';
 }
 
-interface DockerNetwork {
+export interface DockerNetwork {
     Id: string;
     Name: string;
     Driver: string;
@@ -368,7 +368,7 @@ export default function ResourcesView() {
     const [createNetworkForm, setCreateNetworkForm] = useState({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
     const [isCreatingNetwork, setIsCreatingNetwork] = useState(false);
     const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
-    const [isInspecting, setIsInspecting] = useState(false);
+    const [isInspectLoading, setIsInspectLoading] = useState(false);
 
     // Unmanaged container state
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
@@ -500,7 +500,7 @@ export default function ResourcesView() {
     };
 
     const handleInspectNetwork = async (id: string) => {
-        setIsInspecting(true);
+        setIsInspectLoading(true);
         try {
             const res = await apiFetch(`/system/networks/${id}`);
             if (!res.ok) throw new Error('Failed to inspect network');
@@ -509,7 +509,7 @@ export default function ResourcesView() {
         } catch (error: any) {
             toast.error(error?.message || error?.error || error?.data?.error || 'Something went wrong.');
         } finally {
-            setIsInspecting(false);
+            setIsInspectLoading(false);
         }
     };
 
@@ -758,19 +758,17 @@ export default function ResourcesView() {
                     {/* Networks */}
                     <TabsContent value="networks" className="m-0 border-0 p-0 animate-in fade-in-0 duration-200">
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                {networkViewMode === 'list' && (
-                                    <FilterToggle
-                                        value={networkFilter}
-                                        onChange={setNetworkFilter}
-                                        counts={{
-                                            all: networks.length,
-                                            managed: networks.filter(n => n.managedStatus === 'managed').length,
-                                            unmanaged: networks.filter(n => n.managedStatus !== 'managed').length,
-                                        }}
-                                    />
-                                )}
-                            </div>
+                            {networkViewMode === 'list' && (
+                                <FilterToggle
+                                    value={networkFilter}
+                                    onChange={setNetworkFilter}
+                                    counts={{
+                                        all: networks.length,
+                                        managed: networks.filter(n => n.managedStatus === 'managed').length,
+                                        unmanaged: networks.filter(n => n.managedStatus !== 'managed').length,
+                                    }}
+                                />
+                            )}
                             <div className="flex items-center gap-2 pr-3">
                                 <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
                                     <button
@@ -815,7 +813,7 @@ export default function ResourcesView() {
                                             <span className="text-sm">Loading topology...</span>
                                         </div>
                                     }>
-                                        <NetworkTopologyView networks={networks} />
+                                        <NetworkTopologyView />
                                     </Suspense>
                                 </ProGate>
                             </div>
@@ -852,9 +850,10 @@ export default function ResourcesView() {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-7 w-7 hover:text-foreground transition-colors"
+                                                        disabled={isInspectLoading}
                                                         onClick={() => handleInspectNetwork(net.Id)}
                                                     >
-                                                        <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                        {isInspectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />}
                                                     </Button>
                                                     {isAdmin && <Button
                                                         variant="ghost"

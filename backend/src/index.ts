@@ -4405,6 +4405,35 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/system/networks/topology', async (req: Request, res: Response) => {
+  try {
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const allNetworks = await dockerController.getNetworks();
+    const userNetworks = allNetworks.filter((n: any) => n.managedStatus !== 'system');
+
+    const inspected = await Promise.all(
+      userNetworks.map(async (net: any) => {
+        try {
+          const detail = await dockerController.inspectNetwork(net.Id);
+          const containers = Object.entries(detail.Containers || {}).map(([id, c]: [string, any]) => ({
+            id,
+            name: c.Name,
+            ip: c.IPv4Address,
+          }));
+          return { ...net, containers };
+        } catch {
+          return { ...net, containers: [] };
+        }
+      })
+    );
+
+    res.json(inspected);
+  } catch (error: any) {
+    console.error('Failed to fetch network topology:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch network topology' });
+  }
+});
+
 app.get('/api/system/networks/:id', async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;

@@ -21,23 +21,12 @@ import { cn } from '@/lib/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface DockerNetwork {
+interface TopologyNetwork {
     Id: string;
     Name: string;
     Driver: string;
-    Scope: string;
-    managedBy: string | null;
     managedStatus: 'managed' | 'unmanaged' | 'system';
-}
-
-interface NetworkInspect {
-    Id: string;
-    Name: string;
-    Driver: string;
-    Containers: Record<string, {
-        Name: string;
-        IPv4Address: string;
-    }>;
+    containers: Array<{ id: string; name: string; ip: string }>;
 }
 
 interface ContainerNode {
@@ -45,10 +34,6 @@ interface ContainerNode {
     name: string;
     networks: string[];
     ipAddresses: Record<string, string>;
-}
-
-interface NetworkTopologyViewProps {
-    networks: DockerNetwork[];
 }
 
 // ── Custom Nodes ──────────────────────────────────────────────────────────────
@@ -117,7 +102,7 @@ const EDGE_COLORS = [
 // ── Layout Helper ─────────────────────────────────────────────────────────────
 
 function layoutGraph(
-    networksList: Array<DockerNetwork & { containers: Array<{ id: string; name: string; ip: string }> }>,
+    networksList: TopologyNetwork[],
 ): { nodes: Node[]; edges: Edge[] } {
     const flowNodes: Node[] = [];
     const flowEdges: Edge[] = [];
@@ -180,7 +165,7 @@ function layoutGraph(
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function NetworkTopologyView({ networks }: NetworkTopologyViewProps) {
+export default function NetworkTopologyView() {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [loading, setLoading] = useState(true);
@@ -188,25 +173,9 @@ export default function NetworkTopologyView({ networks }: NetworkTopologyViewPro
     const fetchTopology = useCallback(async () => {
         setLoading(true);
         try {
-            const userNetworks = networks.filter(n => n.managedStatus !== 'system');
-
-            const inspected = await Promise.all(
-                userNetworks.map(async net => {
-                    try {
-                        const inspectRes = await apiFetch(`/system/networks/${net.Id}`);
-                        if (!inspectRes.ok) return { ...net, containers: [] as Array<{ id: string; name: string; ip: string }> };
-                        const detail: NetworkInspect = await inspectRes.json();
-                        const containers = Object.entries(detail.Containers || {}).map(([id, c]) => ({
-                            id,
-                            name: c.Name,
-                            ip: c.IPv4Address,
-                        }));
-                        return { ...net, containers };
-                    } catch {
-                        return { ...net, containers: [] as Array<{ id: string; name: string; ip: string }> };
-                    }
-                })
-            );
+            const res = await apiFetch('/system/networks/topology');
+            if (!res.ok) throw new Error('Failed to fetch topology');
+            const inspected = await res.json();
 
             const { nodes: layoutNodes, edges: layoutEdges } = layoutGraph(inspected);
             setNodes(layoutNodes);
@@ -216,7 +185,7 @@ export default function NetworkTopologyView({ networks }: NetworkTopologyViewPro
         } finally {
             setLoading(false);
         }
-    }, [networks, setNodes, setEdges]);
+    }, [setNodes, setEdges]);
 
     useEffect(() => { fetchTopology(); }, [fetchTopology]);
 
