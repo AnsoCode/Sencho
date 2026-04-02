@@ -41,7 +41,7 @@ describe('DatabaseService - container metrics', () => {
   });
 
   it('aggregates metrics into minute buckets', () => {
-    const baseTime = Date.now();
+    const baseTime = Math.floor(Date.now() / 60000) * 60000; // floor to minute start
     // Insert two metrics within the same minute
     db.addContainerMetric({
       container_id: 'bucket-test',
