@@ -26,7 +26,7 @@ import { LabelDot, type Label, type LabelColor } from '../LabelPill';
 
 const LABEL_COLORS: LabelColor[] = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'];
 
-export function LabelsSection({ isPro }: { isPro: boolean }) {
+export function LabelsSection() {
     const [labels, setLabels] = useState<Label[]>([]);
     const [loading, setLoading] = useState(true);
     const [assignmentCounts, setAssignmentCounts] = useState<Record<number, number>>({});
@@ -120,8 +120,6 @@ export function LabelsSection({ isPro }: { isPro: boolean }) {
             toast.error((err as Error)?.message || 'Something went wrong.');
         }
     };
-
-    void isPro;
 
     return (
         <ProGate featureName="Stack Labels">

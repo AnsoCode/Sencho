@@ -100,7 +100,7 @@ export function LabelAssignPopover({ stackName, allLabels, assignedLabelIds, onL
                             <LabelDot color={label.color} />
                             <span className="flex-1 text-left font-mono text-[12px] truncate">{label.name}</span>
                             {assignedLabelIds.includes(label.id) && (
-                                <Check className="w-3.5 h-3.5 text-success shrink-0" />
+                                <Check className="w-3.5 h-3.5 text-success shrink-0" strokeWidth={1.5} />
                             )}
                         </button>
                     ))}

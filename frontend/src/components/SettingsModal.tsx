@@ -254,7 +254,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
             case 'registries':
                 return <RegistriesSection />;
             case 'labels':
-                return <LabelsSection isPro={isPro} />;
+                return <LabelsSection />;
             case 'system':
                 return (
                     <SystemSection

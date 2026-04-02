@@ -1388,21 +1388,30 @@ export class DatabaseService {
         return { id: result.lastInsertRowid as number, node_id: nodeId, name, color };
     }
 
-    public updateLabel(id: number, updates: { name?: string; color?: string }): Label | null {
-        const label = this.db.prepare('SELECT * FROM stack_labels WHERE id = ?').get(id) as Label | undefined;
+    public updateLabel(id: number, nodeId: number, updates: { name?: string; color?: string }): Label | null {
+        const label = this.db.prepare('SELECT * FROM stack_labels WHERE id = ? AND node_id = ?').get(id, nodeId) as Label | undefined;
         if (!label) return null;
         const name = updates.name ?? label.name;
         const color = updates.color ?? label.color;
-        this.db.prepare('UPDATE stack_labels SET name = ?, color = ? WHERE id = ?').run(name, color, id);
+        this.db.prepare('UPDATE stack_labels SET name = ?, color = ? WHERE id = ? AND node_id = ?').run(name, color, id, nodeId);
         return { ...label, name, color };
     }
 
-    public deleteLabel(id: number): void {
-        this.db.prepare('DELETE FROM stack_labels WHERE id = ?').run(id);
+    public deleteLabel(id: number, nodeId: number): void {
+        this.db.prepare('DELETE FROM stack_labels WHERE id = ? AND node_id = ?').run(id, nodeId);
     }
 
     public setStackLabels(stackName: string, nodeId: number, labelIds: number[]): void {
         const txn = this.db.transaction(() => {
+            if (labelIds.length > 0) {
+                const placeholders = labelIds.map(() => '?').join(',');
+                const validCount = this.db.prepare(
+                    `SELECT COUNT(*) as cnt FROM stack_labels WHERE id IN (${placeholders}) AND node_id = ?`
+                ).get(...labelIds, nodeId) as { cnt: number };
+                if (validCount.cnt !== labelIds.length) {
+                    throw new Error('One or more label IDs are invalid for this node');
+                }
+            }
             this.db.prepare('DELETE FROM stack_label_assignments WHERE stack_name = ? AND node_id = ?').run(stackName, nodeId);
             const insert = this.db.prepare('INSERT INTO stack_label_assignments (label_id, stack_name, node_id) VALUES (?, ?, ?)');
             for (const labelId of labelIds) {

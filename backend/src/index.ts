@@ -18,7 +18,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, Label } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { ImageUpdateService } from './services/ImageUpdateService';
@@ -2500,8 +2500,8 @@ app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Pro
 
     const label = DatabaseService.getInstance().createLabel(nodeId, name.trim(), color);
     res.status(201).json(label);
-  } catch (error: any) {
-    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
       res.status(409).json({ error: 'A label with that name already exists' });
       return;
     }
@@ -2526,6 +2526,8 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
   if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
+    const nodeId = req.nodeId ?? 0;
     const { name, color } = req.body;
 
     if (name !== undefined) {
@@ -2543,7 +2545,7 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
       return;
     }
 
-    const updated = DatabaseService.getInstance().updateLabel(id, {
+    const updated = DatabaseService.getInstance().updateLabel(id, nodeId, {
       name: name?.trim(),
       color,
     });
@@ -2552,8 +2554,8 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
       return;
     }
     res.json(updated);
-  } catch (error: any) {
-    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
       res.status(409).json({ error: 'A label with that name already exists' });
       return;
     }
@@ -2566,7 +2568,9 @@ app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response
   if (!requirePro(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
-    DatabaseService.getInstance().deleteLabel(id);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
+    const nodeId = req.nodeId ?? 0;
+    DatabaseService.getInstance().deleteLabel(id, nodeId);
     res.json({ success: true });
   } catch (error) {
     console.error('[Labels] Delete error:', error);
@@ -2600,8 +2604,10 @@ app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, re
 
 app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePro(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
     const { action } = req.body;
     const validActions = ['deploy', 'stop', 'restart'];
     if (!action || !validActions.includes(action)) {
@@ -2631,8 +2637,8 @@ app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Res
           }
         }
         results.push({ stackName, success: true });
-      } catch (err: any) {
-        results.push({ stackName, success: false, error: err?.message || 'Unknown error' });
+      } catch (err: unknown) {
+        results.push({ stackName, success: false, error: (err as Error)?.message || 'Unknown error' });
       }
     }
 

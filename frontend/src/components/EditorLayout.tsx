@@ -1462,7 +1462,7 @@ export default function EditorLayout() {
                                   >
                                     <LabelDot color={label.color} />
                                     <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
-                                    {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" />}
+                                    {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
                                   </ContextMenuItem>
                                 );
                               })}
