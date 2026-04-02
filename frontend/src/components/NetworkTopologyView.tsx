@@ -180,8 +180,9 @@ export default function NetworkTopologyView() {
             const { nodes: layoutNodes, edges: layoutEdges } = layoutGraph(inspected);
             setNodes(layoutNodes);
             setEdges(layoutEdges);
-        } catch (error: any) {
-            toast.error(error?.message || error?.error || error?.data?.error || 'Something went wrong.');
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || err?.error || 'Something went wrong.'));
         } finally {
             setLoading(false);
         }

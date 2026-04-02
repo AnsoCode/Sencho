@@ -495,8 +495,9 @@ export default function ResourcesView() {
             setShowCreateNetwork(false);
             setCreateNetworkForm({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
             await fetchAllData();
-        } catch (error: any) {
-            toast.error(error?.message || error?.error || error?.data?.error || 'Something went wrong.');
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || err?.error || 'Something went wrong.'));
         } finally {
             setIsCreatingNetwork(false);
         }
@@ -509,8 +510,9 @@ export default function ResourcesView() {
             if (!res.ok) throw new Error('Failed to inspect network');
             const data = await res.json();
             setInspectNetwork(data);
-        } catch (error: any) {
-            toast.error(error?.message || error?.error || error?.data?.error || 'Something went wrong.');
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || err?.error || 'Something went wrong.'));
         } finally {
             setIsInspectLoading(false);
         }
