@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+
+* **quickstart:** fix Cyrillic character in Docker image reference and correct registry from GHCR to Docker Hub (`saelix/sencho`)
+* **backup:** correct WAL mode references — Sencho uses SQLite default journal mode, not WAL
+* **configuration:** add SSL/TLS examples for Nginx and Traefik reverse proxies, add Caddy configuration
+* **env:** add missing `PORT`, `DATA_DIR`, `NODE_ENV`, `FRONTEND_URL`, `SSO_LDAP_DISPLAY_NAME` to `.env.example`
+* **operations:** add upgrade & migration guide, self-hosting best practices page
+* **reference:** add architecture overview and development/contributor guide
+* **openapi:** update spec from v0.23.0 to v0.25.3, add Registries and Image Updates endpoint groups
+
 ### Fixed
 
 * **error-handling:** surface silent errors across the codebase — added `console.warn`/`console.error` logging to 22 silent catch blocks across 10 files (services, index.ts, frontend Login). Errors in cleanup, migrations, SSO, fleet snapshots, shutdown, and validation are now visible in logs without changing any control flow. ENOENT guards added to file-system catches to distinguish missing files from permission errors.
