@@ -88,7 +88,7 @@ This applies to all stack endpoints: read, write, deploy, down, restart, stop, s
 
 ## Rate limiting
 
-All `/api/` endpoints are subject to a global rate limit of **100 requests per minute** per IP address. When exceeded, the server responds with `429 Too Many Requests`:
+All API endpoints are rate-limited per IP address. Authentication endpoints have stricter limits to prevent brute-force attacks. When exceeded, the server responds with `429 Too Many Requests`:
 
 ```json
 {
@@ -96,11 +96,7 @@ All `/api/` endpoints are subject to a global rate limit of **100 requests per m
 }
 ```
 
-Authentication endpoints (`/api/auth/*`) have an additional, stricter limit of **5 requests per 15 minutes** to prevent brute-force attacks. Both limits apply independently — a login request counts against both the global limit and the auth limit.
-
-The global rate limit is configurable via the `API_RATE_LIMIT` environment variable (requests per minute, default `100`).
-
-Standard rate limit headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) are included in all API responses.
+Standard rate limit headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) are included in all API responses, so clients can self-throttle accordingly.
 
 ## License tier requirements
 

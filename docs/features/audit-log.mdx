@@ -91,4 +91,4 @@ Cleanup runs automatically as part of Sencho's periodic maintenance cycle.
 
 ## Security at rest
 
-As of this release, sensitive database values (such as remote node API tokens) are encrypted at rest using AES-256-GCM. The encryption key is stored as a separate file outside the SQLite database, ensuring that database file exposure alone does not compromise secrets.
+Sensitive database values (such as remote node API tokens) are encrypted at rest. The encryption key is stored separately from the database, ensuring that database file exposure alone does not compromise secrets.

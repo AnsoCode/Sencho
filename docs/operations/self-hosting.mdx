@@ -36,7 +36,7 @@ Sencho requires three volume mounts to function correctly:
 | `/opt/compose:/opt/compose` | Your compose project files (must follow 1:1 path rule) | Yes |
 
 <Note>
-  The data directory contains `sencho.db` (all settings, nodes, alerts, metrics) and `encryption.key` (used to encrypt secrets at rest). Losing this directory means losing your Sencho configuration entirely.
+  The data directory contains your Sencho database and encryption keys. Losing this directory means losing your Sencho configuration entirely.
 </Note>
 
 ---
@@ -89,9 +89,8 @@ Quick reference for all environment variables. See [Configuration](/getting-star
 | `JWT_SECRET` | *(required)* | Secret key for signing JWT tokens |
 | `COMPOSE_DIR` | `/app/compose` | Path to compose project files (1:1 rule applies) |
 | `PORT` | `3000` | HTTP server listen port |
-| `DATA_DIR` | `/app/data` | Database and encryption key directory |
+| `DATA_DIR` | `/app/data` | Persistent data directory |
 | `NODE_ENV` | `production` | Set automatically in Docker image |
 | `FRONTEND_URL` | *(empty)* | Frontend origin for CORS; leave empty for same-origin |
-| `API_RATE_LIMIT` | `100` | Max API requests per minute per IP |
 
 SSO variables are documented separately in the [SSO Quickstart](/getting-started/sso-quickstart).
