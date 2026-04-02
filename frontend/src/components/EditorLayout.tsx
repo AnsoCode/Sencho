@@ -18,7 +18,7 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
@@ -116,6 +116,7 @@ export default function EditorLayout() {
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
   const [backupInfo, setBackupInfo] = useState<{ exists: boolean; timestamp: number | null }>({ exists: false, timestamp: null });
   const [theme, setTheme] = useState<Theme>(() => {
@@ -239,13 +240,13 @@ export default function EditorLayout() {
     return () => cancelAnimationFrame(id);
   }, [activeTab]);
 
-  const refreshStacks = async (background = false) => {
+  const refreshStacks = async (background = false): Promise<string[]> => {
     if (!background) setIsLoading(true);
     try {
       const res = await apiFetch('/stacks');
       if (!res.ok) {
         setFiles([]);
-        return;
+        return [];
       }
       const data = await res.json();
       const fileList: string[] = Array.isArray(data) ? data : [];
@@ -267,11 +268,40 @@ export default function EditorLayout() {
         }
       }
       setStackStatuses(statuses);
+      return fileList;
     } catch (error) {
       console.error('Failed to refresh stacks:', error);
       setFiles([]);
+      return [];
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleScanStacks = async () => {
+    if (isScanning) return;
+    setIsScanning(true);
+    const previousStacks = [...files];
+    try {
+      const currentStacks = await refreshStacks();
+      const added = currentStacks.filter(s => !previousStacks.includes(s));
+      const removed = previousStacks.filter(s => !currentStacks.includes(s));
+
+      if (added.length > 0) {
+        toast.success(`Found ${added.length} new stack${added.length !== 1 ? 's' : ''}: ${added.join(', ')}`);
+      }
+      if (removed.length > 0) {
+        toast.info(`${removed.length} stack${removed.length !== 1 ? 's' : ''} no longer detected: ${removed.join(', ')}`);
+      }
+      if (added.length === 0 && removed.length === 0) {
+        toast.info('No new stacks found.');
+      }
+    } catch (error: unknown) {
+      const err = error as Record<string, unknown>;
+      const data = err?.data as Record<string, unknown> | undefined;
+      toast.error((err?.message as string) || (err?.error as string) || (data?.error as string) || 'Something went wrong.');
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -1163,11 +1193,11 @@ export default function EditorLayout() {
           </div>
         )}
 
-        {/* Create Stack Button */}
-        {can('stack:create') && <div className="p-4">
+        {/* Create Stack & Scan Buttons */}
+        {can('stack:create') && <div className="p-4 flex gap-2">
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="w-full rounded-lg">
+              <Button variant="outline" className="flex-1 rounded-lg">
                 <Plus className="w-4 h-4 mr-2" />
                 Create Stack
               </Button>
@@ -1190,6 +1220,26 @@ export default function EditorLayout() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="rounded-lg shrink-0"
+                  onClick={handleScanStacks}
+                  disabled={isScanning}
+                >
+                  {isScanning
+                    ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
+                    : <FolderSearch className="w-4 h-4" strokeWidth={1.5} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Scan stacks folder</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>}
 
         {/* Search Input & Stack List */}

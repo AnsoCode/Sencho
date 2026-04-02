@@ -75,6 +75,24 @@ Right-click or use the **⋮** button on any stack in the sidebar to access:
 - **Update** - pull latest images and recreate containers
 - **Delete** - stop and remove the stack (admin only)
 
+## Scanning for stacks
+
+If you place Docker Compose files directly into the stacks directory (for example, via `scp`, a file manager, or the command line), you can import them without going through the full "Create Stack" flow.
+
+Click the **folder-search icon** next to the "Create Stack" button in the sidebar. Sencho scans the configured stacks directory and reports what it finds:
+
+<Frame>
+  <img src="/images/stack-scanning/scan-button-sidebar.png" alt="Scan stacks folder button in the sidebar" />
+</Frame>
+
+- **New stacks detected** — a success notification lists the newly discovered stack names, and they appear immediately in the sidebar
+- **Stacks removed from disk** — an informational notification lists stacks that are no longer present in the directory
+- **No changes** — a notification confirms no new stacks were found
+
+<Tip>
+  Any subdirectory inside your `COMPOSE_DIR` that contains a `compose.yaml`, `compose.yml`, `docker-compose.yaml`, or `docker-compose.yml` file is recognized as a valid stack.
+</Tip>
+
 ## Converting a `docker run` command
 
 If you have an existing `docker run` command and want to turn it into a Compose stack, go to the **Home** tab and paste it into the "Convert Docker Run to Compose" field. Sencho converts it to YAML that you can save as a new stack.

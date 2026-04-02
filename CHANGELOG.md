@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **stack-management:** scan stacks folder button to detect and import manually-placed compose files
+
 ### Docs
 
 * **quickstart:** fix Cyrillic character in Docker image reference and correct registry from GHCR to Docker Hub (`saelix/sencho`)

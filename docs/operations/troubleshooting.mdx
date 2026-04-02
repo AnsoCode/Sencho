@@ -159,6 +159,28 @@ DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash',
 
 ---
 
+## Scan stacks folder doesn't find my stacks
+
+**Symptom:** You placed Docker Compose files in the stacks directory and clicked the scan button, but "No new stacks found" appears.
+
+**Checks in order:**
+
+1. **Is the compose file in a subdirectory?** Sencho only discovers stacks inside subdirectories of `COMPOSE_DIR`. A loose `compose.yaml` sitting directly in the root of `COMPOSE_DIR` is ignored — each stack must be in its own folder (e.g. `COMPOSE_DIR/my-app/compose.yaml`).
+
+2. **Is the compose file named correctly?** Sencho recognizes these filenames only:
+   - `compose.yaml`
+   - `compose.yml`
+   - `docker-compose.yaml`
+   - `docker-compose.yml`
+
+   Other names (e.g. `docker-compose.prod.yaml`, `stack.yaml`) are not detected.
+
+3. **Is the directory empty or missing a compose file?** A subdirectory that exists but contains no recognized compose file will not appear. Add a valid compose file to the directory.
+
+4. **Is the stack already tracked?** Stacks that already appear in the sidebar are not reported again. The scan only reports *changes* since the last time the list was loaded.
+
+---
+
 ## Checking the health endpoint
 
 Sencho exposes a health endpoint for monitoring and container health checks:
