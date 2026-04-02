@@ -543,7 +543,7 @@ describe('DockerController - inspectNetwork edge cases', () => {
     const dc = DockerController.getInstance(1);
     const result = await dc.inspectNetwork('multi-net');
 
-    expect(Object.keys(result.Containers)).toHaveLength(3);
+    expect(Object.keys(result.Containers ?? {})).toHaveLength(3);
   });
 
   it('propagates Docker daemon connection errors', async () => {
