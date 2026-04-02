@@ -77,6 +77,28 @@
   --card-border-top: oklch(0 0 0 / 0.12);
   --card-border-hover: oklch(0 0 0 / 0.15);
 
+  /* Label palette */
+  --label-teal: oklch(0.55 0.12 192);
+  --label-teal-bg: oklch(0.55 0.12 192 / 0.12);
+  --label-blue: oklch(0.55 0.14 250);
+  --label-blue-bg: oklch(0.55 0.14 250 / 0.12);
+  --label-purple: oklch(0.55 0.14 300);
+  --label-purple-bg: oklch(0.55 0.14 300 / 0.12);
+  --label-rose: oklch(0.55 0.16 10);
+  --label-rose-bg: oklch(0.55 0.16 10 / 0.12);
+  --label-amber: oklch(0.60 0.16 60);
+  --label-amber-bg: oklch(0.60 0.16 60 / 0.12);
+  --label-green: oklch(0.55 0.15 150);
+  --label-green-bg: oklch(0.55 0.15 150 / 0.12);
+  --label-orange: oklch(0.58 0.16 45);
+  --label-orange-bg: oklch(0.58 0.16 45 / 0.12);
+  --label-pink: oklch(0.58 0.16 340);
+  --label-pink-bg: oklch(0.58 0.16 340 / 0.12);
+  --label-cyan: oklch(0.58 0.12 210);
+  --label-cyan-bg: oklch(0.58 0.12 210 / 0.12);
+  --label-slate: oklch(0.50 0.01 250);
+  --label-slate-bg: oklch(0.50 0.01 250 / 0.12);
+
   /* Chart grid & axis */
   --chart-grid: oklch(0 0 0 / 0.06);
   --chart-tick: oklch(0 0 0 / 0.45);
@@ -193,6 +215,28 @@
   --card-border: oklch(1 0 0 / 0.07);
   --card-border-top: oklch(1 0 0 / 0.14);
   --card-border-hover: oklch(1 0 0 / 0.14);
+
+  /* Label palette */
+  --label-teal: oklch(0.75 0.10 192);
+  --label-teal-bg: oklch(0.75 0.10 192 / 0.15);
+  --label-blue: oklch(0.72 0.12 250);
+  --label-blue-bg: oklch(0.72 0.12 250 / 0.15);
+  --label-purple: oklch(0.72 0.12 300);
+  --label-purple-bg: oklch(0.72 0.12 300 / 0.15);
+  --label-rose: oklch(0.72 0.14 10);
+  --label-rose-bg: oklch(0.72 0.14 10 / 0.15);
+  --label-amber: oklch(0.78 0.14 60);
+  --label-amber-bg: oklch(0.78 0.14 60 / 0.15);
+  --label-green: oklch(0.72 0.13 150);
+  --label-green-bg: oklch(0.72 0.13 150 / 0.15);
+  --label-orange: oklch(0.75 0.14 45);
+  --label-orange-bg: oklch(0.75 0.14 45 / 0.15);
+  --label-pink: oklch(0.75 0.14 340);
+  --label-pink-bg: oklch(0.75 0.14 340 / 0.15);
+  --label-cyan: oklch(0.75 0.10 210);
+  --label-cyan-bg: oklch(0.75 0.10 210 / 0.15);
+  --label-slate: oklch(0.65 0.01 250);
+  --label-slate-bg: oklch(0.65 0.01 250 / 0.15);
 
   /* Chart grid & axis */
   --chart-grid: oklch(1 0 0 / 0.05);

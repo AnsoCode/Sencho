@@ -38,6 +38,13 @@ export interface Node {
     api_token?: string;
 }
 
+export interface Label {
+    id: number;
+    node_id: number;
+    name: string;
+    color: string;
+}
+
 export interface Webhook {
     id?: number;
     name: string;
@@ -416,6 +423,24 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task ON scheduled_task_runs(task_id);
       CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
+
+      CREATE TABLE IF NOT EXISTS stack_labels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id INTEGER NOT NULL DEFAULT 0,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        UNIQUE(node_id, name)
+      );
+
+      CREATE TABLE IF NOT EXISTS stack_label_assignments (
+        label_id INTEGER NOT NULL REFERENCES stack_labels(id) ON DELETE CASCADE,
+        stack_name TEXT NOT NULL,
+        node_id INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (label_id, stack_name, node_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_label_assignments_stack
+        ON stack_label_assignments(stack_name, node_id);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -1348,5 +1373,72 @@ export class DatabaseService {
     public cleanupOldTaskRuns(retentionDays = 30): void {
         const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
         this.db.prepare('DELETE FROM scheduled_task_runs WHERE started_at < ?').run(cutoff);
+    }
+
+    // --- Stack Labels ---
+
+    public getLabels(nodeId: number): Label[] {
+        return this.db.prepare('SELECT * FROM stack_labels WHERE node_id = ? ORDER BY name').all(nodeId) as Label[];
+    }
+
+    public createLabel(nodeId: number, name: string, color: string): Label {
+        const result = this.db.prepare(
+            'INSERT INTO stack_labels (node_id, name, color) VALUES (?, ?, ?)'
+        ).run(nodeId, name, color);
+        return { id: result.lastInsertRowid as number, node_id: nodeId, name, color };
+    }
+
+    public updateLabel(id: number, nodeId: number, updates: { name?: string; color?: string }): Label | null {
+        const label = this.db.prepare('SELECT * FROM stack_labels WHERE id = ? AND node_id = ?').get(id, nodeId) as Label | undefined;
+        if (!label) return null;
+        const name = updates.name ?? label.name;
+        const color = updates.color ?? label.color;
+        this.db.prepare('UPDATE stack_labels SET name = ?, color = ? WHERE id = ? AND node_id = ?').run(name, color, id, nodeId);
+        return { ...label, name, color };
+    }
+
+    public deleteLabel(id: number, nodeId: number): void {
+        this.db.prepare('DELETE FROM stack_labels WHERE id = ? AND node_id = ?').run(id, nodeId);
+    }
+
+    public setStackLabels(stackName: string, nodeId: number, labelIds: number[]): void {
+        const txn = this.db.transaction(() => {
+            if (labelIds.length > 0) {
+                const placeholders = labelIds.map(() => '?').join(',');
+                const validCount = this.db.prepare(
+                    `SELECT COUNT(*) as cnt FROM stack_labels WHERE id IN (${placeholders}) AND node_id = ?`
+                ).get(...labelIds, nodeId) as { cnt: number };
+                if (validCount.cnt !== labelIds.length) {
+                    throw new Error('One or more label IDs are invalid for this node');
+                }
+            }
+            this.db.prepare('DELETE FROM stack_label_assignments WHERE stack_name = ? AND node_id = ?').run(stackName, nodeId);
+            const insert = this.db.prepare('INSERT INTO stack_label_assignments (label_id, stack_name, node_id) VALUES (?, ?, ?)');
+            for (const labelId of labelIds) {
+                insert.run(labelId, stackName, nodeId);
+            }
+        });
+        txn();
+    }
+
+    public getLabelsForStacks(nodeId: number): Record<string, Label[]> {
+        const rows = this.db.prepare(`
+            SELECT a.stack_name, l.id, l.node_id, l.name, l.color
+            FROM stack_label_assignments a
+            JOIN stack_labels l ON a.label_id = l.id
+            WHERE a.node_id = ?
+            ORDER BY l.name
+        `).all(nodeId) as (Label & { stack_name: string })[];
+        const result: Record<string, Label[]> = {};
+        for (const row of rows) {
+            if (!result[row.stack_name]) result[row.stack_name] = [];
+            result[row.stack_name].push({ id: row.id, node_id: row.node_id, name: row.name, color: row.color });
+        }
+        return result;
+    }
+
+    public getStacksForLabel(labelId: number): string[] {
+        const rows = this.db.prepare('SELECT stack_name FROM stack_label_assignments WHERE label_id = ?').all(labelId) as { stack_name: string }[];
+        return rows.map(r => r.stack_name);
     }
 }

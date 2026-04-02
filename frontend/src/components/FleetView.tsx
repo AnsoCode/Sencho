@@ -18,6 +18,7 @@ import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from './ProGate';
 import FleetSnapshots from './FleetSnapshots';
 import { toast } from '@/components/ui/toast-store';
+import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
 
 // --- Types ---
 
@@ -186,10 +187,11 @@ function ContainerRow({ container, nodeId, onNavigate }: {
     );
 }
 
-function StackSection({ stackName, nodeId, onNavigate }: {
+function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
     stackName: string;
     nodeId: number;
     onNavigate: (nodeId: number, stackName: string) => void;
+    labelMap?: Record<string, StackLabel[]>;
 }) {
     const [expanded, setExpanded] = useState(false);
     const [containers, setContainers] = useState<StackContainer[] | null>(null);
@@ -228,6 +230,13 @@ function StackSection({ stackName, nodeId, onNavigate }: {
                 {expanded ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
                 <Layers className="w-3 h-3 text-muted-foreground shrink-0" />
                 <span className="truncate flex-1">{stackName}</span>
+                {labelMap?.[stackName]?.length ? (
+                    <span className="flex items-center gap-0.5 shrink-0">
+                        {labelMap[stackName].map(l => (
+                            <LabelDot key={l.id} color={l.color} />
+                        ))}
+                    </span>
+                ) : null}
                 {containers !== null && (
                     <span className="text-[10px] text-muted-foreground shrink-0">
                         {runningCount}/{totalCount}
@@ -259,7 +268,7 @@ function StackSection({ stackName, nodeId, onNavigate }: {
     );
 }
 
-function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void }) {
+function NodeCard({ node, onNavigate, labelMap }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void; labelMap?: Record<string, StackLabel[]> }) {
     const { isPro } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
@@ -414,6 +423,7 @@ function NodeCard({ node, onNavigate }: { node: FleetNode; onNavigate: (nodeId: 
                                             stackName={stack}
                                             nodeId={node.id}
                                             onNavigate={onNavigate}
+                                            labelMap={labelMap}
                                         />
                                     ))}
                                 </div>
@@ -440,6 +450,9 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [prefs, setPrefs] = useState<FleetPreferences>(loadPreferences);
+    const [fleetLabels, setFleetLabels] = useState<StackLabel[]>([]);
+    const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<string, StackLabel[]>>({});
+    const [labelFilters, setLabelFilters] = useState<Set<number>>(new Set());
     const { isPro } = useLicense();
 
     const updatePrefs = useCallback((update: Partial<FleetPreferences>) => {
@@ -465,9 +478,24 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
     }, []);
 
+    const fetchLabels = useCallback(async () => {
+        if (!isPro) return;
+        try {
+            const [labelsRes, assignmentsRes] = await Promise.all([
+                apiFetch('/labels', { localOnly: true }),
+                apiFetch('/labels/assignments', { localOnly: true }),
+            ]);
+            if (labelsRes.ok) setFleetLabels(await labelsRes.json());
+            if (assignmentsRes.ok) setFleetStackLabelMap(await assignmentsRes.json());
+        } catch {
+            // Non-critical
+        }
+    }, [isPro]);
+
     useEffect(() => {
         fetchOverview();
-    }, [fetchOverview]);
+        fetchLabels();
+    }, [fetchOverview, fetchLabels]);
 
     // Pro: auto-refresh every 30s
     useEffect(() => {
@@ -521,6 +549,16 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             // Critical filter
             if (prefs.filterCritical) filtered = filtered.filter(isCritical);
 
+            // Label filter
+            if (labelFilters.size > 0) {
+                filtered = filtered.filter(n =>
+                    n.stacks?.some(s => {
+                        const sLabels = fleetStackLabelMap[s] || [];
+                        return sLabels.some(l => labelFilters.has(l.id));
+                    })
+                );
+            }
+
             // Sort
             filtered.sort((a, b) => {
                 let cmp = 0;
@@ -546,7 +584,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
 
         return filtered;
-    }, [nodes, searchQuery, isPro, prefs]);
+    }, [nodes, searchQuery, isPro, prefs, labelFilters, fleetStackLabelMap]);
 
     return (
         <div className="h-full overflow-auto p-6">
@@ -730,6 +768,30 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         <AlertTriangle className="w-3 h-3 mr-1" />
                                         Critical Only
                                     </Button>
+
+                                    {fleetLabels.length > 0 && (
+                                        <>
+                                            <div className="w-px h-5 bg-border mx-1" />
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {fleetLabels.map(label => (
+                                                    <LabelPill
+                                                        key={label.id}
+                                                        label={label}
+                                                        size="sm"
+                                                        active={labelFilters.has(label.id)}
+                                                        onClick={() => {
+                                                            setLabelFilters(prev => {
+                                                                const next = new Set(prev);
+                                                                if (next.has(label.id)) next.delete(label.id);
+                                                                else next.add(label.id);
+                                                                return next;
+                                                            });
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
 
@@ -741,6 +803,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             key={node.id}
                                             node={node}
                                             onNavigate={onNavigateToNode}
+                                            labelMap={fleetStackLabelMap}
                                         />
                                     ))}
                                 </div>
@@ -756,6 +819,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         onClick={() => {
                                             setSearchQuery('');
                                             updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
+                                            setLabelFilters(new Set());
                                         }}
                                     >
                                         <RotateCcw className="w-3.5 h-3.5 mr-1.5" />

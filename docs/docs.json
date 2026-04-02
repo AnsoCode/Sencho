@@ -103,6 +103,7 @@
               "features/host-console",
               "features/multi-node",
               "features/fleet-view",
+              "features/stack-labels",
               "features/alerts-notifications",
               "features/webhooks",
               "features/rbac",

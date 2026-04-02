@@ -18,8 +18,10 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
+import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
@@ -31,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from './ui/context-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import { cn } from '@/lib/utils';
@@ -132,6 +134,13 @@ export default function EditorLayout() {
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
+  const [labels, setLabels] = useState<StackLabel[]>([]);
+  const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
+  const [activeLabelFilters, setActiveLabelFilters] = useState<Set<number>>(new Set());
+  const [bulkActionLabel, setBulkActionLabel] = useState<StackLabel | null>(null);
+  const [bulkAction, setBulkAction] = useState<string>('');
+  const [bulkActionOpen, setBulkActionOpen] = useState(false);
+  const [bulkActionRunning, setBulkActionRunning] = useState(false);
 
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
@@ -148,6 +157,7 @@ export default function EditorLayout() {
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
 
@@ -268,6 +278,7 @@ export default function EditorLayout() {
         }
       }
       setStackStatuses(statuses);
+      refreshLabels();
       return fileList;
     } catch (error) {
       console.error('Failed to refresh stacks:', error);
@@ -275,6 +286,20 @@ export default function EditorLayout() {
       return [];
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshLabels = async () => {
+    if (!isPro) return;
+    try {
+      const [labelsRes, assignmentsRes] = await Promise.all([
+        apiFetch('/labels'),
+        apiFetch('/labels/assignments'),
+      ]);
+      if (labelsRes.ok) setLabels(await labelsRes.json());
+      if (assignmentsRes.ok) setStackLabelMap(await assignmentsRes.json());
+    } catch {
+      // Labels are non-critical; fail silently
     }
   };
 
@@ -1128,7 +1153,12 @@ export default function EditorLayout() {
 
   // Filter files based on search query
   const filteredFiles = files.filter(file => {
-    return file.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!file.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (activeLabelFilters.size > 0) {
+      const fileLabels = stackLabelMap[file] || [];
+      if (!fileLabels.some(l => activeLabelFilters.has(l.id))) return false;
+    }
+    return true;
   });
 
   // Get display name for stack (now just returns the name as-is since no extension)
@@ -1252,6 +1282,45 @@ export default function EditorLayout() {
               className="h-9"
             />
           </div>
+          {isPro && labels.length > 0 && (
+            <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
+              {labels.map(label => (
+                <ContextMenu key={label.id}>
+                  <ContextMenuTrigger asChild>
+                    <div>
+                      <LabelPill
+                        label={label}
+                        size="sm"
+                        active={activeLabelFilters.has(label.id)}
+                        onClick={() => {
+                          setActiveLabelFilters(prev => {
+                            const next = new Set(prev);
+                            if (next.has(label.id)) next.delete(label.id);
+                            else next.add(label.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('deploy'); setBulkActionOpen(true); }}>
+                      <Play className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Deploy all
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('stop'); setBulkActionOpen(true); }}>
+                      <Square className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Stop all
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('restart'); setBulkActionOpen(true); }}>
+                      <RotateCw className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Restart all
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              ))}
+            </div>
+          )}
           <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-icon px-4 py-2 mt-2 flex-none">STACKS</h3>
           <ScrollArea className="flex-1 px-2 pb-2">
             <div data-stacks-loaded={isLoading ? "false" : "true"}>
@@ -1281,6 +1350,13 @@ export default function EditorLayout() {
                                 {stackStatuses[file] === 'running' ? 'UP' : stackStatuses[file] === 'exited' ? 'DN' : '--'}
                               </span>
                               <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
+                              {isPro && stackLabelMap[file]?.length > 0 && (
+                                <span className="flex items-center gap-0.5 shrink-0 ml-1">
+                                  {stackLabelMap[file].map(l => (
+                                    <LabelDot key={l.id} color={l.color} />
+                                  ))}
+                                </span>
+                              )}
 
                               {stackUpdates[file] && (
                                 <span
@@ -1301,6 +1377,19 @@ export default function EditorLayout() {
                                       <BellRing className="h-4 w-4 mr-2" />
                                       Alerts
                                     </DropdownMenuItem>
+                                    {isPro && (
+                                      <LabelAssignPopover
+                                        stackName={file}
+                                        allLabels={labels}
+                                        assignedLabelIds={(stackLabelMap[file] || []).map(l => l.id)}
+                                        onLabelsChanged={refreshLabels}
+                                      >
+                                        <DropdownMenuItem onSelect={e => e.preventDefault()}>
+                                          <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                                          Labels
+                                        </DropdownMenuItem>
+                                      </LabelAssignPopover>
+                                    )}
                                     <DropdownMenuItem onClick={() => checkUpdatesForStack()}>
                                       <RefreshCw className="h-4 w-4 mr-2" />
                                       Check for updates
@@ -1349,6 +1438,47 @@ export default function EditorLayout() {
                           <BellRing className="h-4 w-4 mr-2" />
                           Alerts
                         </ContextMenuItem>
+                        {isPro && (
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                              Labels
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent className="min-w-[180px]">
+                              {labels.map(label => {
+                                const assigned = (stackLabelMap[file] || []).some(l => l.id === label.id);
+                                return (
+                                  <ContextMenuItem
+                                    key={label.id}
+                                    onClick={async () => {
+                                      const currentIds = (stackLabelMap[file] || []).map(l => l.id);
+                                      const newIds = assigned ? currentIds.filter(id => id !== label.id) : [...currentIds, label.id];
+                                      try {
+                                        const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, { method: 'PUT', body: JSON.stringify({ labelIds: newIds }) });
+                                        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error || 'Failed to update labels.'); }
+                                        refreshLabels();
+                                      } catch (err: unknown) { toast.error((err as Error)?.message || 'Failed to update labels.'); }
+                                    }}
+                                  >
+                                    <LabelDot color={label.color} />
+                                    <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
+                                    {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
+                                  </ContextMenuItem>
+                                );
+                              })}
+                              {labels.length === 0 && (
+                                <ContextMenuItem disabled>
+                                  <span className="text-xs text-muted-foreground">No labels yet</span>
+                                </ContextMenuItem>
+                              )}
+                              <ContextMenuSeparator />
+                              <ContextMenuItem onClick={() => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); }}>
+                                <Plus className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                                <span className="text-xs">Manage labels...</span>
+                              </ContextMenuItem>
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
+                        )}
                         <ContextMenuItem onClick={() => checkUpdatesForStack()}>
                           <RefreshCw className="h-4 w-4 mr-2" />
                           Check for updates
@@ -1912,6 +2042,63 @@ export default function EditorLayout() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={bulkActionOpen} onOpenChange={setBulkActionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} all &ldquo;{bulkActionLabel?.name}&rdquo; stacks?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will {bulkAction} all stacks labeled &ldquo;{bulkActionLabel?.name}&rdquo;.
+              {stackLabelMap && bulkActionLabel && (
+                <span className="block mt-2 font-mono text-xs">
+                  Affected: {Object.entries(stackLabelMap)
+                    .filter(([, ls]) => ls.some(l => l.id === bulkActionLabel.id))
+                    .map(([name]) => name)
+                    .join(', ') || 'none'}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkActionRunning}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkActionRunning}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!bulkActionLabel) return;
+                setBulkActionRunning(true);
+                try {
+                  const res = await apiFetch(`/labels/${bulkActionLabel.id}/action`, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: bulkAction }),
+                  });
+                  if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data?.error || `Bulk ${bulkAction} failed.`);
+                  }
+                  const data = await res.json();
+                  const failed = data.results?.filter((r: { success: boolean }) => !r.success) || [];
+                  if (failed.length > 0) {
+                    toast.error(`${failed.length} stack(s) failed to ${bulkAction}.`);
+                  } else {
+                    toast.success(`All stacks ${bulkAction === 'deploy' ? 'deployed' : bulkAction === 'stop' ? 'stopped' : 'restarted'} successfully.`);
+                  }
+                  setBulkActionOpen(false);
+                  refreshStacks(true);
+                } catch (err: unknown) {
+                  toast.error((err as Error)?.message || 'Something went wrong.');
+                } finally {
+                  setBulkActionRunning(false);
+                }
+              }}
+            >
+              {bulkActionRunning ? 'Running...' : `${bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} All`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Bash Exec Modal */}
       {selectedContainer && (
         <BashExecModal
@@ -1936,7 +2123,8 @@ export default function EditorLayout() {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+        onClose={() => { setSettingsModalOpen(false); setSettingsInitialSection('account'); }}
+        initialSection={settingsInitialSection}
       />
 
       {/* Stack Alert Sheet */}
