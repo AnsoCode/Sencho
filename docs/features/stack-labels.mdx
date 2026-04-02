@@ -9,17 +9,11 @@ description: Organize your stacks with colored labels for quick filtering, group
 
 Stack Labels let you tag your Docker Compose stacks with custom colored labels like `production`, `staging`, or `media-server`. Once labeled, you can filter your stack list, identify stacks at a glance, and run bulk actions on entire groups.
 
+<Frame>
+  <img src="/images/stack-labels/sidebar-with-label-dots.png" alt="Sidebar showing stacks with colored label dots" />
+</Frame>
+
 ## Creating labels
-
-There are two ways to create a label:
-
-### From the stack context menu
-
-1. Right-click any stack in the sidebar (or click the three-dot menu)
-2. Select **Labels**
-3. Click **Create new label** at the bottom of the popover
-4. Enter a name and pick a color from the palette
-5. Click **Create** — the label is immediately assigned to that stack
 
 ### From Settings
 
@@ -28,13 +22,26 @@ There are two ways to create a label:
 3. Enter a name and pick a color
 4. Click **Create**
 
-Labels created in Settings are available for assignment but not attached to any stack yet.
+<Frame>
+  <img src="/images/stack-labels/settings-labels-fixed.png" alt="Settings Labels section with label management" />
+</Frame>
+
+### From the stack context menu
+
+1. Right-click any stack in the sidebar (or click the three-dot menu)
+2. Hover over **Labels**
+3. Click **Manage labels...** at the bottom of the sub-menu
+4. Create your label from the Settings panel that opens
 
 ## Assigning labels to stacks
 
-1. Right-click a stack in the sidebar
-2. Select **Labels**
-3. Check or uncheck labels to assign or remove them
+1. Right-click a stack in the sidebar (or click the three-dot menu)
+2. Hover over **Labels** to open the sub-menu
+3. Click a label to toggle it on or off
+
+<Frame>
+  <img src="/images/stack-labels/context-menu-label-submenu-open.png" alt="Right-click context menu with Labels sub-menu" />
+</Frame>
 
 A stack can have multiple labels. Changes save immediately.
 
@@ -43,6 +50,10 @@ A stack can have multiple labels. Changes save immediately.
 ### Sidebar
 
 When you have labels, a pill bar appears between the search box and the stack list. Click a label pill to filter — only stacks with that label are shown. Click multiple pills to see stacks matching **any** of the selected labels. Click an active pill again to deselect it.
+
+<Frame>
+  <img src="/images/stack-labels/sidebar-filtered-by-label.png" alt="Sidebar filtered by label showing only matching stacks" />
+</Frame>
 
 ### Fleet View
 
