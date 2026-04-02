@@ -137,6 +137,10 @@ export default function EditorLayout() {
   const [labels, setLabels] = useState<StackLabel[]>([]);
   const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
   const [activeLabelFilters, setActiveLabelFilters] = useState<Set<number>>(new Set());
+  const [bulkActionLabel, setBulkActionLabel] = useState<StackLabel | null>(null);
+  const [bulkAction, setBulkAction] = useState<string>('');
+  const [bulkActionOpen, setBulkActionOpen] = useState(false);
+  const [bulkActionRunning, setBulkActionRunning] = useState(false);
 
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
@@ -1280,20 +1284,39 @@ export default function EditorLayout() {
           {isPro && labels.length > 0 && (
             <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
               {labels.map(label => (
-                <LabelPill
-                  key={label.id}
-                  label={label}
-                  size="sm"
-                  active={activeLabelFilters.has(label.id)}
-                  onClick={() => {
-                    setActiveLabelFilters(prev => {
-                      const next = new Set(prev);
-                      if (next.has(label.id)) next.delete(label.id);
-                      else next.add(label.id);
-                      return next;
-                    });
-                  }}
-                />
+                <ContextMenu key={label.id}>
+                  <ContextMenuTrigger asChild>
+                    <div>
+                      <LabelPill
+                        label={label}
+                        size="sm"
+                        active={activeLabelFilters.has(label.id)}
+                        onClick={() => {
+                          setActiveLabelFilters(prev => {
+                            const next = new Set(prev);
+                            if (next.has(label.id)) next.delete(label.id);
+                            else next.add(label.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('deploy'); setBulkActionOpen(true); }}>
+                      <Play className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Deploy all
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('stop'); setBulkActionOpen(true); }}>
+                      <Square className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Stop all
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('restart'); setBulkActionOpen(true); }}>
+                      <RotateCw className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                      Restart all
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </div>
           )}
@@ -1986,6 +2009,63 @@ export default function EditorLayout() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteStack}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkActionOpen} onOpenChange={setBulkActionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} all &ldquo;{bulkActionLabel?.name}&rdquo; stacks?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will {bulkAction} all stacks labeled &ldquo;{bulkActionLabel?.name}&rdquo;.
+              {stackLabelMap && bulkActionLabel && (
+                <span className="block mt-2 font-mono text-xs">
+                  Affected: {Object.entries(stackLabelMap)
+                    .filter(([, ls]) => ls.some(l => l.id === bulkActionLabel.id))
+                    .map(([name]) => name)
+                    .join(', ') || 'none'}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkActionRunning}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkActionRunning}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!bulkActionLabel) return;
+                setBulkActionRunning(true);
+                try {
+                  const res = await apiFetch(`/labels/${bulkActionLabel.id}/action`, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: bulkAction }),
+                  });
+                  if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data?.error || `Bulk ${bulkAction} failed.`);
+                  }
+                  const data = await res.json();
+                  const failed = data.results?.filter((r: { success: boolean }) => !r.success) || [];
+                  if (failed.length > 0) {
+                    toast.error(`${failed.length} stack(s) failed to ${bulkAction}.`);
+                  } else {
+                    toast.success(`All stacks ${bulkAction === 'deploy' ? 'deployed' : bulkAction === 'stop' ? 'stopped' : 'restarted'} successfully.`);
+                  }
+                  setBulkActionOpen(false);
+                  refreshStacks(true);
+                } catch (err: unknown) {
+                  toast.error((err as Error)?.message || 'Something went wrong.');
+                } finally {
+                  setBulkActionRunning(false);
+                }
+              }}
+            >
+              {bulkActionRunning ? 'Running...' : `${bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} All`}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
