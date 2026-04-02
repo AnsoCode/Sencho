@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* **labels:** Stack Labels — organize stacks with custom colored labels for filtering and bulk actions (Pro)
+  * Create, edit, and delete labels from Settings → Labels
+  * Assign labels to stacks via right-click context menu or dropdown menu
+  * Filter sidebar stack list by label (OR logic with clickable pill bar)
+  * Filter Fleet View by label
+  * Bulk actions on labeled stacks: deploy all, stop all, restart all
+  * 10 curated oklch label colors with light/dark theme support
+  * Label data persists across tier downgrades — upgrading restores all labels
 * **resources:** Docker network management — create, inspect, and delete networks from the UI
 * **resources:** Network inspect panel showing IPAM config, connected containers with IPs/MACs, and labels
 * **resources:** Network creation dialog with driver, subnet, gateway, internal, and attachable options
