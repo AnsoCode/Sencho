@@ -12,7 +12,7 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import {
     Shield, Activity, Bell, Code, Server, Package,
-    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock,
+    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag,
 } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -32,6 +32,7 @@ import {
     AppStoreSection,
     SupportSection,
     AboutSection,
+    LabelsSection,
     DEFAULT_SETTINGS,
 } from './settings';
 import type { PatchableSettings, SectionId } from './settings';
@@ -39,18 +40,23 @@ import type { PatchableSettings, SectionId } from './settings';
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
+    initialSection?: SectionId;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { isAdmin } = useAuth();
     const { license, isPro } = useLicense();
     const isRemote = activeNode?.type === 'remote';
-    const [activeSection, setActiveSection] = useState<SectionId>('account');
+    const [activeSection, setActiveSection] = useState<SectionId>(initialSection || 'account');
+
+    useEffect(() => {
+        if (isOpen && initialSection) setActiveSection(initialSection);
+    }, [isOpen, initialSection]);
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'labels' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -247,6 +253,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 return <ApiTokensSection />;
             case 'registries':
                 return <RegistriesSection />;
+            case 'labels':
+                return <LabelsSection isPro={isPro} />;
             case 'system':
                 return (
                     <SystemSection
@@ -331,6 +339,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         )}
                         {!isRemote && isAdmin && (
                             <NavButton section="registries" icon={<Database className="w-4 h-4 mr-2" />} label="Registries" locked={!isTeamPro} />
+                        )}
+                        {!isRemote && (
+                            <NavButton section="labels" icon={<Tag className="w-4 h-4 mr-2" />} label="Labels" locked={!isPro} />
                         )}
 
                         {!isRemote && isAdmin && <Separator className="my-1.5" />}

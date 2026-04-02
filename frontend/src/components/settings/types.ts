@@ -33,6 +33,7 @@ export type SectionId =
     | 'sso'
     | 'api-tokens'
     | 'registries'
+    | 'labels'
     | 'system'
     | 'notifications'
     | 'webhooks'

@@ -18,7 +18,7 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
 import { LabelAssignPopover } from './LabelAssignPopover';
@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from './ui/context-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import { cn } from '@/lib/utils';
@@ -157,6 +157,7 @@ export default function EditorLayout() {
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
 
@@ -1438,17 +1439,45 @@ export default function EditorLayout() {
                           Alerts
                         </ContextMenuItem>
                         {isPro && (
-                          <LabelAssignPopover
-                            stackName={file}
-                            allLabels={labels}
-                            assignedLabelIds={(stackLabelMap[file] || []).map(l => l.id)}
-                            onLabelsChanged={refreshLabels}
-                          >
-                            <ContextMenuItem onSelect={e => e.preventDefault()}>
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
                               <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
                               Labels
-                            </ContextMenuItem>
-                          </LabelAssignPopover>
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent className="min-w-[180px]">
+                              {labels.map(label => {
+                                const assigned = (stackLabelMap[file] || []).some(l => l.id === label.id);
+                                return (
+                                  <ContextMenuItem
+                                    key={label.id}
+                                    onClick={async () => {
+                                      const currentIds = (stackLabelMap[file] || []).map(l => l.id);
+                                      const newIds = assigned ? currentIds.filter(id => id !== label.id) : [...currentIds, label.id];
+                                      try {
+                                        const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, { method: 'PUT', body: JSON.stringify({ labelIds: newIds }) });
+                                        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error || 'Failed to update labels.'); }
+                                        refreshLabels();
+                                      } catch (err: unknown) { toast.error((err as Error)?.message || 'Failed to update labels.'); }
+                                    }}
+                                  >
+                                    <LabelDot color={label.color} />
+                                    <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
+                                    {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" />}
+                                  </ContextMenuItem>
+                                );
+                              })}
+                              {labels.length === 0 && (
+                                <ContextMenuItem disabled>
+                                  <span className="text-xs text-muted-foreground">No labels yet</span>
+                                </ContextMenuItem>
+                              )}
+                              <ContextMenuSeparator />
+                              <ContextMenuItem onClick={() => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); }}>
+                                <Plus className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                                <span className="text-xs">Manage labels...</span>
+                              </ContextMenuItem>
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
                         )}
                         <ContextMenuItem onClick={() => checkUpdatesForStack()}>
                           <RefreshCw className="h-4 w-4 mr-2" />
@@ -2094,7 +2123,8 @@ export default function EditorLayout() {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
+        onClose={() => { setSettingsModalOpen(false); setSettingsInitialSection('account'); }}
+        initialSection={settingsInitialSection}
       />
 
       {/* Stack Alert Sheet */}
