@@ -37,9 +37,11 @@ export interface ClassifiedNetwork {
   managedStatus: 'managed' | 'unmanaged' | 'system';
 }
 
+export type NetworkDriver = 'bridge' | 'overlay' | 'macvlan' | 'host' | 'none';
+
 export interface CreateNetworkOptions {
   Name: string;
-  Driver?: string;
+  Driver?: NetworkDriver;
   IPAM?: { Config: Array<{ Subnet?: string; Gateway?: string }> };
   Labels?: Record<string, string>;
   Internal?: boolean;

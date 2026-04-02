@@ -56,6 +56,9 @@ interface DockerVolume {
     managedStatus: 'managed' | 'unmanaged';
 }
 
+const NETWORK_DRIVERS = ['bridge', 'overlay', 'macvlan', 'host', 'none'] as const;
+type NetworkDriver = (typeof NETWORK_DRIVERS)[number];
+
 export interface DockerNetwork {
     Id: string;
     Name: string;
@@ -365,7 +368,7 @@ export default function ResourcesView() {
 
     // Network create/inspect state
     const [showCreateNetwork, setShowCreateNetwork] = useState(false);
-    const [createNetworkForm, setCreateNetworkForm] = useState({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
+    const [createNetworkForm, setCreateNetworkForm] = useState<{ name: string; driver: NetworkDriver; subnet: string; gateway: string; internal: boolean; attachable: boolean }>({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
     const [isCreatingNetwork, setIsCreatingNetwork] = useState(false);
     const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
     const [isInspectLoading, setIsInspectLoading] = useState(false);
@@ -548,7 +551,7 @@ export default function ResourcesView() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                 {/* Disk Footprint */}
-                <Card className="col-span-1 border-border shadow-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                <Card className="col-span-1 border-border shadow-card-bevel animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Docker Disk Footprint
@@ -574,7 +577,7 @@ export default function ResourcesView() {
                 </Card>
 
                 {/* Quick Clean */}
-                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-sm flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
+                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-card-bevel flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Quick Clean
@@ -626,7 +629,7 @@ export default function ResourcesView() {
             {/* Resource Tabs */}
             <Tabs
                 defaultValue="images"
-                className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-sm overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
+                className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-card-bevel overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
             >
                 <div className="px-4 pt-3 pb-0 border-b border-glass-border bg-glass">
                     <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 gap-1 p-0">
@@ -697,8 +700,8 @@ export default function ResourcesView() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
+                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                 </Button>}
                                             </TableCell>
                                         </TableRow>
@@ -744,8 +747,8 @@ export default function ResourcesView() {
                                             <TableCell className="hidden md:table-cell text-xs text-muted-foreground truncate max-w-[300px]">{vol.Mountpoint}</TableCell>
                                             <TableCell><ManagedBadge status={vol.managedStatus} managedBy={vol.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-500 hover:bg-red-500/10 transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
+                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                 </Button>}
                                             </TableCell>
                                         </TableRow>
@@ -893,7 +896,7 @@ export default function ResourcesView() {
                                 onClick={() => setBulkPurgeConfirm(true)}
                                 disabled={selectedOrphans.length === 0 || isActioning}
                             >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                 {isActioning ? 'Purging...' : `Purge Selected (${selectedOrphans.length})`}
                             </Button>
                         </div>
@@ -911,7 +914,7 @@ export default function ResourcesView() {
                                 {Object.entries(orphans).map(([project, containers], gi) => (
                                     <div
                                         key={project}
-                                        className="bg-card rounded-lg border shadow-sm overflow-hidden text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200"
+                                        className="bg-card rounded-lg border shadow-card-bevel overflow-hidden text-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200"
                                         style={{ animationDelay: `${gi * 60}ms` }}
                                     >
                                         {/* Project header */}
@@ -1059,17 +1062,15 @@ export default function ResourcesView() {
                             <Label htmlFor="net-driver" className="text-xs font-medium">Driver</Label>
                             <Select
                                 value={createNetworkForm.driver}
-                                onValueChange={v => setCreateNetworkForm(f => ({ ...f, driver: v }))}
+                                onValueChange={v => setCreateNetworkForm(f => ({ ...f, driver: v as NetworkDriver }))}
                             >
                                 <SelectTrigger id="net-driver" className="text-sm">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="bridge">bridge</SelectItem>
-                                    <SelectItem value="overlay">overlay</SelectItem>
-                                    <SelectItem value="macvlan">macvlan</SelectItem>
-                                    <SelectItem value="host">host</SelectItem>
-                                    <SelectItem value="none">none</SelectItem>
+                                    {NETWORK_DRIVERS.map(d => (
+                                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
