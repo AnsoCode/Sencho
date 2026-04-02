@@ -78,8 +78,8 @@ export function UsersSection() {
             toast.error('Password is required for new users.');
             return;
         }
-        if (formPassword && formPassword.length < 6) {
-            toast.error('Password must be at least 6 characters.');
+        if (formPassword && formPassword.length < 8) {
+            toast.error('Password must be at least 8 characters.');
             return;
         }
         if (formPassword && formPassword !== formConfirmPassword) {
@@ -283,7 +283,7 @@ export function UsersSection() {
                                     type="password"
                                     value={formPassword}
                                     onChange={(e) => setFormPassword(e.target.value)}
-                                    placeholder={editingUser ? 'Leave blank to keep' : 'min. 6 characters'}
+                                    placeholder={editingUser ? 'Leave blank to keep' : 'min. 8 characters'}
                                 />
                             </div>
                             <div className="space-y-2">

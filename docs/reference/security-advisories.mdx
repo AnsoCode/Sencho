@@ -7,6 +7,40 @@ Sencho's Docker image bundles the Docker CLI and Docker Compose plugin as static
 
 This page tracks known CVEs, their resolution status, and the minimum safe versions.
 
+## April 2026 — Application Security Hardening
+
+A follow-up audit identified three application-level findings. All have been remediated in v0.25.2+.
+
+### 1. Encryption key file permissions
+
+**Finding:** The encryption key file (`encryption.key` in the data directory) was created with correct permissions (`0600`) on first run, but permissions were not verified on subsequent loads. If the file was copied, restored from backup, or had its permissions changed externally, it could remain world-readable.
+
+**Remediation:**
+- The CryptoService now verifies file permissions on every startup and automatically corrects them to `0600` (owner read/write only) if they are more permissive. A warning is logged when this occurs.
+- The Docker entrypoint now explicitly sets `chmod 600` on the encryption key before dropping privileges.
+
+<Note>
+  This is a defense-in-depth measure. In Docker deployments, the non-root `sencho` user and volume isolation already limit exposure. The fix primarily benefits bare-metal or non-containerized deployments.
+</Note>
+
+### 2. Minimum password length increased to 8 characters
+
+**Finding:** The minimum password length was 6 characters, which is below the [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) recommendation of at least 8 characters for memorized secrets.
+
+**Remediation:** The minimum password length has been increased from 6 to 8 characters across all validation points — initial setup, password changes, and user creation/updates.
+
+<Note>
+  Existing users with passwords shorter than 8 characters can still log in. The new minimum only applies when setting or changing a password. Administrators may want to notify users to update short passwords.
+</Note>
+
+### 3. Sensitive data removed from console output
+
+**Finding:** Several `console.log` statements in the backend exposed full filesystem paths (including paths to `.env` files), stack names, and admin usernames in standard output. In containerized deployments, stdout is often collected by logging aggregators, making this an information disclosure risk.
+
+**Remediation:** All path-exposing and data-leaking log statements have been removed from `FileSystemService`, `DatabaseService`, and the stack management routes. Error-level logging (`console.error`) for failure diagnostics has been retained, but without sensitive path or identity details.
+
+---
+
 ## March 2026 Audit
 
 The following vulnerabilities were identified against the Sencho Docker image built with Docker CLI v29.3.1 and Docker Compose v2.40.3.

@@ -47,6 +47,7 @@ const _origEmitWarning = process.emitWarning.bind(process);
   _origEmitWarning(warning, ...args);
 };
 
+const MIN_PASSWORD_LENGTH = 8;
 const app = express();
 const PORT = 3000;
 
@@ -353,8 +354,8 @@ app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response)
       return;
     }
 
-    if (password.length < 6) {
-      res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
       return;
     }
 
@@ -432,8 +433,8 @@ app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response
       res.status(400).json({ error: 'Old password and new password are required' });
       return;
     }
-    if (newPassword.length < 6) {
-      res.status(400).json({ error: 'New password must be at least 6 characters' });
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      res.status(400).json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters` });
       return;
     }
 
@@ -1797,8 +1798,8 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
       res.status(400).json({ error: 'Username must be at least 3 characters (letters, numbers, underscore, hyphen)' });
       return;
     }
-    if (typeof password !== 'string' || password.length < 6) {
-      res.status(400).json({ error: 'Password must be at least 6 characters' });
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+      res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
       return;
     }
     const validRoles: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin', 'auditor'];
@@ -1888,8 +1889,8 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
     }
 
     if (password !== undefined) {
-      if (typeof password !== 'string' || password.length < 6) {
-        res.status(400).json({ error: 'Password must be at least 6 characters' });
+      if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+        res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
         return;
       }
       updates.password_hash = await bcrypt.hash(password, 10);
@@ -2491,13 +2492,11 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
   }
   try {
     const { content } = req.body;
-    console.log('PUT /api/stacks/:stackName', { stackName, contentType: typeof content, contentLength: content?.length });
     if (typeof content !== 'string') {
       console.error('Content is not a string:', content);
       return res.status(400).json({ error: 'Content must be a string' });
     }
     await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
-    console.log('Stack saved successfully:', stackName);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
     console.error('Failed to save stack:', error);

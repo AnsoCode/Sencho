@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **security:** self-heal encryption key file permissions on startup — verifies `0600` and corrects if permissive; Docker entrypoint also enforces `chmod 600` before privilege drop
+* **security:** increase minimum password length from 6 to 8 characters (NIST SP 800-63B) — applies to setup, password change, and user management; existing short passwords remain valid until changed
+* **security:** remove sensitive data from console output — file paths, `.env` locations, stack names, and admin usernames no longer logged to stdout
 * **security:** use raw request bytes for webhook HMAC signature verification instead of re-serialized JSON — prevents signature mismatches from serialization differences
 * **security:** use NIST-recommended 12-byte IV for AES-256-GCM encryption (backward compatible with existing 16-byte IVs)
 * **security:** add 1-year default expiry to node proxy JWT tokens — previously issued without expiry

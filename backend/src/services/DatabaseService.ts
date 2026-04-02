@@ -473,7 +473,7 @@ export class DatabaseService {
         this.db.prepare(
             'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
         ).run(username, passwordHash, 'admin', now, now);
-        console.log(`Migrated admin user "${username}" to users table.`);
+        console.log('Migrated legacy admin user to users table.');
     }
 
     private migrateJsonConfig(dataDir: string) {
