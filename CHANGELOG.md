@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **fleet:** remote node update management (Pro tier) — check for outdated nodes and trigger over-the-air updates from Fleet View. Nodes self-update by pulling the latest Docker image and recreating their container. Includes version badges on node cards, per-node and bulk "Update All" actions, real-time progress tracking with 5-second polling, reconnecting overlay for local node updates, and `POST /api/system/update` endpoint for programmatic self-updates. Requires Docker Compose deployment with Docker socket access.
+
 ## [0.32.0](https://github.com/AnsoCode/Sencho/compare/v0.31.0...v0.32.0) (2026-04-03)
 
 

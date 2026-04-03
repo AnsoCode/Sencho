@@ -30,7 +30,9 @@ import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
-import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta } from './services/CapabilityRegistry';
+import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta, getActiveCapabilities } from './services/CapabilityRegistry';
+import SelfUpdateService from './services/SelfUpdateService';
+import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
 import YAML from 'yaml';
@@ -323,7 +325,7 @@ app.get('/api/health', (_req: Request, res: Response): void => {
 // Public meta endpoint - returns this instance's version and supported capabilities.
 // No auth required (like /health). Used by remote nodes during connection tests.
 app.get('/api/meta', (_req: Request, res: Response): void => {
-  res.json({ version: getSenchoVersion(), capabilities: CAPABILITIES });
+  res.json({ version: getSenchoVersion(), capabilities: getActiveCapabilities() });
 });
 
 // Auth Routes (no authentication required)
@@ -1032,7 +1034,35 @@ app.post('/api/license/validate', async (_req: Request, res: Response): Promise<
   }
 });
 
+// --- Self-Update ---
+
+/** Respond 202 and trigger the "last breath" self-update after the response flushes. */
+function scheduleLocalUpdate(res: Response, message: string): void {
+  res.status(202).json({ message });
+  res.on('finish', () => {
+    setTimeout(() => SelfUpdateService.getInstance().triggerUpdate(), 500);
+  });
+}
+
+app.post('/api/system/update', (_req: Request, res: Response): void => {
+  if (!SelfUpdateService.getInstance().isAvailable()) {
+    res.status(503).json({ error: 'Self-update unavailable. Sencho must be deployed via Docker Compose.' });
+    return;
+  }
+  scheduleLocalUpdate(res, 'Update initiated. The server will restart shortly.');
+});
+
 // --- Fleet Overview (local-only, aggregates all nodes) ---
+
+// In-memory tracker for remote node updates (transient — lost on gateway restart)
+interface UpdateTracker {
+  status: 'updating' | 'completed' | 'timeout' | 'failed';
+  startedAt: number;
+  previousVersion: string | null;
+  error?: string;
+}
+const updateTracker = new Map<number, UpdateTracker>();
+const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 interface FleetNodeOverview {
   id: number;
@@ -1168,6 +1198,182 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Requ
   } catch (error) {
     console.error('[Fleet] Node stack containers error:', error);
     res.status(500).json({ error: 'Failed to fetch stack containers' });
+  }
+});
+
+// Fleet Update Status — returns version comparison and active update status for all nodes
+app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promise<void> => {
+  if (!requirePro(_req, res)) return;
+  try {
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+    const gatewayVersion = getSenchoVersion();
+
+    const results = await Promise.allSettled(
+      nodes.map(async (node) => {
+        const tracker = updateTracker.get(node.id);
+
+        let version: string | null = null;
+        if (node.type === 'local') {
+          version = gatewayVersion;
+        } else if (node.api_url && node.api_token) {
+          const meta = await fetchRemoteMeta(node.api_url, node.api_token);
+          version = meta.version;
+        }
+
+        // For nodes actively updating, check if they've come back with a new version
+        if (tracker?.status === 'updating') {
+          if (Date.now() - tracker.startedAt > UPDATE_TIMEOUT_MS) {
+            updateTracker.set(node.id, { ...tracker, status: 'timeout' });
+          } else if (node.type === 'remote' && version && version !== tracker.previousVersion) {
+            updateTracker.set(node.id, { ...tracker, status: 'completed' });
+          }
+        }
+
+        const currentTracker = updateTracker.get(node.id);
+        return {
+          nodeId: node.id,
+          name: node.name,
+          type: node.type,
+          version,
+          latestVersion: gatewayVersion,
+          updateAvailable: version === null
+            ? (node.type === 'remote') // Remote node without /api/meta is pre-capability-negotiation — definitely outdated
+            : (version !== gatewayVersion && !!semver.valid(version) && semver.lt(version, gatewayVersion)),
+          updateStatus: currentTracker?.status ?? null,
+        };
+      })
+    );
+
+    const nodeStatuses = results.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value;
+      return {
+        nodeId: nodes[i].id,
+        name: nodes[i].name,
+        type: nodes[i].type,
+        version: null,
+        latestVersion: gatewayVersion,
+        updateAvailable: false,
+        updateStatus: null,
+      };
+    });
+
+    res.json({ nodes: nodeStatuses });
+  } catch (error) {
+    console.error('[Fleet] Update status error:', error);
+    res.status(500).json({ error: 'Failed to fetch update status' });
+  }
+});
+
+// Trigger update on a specific node
+app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const nodeId = parseInt(req.params.nodeId as string, 10);
+    const db = DatabaseService.getInstance();
+    const node = db.getNode(nodeId);
+    if (!node) {
+      res.status(404).json({ error: 'Node not found' });
+      return;
+    }
+
+    const existing = updateTracker.get(nodeId);
+    if (existing?.status === 'updating') {
+      res.status(409).json({ error: 'Update already in progress for this node.' });
+      return;
+    }
+
+    if (node.type === 'local') {
+      if (!SelfUpdateService.getInstance().isAvailable()) {
+        res.status(503).json({ error: 'Self-update unavailable on the local node.' });
+        return;
+      }
+      updateTracker.set(nodeId, { status: 'updating', startedAt: Date.now(), previousVersion: getSenchoVersion() });
+      scheduleLocalUpdate(res, 'Update initiated on local node. The server will restart shortly.');
+      return;
+    }
+
+    // Remote node
+    if (!node.api_url || !node.api_token) {
+      res.status(503).json({ error: 'Remote node not configured.' });
+      return;
+    }
+
+    // Check remote capabilities
+    const meta = await fetchRemoteMeta(node.api_url, node.api_token);
+    if (!meta.capabilities.includes('self-update')) {
+      res.status(503).json({ error: 'Remote node does not support self-update. It may need to be updated manually first.' });
+      return;
+    }
+
+    // Trigger remote update
+    const response = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/update`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${node.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      res.status(502).json({ error: (err as Record<string, string>)?.error || 'Remote node rejected update request.' });
+      return;
+    }
+
+    updateTracker.set(nodeId, { status: 'updating', startedAt: Date.now(), previousVersion: meta.version });
+    res.status(202).json({ message: `Update initiated on ${node.name}.` });
+  } catch (error) {
+    console.error('[Fleet] Node update error:', error);
+    res.status(500).json({ error: 'Failed to trigger node update.' });
+  }
+});
+
+// Trigger update on all outdated nodes
+app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<void> => {
+  if (!requirePro(req, res)) return;
+  try {
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+    const gatewayVersion = getSenchoVersion();
+
+    // Filter to eligible candidates, then trigger all in parallel
+    const candidates = nodes.filter(node => {
+      if (node.type === 'local') return false;
+      if (updateTracker.get(node.id)?.status === 'updating') return false;
+      if (!node.api_url || !node.api_token) return false;
+      return true;
+    });
+
+    const results = await Promise.allSettled(candidates.map(async (node) => {
+      const meta = await fetchRemoteMeta(node.api_url!, node.api_token!);
+      if (!meta.version || !semver.valid(meta.version) || !semver.lt(meta.version, gatewayVersion) || !meta.capabilities.includes('self-update')) {
+        return { name: node.name, triggered: false };
+      }
+      const response = await fetch(`${node.api_url!.replace(/\/$/, '')}/api/system/update`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${node.api_token}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        updateTracker.set(node.id, { status: 'updating', startedAt: Date.now(), previousVersion: meta.version });
+        return { name: node.name, triggered: true };
+      }
+      return { name: node.name, triggered: false };
+    }));
+
+    const updating: string[] = [];
+    const skipped = nodes.filter(n => !candidates.includes(n)).map(n => n.name);
+    for (const r of results) {
+      const val = r.status === 'fulfilled' ? r.value : { name: 'unknown', triggered: false };
+      (val.triggered ? updating : skipped).push(val.name);
+    }
+
+    res.status(202).json({ updating, skipped });
+  } catch (error) {
+    console.error('[Fleet] Update all error:', error);
+    res.status(500).json({ error: 'Failed to trigger fleet update.' });
   }
 });
 
@@ -5261,6 +5467,9 @@ async function startServer() {
 
   // Initialize License Service (starts trial on first boot, periodic validation)
   LicenseService.getInstance().initialize();
+
+  // Detect whether this instance can self-update (Docker Compose container inspection)
+  await SelfUpdateService.getInstance().initialize();
 
   // Start Background Watchdog
   MonitorService.getInstance().start();

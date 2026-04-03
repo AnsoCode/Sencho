@@ -27,6 +27,7 @@ export const CAPABILITIES = [
   'api-tokens',
   'users',
   'registries',
+  'self-update',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -39,6 +40,19 @@ export function getSenchoVersion(): string {
 export interface RemoteMeta {
   version: string | null;
   capabilities: string[];
+}
+
+// Runtime capability overrides — services call disableCapability() during init
+const disabledCapabilities = new Set<Capability>();
+
+export function disableCapability(c: Capability): void {
+  disabledCapabilities.add(c);
+}
+
+/** Returns capabilities this instance actually supports at runtime. */
+export function getActiveCapabilities(): readonly string[] {
+  if (disabledCapabilities.size === 0) return CAPABILITIES;
+  return CAPABILITIES.filter(c => !disabledCapabilities.has(c));
 }
 
 /** Fetch /api/meta from a remote Sencho instance. Returns empty data on failure. */

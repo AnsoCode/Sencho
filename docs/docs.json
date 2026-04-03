@@ -104,6 +104,7 @@
               "features/multi-node",
               "features/node-compatibility",
               "features/fleet-view",
+              "features/remote-updates",
               "features/stack-labels",
               "features/alerts-notifications",
               "features/notification-routing",
@@ -149,7 +150,8 @@
             "group": "Health & Meta",
             "pages": [
               "GET /api/health",
-              "GET /api/meta"
+              "GET /api/meta",
+              "POST /api/system/update"
             ]
           },
           {
@@ -222,6 +224,9 @@
               "GET /api/fleet/overview",
               "GET /api/fleet/node/{nodeId}/stacks",
               "GET /api/fleet/node/{nodeId}/stacks/{stackName}/containers",
+              "GET /api/fleet/update-status",
+              "POST /api/fleet/nodes/{nodeId}/update",
+              "POST /api/fleet/update-all",
               "POST /api/fleet/snapshots",
               "GET /api/fleet/snapshots",
               "GET /api/fleet/snapshots/{id}",

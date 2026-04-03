@@ -20,6 +20,7 @@ export const CAPABILITIES = [
   'api-tokens',
   'users',
   'registries',
+  'self-update',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
