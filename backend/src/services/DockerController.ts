@@ -364,6 +364,29 @@ class DockerController {
     return this.validateApiData<any[]>(containers);
   }
 
+  public async getBulkStackStatuses(stackNames: string[]): Promise<Record<string, 'running' | 'exited' | 'unknown'>> {
+    const allContainers = await this.docker.listContainers({ all: true });
+    const knownSet = new Set(stackNames);
+
+    const statuses: Record<string, 'running' | 'exited' | 'unknown'> = {};
+    for (const name of stackNames) {
+      statuses[name] = 'unknown';
+    }
+
+    for (const container of allContainers as any[]) {
+      const project: string | undefined = container.Labels?.['com.docker.compose.project'];
+      if (project && knownSet.has(project)) {
+        if (container.State === 'running') {
+          statuses[project] = 'running';
+        } else if (statuses[project] !== 'running') {
+          statuses[project] = 'exited';
+        }
+      }
+    }
+
+    return statuses;
+  }
+
   public async getContainersByStack(stackName: string) {
     const stackDir = path.join(COMPOSE_DIR, stackName);
 
