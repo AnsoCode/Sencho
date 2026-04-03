@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.0](https://github.com/AnsoCode/Sencho/compare/v0.31.0...v0.32.0) (2026-04-03)
+
+
+### Added
+
+* **nodes:** add capability-based node compatibility negotiation ([#350](https://github.com/AnsoCode/Sencho/issues/350)) ([ee75811](https://github.com/AnsoCode/Sencho/commit/ee75811e255e8d5f9ae87117d12c2902185d98f1))
+
 ## [0.31.0](https://github.com/AnsoCode/Sencho/compare/v0.30.0...v0.31.0) (2026-04-03)
 
 
