@@ -1829,7 +1829,7 @@ export default function EditorLayout() {
                             ) : (
                               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
+                                {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
                               </Button>
                             )}
                             <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
