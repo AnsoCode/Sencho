@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { version as SENCHO_VERSION } from '../../../package.json';
 
 /**
  * Static registry of capabilities supported by THIS Sencho instance.
@@ -33,7 +32,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export function getSenchoVersion(): string {
-  return SENCHO_VERSION;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('../../../package.json').version;
 }
 
 export interface RemoteMeta {
