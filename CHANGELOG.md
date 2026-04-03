@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* **nodes:** Per-node scheduling and update visibility in the Nodes table
+  * New "Schedules" and "Updates" columns show active task counts, next run time, and auto-update status per node
+  * Calendar action button navigates to Schedules/Auto-Update views filtered to that node
+  * Filter bar in schedule views with pre-selected node when creating tasks
+* **nodes:** Fleet-wide image update aggregation endpoint (`/api/image-updates/fleet`) with 2-minute cache
+* **nodes:** Node scheduling summary endpoint (`/api/nodes/scheduling-summary`)
+
+### Fixed
+
+* **scheduler:** `stack_update_status` table now includes `node_id` — stacks with the same name on different nodes no longer collide
+* **scheduler:** Scheduled tasks targeting offline or deleted nodes now fail with clear error messages instead of cryptic Docker connection errors
+* **nodes:** Deleting a node now cascades cleanup to its scheduled tasks and update status data (wrapped in a transaction)
+
 * **labels:** Stack Labels — organize stacks with custom colored labels for filtering and bulk actions (Pro)
   * Create, edit, and delete labels from Settings → Labels
   * Assign labels to stacks via right-click context menu or dropdown menu

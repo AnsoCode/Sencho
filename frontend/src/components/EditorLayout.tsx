@@ -46,6 +46,8 @@ import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
 import ScheduledOperationsView from './ScheduledOperationsView';
 import AutoUpdatePoliciesView from './AutoUpdatePoliciesView';
+import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
+import type { SenchoNavigateDetail } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -131,6 +133,7 @@ export default function EditorLayout() {
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
+  const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -218,6 +221,7 @@ export default function EditorLayout() {
       setActiveView('dashboard');
     } else {
       setActiveView(value as typeof activeView);
+      setFilterNodeId(null);
     }
   };
 
@@ -234,6 +238,19 @@ export default function EditorLayout() {
     document.documentElement.classList.toggle('dark', isDarkMode);
     localStorage.setItem('sencho-theme', theme);
   }, [isDarkMode, theme]);
+
+  // Listen for cross-component navigation (e.g., NodeManager → Schedules)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<SenchoNavigateDetail>).detail;
+      if (detail?.view) {
+        setActiveView(detail.view);
+        setFilterNodeId(detail.nodeId ?? null);
+      }
+    };
+    window.addEventListener(SENCHO_NAVIGATE_EVENT, handler);
+    return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
+  }, []);
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
@@ -2017,9 +2034,9 @@ export default function EditorLayout() {
           ) : activeView === 'audit-log' ? (
             <AuditLogView />
           ) : activeView === 'auto-updates' ? (
-            <AutoUpdatePoliciesView />
+            <AutoUpdatePoliciesView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
           ) : activeView === 'scheduled-ops' ? (
-            <ScheduledOperationsView />
+            <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
           ) : (
             <HomeDashboard />
           )}

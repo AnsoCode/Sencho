@@ -73,6 +73,23 @@ Node status indicators:
 | Red dot | Node is unreachable |
 | Gray dot | Status not yet checked |
 
+## Per-node scheduling and update indicators
+
+The Nodes table surfaces scheduling and update status at a glance for each node:
+
+<Frame>
+  <img src="/images/per-node-scheduling/nodes-table-overview.png" alt="Nodes table showing Schedules and Updates columns for each node" />
+</Frame>
+
+| Column | What it shows |
+|--------|---------------|
+| **Schedules** | Number of active scheduled tasks targeting this node, plus a relative countdown to the next run (e.g. "next 2h") |
+| **Updates** | Whether auto-update policies are enabled ("Auto" badge), and how many stacks have pending image updates (pulsing blue dot with count) |
+
+Click the **calendar icon** on any node row to jump directly to the Schedules view filtered to that node. From there you can create, edit, or manage scheduled tasks scoped to the selected node. The filter bar shows which node you're viewing, with a **Clear filter** button to return to the full list.
+
+When a node is deleted, all scheduled tasks and update status data associated with it are automatically cleaned up.
+
 ## Editing and deleting nodes
 
 Click the **pencil icon** on any remote node row to edit its name, URL, or token. Click the **trash icon** to remove it. The local node cannot be edited or deleted.

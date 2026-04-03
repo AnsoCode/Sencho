@@ -3085,7 +3085,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
   try {
     const atomic = LicenseService.getInstance().getTier() === 'pro';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
-    DatabaseService.getInstance().clearStackUpdateStatus(stackName);
+    DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     res.json({ status: 'Update completed' });
   } catch (error) {
     const rolledBack = LicenseService.getInstance().getTier() === 'pro';
@@ -4761,9 +4761,9 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 // Image Update Checker API
 // =========================
 
-app.get('/api/image-updates', authMiddleware, (_req: Request, res: Response) => {
+app.get('/api/image-updates', authMiddleware, (req: Request, res: Response) => {
   try {
-    const updates = DatabaseService.getInstance().getStackUpdateStatus();
+    const updates = DatabaseService.getInstance().getStackUpdateStatus(req.nodeId);
     res.json(updates);
   } catch (error) {
     console.error('Failed to fetch image update status:', error);
@@ -4790,6 +4790,67 @@ app.get('/api/image-updates/status', authMiddleware, (_req: Request, res: Respon
   res.json({ checking: ImageUpdateService.getInstance().isChecking() });
 });
 
+// Fleet-wide image update aggregation (local DB + remote node APIs)
+let fleetUpdateCache: { data: Record<number, Record<string, boolean>>; fetchedAt: number } | null = null;
+const FLEET_CACHE_TTL = 120_000; // 2 minutes
+
+app.get('/api/image-updates/fleet', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    if (fleetUpdateCache && Date.now() - fleetUpdateCache.fetchedAt < FLEET_CACHE_TTL) {
+      res.json(fleetUpdateCache.data);
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+    const nr = NodeRegistry.getInstance();
+    const result: Record<number, Record<string, boolean>> = {};
+
+    // Local nodes: synchronous DB reads
+    for (const node of nodes) {
+      if (node.type === 'local') {
+        result[node.id] = db.getStackUpdateStatus(node.id);
+      }
+    }
+
+    // Remote nodes: parallel fetches with individual timeouts
+    const remoteNodes = nodes.filter(n => n.type === 'remote' && n.status === 'online' && n.api_url);
+    const remoteResults = await Promise.allSettled(
+      remoteNodes.map(async (node) => {
+        const proxyTarget = nr.getProxyTarget(node.id);
+        const baseUrl = node.api_url!.replace(/\/$/, '');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const resp = await fetch(`${baseUrl}/api/image-updates`, {
+            headers: proxyTarget?.apiToken
+              ? { Authorization: `Bearer ${proxyTarget.apiToken}` }
+              : {},
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          if (resp.ok) return { nodeId: node.id, data: await resp.json() as Record<string, boolean> };
+        } catch {
+          clearTimeout(timeout);
+        }
+        return null;
+      })
+    );
+
+    for (const entry of remoteResults) {
+      if (entry.status === 'fulfilled' && entry.value) {
+        result[entry.value.nodeId] = entry.value.data;
+      }
+    }
+
+    fleetUpdateCache = { data: result, fetchedAt: Date.now() };
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to aggregate fleet update status:', error);
+    res.status(500).json({ error: 'Failed to aggregate fleet update status' });
+  }
+});
+
 // =========================
 // Node Management API
 // =========================
@@ -4802,6 +4863,48 @@ app.get('/api/nodes', async (req: Request, res: Response) => {
     res.json(nodes);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch nodes' });
+  }
+});
+
+// Per-node scheduling + update summary (must be before :id route)
+app.get('/api/nodes/scheduling-summary', authMiddleware, (_req: Request, res: Response) => {
+  try {
+    const db = DatabaseService.getInstance();
+    const scheduleSummary = db.getNodeSchedulingSummary();
+    const updateSummary = db.getNodeUpdateSummary();
+
+    const result: Record<number, {
+      active_tasks: number;
+      auto_update_enabled: boolean;
+      next_run_at: number | null;
+      stacks_with_updates: number;
+    }> = {};
+
+    for (const s of scheduleSummary) {
+      result[s.node_id] = {
+        active_tasks: s.active_tasks,
+        auto_update_enabled: s.auto_update_enabled === 1,
+        next_run_at: s.next_run_at,
+        stacks_with_updates: 0,
+      };
+    }
+    for (const u of updateSummary) {
+      if (result[u.node_id]) {
+        result[u.node_id].stacks_with_updates = u.stacks_with_updates;
+      } else {
+        result[u.node_id] = {
+          active_tasks: 0,
+          auto_update_enabled: false,
+          next_run_at: null,
+          stacks_with_updates: u.stacks_with_updates,
+        };
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to fetch node scheduling summary:', error);
+    res.status(500).json({ error: 'Failed to fetch node scheduling summary' });
   }
 });
 

@@ -276,7 +276,7 @@ export class ImageUpdateService {
         const now = Date.now();
         for (const [stackName, images] of stackImages) {
             const hasUpdate = Array.from(images).some(img => imageUpdateMap.get(img) === true);
-            db.upsertStackUpdateStatus(stackName, hasUpdate, now);
+            db.upsertStackUpdateStatus(nodeId, stackName, hasUpdate, now);
         }
     }
 

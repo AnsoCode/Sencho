@@ -87,6 +87,15 @@ Sencho uses standard 5-field cron expressions:
 | `30 2 1 * *` | 1st of every month at 2:30 AM |
 | `0 0 * * 1-5` | Midnight on weekdays |
 
+## Filtering by Node
+
+When managing a multi-node fleet, you can filter the schedule list to show only tasks targeting a specific node. There are two ways to access this:
+
+- **From the Nodes table:** Click the **calendar icon** on any node row in **Settings → Nodes** to jump directly to the Schedules view filtered to that node.
+- **From the Schedules view:** A filter bar appears at the top showing which node you're viewing, with a **Clear filter** button to return to the full list.
+
+When creating a new task while a node filter is active, Sencho pre-selects that node in the create dialog.
+
 ## Managing Tasks
 
 - **Enable/Disable** - Use the toggle switch in the task list to pause or resume a schedule without deleting it.
