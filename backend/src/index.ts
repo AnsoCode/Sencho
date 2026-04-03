@@ -2917,6 +2917,25 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/stacks/statuses', async (req: Request, res: Response) => {
+  try {
+    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    const stackNames = stacks.map((s: string) => s.replace(/\.(yml|yaml)$/, ''));
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const statuses = await dockerController.getBulkStackStatuses(stackNames);
+    // Map back to filenames to match frontend expectations
+    const result: Record<string, 'running' | 'exited' | 'unknown'> = {};
+    for (const stack of stacks) {
+      const name = stack.replace(/\.(yml|yaml)$/, '');
+      result[stack] = statuses[name] ?? 'unknown';
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to fetch stack statuses:', error);
+    res.status(500).json({ error: 'Failed to fetch stack statuses' });
+  }
+});
+
 app.get('/api/stacks/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;

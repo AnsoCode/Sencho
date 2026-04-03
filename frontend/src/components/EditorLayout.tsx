@@ -66,6 +66,8 @@ interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
 }
 
+type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
+
 interface Notification {
   id: number;
   level: 'info' | 'warning' | 'error';
@@ -120,7 +122,24 @@ export default function EditorLayout() {
   const [newStackName, setNewStackName] = useState('');
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [stackActions, setStackActions] = useState<Record<string, StackAction>>({});
+  const stackActionsRef = useRef<Record<string, StackAction>>({});
+  stackActionsRef.current = stackActions;
+
+  const setStackAction = (stackFile: string, action: StackAction) => {
+    setStackActions(prev => ({ ...prev, [stackFile]: action }));
+  };
+  const clearStackAction = (stackFile: string) => {
+    setStackActions(prev => {
+      const next = { ...prev };
+      delete next[stackFile];
+      return next;
+    });
+  };
+  const isStackBusy = (stackFile: string) => stackFile in stackActions;
+
+  const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
+
   const [isScanning, setIsScanning] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
   const [backupInfo, setBackupInfo] = useState<{ exists: boolean; timestamp: number | null }>({ exists: false, timestamp: null });
@@ -280,22 +299,36 @@ export default function EditorLayout() {
       const fileList: string[] = Array.isArray(data) ? data : [];
       setFiles(fileList);
 
-      // Fetch status for all stacks in parallel
-      const statusResults = await Promise.allSettled(
-        fileList.map(async (file) => {
-          const containersRes = await apiFetch(`/stacks/${file}/containers`);
-          const containers = await containersRes.json();
-          const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
-          return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
-        })
-      );
-      const statuses: StackStatus = {};
-      for (const result of statusResults) {
-        if (result.status === 'fulfilled') {
-          statuses[result.value.file] = result.value.status;
+      // Fetch all stack statuses in a single bulk call (falls back to per-stack queries for older remote nodes)
+      const statusRes = await apiFetch('/stacks/statuses');
+      let bulkStatuses: Record<string, 'running' | 'exited' | 'unknown'> | null = null;
+      if (statusRes.ok) {
+        bulkStatuses = await statusRes.json();
+      } else {
+        // Fallback: query each stack individually (remote node may not have bulk endpoint)
+        const statusResults = await Promise.allSettled(
+          fileList.map(async (file) => {
+            const containersRes = await apiFetch(`/stacks/${file}/containers`);
+            const containers = await containersRes.json();
+            const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
+            return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
+          })
+        );
+        bulkStatuses = {};
+        for (const result of statusResults) {
+          if (result.status === 'fulfilled') {
+            bulkStatuses[result.value.file] = result.value.status;
+          }
         }
       }
-      setStackStatuses(statuses);
+      setStackStatuses(prev => {
+        const next: StackStatus = {};
+        for (const file of fileList) {
+          const status = bulkStatuses?.[file] ?? 'unknown';
+          next[file] = (file in stackActionsRef.current) ? (prev[file] ?? status) : status;
+        }
+        return next;
+      });
       refreshLabels();
       return fileList;
     } catch (error) {
@@ -305,6 +338,10 @@ export default function EditorLayout() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const setOptimisticStatus = (stackFile: string, status: 'running' | 'exited') => {
+    setStackStatuses(prev => ({ ...prev, [stackFile]: status }));
   };
 
   const refreshLabels = async () => {
@@ -846,28 +883,31 @@ export default function EditorLayout() {
   };
 
   const rollbackStack = async () => {
-    if (!selectedFile || loadingAction !== null) return;
-    setLoadingAction('rollback');
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    setStackAction(stackFile, 'rollback');
+    setOptimisticStatus(stackFile, 'running');
     try {
-      const res = await apiFetch(`/stacks/${selectedFile}/rollback`, { method: 'POST' });
+      const res = await apiFetch(`/stacks/${stackFile}/rollback`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err?.error || 'Rollback failed');
       }
       toast.success('Stack rolled back successfully.');
       // Reload the editor content
-      const contentRes = await apiFetch(`/stacks/${selectedFile}`);
+      const contentRes = await apiFetch(`/stacks/${stackFile}`);
       const text = await contentRes.text();
       setContent(text || '');
       setOriginalContent(text || '');
       // Refresh backup info
-      const backupRes = await apiFetch(`/stacks/${selectedFile}/backup`);
+      const backupRes = await apiFetch(`/stacks/${stackFile}/backup`);
       if (backupRes.ok) setBackupInfo(await backupRes.json());
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Rollback failed';
       toast.error(msg);
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
@@ -892,9 +932,11 @@ export default function EditorLayout() {
   const deployStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || loadingAction !== null) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setLoadingAction('deploy');
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setStackAction(stackFile, 'deploy');
+    setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/deploy`, {
         method: 'POST',
@@ -905,10 +947,11 @@ export default function EditorLayout() {
       }
       toast.success("Stack deployed successfully!");
       // Refresh containers after deploy
-      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      await refreshStacks(true);
+      if (selectedFile === stackFile) {
+        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+        const conts = await containersRes.json();
+        setContainers(Array.isArray(conts) ? conts : []);
+      }
       // Refresh backup info
       if (isPro) {
         try {
@@ -921,16 +964,19 @@ export default function EditorLayout() {
       const msg = (error as Error).message || 'Failed to deploy stack';
       toast.error(isPro ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
   const stopStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || loadingAction !== null) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setLoadingAction('stop');
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setStackAction(stackFile, 'stop');
+    setOptimisticStatus(stackFile, 'exited');
     try {
       const response = await apiFetch(`/stacks/${stackName}/stop`, {
         method: 'POST',
@@ -941,24 +987,28 @@ export default function EditorLayout() {
       }
       toast.success('Stack stopped successfully!');
       // Refresh containers after stop
-      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      await refreshStacks(true);
+      if (selectedFile === stackFile) {
+        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+        const conts = await containersRes.json();
+        setContainers(Array.isArray(conts) ? conts : []);
+      }
     } catch (error) {
       console.error('Failed to stop:', error);
       toast.error((error as Error).message || 'Failed to stop stack');
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
   const restartStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || loadingAction !== null) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setLoadingAction('restart');
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setStackAction(stackFile, 'restart');
+    setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/restart`, {
         method: 'POST',
@@ -969,24 +1019,28 @@ export default function EditorLayout() {
       }
       toast.success('Stack restarted successfully!');
       // Refresh containers after restart
-      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      await refreshStacks(true);
+      if (selectedFile === stackFile) {
+        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+        const conts = await containersRes.json();
+        setContainers(Array.isArray(conts) ? conts : []);
+      }
     } catch (error) {
       console.error('Failed to restart:', error);
       toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
   const updateStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || loadingAction !== null) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setLoadingAction('update');
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setStackAction(stackFile, 'update');
+    setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/update`, {
         method: 'POST',
@@ -997,21 +1051,26 @@ export default function EditorLayout() {
       }
       toast.success('Stack updated successfully!');
       // Refresh containers after update
-      const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await containersRes.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-      await refreshStacks(true);
+      if (selectedFile === stackFile) {
+        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+        const conts = await containersRes.json();
+        setContainers(Array.isArray(conts) ? conts : []);
+      }
     } catch (error) {
       console.error('Failed to update:', error);
       toast.error((error as Error).message || 'Failed to update stack');
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
   const deleteStack = async () => {
     if (!stackToDelete) return;
-    setLoadingAction('delete');
+    // Find matching file entry for per-stack tracking
+    const deleteKey = files.find(f => f === stackToDelete || f.replace(/\.(yml|yaml)$/, '') === stackToDelete) ?? stackToDelete;
+    if (isStackBusy(deleteKey)) return;
+    setStackAction(deleteKey, 'delete');
     try {
       const response = await apiFetch(`/stacks/${stackToDelete}`, {
         method: 'DELETE',
@@ -1038,15 +1097,23 @@ export default function EditorLayout() {
       console.error('Failed to delete stack:', error);
       toast.error((error as Error).message || 'Failed to delete stack');
     } finally {
-      setLoadingAction(null);
+      clearStackAction(deleteKey);
     }
   };
 
   // Context-menu-friendly stack actions (accept file name directly)
-  const executeStackActionByFile = async (stackFile: string, action: string, endpoint: string) => {
-    if (loadingAction !== null) return;
+  const executeStackActionByFile = async (stackFile: string, action: StackAction, endpoint: string) => {
+    if (isStackBusy(stackFile)) return;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setLoadingAction(action);
+    setStackAction(stackFile, action);
+
+    // Optimistic status update
+    if (action === 'stop') {
+      setOptimisticStatus(stackFile, 'exited');
+    } else if (action === 'deploy' || action === 'restart' || action === 'update') {
+      setOptimisticStatus(stackFile, 'running');
+    }
+
     try {
       const response = await apiFetch(`/stacks/${stackName}/${endpoint}`, { method: 'POST' });
       if (!response.ok) {
@@ -1059,7 +1126,6 @@ export default function EditorLayout() {
         const conts = await containersRes.json();
         setContainers(Array.isArray(conts) ? conts : []);
       }
-      await refreshStacks(true);
       if (action === 'update') fetchImageUpdates();
       if (action === 'deploy' && isPro) {
         try {
@@ -1072,7 +1138,8 @@ export default function EditorLayout() {
       const msg = (error as Error).message || `Failed to ${action} stack`;
       toast.error(action === 'deploy' && isPro ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
-      setLoadingAction(null);
+      clearStackAction(stackFile);
+      refreshStacks(true);
     }
   };
 
@@ -1369,11 +1436,17 @@ export default function EditorLayout() {
                           >
                             <div className="flex items-center gap-2 w-full">
                               <span
-                                className={`font-mono text-[10px] shrink-0 w-[18px] ${stackStatuses[file] === 'running' ? 'text-success' :
+                                className={`font-mono text-[10px] shrink-0 w-[18px] flex items-center ${
+                                  isStackBusy(file) ? 'text-muted-foreground' :
+                                  stackStatuses[file] === 'running' ? 'text-success' :
                                   stackStatuses[file] === 'exited' ? 'text-destructive' : 'text-stat-icon'
-                                  }`}
+                                }`}
                               >
-                                {stackStatuses[file] === 'running' ? 'UP' : stackStatuses[file] === 'exited' ? 'DN' : '--'}
+                                {isStackBusy(file)
+                                  ? <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2} />
+                                  : stackStatuses[file] === 'running' ? 'UP'
+                                  : stackStatuses[file] === 'exited' ? 'DN'
+                                  : '--'}
                               </span>
                               <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
                               {isPro && stackLabelMap[file]?.length > 0 && (
@@ -1421,19 +1494,19 @@ export default function EditorLayout() {
                                       Check for updates
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
                                       <Play className="h-4 w-4 mr-2" />
                                       Deploy
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
                                       <Square className="h-4 w-4 mr-2" />
                                       Stop
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
                                       <RotateCw className="h-4 w-4 mr-2" />
                                       Restart
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
                                       <Download className="h-4 w-4 mr-2" />
                                       Update
                                     </DropdownMenuItem>
@@ -1510,19 +1583,19 @@ export default function EditorLayout() {
                           Check for updates
                         </ContextMenuItem>
                         <ContextMenuSeparator />
-                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
                           <Play className="h-4 w-4 mr-2" />
                           Deploy
                         </ContextMenuItem>
-                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
                           <Square className="h-4 w-4 mr-2" />
                           Stop
                         </ContextMenuItem>
-                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
                           <RotateCw className="h-4 w-4 mr-2" />
                           Restart
                         </ContextMenuItem>
-                        <ContextMenuItem onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
                           <Download className="h-4 w-4 mr-2" />
                           Update
                         </ContextMenuItem>
@@ -1756,7 +1829,7 @@ export default function EditorLayout() {
                             ) : (
                               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                {loadingAction === 'deploy' || loadingAction === 'start' ? 'Starting...' : 'Start'}
+                                {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
                               </Button>
                             )}
                             <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **stacks:** bulk `/api/stacks/statuses` endpoint — fetches all stack statuses in a single Docker API call instead of N individual `docker compose ps` invocations. Falls back to per-stack queries for remote nodes on older versions.
+
+### Fixed
+
+* **stacks:** sidebar status indicators showing "--" (unknown) after stopping a stack instead of "DN". Root cause was a race condition where `refreshStacks` queried container state before Docker had fully transitioned containers.
+
+### Changed
+
+* **stacks:** stack actions (deploy, stop, restart, update) are now tracked per-stack instead of globally. Users can fire actions on multiple stacks concurrently without the UI blocking. Sidebar shows a spinner per stack during in-flight actions.
+
 ## [0.34.0](https://github.com/AnsoCode/Sencho/compare/v0.33.1...v0.34.0) (2026-04-03)
 
 
