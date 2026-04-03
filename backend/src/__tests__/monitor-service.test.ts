@@ -307,7 +307,7 @@ describe('MonitorService - global crash detection', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('Crash'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('Crash'), undefined);
   });
 
   it('ignores exit codes 0, 137, 143, 255', async () => {
@@ -340,7 +340,7 @@ describe('MonitorService - global crash detection', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('unhealthy'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('unhealthy'), undefined);
   });
 
   it('skips remote nodes', async () => {
@@ -386,7 +386,7 @@ describe('MonitorService - breach state machine', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), 'my-stack');
     expect(mockUpdateStackAlertLastFired).toHaveBeenCalledWith(1, expect.any(Number));
   });
 

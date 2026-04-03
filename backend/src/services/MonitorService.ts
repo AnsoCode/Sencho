@@ -128,17 +128,18 @@ export class MonitorService {
                         const containers = await docker.getAllContainers();
                         for (const c of containers) {
                             if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
+                                const containerStack = c.Labels?.['com.docker.compose.project'] || undefined;
                                 if (c.State === 'exited') {
                                     if (c.Status.includes('seconds ago')) {
                                         const match = c.Status.match(/Exited \((\d+)\)/i);
                                         const exitCode = match ? parseInt(match[1], 10) : null;
                                         const intentionalExitCodes = [0, 137, 143, 255];
                                         if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
-                                            await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`);
+                                            await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`, containerStack);
                                         }
                                     }
                                 } else if (String(c.Status).includes('unhealthy')) {
-                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`);
+                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`, containerStack);
                                 }
                             }
                         }
@@ -277,7 +278,8 @@ export class MonitorService {
 
                                         await NotificationService.getInstance().dispatchAlert(
                                             'warning',
-                                            message
+                                            message,
+                                            rule.stack_name
                                         );
 
                                         // Update last fired

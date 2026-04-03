@@ -40,6 +40,7 @@ export type SectionId =
     | 'developer'
     | 'nodes'
     | 'appstore'
+    | 'notification-routing'
     | 'support'
     | 'about';
 
