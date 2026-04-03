@@ -297,9 +297,11 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_metrics_container ON container_metrics(container_id);
 
       CREATE TABLE IF NOT EXISTS stack_update_status (
-        stack_name TEXT PRIMARY KEY,
+        node_id INTEGER NOT NULL DEFAULT 0,
+        stack_name TEXT NOT NULL,
         has_update INTEGER DEFAULT 0,
-        checked_at INTEGER NOT NULL
+        checked_at INTEGER NOT NULL,
+        PRIMARY KEY (node_id, stack_name)
       );
 
       CREATE TABLE IF NOT EXISTS nodes (
@@ -471,12 +473,25 @@ export class DatabaseService {
         maybeAddCol('scheduled_tasks', 'target_services', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'prune_label_filter', 'TEXT DEFAULT NULL');
 
-        // Per-node scoping for stack update status (pre-0.10 had stack_name as sole PK)
-        maybeAddCol('stack_update_status', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
-        this.db.exec(`
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_stack_update_status_node_stack
-            ON stack_update_status(node_id, stack_name);
-        `);
+        // Recreate stack_update_status with composite PK (node_id, stack_name).
+        // Original table had stack_name as sole PK which breaks when multiple nodes share stack names.
+        const susInfo = this.db.pragma('table_info(stack_update_status)') as Array<{ name: string; pk: number }>;
+        const needsRecreate = susInfo.some(c => c.name === 'stack_name' && c.pk === 1) && !susInfo.some(c => c.name === 'node_id' && c.pk > 0);
+        if (needsRecreate) {
+          this.db.exec(`
+            CREATE TABLE stack_update_status_new (
+              node_id INTEGER NOT NULL DEFAULT 0,
+              stack_name TEXT NOT NULL,
+              has_update INTEGER DEFAULT 0,
+              checked_at INTEGER NOT NULL,
+              PRIMARY KEY (node_id, stack_name)
+            );
+            INSERT OR IGNORE INTO stack_update_status_new (node_id, stack_name, has_update, checked_at)
+              SELECT COALESCE(node_id, 0), stack_name, has_update, checked_at FROM stack_update_status;
+            DROP TABLE stack_update_status;
+            ALTER TABLE stack_update_status_new RENAME TO stack_update_status;
+          `);
+        }
 
         // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
         const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
