@@ -72,7 +72,12 @@ function formatTimestamp(ts: number | null): string {
   return new Date(ts).toLocaleString();
 }
 
-export default function ScheduledOperationsView() {
+interface ScheduledOperationsViewProps {
+  filterNodeId?: number | null;
+  onClearFilter?: () => void;
+}
+
+export default function ScheduledOperationsView({ filterNodeId, onClearFilter }: ScheduledOperationsViewProps) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -102,6 +107,13 @@ export default function ScheduledOperationsView() {
   // Available stacks and nodes for selection
   const [stacks, setStacks] = useState<string[]>([]);
   const [nodes, setNodes] = useState<NodeOption[]>([]);
+
+  const filteredTasks = filterNodeId != null
+    ? tasks.filter(t => t.node_id === filterNodeId)
+    : tasks;
+  const filterNodeName = filterNodeId != null
+    ? nodes.find(n => n.id === filterNodeId)?.name
+    : null;
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -184,13 +196,16 @@ export default function ScheduledOperationsView() {
     setFormName('');
     setFormAction('restart');
     setFormTargetId('');
-    setFormNodeId('');
+    setFormNodeId(filterNodeId != null ? String(filterNodeId) : '');
     setFormCron('0 3 * * *');
     setFormEnabled(true);
     setFormPruneTargets(['containers', 'images', 'networks', 'volumes']);
     setFormTargetServices([]);
     setFormPruneLabelFilter('');
     setDialogOpen(true);
+    if (filterNodeId != null) {
+      fetchStacks(String(filterNodeId));
+    }
   };
 
   const openEdit = (task: ScheduledTask) => {
@@ -352,11 +367,23 @@ export default function ScheduledOperationsView() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading && tasks.length === 0 ? (
+          {filterNodeId != null && filterNodeName && (
+            <div className="flex items-center gap-2 mb-4 px-1">
+              <Badge variant="outline" className="gap-1.5 text-xs">
+                Filtered to node: <span className="font-medium">{filterNodeName}</span>
+              </Badge>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onClearFilter}>
+                Clear filter
+              </Button>
+            </div>
+          )}
+          {loading && filteredTasks.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">Loading...</div>
-          ) : tasks.length === 0 ? (
+          ) : filteredTasks.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">
-              No scheduled tasks yet. Create one to automate recurring operations.
+              {filterNodeId != null
+                ? 'No scheduled tasks for this node. Create one to automate recurring operations.'
+                : 'No scheduled tasks yet. Create one to automate recurring operations.'}
             </div>
           ) : (
             <Table>
@@ -373,7 +400,7 @@ export default function ScheduledOperationsView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tasks.map((task) => (
+                {filteredTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="font-medium">{task.name}</TableCell>
                     <TableCell>

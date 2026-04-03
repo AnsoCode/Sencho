@@ -102,6 +102,13 @@ export class SchedulerService {
         });
 
         try {
+            // Pre-check: ensure target node exists and is reachable
+            if (task.node_id != null && task.action !== 'snapshot') {
+                const node = db.getNode(task.node_id);
+                if (!node) throw new Error(`Target node (id=${task.node_id}) no longer exists`);
+                if (node.status === 'offline') throw new Error(`Target node "${node.name}" is offline`);
+            }
+
             let output = '';
             switch (task.action) {
                 case 'restart':
@@ -379,7 +386,7 @@ export class SchedulerService {
 
         for (const stackName of stackNames) {
             try {
-                const output = await this.executeUpdateForStack(stackName, docker, imageUpdateService, compose, db);
+                const output = await this.executeUpdateForStack(stackName, task.node_id ?? 0, docker, imageUpdateService, compose, db);
                 results.push(output);
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
@@ -393,6 +400,7 @@ export class SchedulerService {
 
     private async executeUpdateForStack(
         stackName: string,
+        nodeId: number,
         docker: DockerController,
         imageUpdateService: ImageUpdateService,
         compose: ComposeService,
@@ -432,7 +440,7 @@ export class SchedulerService {
         }
 
         await compose.updateStack(stackName, undefined, true);
-        db.clearStackUpdateStatus(stackName);
+        db.clearStackUpdateStatus(nodeId, stackName);
 
         NotificationService.getInstance().dispatchAlert(
             'info',

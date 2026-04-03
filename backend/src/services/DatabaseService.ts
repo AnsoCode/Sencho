@@ -458,6 +458,13 @@ export class DatabaseService {
         maybeAddCol('scheduled_tasks', 'target_services', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'prune_label_filter', 'TEXT DEFAULT NULL');
 
+        // Per-node scoping for stack update status (pre-0.10 had stack_name as sole PK)
+        maybeAddCol('stack_update_status', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        this.db.exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_stack_update_status_node_stack
+            ON stack_update_status(node_id, stack_name);
+        `);
+
         // Drop legacy SSH/TLS columns from pre-0.7 databases (no longer read or written)
         const legacyCols = ['host', 'port', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_key', 'tls_ca', 'tls_cert', 'tls_key'];
         for (const col of legacyCols) {
@@ -864,7 +871,11 @@ export class DatabaseService {
         if (node?.is_default) {
             throw new Error('Cannot delete the default node');
         }
-        this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+        this.db.transaction(() => {
+            this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+            this.db.prepare('DELETE FROM scheduled_tasks WHERE node_id = ?').run(id);
+            this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ?').run(id);
+        })();
     }
 
     public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
@@ -873,14 +884,18 @@ export class DatabaseService {
 
     // --- Stack Update Status ---
 
-    public upsertStackUpdateStatus(stackName: string, hasUpdate: boolean, checkedAt: number): void {
+    public upsertStackUpdateStatus(nodeId: number, stackName: string, hasUpdate: boolean, checkedAt: number): void {
         this.db.prepare(
-            'INSERT OR REPLACE INTO stack_update_status (stack_name, has_update, checked_at) VALUES (?, ?, ?)'
-        ).run(stackName, hasUpdate ? 1 : 0, checkedAt);
+            `INSERT INTO stack_update_status (node_id, stack_name, has_update, checked_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(node_id, stack_name) DO UPDATE SET has_update = excluded.has_update, checked_at = excluded.checked_at`
+        ).run(nodeId, stackName, hasUpdate ? 1 : 0, checkedAt);
     }
 
-    public getStackUpdateStatus(): Record<string, boolean> {
-        const rows = this.db.prepare('SELECT stack_name, has_update FROM stack_update_status').all() as any[];
+    public getStackUpdateStatus(nodeId?: number): Record<string, boolean> {
+        const rows = nodeId !== undefined
+            ? this.db.prepare('SELECT stack_name, has_update FROM stack_update_status WHERE node_id = ?').all(nodeId) as Array<{ stack_name: string; has_update: number }>
+            : this.db.prepare('SELECT stack_name, has_update FROM stack_update_status').all() as Array<{ stack_name: string; has_update: number }>;
         const result: Record<string, boolean> = {};
         for (const row of rows) {
             result[row.stack_name] = row.has_update === 1;
@@ -888,8 +903,32 @@ export class DatabaseService {
         return result;
     }
 
-    public clearStackUpdateStatus(stackName: string): void {
-        this.db.prepare('DELETE FROM stack_update_status WHERE stack_name = ?').run(stackName);
+    public clearStackUpdateStatus(nodeId: number, stackName: string): void {
+        this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ? AND stack_name = ?').run(nodeId, stackName);
+    }
+
+    public getNodeUpdateSummary(): Array<{ node_id: number; stacks_with_updates: number }> {
+        return this.db.prepare(
+            'SELECT node_id, SUM(has_update) as stacks_with_updates FROM stack_update_status WHERE has_update = 1 GROUP BY node_id'
+        ).all() as Array<{ node_id: number; stacks_with_updates: number }>;
+    }
+
+    public getNodeSchedulingSummary(): Array<{
+        node_id: number;
+        active_tasks: number;
+        auto_update_enabled: number;
+        next_run_at: number | null;
+    }> {
+        return this.db.prepare(`
+            SELECT
+                node_id,
+                COUNT(*) as active_tasks,
+                MAX(CASE WHEN action = 'update' AND enabled = 1 THEN 1 ELSE 0 END) as auto_update_enabled,
+                MIN(next_run_at) as next_run_at
+            FROM scheduled_tasks
+            WHERE enabled = 1 AND node_id IS NOT NULL
+            GROUP BY node_id
+        `).all() as Array<{ node_id: number; active_tasks: number; auto_update_enabled: number; next_run_at: number | null }>;
     }
 
     // --- Webhooks ---

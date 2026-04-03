@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
@@ -13,7 +13,30 @@ import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw } from 'lucide-react';
+
+interface NodeSchedulingSummary {
+  active_tasks: number;
+  auto_update_enabled: boolean;
+  next_run_at: number | null;
+  stacks_with_updates: number;
+}
+
+export const SENCHO_NAVIGATE_EVENT = 'sencho-navigate';
+export interface SenchoNavigateDetail {
+  view: 'scheduled-ops' | 'auto-updates';
+  nodeId: number;
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = timestamp - Date.now();
+  if (diff < 0) return 'overdue';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
 
 interface NodeFormData {
   name: string;
@@ -48,6 +71,24 @@ export function NodeManager() {
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [generatingToken, setGeneratingToken] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
+
+  // Per-node scheduling summary
+  const [nodeSummary, setNodeSummary] = useState<Record<number, NodeSchedulingSummary>>({});
+
+  const fetchSchedulingSummary = useCallback(async () => {
+    try {
+      const res = await apiFetch('/nodes/scheduling-summary', { localOnly: true });
+      if (res.ok) setNodeSummary(await res.json());
+    } catch {
+      // Non-fatal — summary is supplementary info
+    }
+  }, []);
+
+  const nodeIdKey = useMemo(() => nodes.map(n => n.id).join(','), [nodes]);
+
+  useEffect(() => {
+    fetchSchedulingSummary();
+  }, [nodeIdKey, fetchSchedulingSummary]);
 
   const handleCreate = async () => {
     try {
@@ -407,6 +448,8 @@ export function NodeManager() {
               <TableHead>Type</TableHead>
               <TableHead>Endpoint</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Schedules</TableHead>
+              <TableHead>Updates</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -438,8 +481,82 @@ export function NodeManager() {
                   {node.type === 'local' ? 'docker.sock' : (node.api_url || '-')}
                 </TableCell>
                 <TableCell>{getStatusBadge(node.status)}</TableCell>
+                <TableCell>
+                  {(() => {
+                    const summary = nodeSummary[node.id];
+                    if (!summary || summary.active_tasks === 0) {
+                      return <span className="text-muted-foreground text-sm">—</span>;
+                    }
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-sm tabular-nums tracking-tight">
+                          {summary.active_tasks}
+                        </span>
+                        {summary.next_run_at && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <span className="text-xs text-muted-foreground">
+                                  next {formatRelativeTime(summary.next_run_at)}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {new Date(summary.next_run_at).toLocaleString()}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TableCell>
+                <TableCell>
+                  {(() => {
+                    const summary = nodeSummary[node.id];
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        {summary?.auto_update_enabled ? (
+                          <Badge variant="outline" className="text-info border-info/30 gap-1 text-xs">
+                            <RefreshCw className="w-3 h-3" strokeWidth={1.5} />
+                            Auto
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">Off</span>
+                        )}
+                        {(summary?.stacks_with_updates ?? 0) > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-info animate-pulse" />
+                            <span className="font-mono text-xs tabular-nums tracking-tight text-info">
+                              {summary!.stacks_with_updates}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent<SenchoNavigateDetail>(SENCHO_NAVIGATE_EVENT, {
+                                detail: { view: 'scheduled-ops', nodeId: node.id },
+                              }));
+                            }}
+                          >
+                            <Calendar className="w-4 h-4" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>View Schedules</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>

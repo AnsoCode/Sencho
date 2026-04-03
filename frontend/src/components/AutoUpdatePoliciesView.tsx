@@ -73,7 +73,12 @@ function formatTimestamp(ts: number | null): string {
   return new Date(ts).toLocaleString();
 }
 
-function AutoUpdatePoliciesContent() {
+interface AutoUpdatePoliciesProps {
+  filterNodeId?: number | null;
+  onClearFilter?: () => void;
+}
+
+function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePoliciesProps) {
   const [policies, setPolicies] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -99,6 +104,13 @@ function AutoUpdatePoliciesContent() {
   // Available stacks and nodes
   const [stacks, setStacks] = useState<string[]>([]);
   const [nodes, setNodes] = useState<NodeOption[]>([]);
+
+  const filteredPolicies = filterNodeId != null
+    ? policies.filter(p => p.node_id === filterNodeId)
+    : policies;
+  const filterNodeName = filterNodeId != null
+    ? nodes.find(n => n.id === filterNodeId)?.name
+    : null;
 
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
@@ -153,11 +165,14 @@ function AutoUpdatePoliciesContent() {
     setEditingPolicy(null);
     setFormName('');
     setFormTargetId('');
-    setFormNodeId('');
+    setFormNodeId(filterNodeId != null ? String(filterNodeId) : '');
     setFormCron('0 3 * * *');
     setFormCronPreset('0 3 * * *');
     setFormEnabled(true);
     setDialogOpen(true);
+    if (filterNodeId != null) {
+      fetchStacks(String(filterNodeId));
+    }
   };
 
   const openEdit = (policy: ScheduledTask) => {
@@ -297,11 +312,23 @@ function AutoUpdatePoliciesContent() {
           </p>
         </CardHeader>
         <CardContent>
-          {loading && policies.length === 0 ? (
+          {filterNodeId != null && filterNodeName && (
+            <div className="flex items-center gap-2 mb-4 px-1">
+              <Badge variant="outline" className="gap-1.5 text-xs">
+                Filtered to node: <span className="font-medium">{filterNodeName}</span>
+              </Badge>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={onClearFilter}>
+                Clear filter
+              </Button>
+            </div>
+          )}
+          {loading && filteredPolicies.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">Loading...</div>
-          ) : policies.length === 0 ? (
+          ) : filteredPolicies.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">
-              No auto-update policies yet. Create one to keep your stacks up to date automatically.
+              {filterNodeId != null
+                ? 'No auto-update policies for this node. Create one to keep your stacks up to date automatically.'
+                : 'No auto-update policies yet. Create one to keep your stacks up to date automatically.'}
             </div>
           ) : (
             <Table>
@@ -318,7 +345,7 @@ function AutoUpdatePoliciesContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {policies.map((policy) => (
+                {filteredPolicies.map((policy) => (
                   <TableRow key={policy.id}>
                     <TableCell className="font-medium">{policy.name}</TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{policy.target_id === '*' ? 'All Stacks' : policy.target_id}</TableCell>
@@ -561,10 +588,10 @@ function AutoUpdatePoliciesContent() {
   );
 }
 
-export default function AutoUpdatePoliciesView() {
+export default function AutoUpdatePoliciesView({ filterNodeId, onClearFilter }: AutoUpdatePoliciesProps) {
   return (
     <ProGate featureName="Auto-Update Policies">
-      <AutoUpdatePoliciesContent />
+      <AutoUpdatePoliciesContent filterNodeId={filterNodeId} onClearFilter={onClearFilter} />
     </ProGate>
   );
 }

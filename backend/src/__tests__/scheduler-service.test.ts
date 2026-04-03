@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
   mockGetDueScheduledTasks, mockCreateScheduledTaskRun, mockUpdateScheduledTaskRun,
-  mockUpdateScheduledTask, mockCleanupOldTaskRuns, mockGetScheduledTask, mockGetNodes,
+  mockUpdateScheduledTask, mockCleanupOldTaskRuns, mockGetScheduledTask, mockGetNodes, mockGetNode,
   mockCreateSnapshot, mockInsertSnapshotFiles, mockClearStackUpdateStatus,
   mockGetTier, mockGetVariant,
   mockGetContainersByStack, mockRestartContainer, mockPruneSystem,
@@ -24,6 +24,7 @@ const {
   mockCleanupOldTaskRuns: vi.fn(),
   mockGetScheduledTask: vi.fn(),
   mockGetNodes: vi.fn().mockReturnValue([]),
+  mockGetNode: vi.fn().mockReturnValue({ id: 1, name: 'local', type: 'local', status: 'online' }),
   mockCreateSnapshot: vi.fn().mockReturnValue(1),
   mockInsertSnapshotFiles: vi.fn(),
   mockClearStackUpdateStatus: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('../services/DatabaseService', () => ({
       cleanupOldTaskRuns: mockCleanupOldTaskRuns,
       getScheduledTask: mockGetScheduledTask,
       getNodes: mockGetNodes,
+      getNode: mockGetNode,
       createSnapshot: mockCreateSnapshot,
       insertSnapshotFiles: mockInsertSnapshotFiles,
       clearStackUpdateStatus: mockClearStackUpdateStatus,
@@ -489,7 +491,7 @@ describe('SchedulerService - executeUpdate', () => {
     await svc.triggerTask(80);
 
     expect(mockUpdateStack).toHaveBeenCalledWith('web-app', undefined, true);
-    expect(mockClearStackUpdateStatus).toHaveBeenCalledWith('web-app');
+    expect(mockClearStackUpdateStatus).toHaveBeenCalledWith(1, 'web-app');
   });
 
   it('skips when all images up to date', async () => {
