@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0](https://github.com/AnsoCode/Sencho/compare/v0.28.0...v0.29.0) (2026-04-02)
+
+
+### Added
+
+* **labels:** add stack labels for organizing, filtering, and bulk actions ([#341](https://github.com/AnsoCode/Sencho/issues/341)) ([28e7be6](https://github.com/AnsoCode/Sencho/commit/28e7be652cb18abdd51ca6df8eda2104d213dc30))
+
 ## [0.28.0](https://github.com/AnsoCode/Sencho/compare/v0.27.0...v0.28.0) (2026-04-02)
 
 
@@ -34,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **scheduler:** `stack_update_status` table now includes `node_id` — stacks with the same name on different nodes no longer collide
 * **scheduler:** Scheduled tasks targeting offline or deleted nodes now fail with clear error messages instead of cryptic Docker connection errors
 * **nodes:** Deleting a node now cascades cleanup to its scheduled tasks and update status data (wrapped in a transaction)
-
 * **labels:** Stack Labels — organize stacks with custom colored labels for filtering and bulk actions (Pro)
   * Create, edit, and delete labels from Settings → Labels
   * Assign labels to stacks via right-click context menu or dropdown menu
