@@ -21,7 +21,7 @@ export class NotificationService {
         this.broadcaster = fn;
     }
 
-    public async dispatchAlert(level: 'info' | 'warning' | 'error', message: string) {
+    public async dispatchAlert(level: 'info' | 'warning' | 'error', message: string, stackName?: string) {
         // 1. Log to history and get the full inserted record (with id)
         const notification = this.dbService.addNotificationHistory({
             level,
@@ -34,33 +34,37 @@ export class NotificationService {
             this.broadcaster(notification);
         }
 
-        // 3. Fetch enabled agents
+        // 3. Check notification routing rules if a stack context is available
+        if (stackName) {
+            const routes = this.dbService.getEnabledNotificationRoutes();
+            const matched = routes.filter(r => r.stack_patterns.includes(stackName));
+            if (matched.length > 0) {
+                await Promise.allSettled(
+                    matched.map(route =>
+                        this.sendToChannel(route.channel_type, route.channel_url, level, message)
+                            .catch(error => console.error(`Failed to dispatch notification via route "${route.name}":`, error))
+                    )
+                );
+                return;
+            }
+        }
+
+        // 4. Fall back to global agents
         const agents = this.dbService.getEnabledAgents();
         if (agents.length === 0) {
             console.log('No active notification agents found. Skipping external dispatch.');
             return;
         }
 
-        // 3. Dispatch to each agent
-        for (const agent of agents) {
-            try {
-                if (agent.type === 'discord') {
-                    await this.sendDiscordWebhook(agent.url, level, message);
-                } else if (agent.type === 'slack') {
-                    await this.sendSlackWebhook(agent.url, level, message);
-                } else if (agent.type === 'webhook') {
-                    await this.sendCustomWebhook(agent.url, level, message);
-                }
-            } catch (error) {
-                console.error(`Failed to dispatch notification to ${agent.type}:`, error);
-            }
-        }
+        await Promise.allSettled(
+            agents.map(agent =>
+                this.sendToChannel(agent.type, agent.url, level, message)
+                    .catch(error => console.error(`Failed to dispatch notification to ${agent.type}:`, error))
+            )
+        );
     }
 
-    public async testDispatch(type: 'discord' | 'slack' | 'webhook', url: string) {
-        const level = 'info';
-        const message = '🔌 Test Notification from Sencho!';
-
+    private async sendToChannel(type: string, url: string, level: 'info' | 'warning' | 'error', message: string): Promise<void> {
         if (type === 'discord') {
             await this.sendDiscordWebhook(url, level, message);
         } else if (type === 'slack') {
@@ -68,6 +72,10 @@ export class NotificationService {
         } else if (type === 'webhook') {
             await this.sendCustomWebhook(url, level, message);
         }
+    }
+
+    public async testDispatch(type: 'discord' | 'slack' | 'webhook', url: string) {
+        await this.sendToChannel(type, url, 'info', '🔌 Test Notification from Sencho!');
     }
 
     private async sendDiscordWebhook(url: string, level: 'info' | 'warning' | 'error', message: string) {

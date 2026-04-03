@@ -583,7 +583,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(91);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('failed'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('failed'), undefined);
   });
 
   it('dispatches recovery notification when previous status was failure', async () => {
@@ -603,7 +603,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(92);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('recovered'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('recovered'), 'my-stack');
   });
 });
 

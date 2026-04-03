@@ -202,6 +202,18 @@ export interface Registry {
     updated_at: number;
 }
 
+export interface NotificationRoute {
+    id: number;
+    name: string;
+    stack_patterns: string[];
+    channel_type: 'discord' | 'slack' | 'webhook';
+    channel_url: string;
+    priority: number;
+    enabled: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -223,6 +235,7 @@ export class DatabaseService {
         this.migrateSSOColumns();
         this.migrateRegistries();
         this.migrateRoleAssignments();
+        this.migrateNotificationRoutes();
     }
 
     public static getInstance(): DatabaseService {
@@ -609,6 +622,23 @@ export class DatabaseService {
         }
     }
 
+    private migrateNotificationRoutes(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS notification_routes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                stack_patterns TEXT NOT NULL,
+                channel_type TEXT NOT NULL,
+                channel_url TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_notification_routes_priority ON notification_routes(priority);
+        `);
+    }
+
     // --- Agents ---
 
     public getAgents(): Agent[] {
@@ -636,6 +666,76 @@ export class DatabaseService {
             const stmt = this.db.prepare('INSERT INTO agents (type, url, enabled) VALUES (?, ?, ?)');
             stmt.run(agent.type, agent.url, agent.enabled ? 1 : 0);
         }
+    }
+
+    // --- Notification Routes ---
+
+    private parseNotificationRoute(row: Record<string, unknown>): NotificationRoute {
+        return {
+            id: row.id as number,
+            name: row.name as string,
+            stack_patterns: JSON.parse(row.stack_patterns as string) as string[],
+            channel_type: row.channel_type as 'discord' | 'slack' | 'webhook',
+            channel_url: row.channel_url as string,
+            priority: row.priority as number,
+            enabled: row.enabled === 1,
+            created_at: row.created_at as number,
+            updated_at: row.updated_at as number,
+        };
+    }
+
+    public getNotificationRoutes(): NotificationRoute[] {
+        return this.db.prepare('SELECT * FROM notification_routes ORDER BY priority ASC')
+            .all()
+            .map((row) => this.parseNotificationRoute(row as Record<string, unknown>));
+    }
+
+    public getEnabledNotificationRoutes(): NotificationRoute[] {
+        return this.db.prepare('SELECT * FROM notification_routes WHERE enabled = 1 ORDER BY priority ASC')
+            .all()
+            .map((row) => this.parseNotificationRoute(row as Record<string, unknown>));
+    }
+
+    public getNotificationRoute(id: number): NotificationRoute | undefined {
+        const row = this.db.prepare('SELECT * FROM notification_routes WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+        return row ? this.parseNotificationRoute(row) : undefined;
+    }
+
+    public createNotificationRoute(route: Omit<NotificationRoute, 'id'>): NotificationRoute {
+        const result = this.db.prepare(
+            'INSERT INTO notification_routes (name, stack_patterns, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(
+            route.name,
+            JSON.stringify(route.stack_patterns),
+            route.channel_type,
+            route.channel_url,
+            route.priority,
+            route.enabled ? 1 : 0,
+            route.created_at,
+            route.updated_at
+        );
+        return this.getNotificationRoute(result.lastInsertRowid as number)!;
+    }
+
+    public updateNotificationRoute(id: number, updates: Partial<Omit<NotificationRoute, 'id' | 'created_at'>>): void {
+        const fields: string[] = [];
+        const values: unknown[] = [];
+
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.stack_patterns !== undefined) { fields.push('stack_patterns = ?'); values.push(JSON.stringify(updates.stack_patterns)); }
+        if (updates.channel_type !== undefined) { fields.push('channel_type = ?'); values.push(updates.channel_type); }
+        if (updates.channel_url !== undefined) { fields.push('channel_url = ?'); values.push(updates.channel_url); }
+        if (updates.priority !== undefined) { fields.push('priority = ?'); values.push(updates.priority); }
+        if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+        if (updates.updated_at !== undefined) { fields.push('updated_at = ?'); values.push(updates.updated_at); }
+
+        if (fields.length === 0) return;
+        values.push(id);
+        this.db.prepare(`UPDATE notification_routes SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    public deleteNotificationRoute(id: number): number {
+        return this.db.prepare('DELETE FROM notification_routes WHERE id = ?').run(id).changes;
     }
 
     // --- Global Settings ---

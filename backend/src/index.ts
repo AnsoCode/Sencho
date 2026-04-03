@@ -723,6 +723,9 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /registries': 'Created registry credential',
   'PUT /registries': 'Updated registry credential',
   'DELETE /registries': 'Deleted registry credential',
+  'POST /notification-routes': 'Created notification route',
+  'PUT /notification-routes': 'Updated notification route',
+  'DELETE /notification-routes': 'Deleted notification route',
 };
 
 function getAuditSummary(method: string, apiPath: string): string {
@@ -3628,6 +3631,143 @@ app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Re
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: 'Test failed', details: error.message });
+  }
+});
+
+// --- Notification Routes (Admiral) ---
+
+const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
+
+app.get('/api/notification-routes', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const routes = DatabaseService.getInstance().getNotificationRoutes();
+    res.json(routes);
+  } catch (error) {
+    console.error('Failed to fetch notification routes:', error);
+    res.status(500).json({ error: 'Failed to fetch notification routes' });
+  }
+});
+
+app.post('/api/notification-routes', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'Name is required' });
+      return;
+    }
+    if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string' || !(p as string).trim())) {
+      res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+      return;
+    }
+    if (!NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
+      res.status(400).json({ error: 'channel_type must be discord, slack, or webhook' });
+      return;
+    }
+    if (!channel_url || typeof channel_url !== 'string' || !channel_url.startsWith('https://')) {
+      res.status(400).json({ error: 'channel_url must be a valid HTTPS URL' });
+      return;
+    }
+
+    const now = Date.now();
+    const route = DatabaseService.getInstance().createNotificationRoute({
+      name: name.trim(),
+      stack_patterns: stack_patterns.map((p: string) => p.trim()),
+      channel_type,
+      channel_url: channel_url.trim(),
+      priority: typeof priority === 'number' ? priority : 0,
+      enabled: enabled !== false,
+      created_at: now,
+      updated_at: now,
+    });
+    res.status(201).json(route);
+  } catch (error) {
+    console.error('Failed to create notification route:', error);
+    res.status(500).json({ error: 'Failed to create notification route' });
+  }
+});
+
+app.put('/api/notification-routes/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
+
+    const existing = DatabaseService.getInstance().getNotificationRoute(id);
+    if (!existing) { res.status(404).json({ error: 'Route not found' }); return; }
+
+    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+      res.status(400).json({ error: 'Name must be a non-empty string' });
+      return;
+    }
+    if (stack_patterns !== undefined && (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string' || !(p as string).trim()))) {
+      res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+      return;
+    }
+    if (channel_type !== undefined && !NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
+      res.status(400).json({ error: 'channel_type must be discord, slack, or webhook' });
+      return;
+    }
+    if (channel_url !== undefined && (typeof channel_url !== 'string' || !channel_url.startsWith('https://'))) {
+      res.status(400).json({ error: 'channel_url must be a valid HTTPS URL' });
+      return;
+    }
+
+    const updates: Record<string, unknown> = { updated_at: Date.now() };
+    if (name !== undefined) updates.name = name.trim();
+    if (stack_patterns !== undefined) updates.stack_patterns = stack_patterns.map((p: string) => p.trim());
+    if (channel_type !== undefined) updates.channel_type = channel_type;
+    if (channel_url !== undefined) updates.channel_url = channel_url.trim();
+    if (priority !== undefined) updates.priority = priority;
+    if (enabled !== undefined) updates.enabled = enabled;
+
+    DatabaseService.getInstance().updateNotificationRoute(id, updates);
+    const updated = DatabaseService.getInstance().getNotificationRoute(id);
+    res.json(updated);
+  } catch (error) {
+    console.error('Failed to update notification route:', error);
+    res.status(500).json({ error: 'Failed to update notification route' });
+  }
+});
+
+app.delete('/api/notification-routes/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
+
+    const changes = DatabaseService.getInstance().deleteNotificationRoute(id);
+    if (changes === 0) { res.status(404).json({ error: 'Route not found' }); return; }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete notification route:', error);
+    res.status(500).json({ error: 'Failed to delete notification route' });
+  }
+});
+
+app.post('/api/notification-routes/:id/test', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
+
+    const route = DatabaseService.getInstance().getNotificationRoute(id);
+    if (!route) { res.status(404).json({ error: 'Route not found' }); return; }
+
+    await NotificationService.getInstance().testDispatch(route.channel_type, route.channel_url);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: 'Test failed', details: msg });
   }
 });
 

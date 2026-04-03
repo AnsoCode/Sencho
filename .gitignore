@@ -46,6 +46,7 @@ npm-debug.log*
 plans/
 CLAUDE.md
 MANUAL_STEPS.md
+docs/superpowers/
 
 # Playwright MCP
 .playwright-mcp/

@@ -12,7 +12,7 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import {
     Shield, Activity, Bell, Code, Server, Package,
-    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag,
+    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, GitBranch,
 } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -27,6 +27,7 @@ import {
     UsersSection,
     SystemSection,
     NotificationsSection,
+    NotificationRoutingSection,
     WebhooksSection,
     DeveloperSection,
     AppStoreSection,
@@ -56,7 +57,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
 
     // When switching to a remote node, reset to a node-scoped section if on a global-only one
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'labels' || activeSection === 'notifications' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
+        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'labels' || activeSection === 'notifications' || activeSection === 'notification-routing' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
             setActiveSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -269,6 +270,8 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                 );
             case 'notifications':
                 return <NotificationsSection />;
+            case 'notification-routing':
+                return <NotificationRoutingSection />;
             case 'webhooks':
                 return <WebhooksSection isPro={isPro} />;
             case 'developer':
@@ -354,6 +357,9 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                             showDot={hasSystemChanges}
                         />
                         <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
+                        {!isRemote && isAdmin && (
+                            <NavButton section="notification-routing" icon={<GitBranch className="w-4 h-4 mr-2" />} label="Routing" locked={!isTeamPro} />
+                        )}
                         {!isRemote && (
                             <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPro} />
                         )}

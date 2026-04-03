@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **notifications:** shared notification routing rules (Admiral tier) — route stack alerts to specific Discord, Slack, or webhook channels instead of the global endpoint. Includes per-rule enable/disable, priority ordering, and fallback to global agents when no rule matches.
+
 ## [0.30.0](https://github.com/AnsoCode/Sencho/compare/v0.29.0...v0.30.0) (2026-04-03)
 
 

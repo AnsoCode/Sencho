@@ -142,7 +142,8 @@ export class SchedulerService {
             if (task.last_status === 'failure') {
                 NotificationService.getInstance().dispatchAlert(
                     'info',
-                    `Scheduled task "${task.name}" (${task.action}) recovered successfully`
+                    `Scheduled task "${task.name}" (${task.action}) recovered successfully`,
+                    task.target_id ?? undefined
                 );
             }
         } catch (error: unknown) {
@@ -168,7 +169,8 @@ export class SchedulerService {
             console.error(`[SchedulerService] Task "${task.name}" (id=${task.id}) failed:`, errMsg);
             NotificationService.getInstance().dispatchAlert(
                 'error',
-                `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`
+                `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`,
+                task.target_id ?? undefined
             );
         }
     }
@@ -444,7 +446,8 @@ export class SchedulerService {
 
         NotificationService.getInstance().dispatchAlert(
             'info',
-            `Auto-update: stack "${stackName}" updated with new images`
+            `Auto-update: stack "${stackName}" updated with new images`,
+            stackName
         );
 
         return `Stack "${stackName}": updated (${updatedImages.join(', ')}).`;

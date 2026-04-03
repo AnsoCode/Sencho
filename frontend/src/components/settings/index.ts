@@ -9,5 +9,6 @@ export { AppStoreSection } from './AppStoreSection';
 export { SupportSection } from './SupportSection';
 export { AboutSection } from './AboutSection';
 export { LabelsSection } from './LabelsSection';
+export { NotificationRoutingSection } from './NotificationRoutingSection';
 export { DEFAULT_SETTINGS } from './types';
 export type { PatchableSettings, SectionId, Agent } from './types';

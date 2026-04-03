@@ -105,6 +105,7 @@
               "features/fleet-view",
               "features/stack-labels",
               "features/alerts-notifications",
+              "features/notification-routing",
               "features/webhooks",
               "features/rbac",
               "features/atomic-deployments",
