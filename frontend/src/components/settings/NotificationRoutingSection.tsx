@@ -29,6 +29,7 @@ import {
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from '@/components/AdmiralGate';
+import { CapabilityGate } from '@/components/CapabilityGate';
 import { TierBadge } from '@/components/TierBadge';
 import { Plus, Trash2, Pencil, RefreshCw, Zap, X, GitBranch } from 'lucide-react';
 
@@ -230,6 +231,7 @@ export function NotificationRoutingSection() {
 
     return (
         <AdmiralGate featureName="Notification Routing">
+          <CapabilityGate capability="notification-routing" featureName="Notification Routing">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -452,6 +454,7 @@ export function NotificationRoutingSection() {
                     </div>
                 ))}
             </div>
+          </CapabilityGate>
         </AdmiralGate>
     );
 }

@@ -65,7 +65,7 @@ export function NodeManager() {
   const [editingNodeId, setEditingNodeId] = useState<number | null>(null);
   const [deletingNode, setDeletingNode] = useState<Node | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
-  const [testResult, setTestResult] = useState<{ nodeId: number; info: { serverVersion?: string; os?: string; architecture?: string; containers?: number; images?: number; cpus?: number } } | null>(null);
+  const [testResult, setTestResult] = useState<{ nodeId: number; info: { serverVersion?: string; senchoVersion?: string; os?: string; architecture?: string; containers?: number; images?: number; cpus?: number } } | null>(null);
 
   // Node token generation state
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
@@ -624,6 +624,9 @@ export function NodeManager() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <div><span className="text-muted-foreground">Instance:</span> {testResult.info.serverVersion}</div>
+            {testResult.info.senchoVersion && (
+              <div><span className="text-muted-foreground">Sencho:</span> <span className="font-mono tabular-nums">v{testResult.info.senchoVersion}</span></div>
+            )}
             <div><span className="text-muted-foreground">OS:</span> {testResult.info.os}</div>
             <div><span className="text-muted-foreground">Arch:</span> {testResult.info.architecture}</div>
             <div><span className="text-muted-foreground">Containers:</span> {testResult.info.containers}</div>

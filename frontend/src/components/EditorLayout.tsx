@@ -8,6 +8,7 @@ import HomeDashboard from './HomeDashboard';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
 import { AdmiralGate } from './AdmiralGate';
+import { CapabilityGate } from './CapabilityGate';
 import ResourcesView from './ResourcesView';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -86,7 +87,7 @@ const formatBytes = (bytes: number) => {
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPro, license } = useLicense();
-  const { nodes, activeNode, setActiveNode } = useNodes();
+  const { nodes, activeNode, setActiveNode, nodeMeta } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
   const nodesRef = useRef<Node[]>([]);
@@ -1225,16 +1226,24 @@ export default function EditorLayout() {
                 </div>
               </SelectTrigger>
               <SelectContent>
-                {nodes.map(node => (
-                  <SelectItem key={node.id} value={node.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-success' :
-                        node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
-                        }`} />
-                      {node.name}
-                    </div>
-                  </SelectItem>
-                ))}
+                {nodes.map(node => {
+                  const meta = nodeMeta.get(node.id);
+                  return (
+                    <SelectItem key={node.id} value={node.id.toString()}>
+                      <div className="flex items-center gap-2 w-full">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-success' :
+                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
+                          }`} />
+                        <span>{node.name}</span>
+                        {meta?.version && (
+                          <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60 ml-auto">
+                            v{meta.version}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -1715,7 +1724,9 @@ export default function EditorLayout() {
             <ResourcesView />
           ) : activeView === 'host-console' ? (
             <AdmiralGate featureName="Host Console">
-              <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+              <CapabilityGate capability="host-console" featureName="Host Console">
+                <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+              </CapabilityGate>
             </AdmiralGate>
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
             <ErrorBoundary>
@@ -2020,23 +2031,31 @@ export default function EditorLayout() {
           ) : activeView === 'global-observability' ? (
             <GlobalObservabilityView />
           ) : activeView === 'fleet' ? (
-            <FleetView onNavigateToNode={(nodeId, stackName) => {
-              const node = nodes.find(n => n.id === nodeId);
-              if (node) {
-                if (activeNode?.id === nodeId) {
-                  loadFile(stackName);
-                } else {
-                  pendingStackLoadRef.current = stackName;
-                  setActiveNode(node);
+            <CapabilityGate capability="fleet" featureName="Fleet Management">
+              <FleetView onNavigateToNode={(nodeId, stackName) => {
+                const node = nodes.find(n => n.id === nodeId);
+                if (node) {
+                  if (activeNode?.id === nodeId) {
+                    loadFile(stackName);
+                  } else {
+                    pendingStackLoadRef.current = stackName;
+                    setActiveNode(node);
+                  }
                 }
-              }
-            }} />
+              }} />
+            </CapabilityGate>
           ) : activeView === 'audit-log' ? (
-            <AuditLogView />
+            <CapabilityGate capability="audit-log" featureName="Audit Log">
+              <AuditLogView />
+            </CapabilityGate>
           ) : activeView === 'auto-updates' ? (
-            <AutoUpdatePoliciesView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+            <CapabilityGate capability="auto-updates" featureName="Auto-Update Policies">
+              <AutoUpdatePoliciesView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+            </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
-            <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+            <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
+              <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+            </CapabilityGate>
           ) : (
             <HomeDashboard />
           )}

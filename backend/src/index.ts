@@ -30,6 +30,7 @@ import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
+import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta } from './services/CapabilityRegistry';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
 import YAML from 'yaml';
@@ -177,7 +178,8 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
       !req.path.startsWith('/api/nodes') &&
       !req.path.startsWith('/api/license') &&
       !req.path.startsWith('/api/fleet') &&
-      !req.path.startsWith('/api/webhooks')
+      !req.path.startsWith('/api/webhooks') &&
+      !req.path.startsWith('/api/meta')
     ) {
       // Preserve body stream for proxy piping
       next();
@@ -210,7 +212,8 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
     !req.path.startsWith('/api/nodes') &&
     !req.path.startsWith('/api/license') &&
     !req.path.startsWith('/api/fleet') &&
-    !req.path.startsWith('/api/webhooks')
+    !req.path.startsWith('/api/webhooks') &&
+    !req.path.startsWith('/api/meta')
   ) {
     const node = DatabaseService.getInstance().getNode(req.nodeId);
     if (!node) {
@@ -315,6 +318,12 @@ const authRateLimiter = rateLimit({
 // Public health endpoint - no auth required (used by Docker HEALTHCHECK and uptime monitors)
 app.get('/api/health', (_req: Request, res: Response): void => {
   res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Public meta endpoint - returns this instance's version and supported capabilities.
+// No auth required (like /health). Used by remote nodes during connection tests.
+app.get('/api/meta', (_req: Request, res: Response): void => {
+  res.json({ version: getSenchoVersion(), capabilities: CAPABILITIES });
 });
 
 // Auth Routes (no authentication required)
@@ -2153,7 +2162,7 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
 // Intercepts all /api/ requests for remote Distributed API nodes and forwards them
 // to the target Sencho instance. Node management and auth routes always execute locally.
 app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet') || req.path.startsWith('/webhooks')) {
+  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet') || req.path.startsWith('/webhooks') || req.path.startsWith('/meta')) {
     next();
     return;
   }
@@ -5178,6 +5187,39 @@ app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Connection test failed' });
+  }
+});
+
+// Fetch capability metadata for a specific node. For local nodes, returns this
+// instance's capabilities directly. For remote nodes, relays GET /api/meta from
+// the remote Sencho instance. Returns { version: null, capabilities: [] } on
+// failure (old node without /api/meta, or node offline) — never an error status.
+app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id as string);
+    const node = DatabaseService.getInstance().getNode(id);
+    if (!node) {
+      res.status(404).json({ error: 'Node not found' });
+      return;
+    }
+
+    if (node.type === 'local') {
+      res.json({ version: getSenchoVersion(), capabilities: CAPABILITIES });
+      return;
+    }
+
+    // Remote node — relay GET /api/meta
+    const baseUrl = node.api_url?.replace(/\/$/, '');
+    if (!baseUrl || !node.api_token) {
+      res.json({ version: null, capabilities: [] });
+      return;
+    }
+
+    const meta = await fetchRemoteMeta(baseUrl, node.api_token);
+    res.json(meta);
+  } catch (error: any) {
+    console.error('Failed to fetch node meta:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch node metadata' });
   }
 });
 

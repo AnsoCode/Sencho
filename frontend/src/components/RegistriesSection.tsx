@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
+import { CapabilityGate } from './CapabilityGate';
 import { TierBadge } from './TierBadge';
 import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
 
@@ -206,6 +207,7 @@ export function RegistriesSection() {
 
     return (
         <AdmiralGate featureName="Private Registry Management">
+          <CapabilityGate capability="registries" featureName="Private Registries">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -379,6 +381,7 @@ export function RegistriesSection() {
                     </div>
                 ))}
             </div>
+          </CapabilityGate>
         </AdmiralGate>
     );
 }

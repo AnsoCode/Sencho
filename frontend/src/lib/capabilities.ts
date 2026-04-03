@@ -1,0 +1,25 @@
+/** Must stay in sync with backend/src/services/CapabilityRegistry.ts */
+export const CAPABILITIES = [
+  'stacks',
+  'containers',
+  'resources',
+  'templates',
+  'global-logs',
+  'system-stats',
+  'fleet',
+  'auto-updates',
+  'labels',
+  'webhooks',
+  'network-topology',
+  'notifications',
+  'notification-routing',
+  'host-console',
+  'audit-log',
+  'scheduled-ops',
+  'sso',
+  'api-tokens',
+  'users',
+  'registries',
+] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];

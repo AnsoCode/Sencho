@@ -14,6 +14,7 @@ import { apiFetch } from '@/lib/api';
 import { useAuth, type UserRole } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from '@/components/ProGate';
+import { CapabilityGate } from '@/components/CapabilityGate';
 import { RefreshCw, Trash2, Plus, Pencil } from 'lucide-react';
 
 interface UserItem {
@@ -230,6 +231,7 @@ export function UsersSection() {
 
     return (
         <ProGate featureName="User management">
+          <CapabilityGate capability="users" featureName="User Management">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -452,6 +454,7 @@ export function UsersSection() {
                     </div>
                 )}
             </div>
+          </CapabilityGate>
         </ProGate>
     );
 }

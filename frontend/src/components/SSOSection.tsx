@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
+import { CapabilityGate } from './CapabilityGate';
 import { TierBadge } from './TierBadge';
 import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
@@ -331,6 +332,7 @@ export function SSOSection() {
 
     return (
         <AdmiralGate featureName="SSO Authentication">
+          <CapabilityGate capability="sso" featureName="SSO Authentication">
             <div className="space-y-6">
                 <div>
                     <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
@@ -361,6 +363,7 @@ export function SSOSection() {
                     <p>For OIDC providers, set the OAuth callback URL to: <code className="bg-muted px-1 rounded">{'https://<your-sencho-url>/api/auth/sso/oidc/<provider>/callback'}</code></p>
                 </div>
             </div>
+          </CapabilityGate>
         </AdmiralGate>
     );
 }

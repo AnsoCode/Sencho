@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { ProGate } from '@/components/ProGate';
+import { CapabilityGate } from '@/components/CapabilityGate';
 import { TierBadge } from '@/components/TierBadge';
 import {
     RefreshCw, CheckCircle, XCircle, Webhook, Copy, Trash2,
@@ -141,10 +142,12 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
                 <ProGate featureName="Webhooks">
+                  <CapabilityGate capability="webhooks" featureName="Webhooks">
                     <div className="space-y-3">
                         <div className="h-16 rounded-lg border bg-card" />
                         <div className="h-16 rounded-lg border bg-card" />
                     </div>
+                  </CapabilityGate>
                 </ProGate>
             </div>
         );
