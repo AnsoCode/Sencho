@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0](https://github.com/AnsoCode/Sencho/compare/v0.29.0...v0.30.0) (2026-04-03)
+
+
+### Added
+
+* **nodes:** add per-node scheduling and update visibility ([#344](https://github.com/AnsoCode/Sencho/issues/344)) ([efbd20f](https://github.com/AnsoCode/Sencho/commit/efbd20fed57299acae43ecaee3b1d9ff52da5aae))
+
 ## [0.29.0](https://github.com/AnsoCode/Sencho/compare/v0.28.0...v0.29.0) (2026-04-02)
 
 
