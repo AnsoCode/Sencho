@@ -26,7 +26,8 @@ import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from './ProGate';
 import FleetSnapshots from './FleetSnapshots';
 import { toast } from '@/components/ui/toast-store';
-import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
+import { LabelDot, type Label as StackLabel } from './LabelPill';
+import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 
 // --- Types ---
 
@@ -1022,24 +1023,18 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     {fleetLabels.length > 0 && (
                                         <>
                                             <div className="w-px h-5 bg-border mx-1" />
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                {fleetLabels.map(label => (
-                                                    <LabelPill
-                                                        key={label.id}
-                                                        label={label}
-                                                        size="sm"
-                                                        active={labelFilters.has(label.id)}
-                                                        onClick={() => {
-                                                            setLabelFilters(prev => {
-                                                                const next = new Set(prev);
-                                                                if (next.has(label.id)) next.delete(label.id);
-                                                                else next.add(label.id);
-                                                                return next;
-                                                            });
-                                                        }}
-                                                    />
-                                                ))}
-                                            </div>
+                                            <MultiSelectCombobox
+                                                options={fleetLabels.map(l => ({ value: String(l.id), label: l.name, color: l.color }))}
+                                                selected={new Set(Array.from(labelFilters).map(String))}
+                                                onSelectionChange={(sel) => setLabelFilters(new Set(Array.from(sel).map(Number)))}
+                                                placeholder="Tags"
+                                                renderOption={(option) => (
+                                                    <span className="flex items-center gap-1.5">
+                                                        <LabelDot color={option.color as StackLabel['color'] ?? 'slate'} />
+                                                        {option.label}
+                                                    </span>
+                                                )}
+                                            />
                                         </>
                                     )}
                                 </div>

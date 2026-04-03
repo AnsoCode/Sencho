@@ -54,24 +54,24 @@ const notificationConfig: Record<ToastType, {
   gradient: string;
 }> = {
   info: {
-    iconColor: 'text-blue-500 dark:text-blue-400',
+    iconColor: 'text-info',
     icon: <InfoIcon className="h-6 w-6" />,
-    gradient: 'from-blue-100/60 to-transparent dark:from-blue-900/20 dark:to-transparent',
+    gradient: 'from-info-muted to-transparent',
   },
   success: {
-    iconColor: 'text-green-500 dark:text-green-400',
+    iconColor: 'text-success',
     icon: <SuccessIcon className="h-6 w-6" />,
-    gradient: 'from-green-100/60 to-transparent dark:from-green-900/20 dark:to-transparent',
+    gradient: 'from-success-muted to-transparent',
   },
   warning: {
-    iconColor: 'text-yellow-500 dark:text-yellow-400',
+    iconColor: 'text-warning',
     icon: <WarningIcon className="h-6 w-6" />,
-    gradient: 'from-yellow-100/60 to-transparent dark:from-yellow-900/20 dark:to-transparent',
+    gradient: 'from-warning-muted to-transparent',
   },
   error: {
-    iconColor: 'text-red-500 dark:text-red-400',
+    iconColor: 'text-destructive',
     icon: <ErrorIcon className="h-6 w-6" />,
-    gradient: 'from-red-100/60 to-transparent dark:from-red-900/20 dark:to-transparent',
+    gradient: 'from-destructive-muted to-transparent',
   },
 };
 
@@ -113,7 +113,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 100 }}
       transition={{ duration: 0.3 }}
-      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-xl bg-white/15 dark:bg-black/15 border border-gray-300/60 dark:border-gray-700/60 overflow-hidden ring-1 ring-gray-200/40 dark:ring-gray-700/40 drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
+      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-xl bg-card/80 border border-glass-border overflow-hidden ring-1 ring-glass-border drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -126,11 +126,11 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
           {config.icon}
         </div>
         <div className="flex-1">
-          <p className="font-normal text-gray-900 dark:text-gray-100 text-lg">{message}</p>
+          <p className="font-normal text-foreground text-lg">{message}</p>
         </div>
         <button
           onClick={dismiss}
-          className="flex-shrink-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+          className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-accent"
           aria-label="Close notification"
         >
           <CloseIcon className="h-5 w-5" />
@@ -138,12 +138,12 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
       </div>
 
       {/* Progress bar — Sera UI style with Framer Motion */}
-      <div className="absolute bottom-0 left-0 h-1 w-full bg-gray-300/50 dark:bg-gray-600/50 rounded-b-xl overflow-hidden">
+      <div className="absolute bottom-0 left-0 h-1 w-full bg-glass-border rounded-b-xl overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: hovered ? undefined : '100%' }}
           transition={{ duration: duration / 1000, ease: 'linear' }}
-          className="h-full bg-gradient-to-r from-green-400 via-blue-400 to-sky-400 dark:from-green-500 dark:via-blue-500 dark:to-sky-500"
+          className="h-full bg-gradient-to-r from-success via-info to-brand"
         />
       </div>
     </motion.div>

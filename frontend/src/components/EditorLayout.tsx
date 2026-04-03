@@ -259,6 +259,19 @@ export default function EditorLayout() {
     localStorage.setItem('sencho-theme', theme);
   }, [isDarkMode, theme]);
 
+  // ⌘K / Ctrl+K — focus stack search input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
+        input?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Listen for cross-component navigation (e.g., NodeManager → Schedules)
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1367,13 +1380,16 @@ export default function EditorLayout() {
 
         {/* Search Input & Stack List */}
         <Command className="bg-transparent flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-border flex-none">
+          <div className="px-4 py-2 flex-none relative">
             <CommandInput
               placeholder="Search stacks..."
               value={searchQuery}
               onValueChange={setSearchQuery}
-              className="h-9"
+              className="h-9 border-none"
             />
+            <kbd className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-glass-border bg-glass-highlight px-1.5 font-mono text-[10px] text-muted-foreground">
+              {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'}K
+            </kbd>
           </div>
           {isPro && labels.length > 0 && (
             <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
@@ -2001,7 +2017,7 @@ export default function EditorLayout() {
 
                 {/* Right Column (The Editor) */}
                 <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-[600px] bg-card">
-                  <div className="p-4 border-b border-muted flex items-center justify-between">
+                  <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                         <TabsList>
@@ -2032,23 +2048,23 @@ export default function EditorLayout() {
                       )}
                     </div>
                     {can('stack:edit', 'stack', stackName) && (
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         {!isEditing ? (
-                          <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
+                          <Button size="sm" variant="default" className="rounded-lg h-8" onClick={enterEditMode}>
                             <Pencil className="w-4 h-4 mr-2" />
                             Edit
                           </Button>
                         ) : (
                           <>
-                            <Button size="sm" variant="outline" className="rounded-lg" onClick={discardChanges}>
+                            <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={discardChanges}>
                               <X className="w-4 h-4 mr-2" />
                               Discard
                             </Button>
-                            <Button size="sm" variant="outline" className="rounded-lg" onClick={saveFile}>
+                            <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={saveFile}>
                               <Save className="w-4 h-4 mr-2" />
                               Save Only
                             </Button>
-                            <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
+                            <Button size="sm" variant="default" className="rounded-lg h-8" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
                               <Rocket className="w-4 h-4 mr-2" />
                               Save & Deploy
                             </Button>

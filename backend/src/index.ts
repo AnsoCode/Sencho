@@ -1062,6 +1062,20 @@ app.post('/api/license/validate', async (_req: Request, res: Response): Promise<
   }
 });
 
+app.get('/api/license/billing-portal', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const url = await LicenseService.getInstance().getBillingPortalUrl();
+    if (!url) {
+      res.status(404).json({ error: 'No billing portal available. Ensure you have an active license.' });
+      return;
+    }
+    res.json({ url });
+  } catch (error) {
+    console.error('[License] Billing portal error:', error);
+    res.status(500).json({ error: 'Failed to retrieve billing portal URL' });
+  }
+});
+
 // --- Self-Update ---
 
 /** Respond 202 and trigger the "last breath" self-update after the response flushes. */

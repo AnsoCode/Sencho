@@ -634,7 +634,7 @@ export default function ResourcesView() {
                 defaultValue="images"
                 className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-card-bevel overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
             >
-                <div className="px-4 pt-3 pb-0 border-b border-glass-border bg-glass">
+                <div className="px-4 pt-3 pb-2">
                     <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 gap-1 p-0">
                         <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
                             {(['images', 'volumes', 'networks'] as const).map(tab => (

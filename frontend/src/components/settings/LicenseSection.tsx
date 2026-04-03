@@ -8,14 +8,33 @@ import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from '@/components/TierBadge';
 import {
     Crown, CheckCircle, Check, XCircle, Clock, ExternalLink,
-    CreditCard, RefreshCw, Zap, Compass, ShipWheel,
+    CreditCard, RefreshCw, Zap, Compass, ShipWheel, Loader2,
 } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
 
 export function LicenseSection() {
     const { license, activate, deactivate } = useLicense();
     const [licenseKeyInput, setLicenseKeyInput] = useState('');
     const [isActivating, setIsActivating] = useState(false);
     const [isDeactivating, setIsDeactivating] = useState(false);
+    const [billingLoading, setBillingLoading] = useState(false);
+
+    const openBillingPortal = async () => {
+        setBillingLoading(true);
+        try {
+            const res = await apiFetch('/license/billing-portal', { localOnly: true });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.url) {
+                window.open(data.url, '_blank');
+                return;
+            }
+            toast.error(data?.error || data?.message || data?.data?.error || 'Something went wrong.');
+        } catch {
+            toast.error('Failed to open billing portal.');
+        } finally {
+            setBillingLoading(false);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -94,17 +113,20 @@ export function LicenseSection() {
             {/* Manage Subscription (active Pro) */}
             {license?.status === 'active' && (
                 <div className="space-y-3">
-                    {license.portalUrl && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(license.portalUrl!, '_blank')}
-                        >
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={openBillingPortal}
+                        disabled={billingLoading}
+                    >
+                        {billingLoading ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
                             <CreditCard className="w-4 h-4 mr-2" />
-                            Manage Subscription
-                            <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
-                        </Button>
-                    )}
+                        )}
+                        Manage Subscription
+                        <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+                    </Button>
                     <div className="flex items-center justify-between">
                         <p className="text-sm text-muted-foreground">
                             Deactivating will revert to Community features.

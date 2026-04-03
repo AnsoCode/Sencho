@@ -123,9 +123,9 @@ export function AuditLogView() {
                             <CardTitle>Audit Log</CardTitle>
                         </div>
                         <div className="flex items-center gap-2">
-                            <DropdownMenu>
+                            <DropdownMenu modal={false}>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm">
+                                    <Button variant="outline" size="sm" className="border-border">
                                         <Download className="w-4 h-4 mr-2" />
                                         Export
                                         <ChevronDown className="w-3 h-3 ml-1" />
@@ -136,7 +136,7 @@ export function AuditLogView() {
                                     <DropdownMenuItem onClick={() => handleExport('json')}>Export as JSON</DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                            <Button variant="outline" size="sm" onClick={fetchLogs} disabled={loading}>
+                            <Button variant="outline" size="sm" className="border-border" onClick={fetchLogs} disabled={loading}>
                                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                                 Refresh
                             </Button>
