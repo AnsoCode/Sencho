@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
+import type { Capability } from '@/lib/capabilities';
 
 export interface Node {
   id: number;
@@ -13,13 +14,25 @@ export interface Node {
   api_token?: string;
 }
 
+export interface NodeMeta {
+  version: string | null;
+  capabilities: string[];
+  fetchedAt: number;
+}
+
 interface NodeContextType {
   nodes: Node[];
   activeNode: Node | null;
   setActiveNode: (node: Node) => void;
   refreshNodes: () => Promise<void>;
   isLoading: boolean;
+  activeNodeMeta: NodeMeta | null;
+  hasCapability: (cap: Capability) => boolean;
+  nodeMeta: Map<number, NodeMeta>;
+  refreshNodeMeta: (nodeId: number) => Promise<void>;
 }
+
+const META_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
@@ -27,9 +40,40 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [activeNode, setActiveNodeState] = useState<Node | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  // Ref lets refreshNodes read current activeNode without being a dep (breaks infinite loop)
+  const [nodeMeta, setNodeMeta] = useState<Map<number, NodeMeta>>(new Map());
+
+  // Refs let callbacks read current state without being deps (breaks infinite loop)
   const activeNodeRef = useRef<Node | null>(null);
   activeNodeRef.current = activeNode;
+  const nodeMetaRef = useRef<Map<number, NodeMeta>>(nodeMeta);
+  nodeMetaRef.current = nodeMeta;
+
+  const fetchNodeMeta = useCallback(async (nodeId: number) => {
+    const cached = nodeMetaRef.current.get(nodeId);
+    if (cached && Date.now() - cached.fetchedAt < META_CACHE_TTL) return;
+
+    try {
+      const res = await apiFetch(`/nodes/${nodeId}/meta`, { localOnly: true });
+      if (res.ok) {
+        const data = await res.json();
+        setNodeMeta(prev => {
+          const next = new Map(prev);
+          next.set(nodeId, {
+            version: data.version ?? null,
+            capabilities: Array.isArray(data.capabilities) ? data.capabilities : [],
+            fetchedAt: Date.now(),
+          });
+          return next;
+        });
+      }
+    } catch {
+      setNodeMeta(prev => {
+        const next = new Map(prev);
+        next.set(nodeId, { version: null, capabilities: [], fetchedAt: Date.now() });
+        return next;
+      });
+    }
+  }, []);
 
   const refreshNodes = useCallback(async () => {
     try {
@@ -49,6 +93,7 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
           if (nodeToActivate) {
             setActiveNodeState(nodeToActivate);
             localStorage.setItem('sencho-active-node', String(nodeToActivate.id));
+            fetchNodeMeta(nodeToActivate.id);
           }
         } else {
           const updatedActive = data.find((n: Node) => n.id === currentActive.id);
@@ -60,6 +105,7 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
             if (fallback) {
               setActiveNodeState(fallback);
               localStorage.setItem('sencho-active-node', String(fallback.id));
+              fetchNodeMeta(fallback.id);
             } else {
               setActiveNodeState(null);
               localStorage.removeItem('sencho-active-node');
@@ -72,12 +118,13 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []); // stable - reads activeNode via ref, not closure capture
+  }, [fetchNodeMeta]); // stable - reads activeNode via ref, not closure capture
 
   const setActiveNode = useCallback((node: Node) => {
     setActiveNodeState(node);
     localStorage.setItem('sencho-active-node', String(node.id));
-  }, []);
+    fetchNodeMeta(node.id);
+  }, [fetchNodeMeta]);
 
   useEffect(() => {
     refreshNodes();
@@ -91,8 +138,28 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('node-not-found', handleNodeNotFound);
   }, [refreshNodes]);
 
+  const activeNodeMeta = useMemo(() => {
+    if (!activeNode) return null;
+    return nodeMeta.get(activeNode.id) ?? null;
+  }, [activeNode, nodeMeta]);
+
+  const hasCapability = useCallback((cap: Capability): boolean => {
+    const current = activeNodeRef.current;
+    if (!current) return true;
+    const meta = nodeMetaRef.current.get(current.id);
+    // Optimistic: if meta not yet fetched, assume capable (prevents flash of disabled UI)
+    if (!meta) return true;
+    return meta.capabilities.includes(cap);
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    nodes, activeNode, setActiveNode, refreshNodes, isLoading,
+    activeNodeMeta, hasCapability, nodeMeta, refreshNodeMeta: fetchNodeMeta,
+  }), [nodes, activeNode, setActiveNode, refreshNodes, isLoading,
+       activeNodeMeta, hasCapability, nodeMeta, fetchNodeMeta]);
+
   return (
-    <NodeContext.Provider value={{ nodes, activeNode, setActiveNode, refreshNodes, isLoading }}>
+    <NodeContext.Provider value={contextValue}>
       {children}
     </NodeContext.Provider>
   );

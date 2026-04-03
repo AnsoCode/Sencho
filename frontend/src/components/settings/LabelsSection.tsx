@@ -22,6 +22,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { ProGate } from '../ProGate';
+import { CapabilityGate } from '../CapabilityGate';
 import { LabelDot, type Label, type LabelColor } from '../LabelPill';
 
 const LABEL_COLORS: LabelColor[] = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'];
@@ -123,6 +124,7 @@ export function LabelsSection() {
 
     return (
         <ProGate featureName="Stack Labels">
+          <CapabilityGate capability="labels" featureName="Stack Labels">
             <div className="space-y-4">
                 <div className="flex items-center justify-between pr-8">
                     <div>
@@ -233,6 +235,7 @@ export function LabelsSection() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+          </CapabilityGate>
         </ProGate>
     );
 }

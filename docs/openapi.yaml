@@ -543,6 +543,33 @@ paths:
                     type: number
                     description: Process uptime in seconds.
 
+  /api/meta:
+    get:
+      operationId: getMeta
+      tags: [Health]
+      summary: Instance metadata
+      description: Returns this Sencho instance's version and list of supported capabilities. No authentication required. Used by nodes to negotiate feature compatibility.
+      security: []
+      responses:
+        "200":
+          description: Instance metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, capabilities]
+                properties:
+                  version:
+                    type: string
+                    description: Sencho version (semver).
+                    example: "0.32.0"
+                  capabilities:
+                    type: array
+                    description: List of feature capabilities this instance supports.
+                    items:
+                      type: string
+                    example: ["stacks", "containers", "fleet", "auto-updates", "host-console"]
+
   # ── Stacks ──────────────────────────────────────────────
   /api/stacks:
     get:
@@ -1766,6 +1793,39 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/nodes/{id}/meta:
+    get:
+      operationId: getNodeMeta
+      tags: [Nodes]
+      summary: Get node capabilities
+      description: Returns the version and supported capabilities for a specific node. For local nodes, returns this instance's own metadata. For remote nodes, relays the response from the remote instance's `/api/meta` endpoint. Returns `{ version: null, capabilities: [] }` if the remote node is offline or doesn't support the meta endpoint.
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Node capability metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, capabilities]
+                properties:
+                  version:
+                    type: string
+                    nullable: true
+                    description: Sencho version of the node, or null if unavailable.
+                    example: "0.31.0"
+                  capabilities:
+                    type: array
+                    description: List of feature capabilities the node supports. Empty array if unavailable.
+                    items:
+                      type: string
+                    example: ["stacks", "containers", "fleet"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ── Fleet ───────────────────────────────────────────────
   /api/fleet/overview:

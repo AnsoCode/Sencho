@@ -21,6 +21,7 @@ import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { ProGate } from './ProGate';
+import { CapabilityGate } from './CapabilityGate';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { lazy, Suspense } from 'react';
@@ -813,13 +814,15 @@ export default function ResourcesView() {
                         {networkViewMode === 'topology' ? (
                             <div className="p-4">
                                 <ProGate featureName="Network Topology">
-                                    <Suspense fallback={
-                                        <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
-                                            <span className="text-sm">Loading topology...</span>
-                                        </div>
-                                    }>
-                                        <NetworkTopologyView />
-                                    </Suspense>
+                                    <CapabilityGate capability="network-topology" featureName="Network Topology">
+                                        <Suspense fallback={
+                                            <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
+                                                <span className="text-sm">Loading topology...</span>
+                                            </div>
+                                        }>
+                                            <NetworkTopologyView />
+                                        </Suspense>
+                                    </CapabilityGate>
                                 </ProGate>
                             </div>
                         ) : (

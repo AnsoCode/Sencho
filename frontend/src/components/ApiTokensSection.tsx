@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
+import { CapabilityGate } from './CapabilityGate';
 import { TierBadge } from './TierBadge';
 import { Zap, Plus, Copy, Trash2, CheckCircle, RefreshCw, Clock } from 'lucide-react';
 
@@ -124,6 +125,7 @@ export function ApiTokensSection() {
 
     return (
         <AdmiralGate featureName="API Tokens">
+          <CapabilityGate capability="api-tokens" featureName="API Tokens">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
                     <div>
@@ -267,6 +269,7 @@ export function ApiTokensSection() {
                     </div>
                 ))}
             </div>
+          </CapabilityGate>
         </AdmiralGate>
     );
 }

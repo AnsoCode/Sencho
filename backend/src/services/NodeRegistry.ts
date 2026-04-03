@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import axios from 'axios';
 import { DatabaseService, Node } from './DatabaseService';
+import { fetchRemoteMeta } from './CapabilityRegistry';
 
 /**
  * NodeRegistry: Manages connections for multiple nodes.
@@ -165,21 +166,25 @@ export class NodeRegistry {
 
             // Step 2: Fetch Docker stats in parallel. Use allSettled so a slow or missing
             // endpoint doesn't fail the whole test - each field falls back to '-' gracefully.
-            const [statsResult, sysResult, imagesResult] = await Promise.allSettled([
+            const [statsResult, sysResult, imagesResult, metaResult] = await Promise.allSettled([
                 axios.get(`${baseUrl}/api/stats`, { headers, timeout: 8000 }),
                 axios.get(`${baseUrl}/api/system/stats`, { headers, timeout: 8000 }),
                 axios.get(`${baseUrl}/api/system/images`, { headers, timeout: 8000 }),
+                fetchRemoteMeta(baseUrl, node.api_token!),
             ]);
 
             const stats = statsResult.status === 'fulfilled' ? statsResult.value.data : null;
             const sys = sysResult.status === 'fulfilled' ? sysResult.value.data : null;
             const images = imagesResult.status === 'fulfilled' ? imagesResult.value.data : null;
+            const meta = metaResult.status === 'fulfilled' ? metaResult.value : null;
 
             return {
                 success: true,
                 info: {
                     name: node.name,
                     serverVersion: 'Remote Sencho',
+                    senchoVersion: meta?.version ?? null,
+                    capabilities: meta?.capabilities ?? [],
                     os: 'Remote',
                     architecture: 'Remote',
                     containers: stats?.total ?? '-',

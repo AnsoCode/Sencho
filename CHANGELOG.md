@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * **notifications:** shared notification routing rules (Admiral tier) — route stack alerts to specific Discord, Slack, or webhook channels instead of the global endpoint. Includes per-rule enable/disable, priority ordering, and fallback to global agents when no rule matches.
+* **nodes:** capability-based node compatibility negotiation — each Sencho instance now exposes a `/api/meta` endpoint advertising its version and supported features. When switching nodes, the frontend fetches this metadata and disables features the remote node doesn't support, with a clear overlay explanation. Version is shown in the node switcher dropdown and connection test results. Lays the groundwork for future fleet-wide update management.
 
 ## [0.30.0](https://github.com/AnsoCode/Sencho/compare/v0.29.0...v0.30.0) (2026-04-03)
 
