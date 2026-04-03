@@ -2,7 +2,7 @@
  * Tests for Distributed License Enforcement: the trust chain where the main
  * instance asserts its license tier to remote nodes via proxy headers.
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { setupTestDb, cleanupTestDb, TEST_USERNAME, TEST_JWT_SECRET } from './helpers/setupTestDb';
