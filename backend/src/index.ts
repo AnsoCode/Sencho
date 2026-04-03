@@ -25,7 +25,7 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
-import { LicenseService } from './services/LicenseService';
+import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
@@ -237,6 +237,10 @@ declare global {
       nodeId: number;
       apiTokenScope?: 'read-only' | 'deploy-only' | 'full-admin';
       rawBody?: Buffer;
+      /** License tier asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
+      proxyTier?: LicenseTier;
+      /** License variant asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
+      proxyVariant?: LicenseVariant;
     }
   }
 }
@@ -298,6 +302,23 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     // Accept both user sessions and node proxy tokens. Default role to 'admin' for backward compat with pre-RBAC tokens.
     const dbUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
     req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as UserRole) || 'admin', userId: dbUser?.id ?? 0 };
+
+    // Distributed License Enforcement: trust tier headers only from authenticated node proxy requests.
+    // Browser sessions and API tokens cannot set these — only a valid node_proxy JWT (signed with
+    // this instance's JWT secret) unlocks the trusted path.
+    if (decoded.scope === 'node_proxy') {
+      const tierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
+      const variantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
+      if (isLicenseTier(tierHeader)) {
+        req.proxyTier = tierHeader;
+      }
+      if (isLicenseVariant(variantHeader)) {
+        req.proxyVariant = variantHeader;
+      } else if (variantHeader === '') {
+        req.proxyVariant = null;
+      }
+    }
+
     next();
   } catch (err) {
     console.error('[Auth] Token validation failed:', (err as Error).message);
@@ -818,8 +839,11 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 // --- License Routes (local-only, never proxied) ---
 
 // Pro feature guard: returns false and sends 403 if not Pro tier.
-const requirePro = (_req: Request, res: Response): boolean => {
-  if (LicenseService.getInstance().getTier() !== 'pro') {
+// Checks req.proxyTier first (set by authMiddleware for trusted node proxy requests),
+// falling back to the local LicenseService tier for direct access.
+const requirePro = (req: Request, res: Response): boolean => {
+  const tier = req.proxyTier !== undefined ? req.proxyTier : LicenseService.getInstance().getTier();
+  if (tier !== 'pro') {
     res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
     return false;
   }
@@ -827,13 +851,17 @@ const requirePro = (_req: Request, res: Response): boolean => {
 };
 
 // Admiral feature guard: requires Pro tier with team variant.
-const requireAdmiral = (_req: Request, res: Response): boolean => {
+// Checks req.proxyTier/proxyVariant first (set by authMiddleware for trusted node proxy
+// requests), falling back to the local LicenseService for direct access.
+const requireAdmiral = (req: Request, res: Response): boolean => {
   const ls = LicenseService.getInstance();
-  if (ls.getTier() !== 'pro') {
+  const tier = req.proxyTier !== undefined ? req.proxyTier : ls.getTier();
+  const variant = req.proxyVariant !== undefined ? req.proxyVariant : ls.getVariant();
+  if (tier !== 'pro') {
     res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
     return false;
   }
-  if (ls.getVariant() !== 'team') {
+  if (variant !== 'team') {
     res.status(403).json({ error: 'This feature requires Sencho Admiral.', code: 'ADMIRAL_REQUIRED' });
     return false;
   }
@@ -849,9 +877,9 @@ const requireAdmin = (req: Request, res: Response): boolean => {
 };
 
 // Tier gate for scheduled tasks: 'update' action requires Pro, everything else requires Admiral.
-const requireScheduledTaskTier = (action: string, _req: Request, res: Response): boolean => {
-  if (action === 'update') return requirePro(_req, res);
-  return requireAdmiral(_req, res);
+const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
+  if (action === 'update') return requirePro(req, res);
+  return requireAdmiral(req, res);
 };
 
 // --- Scoped RBAC Permission Engine (Admiral) ---
@@ -2324,6 +2352,13 @@ const remoteNodeProxy = createProxyMiddleware<Request, Response>({
       if (node?.api_token) {
         proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
       }
+      // Distributed License Enforcement: assert the main instance's license tier to the
+      // remote node so tier-gated routes honor the main's license instead of the node's local
+      // (likely Community) tier. The remote's authMiddleware only trusts these headers when the
+      // request carries a valid node_proxy JWT.
+      const proxyLs = LicenseService.getInstance();
+      proxyReq.setHeader(PROXY_TIER_HEADER, proxyLs.getTier());
+      proxyReq.setHeader(PROXY_VARIANT_HEADER, proxyLs.getVariant() || '');
       // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
       // doesn't reject the request with 404 ("Node X not found") - the remote
       // has no record of the gateway's node IDs and should treat the request
@@ -2534,6 +2569,10 @@ server.on('upgrade', async (req, socket, head) => {
       // Strip the browser's session cookie - it is signed by this instance's JWT secret and
       // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
       delete req.headers['cookie'];
+      // Distributed License Enforcement: assert the main's license tier on proxied WS connections.
+      const wsLs = LicenseService.getInstance();
+      req.headers[PROXY_TIER_HEADER] = wsLs.getTier();
+      req.headers[PROXY_VARIANT_HEADER] = wsLs.getVariant() || '';
       // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
       // The remote has no record of the gateway's nodeId, so leaving it would cause unnecessary
       // fallback logic. Removing it lets the remote default cleanly to its own local node.

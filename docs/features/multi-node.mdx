@@ -90,6 +90,28 @@ Click the **calendar icon** on any node row to jump directly to the Schedules vi
 
 When a node is deleted, all scheduled tasks and update status data associated with it are automatically cleaned up.
 
+## License enforcement across nodes
+
+When you have a paid license (Skipper or Admiral) on your primary instance, all remote nodes automatically inherit that license tier for proxied requests. You do not need to activate a license on each remote node separately.
+
+### How it works
+
+Your primary Sencho instance asserts its license tier to remote nodes on every proxied request. Remote nodes trust this assertion because it arrives alongside a valid node proxy token — the same token you configured when adding the node. No additional configuration is required.
+
+This means:
+
+- **Paid primary → remote nodes**: Pro and Admiral features work on all remote nodes, governed by the primary instance's license.
+- **Community primary → remote nodes**: Pro-gated features are blocked on remote nodes, even if a remote node has its own paid license. The primary's tier is authoritative for proxied requests.
+- **Direct access to a node**: If you access a remote Sencho instance directly (not through the primary), it uses its own local license tier as usual.
+
+### Why this matters
+
+Without this trust chain, remote nodes would default to the Community tier and block Pro/Admiral features — even though the primary instance has a valid paid license. Distributed license enforcement eliminates this gap so your fleet behaves consistently regardless of which node you're operating on.
+
+<Note>
+  Remote nodes do not need their own license keys. A single license on the primary instance covers all nodes managed through it.
+</Note>
+
 ## Editing and deleting nodes
 
 Click the **pencil icon** on any remote node row to edit its name, URL, or token. Click the **trash icon** to remove it. The local node cannot be edited or deleted.
