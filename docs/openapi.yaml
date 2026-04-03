@@ -570,6 +570,35 @@ paths:
                       type: string
                     example: ["stacks", "containers", "fleet", "auto-updates", "host-console"]
 
+  /api/system/update:
+    post:
+      operationId: triggerSelfUpdate
+      tags: [Health]
+      summary: Trigger self-update
+      description: |
+        Instructs this Sencho instance to pull the latest Docker image and recreate its own container.
+        Returns 202 immediately; the actual update happens asynchronously after the response is sent.
+        Requires the instance to be deployed via Docker Compose with the Docker socket mounted.
+      responses:
+        "202":
+          description: Update initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Update initiated. The server will restart shortly."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Self-update not available (not running in Docker Compose).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # ── Stacks ──────────────────────────────────────────────
   /api/stacks:
     get:
@@ -1922,6 +1951,122 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/fleet/update-status:
+    get:
+      operationId: getFleetUpdateStatus
+      tags: [Fleet]
+      summary: Fleet update status
+      description: Returns version comparison and active update status for all nodes. Compares each node's version against the gateway's version.
+      responses:
+        "200":
+          description: Update status for all nodes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        nodeId:
+                          type: integer
+                        name:
+                          type: string
+                        type:
+                          type: string
+                          enum: [local, remote]
+                        version:
+                          type: string
+                          nullable: true
+                        latestVersion:
+                          type: string
+                        updateAvailable:
+                          type: boolean
+                        updateStatus:
+                          type: string
+                          nullable: true
+                          enum: [updating, completed, timeout, failed, null]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ProRequired"
+
+  /api/fleet/nodes/{nodeId}/update:
+    post:
+      operationId: triggerNodeUpdate
+      tags: [Fleet]
+      summary: Trigger node update
+      description: Initiates a self-update on the specified node. For remote nodes, sends the update command via the proxy. For local nodes, triggers the update directly.
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "202":
+          description: Update initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ProRequired"
+        "404":
+          description: Node not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Update already in progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Self-update not available on the target node.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/fleet/update-all:
+    post:
+      operationId: triggerFleetUpdateAll
+      tags: [Fleet]
+      summary: Update all outdated nodes
+      description: Triggers self-update on all remote nodes running an older version than the gateway. Local nodes are excluded from bulk updates.
+      responses:
+        "202":
+          description: Bulk update initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updating:
+                    type: array
+                    items:
+                      type: string
+                    description: Names of nodes where update was triggered.
+                  skipped:
+                    type: array
+                    items:
+                      type: string
+                    description: Names of nodes that were skipped.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ProRequired"
 
   /api/fleet/snapshots:
     post:

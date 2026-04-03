@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle, Box, Activity,
-    Play, Square, RotateCcw, ExternalLink, Camera,
+    Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
+    CircleCheck, CircleAlert, Globe, Monitor,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +12,13 @@ import { Input } from '@/components/ui/input';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
@@ -52,6 +60,16 @@ interface StackContainer {
     Image?: string;
     State?: string;
     Status?: string;
+}
+
+interface NodeUpdateStatus {
+    nodeId: number;
+    name: string;
+    type: 'local' | 'remote';
+    version: string | null;
+    latestVersion: string;
+    updateAvailable: boolean;
+    updateStatus: 'updating' | 'completed' | 'timeout' | 'failed' | null;
 }
 
 type SortField = 'name' | 'cpu' | 'memory' | 'containers' | 'status';
@@ -268,7 +286,76 @@ function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
     );
 }
 
-function NodeCard({ node, onNavigate, labelMap }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void; labelMap?: Record<string, StackLabel[]> }) {
+function UpdateStatusBadge({ status }: { status: NodeUpdateStatus['updateStatus'] }) {
+    if (status === 'updating') return (
+        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-info/15 text-info border-info/30 shrink-0">
+            <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" /> Updating
+        </Badge>
+    );
+    if (status === 'completed') return (
+        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-success-muted text-success border-success/30 shrink-0">
+            <Check className="w-2.5 h-2.5 mr-0.5" /> Updated
+        </Badge>
+    );
+    if (status === 'timeout') return (
+        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Timed out</Badge>
+    );
+    if (status === 'failed') return (
+        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Failed</Badge>
+    );
+    return null;
+}
+
+function ReconnectingOverlay() {
+    const [elapsed, setElapsed] = useState(0);
+    const timedOut = elapsed >= 300; // 5 minutes
+
+    useEffect(() => {
+        const timer = setInterval(() => setElapsed(s => s + 1), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        if (timedOut) return;
+        const poll = setInterval(async () => {
+            try {
+                const res = await fetch('/api/health');
+                if (res.ok) window.location.reload();
+            } catch { /* still down */ }
+        }, 3000);
+        return () => clearInterval(poll);
+    }, [timedOut]);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-[10px] backdrop-saturate-[1.15]">
+            <div className="text-center space-y-4">
+                {timedOut ? (
+                    <>
+                        <AlertTriangle className="w-10 h-10 text-warning mx-auto" strokeWidth={1.5} />
+                        <h2 className="text-lg font-medium">Update timed out</h2>
+                        <p className="text-sm text-muted-foreground max-w-sm">
+                            The server has not come back within 5 minutes. Check the Docker host directly.
+                        </p>
+                        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                            Try Reloading
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <Loader2 className="w-10 h-10 text-muted-foreground animate-spin mx-auto" strokeWidth={1.5} />
+                        <h2 className="text-lg font-medium">Updating Sencho...</h2>
+                        <p className="text-sm text-muted-foreground max-w-sm">
+                            The server is pulling the latest image and restarting. This page will reload automatically.
+                        </p>
+                        <p className="text-xs text-muted-foreground tabular-nums">{elapsed}s elapsed</p>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updatingNodeId }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void; labelMap?: Record<string, StackLabel[]>; updateStatus?: NodeUpdateStatus; onUpdate?: (nodeId: number) => void; updatingNodeId?: number | null }) {
     const { isPro } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
@@ -312,19 +399,30 @@ function NodeCard({ node, onNavigate, labelMap }: { node: FleetNode; onNavigate:
                         </div>
                         <div className="min-w-0">
                             <h3 className="text-sm font-medium truncate">{node.name}</h3>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <Badge variant={isOnline ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4">
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <Badge variant={isOnline ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                                     {isOnline ? (
                                         <><Wifi className="w-2.5 h-2.5 mr-0.5" /> Online</>
                                     ) : (
                                         <><WifiOff className="w-2.5 h-2.5 mr-0.5" /> Offline</>
                                     )}
                                 </Badge>
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                                     {node.type}
                                 </Badge>
+                                {updateStatus?.version && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-mono tabular-nums shrink-0">
+                                        v{updateStatus.version}
+                                    </Badge>
+                                )}
+                                {updateStatus?.updateStatus && <UpdateStatusBadge status={updateStatus.updateStatus} />}
+                                {updateStatus?.updateAvailable && !updateStatus.updateStatus && (
+                                    <Badge className="text-[10px] px-1.5 py-0 h-4 bg-warning/15 text-warning border-warning/30 shrink-0">
+                                        Update available
+                                    </Badge>
+                                )}
                                 {isOnline && isCritical(node) && (
-                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">
+                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                                         <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> Critical
                                     </Badge>
                                 )}
@@ -383,6 +481,25 @@ function NodeCard({ node, onNavigate, labelMap }: { node: FleetNode; onNavigate:
                                 <UsageBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-warning' : 'bg-violet-500'} />
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Update button */}
+                {isOnline && updateStatus?.updateAvailable && !updateStatus.updateStatus && onUpdate && (
+                    <div className="mt-3 pt-3 border-t border-border/50">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-7 text-xs"
+                            onClick={() => onUpdate(node.id)}
+                            disabled={updatingNodeId === node.id}
+                        >
+                            {updatingNodeId === node.id ? (
+                                <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Triggering...</>
+                            ) : (
+                                <><Download className="w-3 h-3 mr-1.5" strokeWidth={1.5} />Update to v{updateStatus.latestVersion}</>
+                            )}
+                        </Button>
                     </div>
                 )}
 
@@ -454,6 +571,15 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<string, StackLabel[]>>({});
     const [labelFilters, setLabelFilters] = useState<Set<number>>(new Set());
     const { isPro } = useLicense();
+    const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
+    const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
+    const [reconnecting, setReconnecting] = useState(false);
+    const [localUpdateConfirm, setLocalUpdateConfirm] = useState<number | null>(null);
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [checkingUpdates, setCheckingUpdates] = useState(false);
+    const [modalSearch, setModalSearch] = useState('');
+    const updateStatusesRef = useRef(updateStatuses);
+    updateStatusesRef.current = updateStatuses;
 
     const updatePrefs = useCallback((update: Partial<FleetPreferences>) => {
         setPrefs(prev => {
@@ -492,10 +618,90 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
     }, [isPro]);
 
+    const fetchUpdateStatus = useCallback(async () => {
+        if (!isPro) return;
+        try {
+            const res = await apiFetch('/fleet/update-status', { localOnly: true });
+            if (res.ok) {
+                const data = await res.json();
+                const next: NodeUpdateStatus[] = data.nodes ?? [];
+                setUpdateStatuses(prev =>
+                    JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+                );
+            }
+        } catch { /* non-critical */ }
+    }, [isPro]);
+
+    const triggerNodeUpdate = useCallback(async (nodeId: number) => {
+        const status = updateStatusesRef.current.find(s => s.nodeId === nodeId);
+        if (status?.type === 'local') {
+            setLocalUpdateConfirm(nodeId);
+            return;
+        }
+
+        setUpdatingNodeId(nodeId);
+        try {
+            const res = await apiFetch(`/fleet/nodes/${nodeId}/update`, { method: 'POST', localOnly: true });
+            if (res.ok) {
+                toast.success(`Update initiated on ${status?.name ?? 'node'}.`);
+                fetchUpdateStatus();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger update.');
+            }
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Something went wrong.');
+        } finally {
+            setUpdatingNodeId(null);
+        }
+    }, [fetchUpdateStatus]);
+
+    const confirmLocalUpdate = useCallback(async () => {
+        const nodeId = localUpdateConfirm;
+        setLocalUpdateConfirm(null);
+        if (!nodeId) return;
+
+        setUpdatingNodeId(nodeId);
+        try {
+            const res = await apiFetch(`/fleet/nodes/${nodeId}/update`, { method: 'POST', localOnly: true });
+            if (res.ok) {
+                setReconnecting(true);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger local update.');
+            }
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Something went wrong.');
+        } finally {
+            setUpdatingNodeId(null);
+        }
+    }, [localUpdateConfirm]);
+
+    const triggerUpdateAll = useCallback(async () => {
+        try {
+            const res = await apiFetch('/fleet/update-all', { method: 'POST', localOnly: true });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.updating?.length > 0) {
+                    toast.success(`Update initiated on ${data.updating.length} node${data.updating.length > 1 ? 's' : ''}.`);
+                } else {
+                    toast.success('All nodes are up to date.');
+                }
+                fetchUpdateStatus();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger fleet update.');
+            }
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Something went wrong.');
+        }
+    }, [fetchUpdateStatus]);
+
     useEffect(() => {
         fetchOverview();
         fetchLabels();
-    }, [fetchOverview, fetchLabels]);
+        fetchUpdateStatus();
+    }, [fetchOverview, fetchLabels, fetchUpdateStatus]);
 
     // Pro: auto-refresh every 30s
     useEffect(() => {
@@ -503,6 +709,22 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         const interval = setInterval(() => fetchOverview(), 30000);
         return () => clearInterval(interval);
     }, [isPro, fetchOverview]);
+
+    // Fast poll (5s) when any node is actively updating — uses ref to avoid interval thrashing
+    const hasUpdatingRef = useRef(false);
+    useEffect(() => {
+        hasUpdatingRef.current = updateStatuses.some(s => s.updateStatus === 'updating');
+    }, [updateStatuses]);
+
+    useEffect(() => {
+        const id = setInterval(() => {
+            if (hasUpdatingRef.current) {
+                fetchUpdateStatus();
+                fetchOverview();
+            }
+        }, 5000);
+        return () => clearInterval(id);
+    }, [fetchUpdateStatus, fetchOverview]);
 
     // --- Computed values ---
 
@@ -522,6 +744,16 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
     const totalMemUsed = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.used ?? 0), 0);
     const totalMemTotal = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.total ?? 0), 0);
+
+    const updatableRemoteCount = useMemo(
+        () => updateStatuses.filter(s => s.updateAvailable && !s.updateStatus && s.type === 'remote').length,
+        [updateStatuses]
+    );
+
+    const updateStatusMap = useMemo(
+        () => new Map(updateStatuses.map(s => [s.nodeId, s])),
+        [updateStatuses]
+    );
 
     // --- Filtering & Sorting (Pro) ---
 
@@ -596,16 +828,34 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         {loading ? 'Loading...' : `${onlineCount} of ${nodes.length} nodes online · ${totalContainers} containers · ${totalStacks} stacks`}
                     </p>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchOverview(true)}
-                    disabled={refreshing}
-                    className="gap-2"
-                >
-                    <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    {isPro && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                                setShowUpdateModal(true);
+                                setCheckingUpdates(true);
+                                await fetchUpdateStatus();
+                                setCheckingUpdates(false);
+                            }}
+                            className="gap-2"
+                        >
+                            <Search className="w-4 h-4" />
+                            Check Updates
+                        </Button>
+                    )}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchOverview(true)}
+                        disabled={refreshing}
+                        className="gap-2"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             <Tabs defaultValue="overview">
@@ -804,6 +1054,9 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             node={node}
                                             onNavigate={onNavigateToNode}
                                             labelMap={fleetStackLabelMap}
+                                            updateStatus={updateStatusMap.get(node.id)}
+                                            onUpdate={isPro ? triggerNodeUpdate : undefined}
+                                            updatingNodeId={updatingNodeId}
                                         />
                                     ))}
                                 </div>
@@ -863,6 +1116,201 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     </TabsContent>
                 )}
             </Tabs>
+
+            {/* Reconnecting overlay — shown when local node is updating */}
+            {reconnecting && <ReconnectingOverlay />}
+
+            {/* Node Updates modal */}
+            <Dialog open={showUpdateModal} onOpenChange={(open) => { setShowUpdateModal(open); if (!open) setModalSearch(''); }}>
+                <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Node Updates</DialogTitle>
+                        <DialogDescription className="sr-only">Check and apply updates across your fleet nodes.</DialogDescription>
+                    </DialogHeader>
+
+                    {checkingUpdates ? (
+                        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Checking for updates...
+                        </div>
+                    ) : updateStatuses.length === 0 ? (
+                        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
+                            No nodes found.
+                        </div>
+                    ) : (() => {
+                        const upToDate = updateStatuses.filter(s => !s.updateAvailable && !s.updateStatus).length;
+                        const available = updateStatuses.filter(s => s.updateAvailable && !s.updateStatus).length;
+                        const updating = updateStatuses.filter(s => s.updateStatus === 'updating').length;
+                        const failed = updateStatuses.filter(s => s.updateStatus === 'failed' || s.updateStatus === 'timeout').length;
+                        const q = modalSearch.toLowerCase();
+                        const filtered = q ? updateStatuses.filter(s => s.name.toLowerCase().includes(q) || s.type.includes(q)) : updateStatuses;
+
+                        return (
+                            <>
+                                {/* Summary stats */}
+                                <div className="grid grid-cols-4 gap-2">
+                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{upToDate}</div>
+                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
+                                            <CircleCheck className="w-3 h-3 text-success" strokeWidth={1.5} /> Up to date
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{available}</div>
+                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
+                                            <CircleAlert className="w-3 h-3 text-warning" strokeWidth={1.5} /> Available
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{updating}</div>
+                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
+                                            <Loader2 className="w-3 h-3 text-info" strokeWidth={1.5} /> Updating
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{failed}</div>
+                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
+                                            <AlertTriangle className="w-3 h-3 text-destructive/70" strokeWidth={1.5} /> Failed
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Search + gateway version */}
+                                <div className="flex items-center gap-2">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                                        <Input
+                                            placeholder="Filter nodes..."
+                                            value={modalSearch}
+                                            onChange={e => setModalSearch(e.target.value)}
+                                            className="h-8 pl-8 text-xs"
+                                        />
+                                    </div>
+                                    <div className="text-[11px] text-muted-foreground shrink-0">
+                                        Gateway: <span className="font-mono tabular-nums text-foreground">v{updateStatuses[0]?.latestVersion}</span>
+                                    </div>
+                                </div>
+
+                                {/* Table header */}
+                                <div className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 px-3 text-[10px] text-muted-foreground uppercase tracking-wider">
+                                    <span>Node</span>
+                                    <span>Type</span>
+                                    <span>Current</span>
+                                    <span>Latest</span>
+                                    <span className="text-right">Status</span>
+                                </div>
+
+                                {/* Node list */}
+                                <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-[40vh] -mx-1 px-1">
+                                    {filtered.map(s => (
+                                        <div key={s.nodeId} className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 items-center rounded-lg border border-card-border bg-card px-3 py-2">
+                                            {/* Node name */}
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <div className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${s.updateAvailable && !s.updateStatus ? 'bg-warning/10' : 'bg-muted'}`}>
+                                                    {s.type === 'local'
+                                                        ? <Monitor className={`w-3 h-3 ${s.updateAvailable && !s.updateStatus ? 'text-warning' : 'text-muted-foreground'}`} strokeWidth={1.5} />
+                                                        : <Globe className={`w-3 h-3 ${s.updateAvailable && !s.updateStatus ? 'text-warning' : 'text-muted-foreground'}`} strokeWidth={1.5} />
+                                                    }
+                                                </div>
+                                                <span className="text-sm font-medium truncate">{s.name}</span>
+                                            </div>
+
+                                            {/* Type */}
+                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 w-fit">
+                                                {s.type}
+                                            </Badge>
+
+                                            {/* Current version */}
+                                            <span className="text-xs font-mono tabular-nums text-muted-foreground">
+                                                {s.version ? `v${s.version}` : <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
+                                            </span>
+
+                                            {/* Latest version */}
+                                            <span className="text-xs font-mono tabular-nums">
+                                                v{s.latestVersion}
+                                            </span>
+
+                                            {/* Status / Action */}
+                                            <div className="flex justify-end">
+                                                {s.updateStatus && <UpdateStatusBadge status={s.updateStatus} />}
+                                                {!s.updateStatus && !s.updateAvailable && (
+                                                    <Badge className="text-[10px] px-1.5 py-0 h-5 bg-success-muted text-success border-success/30">
+                                                        <Check className="w-2.5 h-2.5 mr-0.5" /> Up to date
+                                                    </Badge>
+                                                )}
+                                                {s.updateAvailable && !s.updateStatus && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-6 text-[11px] px-2.5"
+                                                        onClick={() => triggerNodeUpdate(s.nodeId)}
+                                                        disabled={updatingNodeId === s.nodeId}
+                                                    >
+                                                        {updatingNodeId === s.nodeId ? (
+                                                            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Updating</>
+                                                        ) : (
+                                                            <><Download className="w-3 h-3 mr-1" strokeWidth={1.5} />Update</>
+                                                        )}
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {filtered.length === 0 && (
+                                        <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+                                            No nodes match &ldquo;{modalSearch}&rdquo;
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Footer */}
+                                <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs text-muted-foreground"
+                                        onClick={async () => { setCheckingUpdates(true); await fetchUpdateStatus(); setCheckingUpdates(false); }}
+                                    >
+                                        <RefreshCw className="w-3 h-3 mr-1.5" strokeWidth={1.5} />
+                                        Recheck
+                                    </Button>
+                                    {updatableRemoteCount > 0 && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={triggerUpdateAll}
+                                            className="h-7 gap-1.5"
+                                        >
+                                            <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                            Update All ({updatableRemoteCount})
+                                        </Button>
+                                    )}
+                                </div>
+                            </>
+                        );
+                    })()}
+                </DialogContent>
+            </Dialog>
+
+            {/* Confirm dialog for local node update */}
+            <AlertDialog open={localUpdateConfirm !== null} onOpenChange={(open) => { if (!open) setLocalUpdateConfirm(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Update local node?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will pull the latest Sencho image and restart the server. The dashboard will be
+                            briefly disconnected and will automatically reconnect when the update completes.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmLocalUpdate}>
+                            <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
+                            Update & Restart
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
