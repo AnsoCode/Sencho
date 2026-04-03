@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **fleet:** remote node update management (Pro tier) — check for outdated nodes and trigger over-the-air updates from Fleet View. Nodes self-update by pulling the latest Docker image and recreating their container. Includes version badges on node cards, per-node and bulk "Update All" actions, real-time progress tracking with 5-second polling, reconnecting overlay for local node updates, and `POST /api/system/update` endpoint for programmatic self-updates. Requires Docker Compose deployment with Docker socket access.
 
+* **license:** distributed license enforcement across multi-node setups — the primary instance's license tier (Skipper/Admiral) is now automatically asserted to remote nodes on every proxied request. Remote nodes honor the assertion only when the request arrives with a valid node proxy token, preventing unauthorized elevation. No per-node license activation required. Includes type guards and header constants in `LicenseService`, and comprehensive test coverage for all trust chain scenarios.
+
 ## [0.32.0](https://github.com/AnsoCode/Sencho/compare/v0.31.0...v0.32.0) (2026-04-03)
 
 

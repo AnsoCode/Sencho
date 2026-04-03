@@ -7,6 +7,21 @@ export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disa
 
 export type LicenseVariant = 'personal' | 'team' | null;
 
+const VALID_TIERS: readonly string[] = ['community', 'pro'] satisfies readonly LicenseTier[];
+const VALID_VARIANTS: readonly string[] = ['personal', 'team'] satisfies readonly LicenseVariant[];
+
+export function isLicenseTier(value: unknown): value is LicenseTier {
+    return typeof value === 'string' && (VALID_TIERS as readonly string[]).includes(value);
+}
+
+export function isLicenseVariant(value: unknown): value is Exclude<LicenseVariant, null> {
+    return typeof value === 'string' && (VALID_VARIANTS as readonly string[]).includes(value);
+}
+
+/** Header names used for Distributed License Enforcement between nodes. */
+export const PROXY_TIER_HEADER = 'x-sencho-tier';
+export const PROXY_VARIANT_HEADER = 'x-sencho-variant';
+
 export interface LicenseInfo {
     tier: LicenseTier;
     status: LicenseStatus;

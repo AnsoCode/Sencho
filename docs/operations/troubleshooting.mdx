@@ -134,6 +134,19 @@ Click the **wifi icon** on the node row to re-test connectivity after making cha
 
 ---
 
+## Pro features return 403 on remote nodes
+
+**Symptom:** A Pro or Admiral feature works on the local node but returns "This feature requires Sencho Pro" (403) when you switch to a remote node.
+
+**Checks in order:**
+
+1. **Is your primary instance licensed?** Go to **Settings > License** on the primary instance and verify it shows an active Skipper or Admiral license. Remote nodes inherit the primary's tier — if the primary is on Community, all remote nodes will be Community too.
+2. **Is the remote node's token valid?** An expired or revoked token prevents the license tier from being transmitted. Regenerate the token on the remote instance and update the node config on the primary.
+3. **Is the remote node running an up-to-date version of Sencho?** Distributed license enforcement requires both the primary and remote instances to be on v0.34.0 or later. Update the remote node if it's on an older version.
+4. **Are you accessing the remote node directly?** If you navigate directly to the remote Sencho instance's URL (bypassing the primary), it uses its own local license. License inheritance only works through the primary's proxy.
+
+---
+
 ## Forgotten admin password
 
 Sencho has no password recovery flow. To reset the password:
