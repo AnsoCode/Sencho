@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0](https://github.com/AnsoCode/Sencho/compare/v0.36.0...v0.37.0) (2026-04-04)
+
+
+### Added
+
+* **stacks:** state-aware sidebar context menu and Open App action ([#368](https://github.com/AnsoCode/Sencho/issues/368)) ([55d3b8c](https://github.com/AnsoCode/Sencho/commit/55d3b8ca1dea6958cecf9d1672a6d891751f7ae3))
+
 ## [Unreleased]
 
 ### Added
