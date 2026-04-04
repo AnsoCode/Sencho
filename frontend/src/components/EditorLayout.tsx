@@ -2243,8 +2243,7 @@ export default function EditorLayout() {
             </CapabilityGate>
           ) : (
             <HomeDashboard onNavigateToStack={(stackFile) => {
-              setSelectedFile(stackFile);
-              setActiveView('editor');
+              loadFile(stackFile);
             }} />
           )}
         </div>
