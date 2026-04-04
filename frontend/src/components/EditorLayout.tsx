@@ -359,6 +359,7 @@ export default function EditorLayout() {
         const statusResults = await Promise.allSettled(
           fileList.map(async (file) => {
             const containersRes = await apiFetch(`/stacks/${file}/containers`);
+            if (!containersRes.ok) return { file, status: 'unknown' as const };
             const containers = await containersRes.json();
             const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
             return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
@@ -2241,7 +2242,10 @@ export default function EditorLayout() {
               <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
             </CapabilityGate>
           ) : (
-            <HomeDashboard />
+            <HomeDashboard onNavigateToStack={(stackFile) => {
+              setSelectedFile(stackFile);
+              setActiveView('editor');
+            }} />
           )}
         </div>
       </div>

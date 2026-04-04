@@ -15,14 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* **stacks:** state-aware sidebar context menu — actions now adapt to stack state (running stacks show Stop/Restart/Update, stopped stacks show Deploy)
-* **stacks:** "Open App" action in sidebar context menu — quickly open a stack's web interface without navigating to the detail view
+* **dashboard:** redesign as DevOps command center with 5 operational sections: health status bar, resource gauges with progress bars, paginated stack health table, historical charts, and recent alerts feed
+* **dashboard:** stack health table with per-stack UP/DN status, aggregated CPU/memory metrics, click-to-navigate, and pagination (8 per page)
+* **dashboard:** system health derivation (Healthy/Degraded/Critical) based on resource thresholds and alert state
+* **stacks:** state-aware sidebar context menu, actions now adapt to stack state (running stacks show Stop/Restart/Update, stopped stacks show Deploy)
+* **stacks:** "Open App" action in sidebar context menu, quickly open a stack's web interface without navigating to the detail view
 * **stacks:** bulk status endpoint now returns detected web port per stack for Open App support
 
 ### Changed
 
+* **dashboard:** replaced 6 flat stat cards with 5 denser resource gauge cards featuring visual progress bars and threshold coloring
+* **dashboard:** extracted monolithic HomeDashboard.tsx (447 lines) into composable sub-components under `dashboard/` directory
 * **updates:** reduced manual image update check cooldown from 10 minutes to 2 minutes
 * **updates:** rate limit error message now dynamically derives from the configured cooldown constant
+
+### Removed
+
+* **dashboard:** removed Docker Run to Compose converter from the dashboard (utility that doesn't belong on the primary landing surface)
+
+### Fixed
+
+* **stacks:** added missing `.ok` check on container status fallback response in EditorLayout, preventing potential JSON parse errors on failed requests
 
 ## [0.36.0](https://github.com/AnsoCode/Sencho/compare/v0.35.0...v0.36.0) (2026-04-04)
 
