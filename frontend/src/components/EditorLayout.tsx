@@ -340,7 +340,7 @@ export default function EditorLayout() {
       // Fetch all stack statuses in a single bulk call (falls back to per-stack queries for older remote nodes)
       const statusRes = await apiFetch('/stacks/statuses');
       let bulkStatuses: Record<string, 'running' | 'exited' | 'unknown'> | null = null;
-      let bulkPorts: Record<string, number | undefined> = {};
+      const bulkPorts: Record<string, number | undefined> = {};
       if (statusRes.ok) {
         const raw = await statusRes.json();
         bulkStatuses = {};
