@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0](https://github.com/AnsoCode/Sencho/compare/v0.37.0...v0.38.0) (2026-04-04)
+
+
+### Added
+
+* **dashboard:** redesign as DevOps command center ([#371](https://github.com/AnsoCode/Sencho/issues/371)) ([2ee959e](https://github.com/AnsoCode/Sencho/commit/2ee959ec3b696c5beba7b8b62bec2221ca65d525))
+
 ## [0.37.0](https://github.com/AnsoCode/Sencho/compare/v0.36.0...v0.37.0) (2026-04-04)
 
 
