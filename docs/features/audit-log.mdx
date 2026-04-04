@@ -17,12 +17,19 @@ Every `POST`, `PUT`, `DELETE`, and `PATCH` request to the Sencho API is automati
 |-------|-------------|
 | **Timestamp** | When the action occurred |
 | **User** | The authenticated username that performed the action |
-| **Method** | HTTP method (`POST`, `PUT`, `DELETE`, `PATCH`) |
+| **Method** | HTTP method (`POST`, `PUT`, `DELETE`, `PATCH`), shown as a color-coded badge |
 | **Action** | Human-readable summary (e.g., "Deployed stack: nginx-proxy") |
-| **Status** | HTTP response status code |
-| **Node** | Which node the action targeted |
-| **Request Path** | Full API path (visible in expanded detail view) |
-| **IP Address** | Client IP address (visible in expanded detail view) |
+| **Status** | HTTP response status code, color-coded by result (green for success, yellow for client errors, red for server errors) |
+| **Node** | Which node the action targeted, or `-` for local-only actions |
+
+Expanding a row reveals additional detail:
+
+| Field | Description |
+|-------|-------------|
+| **Request Path** | Full API path of the request |
+| **IP Address** | Client IP address |
+| **Node ID** | Numeric node ID, or "Local" for local actions |
+| **Entry ID** | Unique identifier for the audit entry |
 
 ### Example actions tracked
 
@@ -43,24 +50,32 @@ Every `POST`, `PUT`, `DELETE`, and `PATCH` request to the Sencho API is automati
 Navigate to the **Audit** tab in the sidebar. This tab is visible to users with the **Admin** or **Auditor** role on an Admiral license.
 
 <Frame>
-  <img src="/images/audit-log/audit-log-overview.png" alt="Audit Log view showing a timeline of actions with search, filters, and export" />
+  <img src="/images/audit-log/audit-log-overview.png" alt="Audit Log view showing the action table with search filters, color-coded method badges, and export controls" />
 </Frame>
 
-Click any row to expand it and see full request details including the API path, IP address, node ID, and entry ID.
+Click any row to expand it and see the full request details inline.
 
-## Filtering & search
+<Frame>
+  <img src="/images/audit-log/audit-log-expanded.png" alt="Audit Log with an expanded row showing request path, IP address, node ID, and entry ID" />
+</Frame>
+
+The header displays the total number of matching entries and provides **Refresh** and **Export** controls.
+
+Results are paginated at 50 entries per page. Navigation controls appear at the bottom of the table when there are multiple pages.
+
+## Filtering and search
 
 The audit log provides several ways to find specific entries:
 
-- **Full-text search** — Search across action summaries, API paths, and usernames
-- **Method filter** — Filter by HTTP method (POST, PUT, DELETE, PATCH)
-- **Date range** — Set a start and/or end date to narrow results to a specific time window
+- **Full-text search** - Search across action summaries, API paths, and usernames
+- **Method filter** - Filter by HTTP method (POST, PUT, DELETE, PATCH) using the dropdown
+- **Date range** - Set a start and/or end date to narrow results to a specific time window
 
 All filters work together and are applied server-side with pagination.
 
 ## Export
 
-Export the currently filtered audit log dataset as **CSV** or **JSON** using the **Export** dropdown in the header. The export respects all active filters — so you can narrow down to a date range or specific user before exporting.
+Export the currently filtered audit log dataset as **CSV** or **JSON** using the **Export** dropdown in the header. The export respects all active filters, so you can narrow down to a date range or specific user before exporting.
 
 Exports are capped at 10,000 entries per download.
 
@@ -75,7 +90,7 @@ The **Auditor** role provides read-only access to the audit log without granting
 
 Auditors **cannot** modify settings, manage users, deploy stacks, or perform any other administrative actions. This role is ideal for compliance officers, security reviewers, or team leads who need visibility into system activity without operational access.
 
-To create an Auditor user, go to **Settings → Users** and select the **Auditor** role when creating a new user.
+To create an Auditor user, go to **Settings > Users** and select the **Auditor** role when creating a new user.
 
 ## Configurable data retention
 
@@ -83,9 +98,13 @@ Audit log entries are automatically cleaned up based on your configured retentio
 
 To change the retention period:
 
-1. Go to **Settings → Developer → Data Retention**
-2. Set the **Audit Log Retention** value (1–365 days)
+1. Go to **Settings > Developer > Data Retention**
+2. Set the **Audit Log Retention** value (1-365 days)
 3. Click **Save Developer Settings**
+
+<Frame>
+  <img src="/images/audit-log/data-retention.png" alt="Data Retention settings showing Audit Log Retention set to 90 days" />
+</Frame>
 
 Cleanup runs automatically as part of Sencho's periodic maintenance cycle.
 

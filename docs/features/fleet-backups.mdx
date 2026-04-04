@@ -7,67 +7,72 @@ description: Snapshot compose files across all nodes for disaster recovery and a
   Fleet-Wide Backups require a Sencho Pro license. The feature is available to Pro admins in the Fleet View.
 </Note>
 
-Create point-in-time snapshots of every `compose.yaml` and `.env` file across your entire fleet - local and remote nodes alike. Snapshots are stored centrally in Sencho's database and can be browsed, previewed, and restored at any time.
+Create point-in-time snapshots of every `compose.yaml` and `.env` file across your entire fleet, local and remote nodes alike. Snapshots are stored centrally in Sencho's database and can be browsed, previewed, and restored at any time.
 
 ## Creating a snapshot
 
 1. Navigate to **Fleet View** and select the **Snapshots** tab
-2. Click **Create Snapshot**
-3. Optionally enter a description (e.g. "Before v2 migration")
-4. Click **Create** - Sencho captures files from every reachable node
+2. Click **Create Snapshot** in the top-right corner
+3. An inline form appears with an optional description field (e.g. "Before v2 migration")
+4. Click **Create** to capture files from every reachable node
 
 <Frame>
-  <img src="/images/fleet-backups/create-snapshot.png" alt="Create Snapshot dialog" />
+  <img src="/images/fleet-backups/create-snapshot.png" alt="Inline form for creating a fleet snapshot with an optional description field" />
 </Frame>
 
 During creation, Sencho connects to each node in parallel:
-- **Local nodes** - reads files directly from the compose directory
-- **Remote nodes** - fetches files via the Distributed API proxy using the node's API token
+- **Local nodes** are read directly from the compose directory
+- **Remote nodes** are fetched via the Distributed API proxy using the node's API token
 
-If a remote node is offline or unreachable, it is **skipped gracefully**. The snapshot is still created with data from all reachable nodes, and skipped nodes are recorded with the reason for the failure.
+If a remote node is offline or unreachable, it is **skipped gracefully**. The snapshot still captures data from all reachable nodes, and skipped nodes are recorded with the reason for the failure.
+
+### Scheduled snapshots
+
+Fleet snapshots can also be created automatically on a recurring schedule. Navigate to the **Schedules** view, create a new scheduled operation, and select **Fleet Snapshot** as the action type. Scheduled snapshots appear in the snapshot list with a "Scheduled snapshot" prefix in their description.
 
 ## Browsing snapshots
 
+The snapshot list shows each snapshot in a table with the following columns:
+
+- **Date** - when the snapshot was taken
+- **Description** - your optional label, or a prefix like "Scheduled snapshot" for automated ones
+- **Scope** - how many nodes and stacks were captured (e.g. "2 nodes, 22 stacks")
+- **Warnings** - a warning icon with a count if any nodes were skipped, or "None"
+- **Actions** - **View** to open the detail view, and a delete button for admins
+
 <Frame>
-  <img src="/images/fleet-backups/browse-snapshots.png" alt="Snapshot list showing date, description, scope, and warnings" />
+  <img src="/images/fleet-backups/browse-snapshots.png" alt="Snapshot list showing date, description, scope, warnings, and action buttons" />
 </Frame>
 
-The snapshot list shows:
-- **Date** - when the snapshot was taken
-- **Description** - your optional label
-- **Scope** - how many nodes and stacks were captured
-- **Warnings** - an indicator if any nodes were skipped
+## Snapshot detail view
 
-Click **View** to open the detail view, which presents a collapsible tree:
+Click **View** on any snapshot to open the detail view. The header card displays the snapshot's title (or "Untitled Snapshot"), who created it, when, and badge counts for nodes and stacks captured.
 
-```
-Node A (local)
-  ├── traefik/
-  │   ├── compose.yaml
-  │   └── .env
-  └── postgres/
-      └── compose.yaml
-Node B (remote)
-  └── grafana/
-      ├── compose.yaml
-      └── .env
-```
+Below the header, each node appears as a collapsible card. Expand a node to see its stacks, then expand a stack to see individual files. Each file has a **Preview** button that renders the file contents inline.
 
-Expand any file to preview its contents inline.
+<Frame>
+  <img src="/images/fleet-backups/snapshot-detail.png" alt="Snapshot detail view showing a collapsible tree of nodes, stacks, and files with preview buttons" />
+</Frame>
+
+If any nodes were unreachable during snapshot creation, a warning banner appears at the top of the detail view listing each skipped node and the reason it was skipped.
 
 ## Restoring from a snapshot
 
 Admins can restore individual stacks from any snapshot:
 
 1. Open a snapshot's detail view
-2. Find the stack you want to restore
-3. Click **Restore**
-4. Optionally check **Redeploy stack after restore** to immediately apply the restored configuration
-5. Confirm the action
+2. Expand the node and stack you want to restore
+3. Click **Restore** below the file list
+4. A confirmation dialog appears. Optionally check **Redeploy stack after restore** to immediately apply the restored configuration.
+5. Click **Restore** to confirm
+
+<Frame>
+  <img src="/images/fleet-backups/restore-dialog.png" alt="Restore confirmation dialog with a redeploy checkbox" />
+</Frame>
 
 Sencho writes the snapshot's files back to the target node:
-- **Local nodes** - files are written directly, and the current files are backed up first (creating a rollback point via the atomic deployment system)
-- **Remote nodes** - files are pushed via the Distributed API proxy
+- **Local nodes** have files written directly, with the current files backed up first (creating a rollback point via the atomic deployment system)
+- **Remote nodes** receive files via the Distributed API proxy
 
 <Warning>
   Restoring overwrites the current compose and environment files on the target node. If atomic deployments are enabled, the current files are backed up before restoration.
@@ -75,17 +80,17 @@ Sencho writes the snapshot's files back to the target node:
 
 ## Deleting snapshots
 
-Admins can delete snapshots from the list view. Deleting a snapshot permanently removes all captured file data from the database. This action cannot be undone.
+Admins can delete snapshots from the list view by clicking the trash icon on the right side of each row. A confirmation dialog asks you to confirm before the snapshot is permanently removed. Deleting a snapshot removes all captured file data from the database. This action cannot be undone.
 
 ## Access control
 
-| Action | Admin | Viewer |
-|--------|-------|--------|
-| View snapshot list | Yes | Yes |
-| Browse snapshot contents | Yes | Yes |
-| Create snapshot | Yes | No |
-| Restore from snapshot | Yes | No |
-| Delete snapshot | Yes | No |
+| Action | Admin | Node Admin | Deployer | Auditor | Viewer |
+|--------|-------|------------|----------|---------|--------|
+| View snapshot list | Yes | Yes | Yes | Yes | Yes |
+| Browse snapshot contents | Yes | Yes | Yes | Yes | Yes |
+| Create snapshot | Yes | No | No | No | No |
+| Restore from snapshot | Yes | No | No | No | No |
+| Delete snapshot | Yes | No | No | No | No |
 
 ## Storage
 
