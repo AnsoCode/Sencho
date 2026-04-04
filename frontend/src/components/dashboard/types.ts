@@ -48,7 +48,9 @@ export interface NotificationItem {
   level: 'info' | 'warning' | 'error';
   message: string;
   timestamp: number;
-  is_read: boolean;
+  is_read: number;
+  nodeId?: number;
+  nodeName?: string;
 }
 
 export interface StackStatusEntry {
@@ -63,7 +65,5 @@ export interface DashboardData {
   systemStats: SystemStats | null;
   metrics: MetricPoint[];
   stackStatuses: Record<string, StackStatusEntry>;
-  notifications: NotificationItem[];
   lastUpdated: number;
-  refreshNotifications: () => Promise<void>;
 }

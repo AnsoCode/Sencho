@@ -5,6 +5,7 @@ import Editor from '@monaco-editor/react';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
+import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
 import { AdmiralGate } from './AdmiralGate';
@@ -73,15 +74,6 @@ interface StackStatusInfo {
 
 type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
 
-interface Notification {
-  id: number;
-  level: 'info' | 'warning' | 'error';
-  message: string;
-  timestamp: number;
-  is_read: number; // 0 | 1 (SQLite boolean)
-  nodeId: number;
-  nodeName: string;
-}
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -203,7 +195,7 @@ export default function EditorLayout() {
   const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
 
   // Notifications & Settings state
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
@@ -470,8 +462,8 @@ export default function EditorLayout() {
           const msg = JSON.parse(event.data as string);
           if (msg.type === 'notification' && msg.payload) {
             const localNode = nodesRef.current.find(n => n.type === 'local');
-            const tagged: Notification = {
-              ...(msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>),
+            const tagged: NotificationItem = {
+              ...(msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>),
               nodeId: localNode?.id ?? -1,
               nodeName: localNode?.name ?? 'Local',
             };
@@ -555,7 +547,7 @@ export default function EditorLayout() {
               // Read node name from ref so it stays fresh even if the node was renamed
               const current = nodesRef.current.find(n => n.id === rn.id);
               setNotifications(prev =>
-                [{ ...msg.payload as Omit<Notification, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
+                [{ ...msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
                   .sort((a, b) => b.timestamp - a.timestamp)
               );
             }
@@ -632,17 +624,17 @@ export default function EditorLayout() {
         ...remoteNodes.map(n => fetchForNode('/notifications', n.id)),
       ]);
 
-      const all: Notification[] = [];
+      const all: NotificationItem[] = [];
 
       if (localResult.status === 'fulfilled' && localResult.value.ok) {
-        const data = await localResult.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+        const data = await localResult.value.json() as Omit<NotificationItem, 'nodeId' | 'nodeName'>[];
         data.forEach(n => all.push({ ...n, nodeId: localNode?.id ?? -1, nodeName: localNode?.name ?? 'Local' }));
       }
 
       for (let i = 0; i < remoteNodes.length; i++) {
         const result = remoteResults[i];
         if (result?.status === 'fulfilled' && result.value.ok) {
-          const data = await result.value.json() as Omit<Notification, 'nodeId' | 'nodeName'>[];
+          const data = await result.value.json() as Omit<NotificationItem, 'nodeId' | 'nodeName'>[];
           const rn = remoteNodes[i];
           data.forEach(n => all.push({ ...n, nodeId: rn.id, nodeName: rn.name }));
         }
@@ -683,7 +675,7 @@ export default function EditorLayout() {
     }
   };
 
-  const deleteNotification = async (notif: Notification) => {
+  const deleteNotification = async (notif: NotificationItem) => {
     try {
       const localNode = nodesRef.current.find(n => n.type === 'local');
       if (notif.nodeId === localNode?.id) {
@@ -2242,9 +2234,11 @@ export default function EditorLayout() {
               <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
             </CapabilityGate>
           ) : (
-            <HomeDashboard onNavigateToStack={(stackFile) => {
-              loadFile(stackFile);
-            }} />
+            <HomeDashboard
+              onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
+              notifications={notifications}
+              onClearNotifications={clearAllNotifications}
+            />
           )}
         </div>
       </div>

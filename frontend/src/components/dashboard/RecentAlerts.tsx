@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import type { NotificationItem } from './types';
 
 interface RecentAlertsProps {
   notifications: NotificationItem[];
-  onCleared?: () => void;
+  onCleared?: () => void | Promise<void>;
 }
 
 const PAGE_SIZE = 8;
@@ -45,10 +44,8 @@ export function RecentAlerts({ notifications, onCleared }: RecentAlertsProps) {
   const handleClearAll = async () => {
     setClearing(true);
     try {
-      const res = await apiFetch('/notifications', { method: 'DELETE', localOnly: true });
-      if (!res.ok) throw new Error('Failed to clear notifications');
+      await onCleared?.();
       setPage(0);
-      onCleared?.();
     } catch (error) {
       toast.error((error as Error)?.message || 'Something went wrong.');
     } finally {

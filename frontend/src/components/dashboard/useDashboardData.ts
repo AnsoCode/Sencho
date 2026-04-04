@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
-import type { Stats, SystemStats, MetricPoint, NotificationItem, StackStatusEntry, DashboardData } from './types';
+import type { Stats, SystemStats, MetricPoint, StackStatusEntry, DashboardData } from './types';
 
 const DEFAULT_STATS: Stats = { active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 };
 
@@ -50,7 +50,6 @@ export function useDashboardData(): DashboardData {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [metrics, setMetrics] = useState<MetricPoint[]>([]);
   const [stackStatuses, setStackStatuses] = useState<Record<string, StackStatusEntry>>({});
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number>(0);
 
   // Keep a ref to the latest nodeId so async callbacks don't write stale data
@@ -130,21 +129,5 @@ export function useDashboardData(): DashboardData {
     return cleanup;
   }, [nodeId, fetchJson]);
 
-  const refreshNotifications = useCallback(async () => {
-    const data = await fetchJson<NotificationItem[]>('/notifications', { localOnly: true });
-    if (data) setNotifications(data);
-  }, [fetchJson]);
-
-  // Notifications: 30s polling, local-only (not affected by node switch)
-  useEffect(() => {
-    const poll = async () => {
-      const data = await fetchJson<NotificationItem[]>('/notifications', { localOnly: true });
-      if (data) setNotifications(data);
-    };
-    poll();
-    const cleanup = visibilityInterval(poll, 30000);
-    return cleanup;
-  }, [fetchJson]);
-
-  return { stats, systemStats, metrics, stackStatuses, notifications, lastUpdated, refreshNotifications };
+  return { stats, systemStats, metrics, stackStatuses, lastUpdated };
 }

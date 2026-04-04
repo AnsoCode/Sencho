@@ -1,4 +1,5 @@
 import { useNodes } from '@/context/NodeContext';
+import type { NotificationItem } from './dashboard/types';
 import {
   HealthStatusBar,
   ResourceGauges,
@@ -10,9 +11,11 @@ import {
 
 interface HomeDashboardProps {
   onNavigateToStack?: (stackFile: string) => void;
+  notifications: NotificationItem[];
+  onClearNotifications: () => void | Promise<void>;
 }
 
-export default function HomeDashboard({ onNavigateToStack }: HomeDashboardProps) {
+export default function HomeDashboard({ onNavigateToStack, notifications, onClearNotifications }: HomeDashboardProps) {
   const { activeNode } = useNodes();
   const data = useDashboardData();
 
@@ -21,7 +24,7 @@ export default function HomeDashboard({ onNavigateToStack }: HomeDashboardProps)
       <HealthStatusBar
         stats={data.stats}
         systemStats={data.systemStats}
-        notifications={data.notifications}
+        notifications={notifications}
         activeNodeName={activeNode?.name || 'Local'}
         lastUpdated={data.lastUpdated}
       />
@@ -44,8 +47,8 @@ export default function HomeDashboard({ onNavigateToStack }: HomeDashboardProps)
       />
 
       <RecentAlerts
-        notifications={data.notifications}
-        onCleared={data.refreshNotifications}
+        notifications={notifications}
+        onCleared={onClearNotifications}
       />
     </div>
   );
