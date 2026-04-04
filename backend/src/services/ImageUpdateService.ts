@@ -159,8 +159,12 @@ export class ImageUpdateService {
 
     private static readonly INTERVAL_MS = 6 * 60 * 60 * 1000;    // 6 hours
     private static readonly STARTUP_DELAY_MS = 2 * 60 * 1000;    // 2 min after boot
-    private static readonly MANUAL_COOLDOWN_MS = 10 * 60 * 1000; // 10 min between manual triggers
+    private static readonly MANUAL_COOLDOWN_MS = 2 * 60 * 1000;  // 2 min between manual triggers
     private static readonly INTER_IMAGE_DELAY_MS = 300;           // be polite to registries
+
+    public static get manualCooldownMinutes(): number {
+        return ImageUpdateService.MANUAL_COOLDOWN_MS / (60 * 1000);
+    }
 
     private constructor() { }
 
@@ -186,7 +190,7 @@ export class ImageUpdateService {
 
     /**
      * Triggers a check immediately, unless one is already running or the
-     * 10-minute manual cooldown has not elapsed.
+     * manual cooldown (MANUAL_COOLDOWN_MS) has not elapsed.
      * Returns false if rate-limited, true if a check was started.
      */
     public triggerManualRefresh(): boolean {

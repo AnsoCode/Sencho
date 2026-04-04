@@ -61,19 +61,33 @@ The stack header exposes four actions:
 
 ## Stack context menu
 
-Right-click or use the **⋮** button on any stack in the sidebar to access:
+Right-click or use the **⋮** button on any stack in the sidebar. The menu adapts to the stack's current state — only relevant actions are shown.
+
+**Running stack:**
 
 <Frame>
-  <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu" />
+  <img src="/images/stack-management/context-menu-running.png" alt="Context menu for a running stack" />
 </Frame>
 
-- **Alerts** - configure metric-based alerting rules for this stack
-- **Check for updates** - manually trigger an image update check
-- **Deploy** - run `docker compose up -d`
-- **Stop** - stop all containers in the stack
-- **Restart** - restart all containers in the stack
-- **Update** - pull latest images and recreate containers
-- **Delete** - stop and remove the stack (admin only)
+**Stopped stack:**
+
+<Frame>
+  <img src="/images/stack-management/context-menu-stopped.png" alt="Context menu for a stopped stack" />
+</Frame>
+
+### Available actions
+
+- **Alerts** — configure metric-based alerting rules for this stack
+- **Labels** — assign organizational labels (Pro)
+- **Check for updates** — manually trigger an image update check
+- **Open App** — open the stack's web interface in a new tab (only shown when the stack is running and exposes a web port)
+- **Deploy** — start the stack (shown when stopped or not yet deployed)
+- **Stop** — stop all containers (shown when running)
+- **Restart** — restart all containers (shown when running)
+- **Update** — pull latest images and recreate containers (shown when running)
+- **Delete** — stop and remove the stack (admin only)
+
+All actions are disabled while another operation is in progress on that stack.
 
 ## Scanning for stacks
 

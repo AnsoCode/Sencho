@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **stacks:** state-aware sidebar context menu — actions now adapt to stack state (running stacks show Stop/Restart/Update, stopped stacks show Deploy)
+* **stacks:** "Open App" action in sidebar context menu — quickly open a stack's web interface without navigating to the detail view
+* **stacks:** bulk status endpoint now returns detected web port per stack for Open App support
+
+### Changed
+
+* **updates:** reduced manual image update check cooldown from 10 minutes to 2 minutes
+* **updates:** rate limit error message now dynamically derives from the configured cooldown constant
+
 ## [0.36.0](https://github.com/AnsoCode/Sencho/compare/v0.35.0...v0.36.0) (2026-04-04)
 
 

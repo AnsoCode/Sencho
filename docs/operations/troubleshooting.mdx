@@ -294,3 +294,20 @@ docker logs -f sencho
 ```
 
 The backend logs all route errors and service failures to stdout. This is the first place to look when the UI shows an error with no useful message.
+
+## "Open App" doesn't appear in the context menu
+
+**Symptom:** You right-click a stack in the sidebar but "Open App" is not listed.
+
+**Cause:** The **Open App** option only appears when both conditions are met:
+
+1. The stack is **running** (status shows UP).
+2. At least one container in the stack has a **published port** (a port mapped to the host).
+
+If your container uses host networking, doesn't expose ports, or only binds to internal Docker networks, the option won't appear. You can still access the app manually by checking the container's port mappings in the stack detail view.
+
+## "Check for updates" shows rate-limit error
+
+**Symptom:** Clicking "Check for updates" shows a toast error about waiting before refreshing.
+
+**Cause:** Manual update checks are rate-limited to prevent excessive requests to container registries. Wait for the cooldown period to elapse before checking again. Automatic background checks run every 6 hours regardless of this limit.

@@ -66,6 +66,11 @@ interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
 }
 
+interface StackStatusInfo {
+  status: 'running' | 'exited' | 'unknown';
+  mainPort?: number;
+}
+
 type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
 
 interface Notification {
@@ -138,6 +143,25 @@ export default function EditorLayout() {
   };
   const isStackBusy = (stackFile: string) => stackFile in stackActions;
 
+  const getStackMenuVisibility = (file: string) => {
+    const status = stackStatuses[file];
+    return {
+      showDeploy: status !== 'running',
+      showStop: status === 'running',
+      showRestart: status === 'running',
+      showUpdate: status === 'running',
+    };
+  };
+
+  const openStackApp = (file: string) => {
+    const port = stackPorts[file];
+    if (!port) return;
+    const host = activeNode?.type === 'remote' && activeNode?.api_url
+      ? new URL(activeNode.api_url).hostname
+      : window.location.hostname;
+    window.open(`http://${host}:${port}`, '_blank');
+  };
+
   const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
 
   const [isScanning, setIsScanning] = useState(false);
@@ -157,6 +181,7 @@ export default function EditorLayout() {
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
+  const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
   const [labels, setLabels] = useState<StackLabel[]>([]);
   const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
   const [activeLabelFilters, setActiveLabelFilters] = useState<Set<number>>(new Set());
@@ -315,8 +340,20 @@ export default function EditorLayout() {
       // Fetch all stack statuses in a single bulk call (falls back to per-stack queries for older remote nodes)
       const statusRes = await apiFetch('/stacks/statuses');
       let bulkStatuses: Record<string, 'running' | 'exited' | 'unknown'> | null = null;
+      const bulkPorts: Record<string, number | undefined> = {};
       if (statusRes.ok) {
-        bulkStatuses = await statusRes.json();
+        const raw = await statusRes.json();
+        bulkStatuses = {};
+        // Handle both old format (plain string) and new format ({ status, mainPort })
+        for (const [key, val] of Object.entries(raw)) {
+          if (typeof val === 'string') {
+            bulkStatuses[key] = val as 'running' | 'exited' | 'unknown';
+          } else if (val && typeof val === 'object' && 'status' in val) {
+            const info = val as StackStatusInfo;
+            bulkStatuses[key] = info.status;
+            if (info.mainPort) bulkPorts[key] = info.mainPort;
+          }
+        }
       } else {
         // Fallback: query each stack individually (remote node may not have bulk endpoint)
         const statusResults = await Promise.allSettled(
@@ -341,6 +378,11 @@ export default function EditorLayout() {
           next[file] = (file in stackActionsRef.current) ? (prev[file] ?? status) : status;
         }
         return next;
+      });
+      setStackPorts(prev => {
+        const keys = Object.keys(bulkPorts);
+        if (keys.length === Object.keys(prev).length && keys.every(k => prev[k] === bulkPorts[k])) return prev;
+        return bulkPorts;
       });
       refreshLabels();
       return fileList;
@@ -1509,23 +1551,45 @@ export default function EditorLayout() {
                                       <RefreshCw className="h-4 w-4 mr-2" />
                                       Check for updates
                                     </DropdownMenuItem>
+                                    {stackStatuses[file] === 'running' && stackPorts[file] && (
+                                      <DropdownMenuItem onClick={() => openStackApp(file)}>
+                                        <ExternalLink className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                                        Open App
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
-                                      <Play className="h-4 w-4 mr-2" />
-                                      Deploy
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
-                                      <Square className="h-4 w-4 mr-2" />
-                                      Stop
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
-                                      <RotateCw className="h-4 w-4 mr-2" />
-                                      Restart
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
-                                      <Download className="h-4 w-4 mr-2" />
-                                      Update
-                                    </DropdownMenuItem>
+                                    {(() => {
+                                      const { showDeploy, showStop, showRestart, showUpdate } = getStackMenuVisibility(file);
+                                      const busy = isStackBusy(file);
+                                      return (
+                                        <>
+                                          {showDeploy && (
+                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                                              <Play className="h-4 w-4 mr-2" />
+                                              Deploy
+                                            </DropdownMenuItem>
+                                          )}
+                                          {showStop && (
+                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                                              <Square className="h-4 w-4 mr-2" />
+                                              Stop
+                                            </DropdownMenuItem>
+                                          )}
+                                          {showRestart && (
+                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                                              <RotateCw className="h-4 w-4 mr-2" />
+                                              Restart
+                                            </DropdownMenuItem>
+                                          )}
+                                          {showUpdate && (
+                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                                              <Download className="h-4 w-4 mr-2" />
+                                              Update
+                                            </DropdownMenuItem>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
                                     {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
                                       <>
                                         <DropdownMenuSeparator />
@@ -1598,23 +1662,45 @@ export default function EditorLayout() {
                           <RefreshCw className="h-4 w-4 mr-2" />
                           Check for updates
                         </ContextMenuItem>
+                        {stackStatuses[file] === 'running' && stackPorts[file] && (
+                          <ContextMenuItem onClick={() => openStackApp(file)}>
+                            <ExternalLink className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                            Open App
+                          </ContextMenuItem>
+                        )}
                         <ContextMenuSeparator />
-                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
-                          <Play className="h-4 w-4 mr-2" />
-                          Deploy
-                        </ContextMenuItem>
-                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
-                          <Square className="h-4 w-4 mr-2" />
-                          Stop
-                        </ContextMenuItem>
-                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
-                          <RotateCw className="h-4 w-4 mr-2" />
-                          Restart
-                        </ContextMenuItem>
-                        <ContextMenuItem disabled={isStackBusy(file)} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Update
-                        </ContextMenuItem>
+                        {(() => {
+                          const { showDeploy, showStop, showRestart, showUpdate } = getStackMenuVisibility(file);
+                          const busy = isStackBusy(file);
+                          return (
+                            <>
+                              {showDeploy && (
+                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
+                                  <Play className="h-4 w-4 mr-2" />
+                                  Deploy
+                                </ContextMenuItem>
+                              )}
+                              {showStop && (
+                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
+                                  <Square className="h-4 w-4 mr-2" />
+                                  Stop
+                                </ContextMenuItem>
+                              )}
+                              {showRestart && (
+                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
+                                  <RotateCw className="h-4 w-4 mr-2" />
+                                  Restart
+                                </ContextMenuItem>
+                              )}
+                              {showUpdate && (
+                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Update
+                                </ContextMenuItem>
+                              )}
+                            </>
+                          );
+                        })()}
                         {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
                           <>
                             <ContextMenuSeparator />

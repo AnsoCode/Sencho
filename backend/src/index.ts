@@ -2936,12 +2936,12 @@ app.get('/api/stacks/statuses', async (req: Request, res: Response) => {
     const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     const stackNames = stacks.map((s: string) => s.replace(/\.(yml|yaml)$/, ''));
     const dockerController = DockerController.getInstance(req.nodeId);
-    const statuses = await dockerController.getBulkStackStatuses(stackNames);
+    const bulkInfo = await dockerController.getBulkStackStatuses(stackNames);
     // Map back to filenames to match frontend expectations
-    const result: Record<string, 'running' | 'exited' | 'unknown'> = {};
+    const result: Record<string, { status: 'running' | 'exited' | 'unknown'; mainPort?: number }> = {};
     for (const stack of stacks) {
       const name = stack.replace(/\.(yml|yaml)$/, '');
-      result[stack] = statuses[name] ?? 'unknown';
+      result[stack] = bulkInfo[name] ?? { status: 'unknown' };
     }
     res.json(result);
   } catch (error) {
@@ -5203,7 +5203,8 @@ app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Resp
   try {
     const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
     if (!triggered) {
-      res.status(429).json({ error: 'Rate limited. Please wait at least 10 minutes between manual refreshes.' });
+      const mins = ImageUpdateService.manualCooldownMinutes;
+      res.status(429).json({ error: `Rate limited. Please wait at least ${mins} minute${mins !== 1 ? 's' : ''} between manual refreshes.` });
       return;
     }
     res.json({ success: true, message: 'Image update check started in background.' });
