@@ -836,8 +836,11 @@ class DockerController {
 
 export const globalDockerNetwork = { rxSec: 0, txSec: 0 };
 let lastNetSum = { rx: 0, tx: 0, timestamp: Date.now() };
+let isUpdatingNetwork = false;
 
 export const updateGlobalDockerNetwork = async () => {
+  if (isUpdatingNetwork) return; // Prevent overlapping calls
+  isUpdatingNetwork = true;
   try {
     const nodeId = NodeRegistry.getInstance().getDefaultNodeId();
     const dockerController = DockerController.getInstance(nodeId);
@@ -878,12 +881,15 @@ export const updateGlobalDockerNetwork = async () => {
     }
 
     lastNetSum = { rx: currentRxSum, tx: currentTxSum, timestamp: now };
-  } catch (error) {
-    console.error('Failed to update global docker network stats:', error);
+  } catch {
+    // Silently skip when Docker is unreachable (e.g. no local engine).
+    // Network stats will remain at their last known values.
+  } finally {
+    isUpdatingNetwork = false;
   }
 };
 
-// Start the interval tracker
-setInterval(updateGlobalDockerNetwork, 3000);
+// Poll network stats every 5s (reduced from 3s to lower Docker daemon pressure)
+setInterval(updateGlobalDockerNetwork, 5000);
 
 export default DockerController;
