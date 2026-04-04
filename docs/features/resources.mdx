@@ -11,7 +11,7 @@ The **Resources** tab gives you a full view of everything Docker is storing on y
 
 ## Docker disk footprint
 
-The stacked bar at the top visualises how your Docker disk usage is distributed:
+The stacked bar at the top visualizes how your Docker disk usage is distributed:
 
 | Segment | Meaning |
 |---------|---------|
@@ -23,16 +23,16 @@ Click any segment to automatically filter the tabs below to that category.
 
 ## Quick Clean panel
 
-Four prune buttons let you reclaim disk space immediately. By default they operate on **Sencho-managed resources only** - they will not touch external Docker projects.
+Four prune buttons let you reclaim disk space immediately. By default they operate on **Sencho-managed resources only**, so they will not touch external Docker projects.
 
 | Button | What it removes |
 |--------|----------------|
 | **Prune Unused Images** | Images with no running containers in Sencho stacks |
 | **Prune Unused Volumes** | Volumes not attached to any Sencho container |
 | **Prune Dead Networks** | Networks not connected to any Sencho container |
-| **Purge Unmanaged Containers** | Containers Sencho doesn't recognise (started outside it) |
+| **Purge Unmanaged Containers** | Containers Sencho doesn't recognize (started outside it) |
 
-Each button has a **⋮ More options** menu that lets you target **all Docker resources** instead of Sencho-only. Use this carefully - it can affect other Compose projects running on the same host.
+The first three buttons have a **More options** dropdown that lets you target **all Docker resources** instead of Sencho-only. Use this carefully, as it can affect other Compose projects running on the same host. The "Purge Unmanaged Containers" button always targets unmanaged containers only.
 
 A confirmation dialog appears before any destructive operation, showing a summary of what will be removed.
 
@@ -42,10 +42,11 @@ A confirmation dialog appears before any destructive operation, showing a summar
 
 Lists all Docker images on the host with their ID, repository tag, size, and status.
 
-**Filter buttons:** `All` · `Managed` · `External`
+**Filter buttons:** `All` / `Managed` / `External`
 
 **Status badges:**
-- `In Use` + stack name - image is actively used by a running container
+- `In Use` + stack name - image is actively used by a running container in a Sencho-managed stack
+- `In Use` + `External` - image is used by a container outside Sencho
 - `Unused` - image has no running containers; safe to delete
 
 Click the trash icon on any row to delete an individual image. Sencho will warn you if the image is in use.
@@ -54,7 +55,7 @@ Click the trash icon on any row to delete an individual image. Sencho will warn 
 
 Lists all Docker volumes. Columns: name, driver, mount point, size, and managed status.
 
-**Filter buttons:** `All` · `Managed` · `External`
+**Filter buttons:** `All` / `Managed` / `External`
 
 <Warning>
   Deleting a volume is permanent. Any data stored in it will be lost. Always back up important volume data before pruning.
@@ -64,7 +65,7 @@ Lists all Docker volumes. Columns: name, driver, mount point, size, and managed 
 
 Lists all Docker networks. Columns: ID, name, driver, scope (`local`, `global`, `swarm`), and managed status.
 
-**Filter buttons:** `All` · `Managed` · `External`
+**Filter buttons:** `All` / `Managed` / `External`
 
 System networks (like `bridge`, `host`, `none`) are shown but cannot be deleted.
 
@@ -93,10 +94,10 @@ Click **+ Create Network** (admin only) to open the creation dialog.
 
 Click the eye icon on any network row to open a detail panel showing:
 
-- **Overview** — ID, driver, scope, creation date, internal/attachable flags
-- **IPAM configuration** — Subnet, gateway, and IP range
-- **Connected containers** — Container name, IPv4 address, and MAC address
-- **Labels** — All Docker labels applied to the network
+- **Overview** - ID, driver, scope, creation date, internal/attachable flags
+- **IPAM configuration** - Subnet, gateway, and IP range
+- **Connected containers** - Container name, IPv4 address, and MAC address
+- **Labels** - All Docker labels applied to the network
 
 <Frame>
   <img src="/images/networks/network-inspect.png" alt="Network inspect panel showing IPAM config and connected containers" />
@@ -110,9 +111,9 @@ Switch to the **Topology** view to see an interactive graph of your Docker netwo
   <img src="/images/networks/network-topology.png" alt="Network topology visualization showing containers connected to networks" />
 </Frame>
 
-- **Network nodes** — Dashed border cards showing network name and driver, color-coded by status (managed, external, system)
-- **Container nodes** — Cards showing container name with IP addresses per network
-- **Edges** — Animated connections between networks and their containers
+- **Network nodes** - Dashed border cards showing network name and driver, color-coded by status (managed, external, system)
+- **Container nodes** - Cards showing container name with IP addresses per network
+- **Edges** - Animated connections between networks and their containers
 - Pan, zoom, and drag nodes to explore the topology
 - A mini map in the bottom-right provides an overview
 
@@ -124,4 +125,4 @@ Switch to the **Topology** view to see an interactive graph of your Docker netwo
 
 Lists containers running on the host that are not part of any Sencho-managed stack. This includes containers started with `docker run`, or Compose projects outside your `COMPOSE_DIR`.
 
-This view is useful for identifying orphaned containers after a failed deployment or after moving stacks in and out of `COMPOSE_DIR`.
+This view is useful for identifying orphaned containers after a failed deployment or after moving stacks in and out of `COMPOSE_DIR`. A badge on the tab shows the count of unmanaged containers when any are detected.

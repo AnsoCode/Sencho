@@ -3,10 +3,10 @@ title: Editor
 description: Edit compose files and environment variables, and manage containers directly from the dashboard.
 ---
 
-Selecting a stack opens the editor view - a split-pane layout with container management on the left and a full Monaco code editor on the right.
+Selecting a stack opens the editor view, a two-column layout. The left column shows the command center (stack controls, containers, and an embedded terminal). The right column holds the Monaco code editor.
 
 <Frame>
-  <img src="/images/editor/editor-overview.png" alt="Editor view showing container panel and Monaco editor" />
+  <img src="/images/editor/editor-overview.png" alt="Editor view showing command center on the left and Monaco editor on the right" />
 </Frame>
 
 ## Compose file editor
@@ -17,11 +17,13 @@ Click **Edit** to enter edit mode. Your changes are unsaved until you explicitly
 
 ### Save options
 
-| Button | What it does |
+The primary action button is **Save & Deploy**, which writes the file to disk and immediately runs `docker compose up -d`. A dropdown arrow next to it reveals additional options:
+
+| Action | What it does |
 |--------|--------------|
-| **Save** | Writes the file to disk. Does not restart any containers. |
-| **Save & Deploy** | Writes the file, then immediately runs `docker compose up -d`. Use this to apply compose changes in one step. |
-| **Discard** | Reverts the editor to the last saved version. Unsaved changes are lost. |
+| **Save & Deploy** | Writes the file, then runs `docker compose up -d` to apply changes immediately. |
+| **Save Only** | Writes the file to disk without restarting any containers. |
+| **Discard Changes** | Reverts the editor to the last saved version. Unsaved changes are lost. |
 
 ## Environment file editor
 
@@ -35,34 +37,39 @@ The `.env` editor has the same save/discard controls as the compose editor. Chan
 
 ## Container panel
 
-The left panel lists all containers that belong to the selected stack. Each container shows:
+The left column lists all containers that belong to the selected stack under the **CONTAINERS** heading. Each container shows:
 
-- **Status badge** - `running`, `exited`, `starting`, or `unhealthy`
-- **Live stats** - CPU %, RAM usage, and network I/O updated every 1–2 seconds
-- **Port mappings** - host:container port pairs (if any)
+- **Status badge** - `running`, `exited`, `starting`, or `unhealthy` (hover for detailed status text)
+- **Live stats** - CPU %, RAM usage, and network I/O displayed inline, updated every few seconds
 
 ### Container actions
 
-Each container row has action buttons that appear on hover:
+Each container row has action buttons on the right side:
 
-| Button | Icon | What it does |
-|--------|------|--------------|
-| **Open App** | External link | Opens the container's web UI in a new tab (uses the first mapped port) |
-| **View Live Logs** | Scroll text | Opens a live log stream modal for that container (available when running) |
-| **Open Bash Terminal** | Terminal | Opens an interactive bash session inside the container (admin only, available when running) |
+| Button | What it does |
+|--------|--------------|
+| **Open App** | Opens the container's web UI in a new tab (uses the detected web port). Only shown when a port is mapped. |
+| **View Live Logs** | Opens a live log stream modal for that container. Only available when the container is running. |
+| **Open Bash Terminal** | Opens an interactive bash session inside the container. Admin only, only available when running. |
 
 <Frame>
-  <img src="/images/editor/container-actions.png" alt="Container action buttons on a running container" />
+  <img src="/images/editor/container-actions.png" alt="Container row showing status badge, live stats, and action buttons" />
 </Frame>
 
-### Log viewer
+## Embedded terminal
 
-The log viewer streams output from a single container in real-time using Server-Sent Events. Logs auto-scroll to the bottom as new lines arrive. Close the modal to stop the stream.
+Below the container list, an embedded terminal streams the combined output from the stack's containers. This provides a persistent view of container logs without opening a separate modal.
+
+The terminal supports search (find text within the log output) and export (download the current log buffer).
 
 ### Container terminal (exec)
 
-The terminal modal gives you an interactive bash shell inside the running container - equivalent to `docker exec -it <id> bash`. It uses a full xterm.js emulator with color support and tab completion.
+The terminal modal from the container action buttons gives you an interactive bash shell inside a running container, equivalent to `docker exec -it <id> bash`. It uses a full xterm.js emulator with color support and tab completion.
 
 <Warning>
   The container terminal requires the container to have `bash` (or `sh`) installed. Minimal images (e.g. Alpine-based) may need `sh` instead.
 </Warning>
+
+## Log viewer
+
+The log viewer (opened from the container action buttons) streams output from a single container in real-time using Server-Sent Events. Logs auto-scroll to the bottom as new lines arrive. Close the modal to stop the stream.

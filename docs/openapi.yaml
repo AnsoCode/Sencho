@@ -1828,7 +1828,7 @@ paths:
       operationId: getNodeMeta
       tags: [Nodes]
       summary: Get node capabilities
-      description: Returns the version and supported capabilities for a specific node. For local nodes, returns this instance's own metadata. For remote nodes, relays the response from the remote instance's `/api/meta` endpoint. Returns `{ version: null, capabilities: [] }` if the remote node is offline or doesn't support the meta endpoint.
+      description: "Returns the version and supported capabilities for a specific node. For local nodes, returns this instance's own metadata. For remote nodes, relays the response from the remote instance's `/api/meta` endpoint. Returns `{ version: null, capabilities: [] }` if the remote node is offline or doesn't support the meta endpoint."
       parameters:
         - $ref: "#/components/parameters/idPath"
       responses:

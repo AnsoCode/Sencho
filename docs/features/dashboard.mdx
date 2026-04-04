@@ -1,60 +1,70 @@
 ---
 title: Dashboard
-description: Real-time system stats, historical metrics, and a quick-start converter for your host machine.
+description: Real-time system stats, stack health, historical metrics, and recent alerts for your host machine.
 ---
 
-The **Home** tab is the first thing you see after logging in. It shows a live snapshot of your host's health alongside container activity across all stacks.
+The **Home** tab is the first thing you see after logging in. It provides a live overview of your node's health, resource usage, stack status, and recent alert activity.
 
 <Frame>
-  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing container stats, system stats, and historical charts" />
+  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing health status, resource gauges, stack health table, and historical charts" />
 </Frame>
 
-## Container stats
+## Health status bar
 
-The top row summarises container state at a glance:
+The top bar provides an at-a-glance health assessment for the active node. Sencho evaluates CPU, RAM, disk usage, exited containers, and unread error alerts to derive one of three states:
+
+| Status | Meaning |
+|--------|---------|
+| **Healthy** | All systems nominal. No resources above warning thresholds, no unread errors. |
+| **Degraded** | At least one resource is above 80%, or there are unread error alerts. |
+| **Critical** | At least one resource is above 90%, or there are exited containers with unread errors. |
+
+The bar also shows the active node name, the number of running containers, the current alert count, and a relative timestamp for the last data refresh.
+
+## Resource gauges
+
+Five compact cards display real-time host and container metrics:
 
 | Card | What it shows |
 |------|---------------|
-| **Active Containers** | Running containers - broken down as `N managed · N external` |
-| **Exited Containers** | Stopped or crashed containers |
-| **Docker Network** | Current inbound/outbound network throughput across all containers |
+| **CPU** | Current CPU usage percentage, core count, and a color-coded gauge bar |
+| **Memory** | RAM usage percentage, used/total in GB, and a gauge bar |
+| **Disk** | Disk usage percentage, used/total for the primary mount, and a gauge bar |
+| **Containers** | Active container count (hover to see managed vs. external breakdown) and exited count |
+| **Network** | Current RX (receive) and TX (transmit) throughput in bytes/second |
 
-**Managed** means the container belongs to a stack in your `COMPOSE_DIR`. **External** means it exists on the Docker host but was started outside Sencho (e.g. by another Compose project or `docker run`).
+Gauge bars turn yellow at 80% usage and red at 90%.
 
-## System stats
+## Stack health table
 
-The second row shows host-level resource usage, polled every few seconds:
+A table listing every stack in your `COMPOSE_DIR` with live status and resource usage:
 
-| Card | What it shows |
-|------|---------------|
-| **Host CPU** | Current CPU usage percentage and core count |
-| **Host RAM** | Used / total memory in GB and percentage |
-| **Host Disk** | Used / total disk space for the primary mount point |
+| Column | Description |
+|--------|-------------|
+| **Stack** | Stack name (derived from the directory name) |
+| **Status** | `UP` (running) or `DN` (exited) |
+| **CPU** | Aggregate CPU usage across all containers in the stack, normalized over host cores |
+| **Memory** | Total memory allocated by the stack's containers |
 
-When any value exceeds configured thresholds (set in **Settings → System Limits**), the card changes colour as a visual warning.
+Click any row to navigate directly to that stack's editor. Stacks are sorted with running stacks first, then alphabetically. If you have more than 8 stacks, the table paginates automatically.
 
 ## Historical metrics charts
 
-Two area charts display time-series data sampled at one-minute intervals, retained for up to 24 hours (configurable in **Settings → Developer**):
+Two area charts display time-series data sampled at one-minute intervals, retained for up to 24 hours:
 
-- **Normalized CPU Usage** - total CPU percentage across all managed containers, normalised over all host cores
-- **Normalized RAM Usage** - total memory allocated by managed containers, in GB
+- **CPU Usage** - normalized total CPU percentage across all managed containers over host cores
+- **RAM Usage** - total memory allocated by managed containers, in GB
 
-The x-axis shows time labels. Hover over a data point to see the exact value at that moment.
+Hover over a data point to see the exact value at that moment.
 
 <Note>
-  Charts only show data from the moment Sencho started. If you just installed Sencho, they will be mostly empty until metrics accumulate.
+  Charts only show data from the moment Sencho started collecting. If you just installed Sencho, they will be mostly empty until metrics accumulate.
 </Note>
 
-## Convert `docker run` to Compose
+## Recent alerts
 
-The bottom panel provides a quick converter: paste any `docker run` command and Sencho transforms it into a valid `docker-compose.yaml` snippet.
+The bottom section displays triggered alert notifications sorted by recency. Each entry shows the severity level (info, warning, or error), the alert message, and a relative timestamp.
 
-```bash
-# Example input
-docker run -d --name myapp -p 8080:80 -e TZ=UTC -v /data:/app/data nginx:latest
-```
+Use the **Clear All Notifications** button to dismiss all alerts. If you have more than 8 alerts, the list paginates.
 
-Click **Convert** and the output YAML appears ready to copy. You can then create a new stack and paste it into the editor.
-
-This is useful when migrating existing containers to managed Compose stacks without having to write YAML by hand.
+Alert thresholds are configured per stack in **Settings > Notifications**. See [Alerts & Notifications](/features/alerts-notifications) for setup details.

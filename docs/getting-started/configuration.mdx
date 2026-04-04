@@ -25,6 +25,7 @@ When you point `COMPOSE_DIR` at a directory, Sencho expects each stack to live i
 |----------|---------|-------------|
 | `PORT` | `3000` | Port the Sencho HTTP server listens on. |
 | `DATA_DIR` | `/app/data` | Directory where Sencho stores its SQLite database, node registry, and cached metrics. |
+| `FRONTEND_URL` | *(empty)* | Frontend origin for CORS. Only needed if the UI is served from a different domain than the API. Leave empty for same-origin setups. |
 | `NODE_ENV` | `production` | Set automatically in the Docker image. Only change this for local development. |
 
 ## SSO environment variables
@@ -78,15 +79,15 @@ When Sencho runs `docker compose up`, it does so on your **host machine**. Docke
 ```yaml
 # ✅ Correct - host path matches container path
 volumes:
-  - /home/boris/docker:/home/boris/docker
+  - /home/user/docker:/home/user/docker
 environment:
-  - COMPOSE_DIR=/home/boris/docker
+  - COMPOSE_DIR=/home/user/docker
 ```
 
 ```yaml
 # ❌ Wrong - paths differ, relative volumes will break
 volumes:
-  - /home/boris/docker:/app/compose
+  - /home/user/docker:/app/compose
 environment:
   - COMPOSE_DIR=/app/compose
 ```
