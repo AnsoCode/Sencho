@@ -1,9 +1,46 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
 import type { Stats, SystemStats, MetricPoint, NotificationItem, StackStatusEntry, DashboardData } from './types';
 
 const DEFAULT_STATS: Stats = { active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 };
+
+/**
+ * Start a polling interval that pauses when the tab is hidden.
+ * Returns a cleanup function that stops the interval.
+ */
+function visibilityInterval(fn: () => void, ms: number): () => void {
+  let interval: ReturnType<typeof setInterval> | null = null;
+
+  const start = () => {
+    if (interval) return;
+    interval = setInterval(fn, ms);
+  };
+
+  const stop = () => {
+    if (interval) {
+      clearInterval(interval);
+      interval = null;
+    }
+  };
+
+  const onVisChange = () => {
+    if (document.hidden) {
+      stop();
+    } else {
+      fn(); // Fetch immediately on re-focus
+      start();
+    }
+  };
+
+  document.addEventListener('visibilitychange', onVisChange);
+  start();
+
+  return () => {
+    stop();
+    document.removeEventListener('visibilitychange', onVisChange);
+  };
+}
 
 export function useDashboardData(): DashboardData {
   const { activeNode } = useNodes();
@@ -15,6 +52,11 @@ export function useDashboardData(): DashboardData {
   const [stackStatuses, setStackStatuses] = useState<Record<string, StackStatusEntry>>({});
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number>(0);
+
+  // Keep a ref to the latest nodeId so async callbacks don't write stale data
+  // after a node switch has already triggered a new effect cycle.
+  const nodeIdRef = useRef(nodeId);
+  useEffect(() => { nodeIdRef.current = nodeId; }, [nodeId]);
 
   const fetchJson = useCallback(async <T>(endpoint: string, options?: { localOnly?: boolean }): Promise<T | null> => {
     try {
@@ -28,61 +70,64 @@ export function useDashboardData(): DashboardData {
 
   // Container stats: 5s polling, resets on node change
   useEffect(() => {
-    // Reset stale data immediately, then fetch fresh data for the new node.
-    // The cleanup function from the previous effect run already cleared the old interval,
-    // so the reset only happens once per node switch, not on every poll tick.
     setStats(DEFAULT_STATS); // eslint-disable-line react-hooks/set-state-in-effect
+    const currentNodeId = nodeId;
     const fetchStats = async () => {
+      if (nodeIdRef.current !== currentNodeId) return; // Stale effect
       const data = await fetchJson<Stats>('/stats');
-      if (data) {
+      if (data && nodeIdRef.current === currentNodeId) {
         setStats(data);
         setLastUpdated(Date.now());
       }
     };
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
+    const cleanup = visibilityInterval(fetchStats, 5000);
+    return cleanup;
   }, [nodeId, fetchJson]);
 
   // System stats: 5s polling, resets on node change
   useEffect(() => {
     setSystemStats(null); // eslint-disable-line react-hooks/set-state-in-effect
+    const currentNodeId = nodeId;
     const fetchSys = async () => {
+      if (nodeIdRef.current !== currentNodeId) return;
       const data = await fetchJson<SystemStats>('/system/stats');
-      if (data) {
+      if (nodeIdRef.current === currentNodeId) {
         setSystemStats(data);
-        setLastUpdated(Date.now());
-      } else {
-        setSystemStats(null);
+        if (data) setLastUpdated(Date.now());
       }
     };
     fetchSys();
-    const interval = setInterval(fetchSys, 5000);
-    return () => clearInterval(interval);
+    const cleanup = visibilityInterval(fetchSys, 5000);
+    return cleanup;
   }, [nodeId, fetchJson]);
 
   // Historical metrics: 60s polling, resets on node change
   useEffect(() => {
     setMetrics([]); // eslint-disable-line react-hooks/set-state-in-effect
+    const currentNodeId = nodeId;
     const fetchMetrics = async () => {
+      if (nodeIdRef.current !== currentNodeId) return;
       const data = await fetchJson<MetricPoint[]>('/metrics/historical');
-      if (data) setMetrics(data);
+      if (data && nodeIdRef.current === currentNodeId) setMetrics(data);
     };
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 60000);
-    return () => clearInterval(interval);
+    const cleanup = visibilityInterval(fetchMetrics, 60000);
+    return cleanup;
   }, [nodeId, fetchJson]);
 
   // Stack statuses: 10s polling, resets on node change
   useEffect(() => {
     setStackStatuses({}); // eslint-disable-line react-hooks/set-state-in-effect
+    const currentNodeId = nodeId;
     const fetchStatuses = async () => {
+      if (nodeIdRef.current !== currentNodeId) return;
       const data = await fetchJson<Record<string, StackStatusEntry>>('/stacks/statuses');
-      if (data) setStackStatuses(data);
+      if (data && nodeIdRef.current === currentNodeId) setStackStatuses(data);
     };
     fetchStatuses();
-    const interval = setInterval(fetchStatuses, 10000);
-    return () => clearInterval(interval);
+    const cleanup = visibilityInterval(fetchStatuses, 10000);
+    return cleanup;
   }, [nodeId, fetchJson]);
 
   const refreshNotifications = useCallback(async () => {
@@ -97,8 +142,8 @@ export function useDashboardData(): DashboardData {
       if (data) setNotifications(data);
     };
     poll();
-    const interval = setInterval(poll, 30000);
-    return () => clearInterval(interval);
+    const cleanup = visibilityInterval(poll, 30000);
+    return cleanup;
   }, [fetchJson]);
 
   return { stats, systemStats, metrics, stackStatuses, notifications, lastUpdated, refreshNotifications };

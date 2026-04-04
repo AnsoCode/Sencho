@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **dashboard:** resolved OOM caused by unbounded concurrent Docker stats polling. Added overlap guard to `updateGlobalDockerNetwork`, increased its interval from 3s to 5s, downsampled historical metrics from 1-minute to 5-minute buckets, and paused all dashboard polling when the browser tab is hidden
 * **stacks:** added missing `.ok` check on container status fallback response in EditorLayout, preventing potential JSON parse errors on failed requests
 
 ## [0.36.0](https://github.com/AnsoCode/Sencho/compare/v0.35.0...v0.36.0) (2026-04-04)

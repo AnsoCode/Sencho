@@ -874,6 +874,9 @@ export class DatabaseService {
 
     public getContainerMetrics(hoursLookback = 24): any[] {
         const cutoff = Date.now() - (hoursLookback * 60 * 60 * 1000);
+        // Aggregate into 5-minute buckets (300000ms) to keep response size bounded.
+        // With 24h lookback that's ~288 buckets per container instead of ~1440.
+        const bucketMs = 300000;
         const stmt = this.db.prepare(`
             SELECT
               container_id,
@@ -882,10 +885,10 @@ export class DatabaseService {
               AVG(memory_mb) as memory_mb,
               MAX(net_rx_mb) as net_rx_mb,
               MAX(net_tx_mb) as net_tx_mb,
-              (timestamp / 60000) * 60000 as timestamp
+              (timestamp / ${bucketMs}) * ${bucketMs} as timestamp
             FROM container_metrics
             WHERE timestamp >= ?
-            GROUP BY container_id, stack_name, (timestamp / 60000)
+            GROUP BY container_id, stack_name, (timestamp / ${bucketMs})
             ORDER BY timestamp ASC
         `);
         return stmt.all(cutoff);
