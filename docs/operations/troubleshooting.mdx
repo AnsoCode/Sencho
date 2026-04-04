@@ -306,6 +306,61 @@ The backend logs all route errors and service failures to stdout. This is the fi
 
 If your container uses host networking, doesn't expose ports, or only binds to internal Docker networks, the option won't appear. You can still access the app manually by checking the container's port mappings in the stack detail view.
 
+## Remote update button does not appear
+
+**Symptom:** A remote node in Fleet View has no **Update** button even though it is running an older version.
+
+**Cause:** The remote node does not advertise the `self-update` [capability](/features/node-compatibility). This happens when the node is not running inside a Docker Compose-managed container, or the Docker socket is not mounted.
+
+**Fix:** Ensure the remote node's `docker-compose.yml` includes the socket volume mount:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+```
+
+Nodes running very old Sencho versions that predate the capability system need to be updated manually first. After that, future updates can be triggered from the dashboard.
+
+---
+
+## Remote update times out
+
+**Symptom:** After clicking **Update** on a remote node, the status changes to **Timed out** instead of **Updated**.
+
+**Cause:** The image pull may be slow on the remote host, or the container failed to restart.
+
+**Fix:** Check the Docker logs on the remote host for errors. You can also update manually by running:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+---
+
+## Stack labels are not visible in the sidebar
+
+**Symptom:** You created labels in Settings but no label pills appear in the sidebar.
+
+**Checks:**
+
+1. **License tier**: Labels require a Skipper or Admiral license. Verify your tier in **Settings > License**.
+2. **At least one label must exist**: The pill bar only appears when you have created at least one label in **Settings > Labels**.
+3. **Downgrade**: If you downgraded from a paid tier to Community, the label UI is hidden but your data is preserved. Upgrading again restores all labels and assignments.
+
+---
+
+## Notification routing rule matches but alerts still go to global channels
+
+**Symptom:** You created a routing rule for a stack, but alerts from that stack still arrive on the global Discord/Slack/Webhook channels.
+
+**Checks:**
+
+1. **Stack name match**: The stack name in the routing rule must match exactly. Stack names are case-sensitive and correspond to the directory name in your compose folder.
+2. **Rule is enabled**: Check that the route's toggle is turned on in **Settings > Routing**.
+3. **License tier**: Notification Routing requires an Admiral license. Skipper and Community users can only use global channels.
+
+---
+
 ## "Check for updates" shows rate-limit error
 
 **Symptom:** Clicking "Check for updates" shows a toast error about waiting before refreshing.

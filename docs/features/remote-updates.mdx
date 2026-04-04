@@ -1,12 +1,12 @@
 ---
-title: Remote updates
-description: Check for outdated nodes and trigger over-the-air updates from the Fleet View.
+title: Remote Updates
+description: Check for outdated nodes and trigger over-the-air Sencho updates from the Fleet View.
 ---
 
-Sencho can update remote nodes directly from the dashboard. When the gateway is running a newer version than a remote node, a one-click update pulls the latest image and recreates the container automatically.
+Sencho can update remote nodes directly from the dashboard. When your primary instance is running a newer version than a remote node, a one-click update pulls the latest image and recreates the container automatically.
 
 <Note>
-  Remote updates require **Sencho Pro** (Skipper or Admiral tier).
+  Remote updates require a **Sencho Pro** license (Skipper or Admiral tier).
 </Note>
 
 ## Prerequisites
@@ -15,79 +15,70 @@ Remote updates work when each node meets these conditions:
 
 - Deployed via **Docker Compose** (the recommended method)
 - The Docker socket (`/var/run/docker.sock`) is mounted into the container
-- Running **Sencho v0.32.0** or later (the version that introduced the `self-update` capability)
+- Running a Sencho version that supports the `self-update` [capability](/features/node-compatibility)
 
-Nodes deployed with `docker run` or orchestrators like Kubernetes do not support self-update. These nodes will show a "self-update unavailable" message.
-
-## How it works
-
-1. The gateway compares each node's version (from `/api/meta`) against its own version.
-2. If a node is running an older version, the Fleet View shows an **Update available** badge.
-3. Clicking **Update** sends a command to the remote node.
-4. The remote node pulls the latest `saelix/sencho` image and recreates its own container.
-5. The gateway polls the node until it comes back online with the new version.
-
-The remote node briefly goes offline during the update (typically 10–30 seconds depending on image pull speed). The Fleet View tracks the progress and shows **Updating**, **Updated**, or **Timed out** status badges.
+Nodes deployed with `docker run` or orchestrators like Kubernetes do not support self-update. These nodes show an error message when you attempt to update them.
 
 ## Checking for updates
 
 Open the **Fleet** tab and click **Check Updates** in the header. This opens the **Node Updates** dialog, which lists every node with its current version and update status.
 
 <Frame>
-  <img src="/images/fleet/check-updates-modal.png" alt="Node Updates dialog showing update status for each node" />
+  <img src="/images/fleet-view/fleet-node-updates.png" alt="Node Updates dialog showing update status for each node" />
 </Frame>
 
-Each node row shows:
+The dialog includes:
 
-| Element | Meaning |
-|---------|---------|
-| Version label (e.g. `v0.31.0`) | The node's current Sencho version |
-| **Up to date** badge | Node is running the latest version |
-| **Update** button | A newer version is available — click to update |
-| **Updating** badge | The node is pulling and restarting |
+- **Summary cards** at the top showing counts of nodes that are Up to date, have updates Available, are currently Updating, or have Failed
+- **Gateway version** label showing your primary instance's version
+- **Filter** search box to find specific nodes by name or type
+- **Node table** with columns for name, type, current version, latest version, and status
+
+Each node's status column shows one of:
+
+| Status | Meaning |
+|--------|---------|
+| **Up to date** badge | Node is running the same version as the gateway |
+| **Update** button | A newer version is available; click to update |
+| **Updating** badge | The node is pulling the new image and restarting |
 | **Updated** badge | The node came back online with the new version |
 | **Timed out** badge | The node did not come back within 5 minutes |
+| **Failed** badge | The update command failed |
 
-Nodes running a version too old to report their version will show `pre-X.Y.Z` as the current version.
+Nodes that are too old to report their version show "unknown" in the current version column. These nodes are treated as outdated.
 
 ## Updating a single node
 
-Click the **Update** button next to any outdated node in the Node Updates dialog, or click the **Update to vX.Y.Z** button directly on the node card in Fleet View. For remote nodes, the update happens in the background. For the local (gateway) node, a confirmation dialog appears warning about the brief dashboard disconnection.
+You can trigger an update in two ways:
+
+- Click the **Update** button next to a node in the Node Updates dialog
+- Click the **Update to vX.Y.Z** button directly on a node card in Fleet View
+
+For remote nodes, the update happens in the background. The Fleet View automatically polls at a faster rate (every 5 seconds) while an update is in progress, so you can watch the status change in near real-time.
 
 ## Updating all nodes
 
-Click **Update All (N)** in the Node Updates dialog to trigger updates on all outdated remote nodes simultaneously. The local node is intentionally excluded from bulk updates — update it separately to avoid losing dashboard connectivity.
+Click **Update All (N)** in the footer of the Node Updates dialog to trigger updates on all outdated remote nodes simultaneously. The local node is excluded from bulk updates to avoid losing dashboard connectivity.
 
 ## Local node updates
 
-When updating the local (gateway) node:
+When you update the local (gateway) node:
 
-1. A confirmation dialog explains that the dashboard will briefly disconnect.
-2. After confirming, the server pulls the new image and restarts.
-3. A reconnecting overlay appears and polls the server every 3 seconds.
+1. A confirmation dialog appears explaining that the dashboard will briefly disconnect.
+2. After confirming, the server pulls the latest image and restarts.
+3. A reconnecting overlay appears and polls the server every few seconds.
 4. The page automatically reloads when the server comes back.
 
 If the server does not return within 5 minutes, a timeout message appears with a manual reload option.
 
-## Troubleshooting
+## What happens during an update
 
-### Node shows "self-update unavailable"
+When an update is triggered on a node, Sencho:
 
-The node is not running inside a Docker Compose-managed container, or the Docker socket is not mounted. Check that your `docker-compose.yml` includes the socket volume mount:
+1. Pulls the latest `saelix/sencho` image using Docker Compose
+2. Recreates the container with the new image
+3. The node goes briefly offline during the restart
 
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
-```
+The gateway monitors the remote node until it comes back online with the new version, then marks it as **Updated**.
 
-### Update times out
-
-The image pull may be slow on the remote host, or the container failed to restart. SSH into the remote host and check `docker logs sencho` for errors. You can also manually update by running:
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-### Old node does not show update button
-
-Nodes running Sencho versions before v0.32.0 do not advertise the `self-update` capability. Update them manually first, then future updates can be triggered from the dashboard.
+If you run into issues with remote updates, see the [Troubleshooting](/operations/troubleshooting#remote-update-button-does-not-appear) page.
