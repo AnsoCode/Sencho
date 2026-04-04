@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
 import type { Stats, SystemStats, MetricPoint, NotificationItem, StackStatusEntry, DashboardData } from './types';
@@ -16,9 +16,6 @@ export function useDashboardData(): DashboardData {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number>(0);
 
-  // Track nodeId to detect changes for clearing stale data
-  const prevNodeRef = useRef(nodeId);
-
   const fetchJson = useCallback(async <T>(endpoint: string, options?: { localOnly?: boolean }): Promise<T | null> => {
     try {
       const res = await apiFetch(endpoint, options);
@@ -31,11 +28,11 @@ export function useDashboardData(): DashboardData {
 
   // Container stats: 5s polling, resets on node change
   useEffect(() => {
-    const nodeChanged = prevNodeRef.current !== nodeId;
-    if (nodeChanged) prevNodeRef.current = nodeId;
-
+    // Reset stale data immediately, then fetch fresh data for the new node.
+    // The cleanup function from the previous effect run already cleared the old interval,
+    // so the reset only happens once per node switch, not on every poll tick.
+    setStats(DEFAULT_STATS); // eslint-disable-line react-hooks/set-state-in-effect
     const fetchStats = async () => {
-      if (nodeChanged) setStats(DEFAULT_STATS);
       const data = await fetchJson<Stats>('/stats');
       if (data) {
         setStats(data);
@@ -49,6 +46,7 @@ export function useDashboardData(): DashboardData {
 
   // System stats: 5s polling, resets on node change
   useEffect(() => {
+    setSystemStats(null); // eslint-disable-line react-hooks/set-state-in-effect
     const fetchSys = async () => {
       const data = await fetchJson<SystemStats>('/system/stats');
       if (data) {
@@ -65,9 +63,10 @@ export function useDashboardData(): DashboardData {
 
   // Historical metrics: 60s polling, resets on node change
   useEffect(() => {
+    setMetrics([]); // eslint-disable-line react-hooks/set-state-in-effect
     const fetchMetrics = async () => {
       const data = await fetchJson<MetricPoint[]>('/metrics/historical');
-      setMetrics(data || []);
+      if (data) setMetrics(data);
     };
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 60000);
@@ -76,9 +75,10 @@ export function useDashboardData(): DashboardData {
 
   // Stack statuses: 10s polling, resets on node change
   useEffect(() => {
+    setStackStatuses({}); // eslint-disable-line react-hooks/set-state-in-effect
     const fetchStatuses = async () => {
       const data = await fetchJson<Record<string, StackStatusEntry>>('/stacks/statuses');
-      setStackStatuses(data || {});
+      if (data) setStackStatuses(data);
     };
     fetchStatuses();
     const interval = setInterval(fetchStatuses, 10000);

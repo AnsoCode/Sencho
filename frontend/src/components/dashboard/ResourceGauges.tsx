@@ -1,5 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Cpu, MemoryStick, HardDrive, Container, Network } from 'lucide-react';
+import {
+  CursorProvider,
+  Cursor,
+  CursorContainer,
+  CursorFollow,
+} from '@/components/animate-ui/primitives/animate/cursor';
 import type { Stats, SystemStats } from './types';
 
 interface ResourceGaugesProps {
@@ -104,19 +110,37 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
-            <div>
-              <span className="text-lg font-mono tabular-nums tracking-tight text-success">{stats.active}</span>
-              <span className="text-xs text-stat-subtitle ml-1">active</span>
+            <div className="relative">
+              <CursorProvider>
+                <CursorContainer className="inline-flex items-baseline">
+                  <span className="text-lg font-mono tabular-nums tracking-tight text-success">{stats.active}</span>
+                  <span className="text-xs text-stat-subtitle ml-1">active</span>
+                </CursorContainer>
+                <Cursor>
+                  <div className="h-2 w-2 rounded-full bg-brand" />
+                </Cursor>
+                <CursorFollow
+                  side="bottom"
+                  sideOffset={4}
+                  align="center"
+                  transition={{ stiffness: 400, damping: 40, bounce: 0 }}
+                >
+                  <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+                    <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+                      <span className="text-stat-value">{stats.managed}<span className="text-stat-subtitle ml-1 font-sans">managed</span></span>
+                      <span className="text-stat-icon">|</span>
+                      <span className="text-stat-value">{stats.unmanaged}<span className="text-stat-subtitle ml-1 font-sans">external</span></span>
+                    </div>
+                  </div>
+                </CursorFollow>
+              </CursorProvider>
             </div>
             <div>
               <span className="text-lg font-mono tabular-nums tracking-tight text-destructive/80">{stats.exited}</span>
               <span className="text-xs text-stat-subtitle ml-1">exited</span>
             </div>
-            <div>
-              <span className="text-xs font-mono tabular-nums text-stat-subtitle">{stats.managed} managed</span>
-            </div>
-            <div>
-              <span className="text-xs font-mono tabular-nums text-stat-subtitle">{stats.unmanaged} external</span>
+            <div className="col-span-2">
+              <span className="text-xs font-mono tabular-nums text-stat-subtitle">{stats.total} total</span>
             </div>
           </div>
         </CardContent>

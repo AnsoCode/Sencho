@@ -878,8 +878,9 @@ export const updateGlobalDockerNetwork = async () => {
     }
 
     lastNetSum = { rx: currentRxSum, tx: currentTxSum, timestamp: now };
-  } catch (error) {
-    console.error('Failed to update global docker network stats:', error);
+  } catch {
+    // Silently skip when Docker is unreachable (e.g. no local engine).
+    // Network stats will remain at their last known values.
   }
 };
 
