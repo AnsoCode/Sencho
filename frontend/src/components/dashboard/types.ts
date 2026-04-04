@@ -65,4 +65,5 @@ export interface DashboardData {
   stackStatuses: Record<string, StackStatusEntry>;
   notifications: NotificationItem[];
   lastUpdated: number;
+  refreshNotifications: () => Promise<void>;
 }

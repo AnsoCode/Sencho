@@ -45,6 +45,7 @@ export default function HomeDashboard({ onNavigateToStack }: HomeDashboardProps)
 
       <RecentAlerts
         notifications={data.notifications}
+        onCleared={data.refreshNotifications}
       />
     </div>
   );

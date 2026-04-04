@@ -85,16 +85,21 @@ export function useDashboardData(): DashboardData {
     return () => clearInterval(interval);
   }, [nodeId, fetchJson]);
 
+  const refreshNotifications = useCallback(async () => {
+    const data = await fetchJson<NotificationItem[]>('/notifications', { localOnly: true });
+    if (data) setNotifications(data);
+  }, [fetchJson]);
+
   // Notifications: 30s polling, local-only (not affected by node switch)
   useEffect(() => {
-    const fetchNotifs = async () => {
+    const poll = async () => {
       const data = await fetchJson<NotificationItem[]>('/notifications', { localOnly: true });
       if (data) setNotifications(data);
     };
-    fetchNotifs();
-    const interval = setInterval(fetchNotifs, 30000);
+    poll();
+    const interval = setInterval(poll, 30000);
     return () => clearInterval(interval);
   }, [fetchJson]);
 
-  return { stats, systemStats, metrics, stackStatuses, notifications, lastUpdated };
+  return { stats, systemStats, metrics, stackStatuses, notifications, lastUpdated, refreshNotifications };
 }
