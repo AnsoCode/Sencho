@@ -9,9 +9,9 @@ description: "Automatically check for and apply container image updates on a sch
 
 ## Overview
 
-Auto-Update Policies let you define schedules for Sencho to automatically check your container images for updates and apply them when new versions are available. Think of it as a built-in Watchtower — but integrated directly into your Sencho dashboard with full visibility into what was updated and when.
+Auto-Update Policies let you define schedules for Sencho to automatically check your container images for updates and apply them when new versions are available. Think of it as a built-in Watchtower, integrated directly into your Sencho dashboard with full visibility into what was updated and when.
 
-Each policy targets a specific stack and runs on a cron schedule. When triggered, Sencho:
+Each policy targets a specific stack (or all stacks on a node) and runs on a cron schedule. When triggered, Sencho:
 
 1. Inspects every container in the target stack
 2. Compares local image digests against the remote registry
@@ -22,7 +22,7 @@ Each policy targets a specific stack and runs on a cron schedule. When triggered
   <img src="/images/auto-update-policies/overview.png" alt="Auto-Update Policies view showing the policies list" />
 </Frame>
 
-## Creating a Policy
+## Creating a policy
 
 Navigate to **Auto-Update** in the sidebar and click **New Policy**.
 
@@ -36,10 +36,13 @@ Fill in the following fields:
 |-------|-------------|
 | **Name** | A descriptive name for the policy (e.g., "Nightly media stack update") |
 | **Node** | The node where the target stack runs |
-| **Stack** | The stack to monitor and update |
-| **Schedule** | A cron expression or preset defining how often to check |
+| **Stack** | The stack to monitor and update, or **All Stacks** to update every stack on the selected node |
+| **Check Frequency** | A cron preset or custom cron expression defining how often to check |
+| **Enabled** | Toggle to enable or disable the policy on creation |
 
-### Schedule Presets
+The Stack selector becomes available after choosing a node. Selecting **All Stacks** will check and update every stack on that node during each run.
+
+### Schedule presets
 
 For convenience, Sencho offers common schedule presets:
 
@@ -52,68 +55,83 @@ For convenience, Sencho offers common schedule presets:
 | Weekly (Sunday 3 AM) | `0 3 * * 0` | Minimal disruption for stable stacks |
 | Custom | User-defined | Any valid cron expression |
 
-## Filtering by Node
+When using a preset, a human-readable description of the schedule is shown below the selector. Custom cron expressions are validated and described in real time.
 
-In a multi-node environment, you can filter the policy list to show only policies targeting a specific node. Click the **calendar icon** on any node row in **Settings → Nodes** to jump directly to a filtered view. A filter bar at the top shows the active node, with a **Clear filter** button to return to the full list.
+## Filtering by node
 
-## Managing Policies
+In a multi-node environment, you can filter the policy list to show only policies targeting a specific node. Click the **calendar icon** on any node row in **Settings > Nodes** to jump directly to a filtered view. A filter badge at the top shows the active node, with a **Clear filter** button to return to the full list.
 
-Each policy in the list shows:
+## Managing policies
 
-- **Name** and target stack
-- **Schedule** in human-readable form (e.g., "Every 6 hours")
-- **Status** — enabled or disabled
-- **Last run** — when it last executed and whether it succeeded
-- **Next run** — when it will execute next
+The policy list is displayed as a table with the following columns:
 
-### Available Actions
+| Column | Description |
+|--------|-------------|
+| **Name** | The policy name |
+| **Stack** | Target stack name, or "All Stacks" for wildcard policies |
+| **Schedule** | Human-readable description with the raw cron expression below |
+| **Status** | Last run result: **Success** (green), **Failed** (red), or "Never run" |
+| **Last Run** | Timestamp of the most recent execution |
+| **Next Run** | When the policy will next execute |
+| **Enabled** | Toggle switch to enable or disable the policy |
+| **Actions** | Action buttons (see below) |
 
-- **Toggle** — Enable or disable a policy without deleting it
-- **Run Now** — Trigger an immediate check-and-update cycle
-- **Edit** — Modify the policy name, target, or schedule
-- **Delete** — Permanently remove the policy
+### Available actions
 
-## Run History
+Each policy row has four action buttons:
 
-Click the clock icon on any policy to view its run history. Each entry shows:
+- **Run Now** (play icon) - Trigger an immediate check-and-update cycle without waiting for the next scheduled run
+- **Execution History** (clock icon) - Open the run history panel for this policy
+- **Edit** (pencil icon) - Modify the policy name, target, or schedule
+- **Delete** (trash icon) - Permanently remove the policy and all its execution history after confirmation
 
-- **Timestamp** — When the run started
-- **Status** — Success or failure
-- **Output** — Detailed log of what was checked and whether updates were applied
+## Run history
 
-This gives you full auditability over what changed and when.
+Click the clock icon on any policy to open the run history panel. The history is displayed as a table with the following columns:
 
-## How It Works
+| Column | Description |
+|--------|-------------|
+| **Time** | When the run started |
+| **Source** | Whether the run was triggered by the **Scheduler** or **Manual** (via Run Now) |
+| **Status** | Success, Failed, or Running |
+| **Duration** | How long the run took (in seconds) |
+| **Details** | Output summary or error message |
+
+Run history is paginated at 20 entries per page. You can export the full history as CSV using the download button in the panel header.
+
+## How it works
 
 Under the hood, Auto-Update Policies are built on the same scheduling engine as [Scheduled Operations](/features/scheduled-operations). The key difference is that auto-update policies:
 
 - Are available to **Skipper** tier (Scheduled Operations requires Admiral)
-- Always target a **stack** (not individual containers)
+- Can target a single **stack** or **all stacks** on a node
 - Perform a **check-then-update** flow rather than a blind restart
 
-### The Check-Then-Update Flow
+### The check-then-update flow
 
-1. **Enumerate images** — Sencho lists all unique images used by containers in the target stack
-2. **Check digests** — For each image, Sencho compares the local `RepoDigests` against the remote registry manifest digest
-3. **Conditional update** — Only if at least one image has a newer version does Sencho run `docker compose up -d` to pull and recreate
-4. **Clear indicators** — After a successful update, the blue update indicator dot is automatically cleared
+1. **Enumerate images** - Sencho lists all unique pullable images used by containers in the target stack
+2. **Check digests** - For each image, Sencho compares the local digest against the remote registry manifest
+3. **Conditional update** - Only if at least one image has a newer version does Sencho run `docker compose up -d` to pull and recreate
+4. **Clear indicators** - After a successful update, the blue update indicator dot is automatically cleared
+5. **Notify** - A notification is dispatched informing you which stack was updated and which images changed
 
-If no updates are found, the run completes with a "No updates available" message and no containers are restarted.
+If no updates are found, the run completes with an "all images up to date" message and no containers are restarted.
 
-## Relationship to Image Update Detection
+## Relationship to image update detection
 
 Sencho has two complementary features for keeping your images current:
 
 | Feature | Purpose | Tier |
 |---------|---------|------|
-| **Image Update Detection** | Passive — shows a blue dot on stacks with available updates | All tiers |
-| **Auto-Update Policies** | Active — automatically applies updates on a schedule | Skipper+ |
+| **Image Update Detection** | Passive: shows a blue dot on stacks with available updates | All tiers |
+| **Auto-Update Policies** | Active: automatically applies updates on a schedule | Skipper+ |
 
 Image Update Detection runs in the background every 6 hours and highlights stacks that have newer images available. Auto-Update Policies take this a step further by automatically applying those updates based on your defined schedule.
 
-## Best Practices
+## Best practices
 
-- **Start with longer intervals** — Use "Daily at 3 AM" or "Weekly" for production stacks. Reserve shorter intervals for dev/staging environments.
-- **Pin critical images** — If a stack uses `image: postgres:16.2` (pinned tag), auto-update will only detect updates to that exact tag. Use floating tags like `postgres:16` if you want minor version updates.
-- **Monitor run history** — Check run history periodically to ensure updates are applying cleanly. Failed runs may indicate registry authentication issues or compose file problems.
-- **Combine with notifications** — Sencho sends alert notifications when auto-updates are applied, so you stay informed even when updates happen automatically.
+- **Start with longer intervals** - Use "Daily at 3 AM" or "Weekly" for production stacks. Reserve shorter intervals for dev/staging environments.
+- **Pin critical images** - If a stack uses `image: postgres:16.2` (pinned tag), auto-update will only detect updates to that exact tag. Use floating tags like `postgres:16` if you want minor version updates.
+- **Monitor run history** - Check run history periodically to ensure updates are applying cleanly. Failed runs may indicate registry authentication issues or compose file problems.
+- **Use "All Stacks" carefully** - Wildcard policies update every stack on the node. This is convenient for dev environments but may be too aggressive for production.
+- **Combine with notifications** - Sencho sends alert notifications when auto-updates are applied, so you stay informed even when updates happen automatically.

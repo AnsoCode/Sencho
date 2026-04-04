@@ -361,6 +361,44 @@ docker compose pull && docker compose up -d
 
 ---
 
+## LDAP connection refused
+
+**Symptom:** Enabling LDAP SSO and testing the connection fails with a connection error.
+
+**Fix:** Verify the LDAP server is reachable from the Sencho container. If LDAP is on the host machine, use `host.docker.internal` (Docker Desktop) or the host's LAN IP address, not `localhost`.
+
+---
+
+## TLS certificate errors (LDAP)
+
+**Symptom:** LDAP connection test fails with a TLS/certificate error.
+
+**Fix:** If your LDAP server uses a self-signed certificate, set `SSO_LDAP_TLS_REJECT_UNAUTHORIZED=false` or toggle off "Verify TLS certificate" in **Settings > SSO**. For production, install a trusted certificate instead.
+
+---
+
+## OAuth callback URL mismatch
+
+**Symptom:** After authenticating with Google, GitHub, or Okta, the provider returns a "redirect URI mismatch" error.
+
+**Fix:** The redirect URI registered in your identity provider must exactly match what Sencho sends. Check:
+
+1. `SSO_CALLBACK_URL` is set to your external URL (e.g., `https://sencho.example.com`)
+2. The callback URL in your provider's settings is `https://sencho.example.com/api/auth/sso/oidc/<provider>/callback`
+3. Protocol matches - don't mix `http` and `https`
+
+---
+
+## SSO buttons not appearing on login page
+
+**Symptom:** You configured an SSO provider but the login page shows no SSO buttons.
+
+**Cause:** SSO providers only appear on the login page when they are both **configured** (saved with valid credentials) and **enabled** (toggle is on).
+
+**Fix:** Go to **Settings > SSO** and verify the provider has an **Active** badge and its toggle is enabled.
+
+---
+
 ## "Check for updates" shows rate-limit error
 
 **Symptom:** Clicking "Check for updates" shows a toast error about waiting before refreshing.
