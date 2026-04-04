@@ -11,6 +11,16 @@ import { NodeRegistry } from './NodeRegistry';
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
+/** Common web-UI private ports, checked in priority order when detecting the main app port. */
+const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
+/** Ports that should never be treated as the main app port. */
+const IGNORE_PORTS = [1900, 53, 22];
+
+export interface BulkStackInfo {
+  status: 'running' | 'exited' | 'unknown';
+  mainPort?: number;
+}
+
 export interface ClassifiedImage {
   Id: string;
   RepoTags: string[];
@@ -364,27 +374,42 @@ class DockerController {
     return this.validateApiData<any[]>(containers);
   }
 
-  public async getBulkStackStatuses(stackNames: string[]): Promise<Record<string, 'running' | 'exited' | 'unknown'>> {
+  public async getBulkStackStatuses(stackNames: string[]): Promise<Record<string, BulkStackInfo>> {
     const allContainers = await this.docker.listContainers({ all: true });
     const knownSet = new Set(stackNames);
 
-    const statuses: Record<string, 'running' | 'exited' | 'unknown'> = {};
+    const result: Record<string, BulkStackInfo> = {};
     for (const name of stackNames) {
-      statuses[name] = 'unknown';
+      result[name] = { status: 'unknown' };
     }
 
     for (const container of allContainers as any[]) {
       const project: string | undefined = container.Labels?.['com.docker.compose.project'];
-      if (project && knownSet.has(project)) {
-        if (container.State === 'running') {
-          statuses[project] = 'running';
-        } else if (statuses[project] !== 'running') {
-          statuses[project] = 'exited';
+      if (!project || !knownSet.has(project)) continue;
+
+      if (container.State === 'running') {
+        result[project].status = 'running';
+
+        // Detect main web port (first running container with a matchable port wins)
+        if (result[project].mainPort === undefined && Array.isArray(container.Ports) && container.Ports.length > 0) {
+          const ports = container.Ports as { PrivatePort?: number; PublicPort?: number }[];
+          let match = ports.find(p => p.PrivatePort && WEB_UI_PORTS.includes(p.PrivatePort));
+          if (!match) match = ports.find(p => p.PublicPort && WEB_UI_PORTS.includes(p.PublicPort));
+          if (!match) match = ports.find(p =>
+            (!p.PrivatePort || !IGNORE_PORTS.includes(p.PrivatePort)) &&
+            (!p.PublicPort || !IGNORE_PORTS.includes(p.PublicPort))
+          );
+          const chosen = match || ports[0];
+          if (chosen?.PublicPort) {
+            result[project].mainPort = chosen.PublicPort;
+          }
         }
+      } else if (result[project].status !== 'running') {
+        result[project].status = 'exited';
       }
     }
 
-    return statuses;
+    return result;
   }
 
   public async getContainersByStack(stackName: string) {
