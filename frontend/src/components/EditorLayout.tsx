@@ -662,7 +662,7 @@ export default function EditorLayout() {
   const markAllRead = async () => {
     try {
       const localNode = nodesRef.current.find(n => n.type === 'local');
-      const unreadNodeIds = [...new Set(notifications.filter(n => !n.is_read).map(n => n.nodeId))];
+      const unreadNodeIds = [...new Set(notifications.filter(n => !n.is_read && n.nodeId != null).map(n => n.nodeId as number))];
       await Promise.allSettled(unreadNodeIds.map(nodeId =>
         nodeId === localNode?.id
           ? apiFetch('/notifications/read', { method: 'POST', localOnly: true })
@@ -680,7 +680,7 @@ export default function EditorLayout() {
       const localNode = nodesRef.current.find(n => n.type === 'local');
       if (notif.nodeId === localNode?.id) {
         await apiFetch(`/notifications/${notif.id}`, { method: 'DELETE', localOnly: true });
-      } else {
+      } else if (notif.nodeId != null) {
         await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
       }
       setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
@@ -693,7 +693,7 @@ export default function EditorLayout() {
   const clearAllNotifications = async () => {
     try {
       const localNode = nodesRef.current.find(n => n.type === 'local');
-      const uniqueNodeIds = [...new Set(notifications.map(n => n.nodeId))];
+      const uniqueNodeIds = [...new Set(notifications.filter(n => n.nodeId != null).map(n => n.nodeId as number))];
       await Promise.allSettled(uniqueNodeIds.map(nodeId =>
         nodeId === localNode?.id
           ? apiFetch('/notifications', { method: 'DELETE', localOnly: true })
