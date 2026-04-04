@@ -19,7 +19,7 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
 import { LabelAssignPopover } from './LabelAssignPopover';
@@ -2048,27 +2048,36 @@ export default function EditorLayout() {
                       )}
                     </div>
                     {can('stack:edit', 'stack', stackName) && (
-                      <div className="flex gap-2 items-center">
+                      <div className="flex items-center">
                         {!isEditing ? (
-                          <Button size="sm" variant="default" className="rounded-lg h-8" onClick={enterEditMode}>
+                          <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
                             <Pencil className="w-4 h-4 mr-2" />
                             Edit
                           </Button>
                         ) : (
-                          <>
-                            <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={discardChanges}>
-                              <X className="w-4 h-4 mr-2" />
-                              Discard
-                            </Button>
-                            <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={saveFile}>
-                              <Save className="w-4 h-4 mr-2" />
-                              Save Only
-                            </Button>
-                            <Button size="sm" variant="default" className="rounded-lg h-8" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
-                              <Rocket className="w-4 h-4 mr-2" />
+                          <div className="flex items-center">
+                            <Button size="sm" variant="default" className="rounded-l-lg rounded-r-none" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
+                              <Rocket className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               Save & Deploy
                             </Button>
-                          </>
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="default" className="rounded-r-lg rounded-l-none border-l border-primary-foreground/20 px-1.5" disabled={loadingAction === 'deploy'}>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={saveFile}>
+                                  <Save className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                  Save Only
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={discardChanges} className="text-destructive/80 focus:text-destructive">
+                                  <X className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                  Discard Changes
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         )}
                       </div>
                     )}
