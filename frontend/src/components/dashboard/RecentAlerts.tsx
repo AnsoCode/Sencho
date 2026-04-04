@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Trash2 } from 'lucide-react';
+import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import type { NotificationItem } from './types';
@@ -9,8 +9,9 @@ import type { NotificationItem } from './types';
 interface RecentAlertsProps {
   notifications: NotificationItem[];
   onCleared?: () => void;
-  maxItems?: number;
 }
+
+const PAGE_SIZE = 8;
 
 const levelConfig: Record<string, { icon: typeof Info; className: string }> = {
   info: { icon: Info, className: 'text-info' },
@@ -28,18 +29,25 @@ function formatRelativeTime(timestamp: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-export function RecentAlerts({ notifications, onCleared, maxItems = 8 }: RecentAlertsProps) {
+export function RecentAlerts({ notifications, onCleared }: RecentAlertsProps) {
   const [clearing, setClearing] = useState(false);
-  const recent = notifications
+  const [page, setPage] = useState(0);
+
+  const sorted = notifications
     .slice()
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, maxItems);
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedAlerts = sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const needsPagination = sorted.length > PAGE_SIZE;
 
   const handleClearAll = async () => {
     setClearing(true);
     try {
       const res = await apiFetch('/notifications', { method: 'DELETE', localOnly: true });
       if (!res.ok) throw new Error('Failed to clear notifications');
+      setPage(0);
       onCleared?.();
     } catch (error) {
       toast.error((error as Error)?.message || 'Something went wrong.');
@@ -51,10 +59,37 @@ export function RecentAlerts({ notifications, onCleared, maxItems = 8 }: RecentA
   return (
     <Card className="bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-stat-title">Recent Alerts</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-stat-title">Recent Alerts</CardTitle>
+          {needsPagination && (
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                disabled={safePage === 0}
+                onClick={() => setPage(safePage - 1)}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </Button>
+              <span className="text-xs font-mono tabular-nums text-stat-subtitle min-w-[3rem] text-center">
+                {safePage + 1} / {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                disabled={safePage >= totalPages - 1}
+                onClick={() => setPage(safePage + 1)}
+              >
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </Button>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {recent.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6 text-stat-subtitle">
             <CheckCircle2 className="h-4 w-4 text-success" strokeWidth={1.5} />
             <span className="text-sm">No recent alerts.</span>
@@ -62,7 +97,7 @@ export function RecentAlerts({ notifications, onCleared, maxItems = 8 }: RecentA
         ) : (
           <>
             <div className="space-y-0.5">
-              {recent.map(n => {
+              {pagedAlerts.map(n => {
                 const config = levelConfig[n.level] || levelConfig.info;
                 const Icon = config.icon;
                 return (
