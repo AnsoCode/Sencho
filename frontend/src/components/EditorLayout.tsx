@@ -19,7 +19,7 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
 import { LabelAssignPopover } from './LabelAssignPopover';
@@ -258,6 +258,19 @@ export default function EditorLayout() {
     document.documentElement.classList.toggle('dark', isDarkMode);
     localStorage.setItem('sencho-theme', theme);
   }, [isDarkMode, theme]);
+
+  // ⌘K / Ctrl+K — focus stack search input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
+        input?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   // Listen for cross-component navigation (e.g., NodeManager → Schedules)
   useEffect(() => {
@@ -1367,13 +1380,16 @@ export default function EditorLayout() {
 
         {/* Search Input & Stack List */}
         <Command className="bg-transparent flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-border flex-none">
+          <div className="px-4 py-2 flex-none relative">
             <CommandInput
               placeholder="Search stacks..."
               value={searchQuery}
               onValueChange={setSearchQuery}
-              className="h-9"
+              className="h-9 border-none"
             />
+            <kbd className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-glass-border bg-glass-highlight px-1.5 font-mono text-[10px] text-muted-foreground">
+              {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'}K
+            </kbd>
           </div>
           {isPro && labels.length > 0 && (
             <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
@@ -2001,7 +2017,7 @@ export default function EditorLayout() {
 
                 {/* Right Column (The Editor) */}
                 <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-[600px] bg-card">
-                  <div className="p-4 border-b border-muted flex items-center justify-between">
+                  <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
                         <TabsList>
@@ -2032,27 +2048,36 @@ export default function EditorLayout() {
                       )}
                     </div>
                     {can('stack:edit', 'stack', stackName) && (
-                      <div className="flex gap-2">
+                      <div className="flex items-center">
                         {!isEditing ? (
                           <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
                             <Pencil className="w-4 h-4 mr-2" />
                             Edit
                           </Button>
                         ) : (
-                          <>
-                            <Button size="sm" variant="outline" className="rounded-lg" onClick={discardChanges}>
-                              <X className="w-4 h-4 mr-2" />
-                              Discard
-                            </Button>
-                            <Button size="sm" variant="outline" className="rounded-lg" onClick={saveFile}>
-                              <Save className="w-4 h-4 mr-2" />
-                              Save Only
-                            </Button>
-                            <Button size="sm" variant="default" className="rounded-lg" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
-                              <Rocket className="w-4 h-4 mr-2" />
+                          <div className="flex items-center">
+                            <Button size="sm" variant="default" className="rounded-l-lg rounded-r-none" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
+                              <Rocket className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               Save & Deploy
                             </Button>
-                          </>
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="default" className="rounded-r-lg rounded-l-none border-l border-primary-foreground/20 px-1.5" disabled={loadingAction === 'deploy'}>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={saveFile}>
+                                  <Save className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                  Save Only
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={discardChanges} className="text-destructive/80 focus:text-destructive">
+                                  <X className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                  Discard Changes
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         )}
                       </div>
                     )}

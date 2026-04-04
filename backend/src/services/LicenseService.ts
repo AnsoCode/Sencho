@@ -243,7 +243,7 @@ export class LicenseService {
             validUntil,
             trialDaysRemaining,
             instanceId,
-            portalUrl: db.getSystemState('customer_portal_url') || null,
+            portalUrl: db.getSystemState('billing_portal_url') || db.getSystemState('customer_portal_url') || null,
         };
     }
 
@@ -291,6 +291,13 @@ export class LicenseService {
             if (data.meta?.variant_name) {
                 db.setSystemState('license_variant_name', data.meta.variant_name);
             }
+            if (data.meta?.customer_id) {
+                db.setSystemState('customer_id', String(data.meta.customer_id));
+            }
+
+            // Clear any cached portal URL so it's refreshed on next request
+            db.setSystemState('billing_portal_url', '');
+            db.setSystemState('billing_portal_expires', '');
 
             console.log('[License] Activated successfully.');
             return { success: true };
@@ -345,6 +352,8 @@ export class LicenseService {
             'update_payment_url',
             'order_id',
             'receipt_url',
+            'billing_portal_url',
+            'billing_portal_expires',
         ];
         for (const key of keysToRemove) {
             db.setSystemState(key, '');
@@ -415,6 +424,9 @@ export class LicenseService {
             if (data.meta?.variant_name) {
                 db.setSystemState('license_variant_name', data.meta.variant_name);
             }
+            if (data.meta?.customer_id && !db.getSystemState('customer_id')) {
+                db.setSystemState('customer_id', String(data.meta.customer_id));
+            }
 
             console.log('[License] Validation successful.');
             return { success: true };
@@ -422,6 +434,53 @@ export class LicenseService {
             // Network failure - don't change status, just log
             console.warn('[License] Validation network error (keeping current status):', (err as Error).message);
             return { success: false, error: 'Unable to reach license server' };
+        }
+    }
+
+    /**
+     * Fetch a signed billing portal URL via the sencho.io proxy.
+     * Returns a pre-signed Lemon Squeezy Customer Portal URL (valid 24hrs).
+     * Caches the URL for 12 hours to reduce external API calls.
+     */
+    public async getBillingPortalUrl(): Promise<string | null> {
+        const db = DatabaseService.getInstance();
+        const status = db.getSystemState('license_status');
+        const licenseKey = db.getSystemState('license_key');
+
+        if (status !== 'active' || !licenseKey) {
+            return null;
+        }
+
+        // Check cache (12hr TTL)
+        const cachedUrl = db.getSystemState('billing_portal_url');
+        const cachedExpires = db.getSystemState('billing_portal_expires');
+        if (cachedUrl && cachedExpires && Date.now() < parseInt(cachedExpires, 10)) {
+            return cachedUrl;
+        }
+
+        try {
+            const response = await axios.post<{ url: string }>(
+                'https://sencho.io/api/billing-portal',
+                { license_key: licenseKey },
+                { timeout: 15000 }
+            );
+
+            const url = response.data?.url;
+            if (!url) {
+                return null;
+            }
+
+            // Cache for 12 hours
+            const ttl = 12 * 60 * 60 * 1000;
+            db.setSystemState('billing_portal_url', url);
+            db.setSystemState('billing_portal_expires', String(Date.now() + ttl));
+
+            return url;
+        } catch (err) {
+            console.warn('[License] Failed to fetch billing portal URL:', (err as Error).message);
+            // Return stale cache if available
+            if (cachedUrl) return cachedUrl;
+            return null;
         }
     }
 

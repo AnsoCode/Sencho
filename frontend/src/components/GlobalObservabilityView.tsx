@@ -200,16 +200,16 @@ export function GlobalObservabilityView() {
     };
 
     return (
-        <div className="flex flex-col h-full w-full relative group bg-[#0A0A0A] text-gray-300">
-            {/* Node Context Indicator */}
-            {activeNode?.type === 'remote' && (
-                <div className="absolute top-2 left-4 z-10 flex items-center gap-1.5 bg-background/90 backdrop-blur-sm border border-border shadow-md rounded-md px-2.5 py-1 text-xs text-muted-foreground">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                    {activeNode.name}
-                </div>
-            )}
-            {/* Floating Action Bar */}
-            <div className="absolute top-2 right-6 z-10 flex gap-2 transition-opacity duration-200 opacity-0 group-hover:opacity-100 focus-within:opacity-100 bg-background/90 backdrop-blur-sm border border-border shadow-md rounded-md p-1 pr-1">
+        <div className="flex flex-col h-full w-full bg-background text-foreground">
+            {/* Permanent Toolbar */}
+            <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border bg-card">
+                {activeNode?.type === 'remote' && (
+                    <div className="flex items-center gap-1.5 border border-border rounded-md px-2.5 py-1 text-xs text-muted-foreground mr-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-info shrink-0" />
+                        {activeNode.name}
+                    </div>
+                )}
+
                 <div className="relative flex items-center">
                     <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
@@ -220,14 +220,14 @@ export function GlobalObservabilityView() {
                     />
                 </div>
 
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-8 text-sm">
                             <Filter className="w-3.5 h-3.5 mr-2" />
                             Stacks ({selectedStacks.length === 0 ? 'All' : selectedStacks.length})
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuContent align="start" className="w-48">
                         {allStacks.map(stack => (
                             <DropdownMenuCheckboxItem
                                 key={stack}
@@ -254,46 +254,47 @@ export function GlobalObservabilityView() {
                     </SelectContent>
                 </Select>
 
-                <Button variant="outline" size="sm" onClick={handleClearLogs} className="h-8 text-sm px-2">
-                    <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleDownload} disabled={filteredLogs.length === 0} className="h-8 text-sm px-2">
-                    <Download className="w-3.5 h-3.5" />
-                </Button>
+                <div className="flex-1" />
 
                 {devMode && (
                     <div className="flex items-center px-2 text-xs text-success font-mono animate-pulse">
                         ● LIVE
                     </div>
                 )}
+
+                <Button variant="outline" size="sm" onClick={handleClearLogs} className="h-8 text-sm px-2">
+                    <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownload} disabled={filteredLogs.length === 0} className="h-8 text-sm px-2">
+                    <Download className="w-3.5 h-3.5" />
+                </Button>
             </div>
 
-            {loading && logs.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
-                    <RefreshCw className="w-6 h-6 text-primary animate-spin" />
-                </div>
-            )}
-
-            <div className="flex-1 overflow-auto p-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent" onScroll={handleScroll}>
+            <div className="flex-1 min-h-0 overflow-auto p-4 relative bg-background" onScroll={handleScroll}>
+                {loading && logs.length === 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-20">
+                        <RefreshCw className="w-6 h-6 text-primary animate-spin" />
+                    </div>
+                )}
                 {filteredLogs.length > 0 ? (
                     <>
                         {filteredLogs.length > MAX_DISPLAY_ROWS && (
-                            <div className="text-gray-600 italic text-xs text-center mb-3 py-1 border-b border-gray-800">
+                            <div className="text-muted-foreground italic text-xs text-center mb-3 py-1 border-b border-border">
                                 Showing last {MAX_DISPLAY_ROWS} of {filteredLogs.length} matching entries. Use filters or clear logs to see earlier entries.
                             </div>
                         )}
                         {filteredLogs.slice(-MAX_DISPLAY_ROWS).map((log) => (
-                            <div key={log._id} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-white/5 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
-                                <span className="text-gray-500 mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
-                                <span className="text-blue-400 font-semibold mr-2">[{log.containerName}]</span>
-                                <span className={`mr-2 font-medium ${log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-success'}`}>{log.level}:</span>
-                                <span className={log.source === 'STDERR' ? 'text-red-300' : 'text-gray-300'}>{log.message}</span>
+                            <div key={log._id} className="mb-1 leading-relaxed whitespace-pre-wrap break-all hover:bg-accent/50 px-2 py-0.5 rounded -mx-2 font-mono text-xs">
+                                <span className="text-muted-foreground mr-2">[{new Date(log.timestampMs).toLocaleTimeString([], { hour12: true })}]</span>
+                                <span className="text-info font-semibold mr-2">[{log.containerName}]</span>
+                                <span className={`mr-2 font-medium ${log.level === 'ERROR' ? 'text-destructive' : log.level === 'WARN' ? 'text-warning' : 'text-success'}`}>{log.level}:</span>
+                                <span className={log.source === 'STDERR' ? 'text-destructive/80' : 'text-foreground/80'}>{log.message}</span>
                             </div>
                         ))}
                         <div ref={bottomRef} />
                     </>
                 ) : (
-                    <div className="text-gray-500 italic p-4 text-center mt-10">
+                    <div className="text-muted-foreground italic p-4 text-center mt-10">
                         {logs.length === 0 ? "No active logs found." : "No logs match the current filters."}
                     </div>
                 )}

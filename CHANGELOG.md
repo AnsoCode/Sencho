@@ -16,14 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * **stacks:** bulk `/api/stacks/statuses` endpoint — fetches all stack statuses in a single Docker API call instead of N individual `docker compose ps` invocations. Falls back to per-stack queries for remote nodes on older versions.
+* **fleet:** tag filter dropdown — replaced inline pills with a multi-select combobox for cleaner filtering
+* **editor:** ⌘K / Ctrl+K keyboard shortcut to focus the sidebar stack search
+* **billing:** signed Lemon Squeezy Customer Portal URLs — "Billing" button now opens an auto-authenticated portal session via the sencho.io proxy, available for all license tiers
 
 ### Fixed
 
 * **stacks:** sidebar status indicators showing "--" (unknown) after stopping a stack instead of "DN". Root cause was a race condition where `refreshStacks` queried container state before Docker had fully transitioned containers.
+* **logs:** toolbar (search, filters, actions) was a hover-only floating bar that could disappear — now a permanent pinned toolbar always visible at the top
+* **logs:** replaced all hardcoded colors with design tokens for proper light/dark theme support
+* **audit:** Export dropdown caused toolbar to scroll out of view due to Radix scroll-locking (`modal={false}` fix)
+* **audit:** light theme button contrast — outline buttons were invisible due to `--input` matching `--background`
+* **toast:** notification colors used hardcoded Tailwind values instead of oklch design tokens
+* **editor:** button row (Discard / Save Only / Save & Deploy) had inconsistent heights across variants
 
 ### Changed
 
 * **stacks:** stack actions (deploy, stop, restart, update) are now tracked per-stack instead of globally. Users can fire actions on multiple stacks concurrently without the UI blocking. Sidebar shows a spinner per stack during in-flight actions.
+* **resources:** removed redundant inner border and background on tab navigation wrapper
 
 ## [0.34.0](https://github.com/AnsoCode/Sencho/compare/v0.33.1...v0.34.0) (2026-04-03)
 

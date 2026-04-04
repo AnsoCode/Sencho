@@ -1,9 +1,12 @@
-import { Settings, LogOut, ExternalLink, Monitor, Sun, Moon, User } from 'lucide-react';
+import { useState } from 'react';
+import { Settings, LogOut, ExternalLink, Monitor, Sun, Moon, User, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
 import { TierBadge } from './TierBadge';
 
 type Theme = 'light' | 'dark' | 'auto';
@@ -17,6 +20,24 @@ interface UserProfileDropdownProps {
 export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
     const { logout, user, isAdmin } = useAuth();
     const { license } = useLicense();
+    const [billingLoading, setBillingLoading] = useState(false);
+
+    const openBillingPortal = async () => {
+        setBillingLoading(true);
+        try {
+            const res = await apiFetch('/license/billing-portal', { localOnly: true });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.url) {
+                window.open(data.url, '_blank');
+                return;
+            }
+            toast.error(data?.error || data?.message || data?.data?.error || 'Something went wrong.');
+        } catch {
+            toast.error('Failed to open billing portal.');
+        } finally {
+            setBillingLoading(false);
+        }
+    };
 
     return (
         <Popover>
@@ -57,15 +78,18 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                         Settings
                     </button>
                     {license?.status === 'active' && (
-                        <a
-                            href="https://sencho.io/billing"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors"
+                        <button
+                            onClick={openBillingPortal}
+                            disabled={billingLoading}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-left disabled:opacity-50"
                         >
-                            <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                            {billingLoading ? (
+                                <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                            ) : (
+                                <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                            )}
                             Billing
-                        </a>
+                        </button>
                     )}
                 </div>
 
