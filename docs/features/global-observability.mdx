@@ -3,7 +3,7 @@ title: Global Observability
 description: A unified, searchable log stream from every container across all your stacks.
 ---
 
-The **Logs** tab aggregates output from all running containers into a single scrollable view. Instead of tailing logs one container at a time, you see everything in one place - with filtering to focus on what matters.
+The **Logs** tab aggregates output from all running containers into a single scrollable view. Instead of tailing logs one container at a time, you see everything in one place, with filtering to focus on what matters.
 
 <Frame>
   <img src="/images/global-observability/global-observability-overview.png" alt="Global Observability view showing real-time log lines from multiple containers" />
@@ -11,48 +11,60 @@ The **Logs** tab aggregates output from all running containers into a single scr
 
 ## Log format
 
-Each line shows:
+Each line displays:
 
-- **Timestamp** - when the log line was emitted
-- **Stack name** - the Compose stack the container belongs to (colour-coded)
-- **Container name** - the specific container
-- **Level** - `INFO`, `WARN`, or `ERROR` (where detectable)
-- **Message** - the raw log output
+- **Timestamp** - when the log line was emitted (local time, 12-hour format)
+- **Container name** - the specific container that produced the line, shown in brackets
+- **Level** - `INFO`, `WARN`, or `ERROR` (where detectable), colour-coded for quick scanning
+- **Message** - the raw log output, tinted red for `STDERR` lines
+
+`WARN` lines appear in amber, `ERROR` lines in red, and `INFO` lines in green so you can spot problems at a glance.
 
 ## Streaming modes
 
-Sencho supports two modes for fetching logs, switchable via the **Developer mode** toggle:
+Sencho supports two modes for fetching logs, controlled by the **Developer Mode** toggle in **Settings → Developer**:
 
 | Mode | How it works | Best for |
 |------|-------------|----------|
-| **Standard** (default) | Polls all containers every N seconds (configurable in Settings → Developer) | General use; lower overhead |
-| **Developer mode** | Server-Sent Events stream; logs arrive as they are emitted | Debugging; watching a specific event in real-time |
+| **Standard** (default) | Polls all containers on a configurable interval | General use; lower overhead |
+| **Developer mode** | Server-Sent Events (SSE) stream; logs arrive as they are emitted | Debugging; watching events in real time |
 
-The default polling interval is 5 seconds. You can change it to 1, 3, 5, or 10 seconds in **Settings → Developer → Global Logs Refresh Rate**.
+When Developer Mode is active, a pulsing green **● LIVE** indicator appears in the toolbar to confirm the SSE stream is connected.
+
+The default polling interval is 5 seconds. You can change it to 1, 3, 5, or 10 seconds in **Settings → Developer → Standard Log Polling Rate**. This setting is disabled while Developer Mode is active because SSE streaming replaces polling entirely.
 
 ## Filtering logs
 
-Use the controls above the log panel to narrow what you see:
+Use the controls in the toolbar above the log panel to narrow what you see:
 
 | Control | What it does |
 |---------|-------------|
-| **Stack filter** | Multi-select dropdown - show only logs from chosen stacks |
-| **Stream** | `ALL` / `STDOUT` / `STDERR` - filter by output stream |
-| **Search** | Full-text filter on the message field (case-insensitive) |
+| **Search** | Full-text filter across the message, container name, and stack name (case-insensitive) |
+| **Stacks** | Checkbox dropdown; select one or more stacks to show only their containers' logs. Displays "All" when nothing is selected. |
+| **All Streams** | Filter by output stream: `All Streams`, `STDOUT`, or `STDERR` |
 
-Filters combine - you can show only `STDERR` from a specific stack while searching for a keyword.
+Filters combine. For example, you can show only `STDERR` from a specific stack while searching for a keyword.
 
 ## Controls
 
 | Button | What it does |
 |--------|-------------|
-| **Clear** | Clears the current log buffer in the UI (does not delete logs from Docker) |
-| **Auto-scroll** toggle | When enabled, the view scrolls to the bottom as new lines arrive |
+| **Clear** (trash icon) | Clears the current log buffer in the UI. Does not delete logs from Docker. |
+| **Download** (download icon) | Exports the currently filtered logs as a `.txt` file. The filename includes a timestamp for easy identification. |
 
-## Capacity limits
+## Auto-scroll
 
-To avoid browser memory issues, the log view keeps a maximum of **2,000 entries** in memory at a time. Older entries are dropped as new ones arrive. For deeper investigation, use the [per-container log viewer](/features/editor#log-viewer) in the Editor tab, or `docker compose logs` directly from the [Host Console](/features/host-console).
+The log view automatically scrolls to the bottom as new lines arrive. If you scroll up to inspect older entries, auto-scroll pauses so you are not pulled away. Scrolling back to the bottom re-enables it.
+
+## Display limits
+
+To keep the browser responsive, the log viewer enforces two capacity limits:
+
+- **Memory buffer** - a maximum of 2,000 log entries are held in memory at a time. Older entries are dropped as new ones arrive.
+- **Rendered rows** - only the most recent 300 entries from the filtered set are rendered as DOM nodes. If more entries match, a notice appears at the top of the log area showing how many entries exist versus how many are displayed.
+
+For deeper investigation, use the [per-container log viewer](/features/editor#log-viewer) in the Editor tab, or `docker compose logs` directly from the [Host Console](/features/host-console).
 
 <Note>
-  Log retention on the backend is controlled by **Settings → Developer → Log Retention Days** (default: 30 days). This affects historical logs stored in Sencho's database, not the live stream.
+  Log data retention on the backend is controlled by **Settings → Developer → Notification Log Retention** (default: 30 days). This affects historical notification and alert logs stored in Sencho's database, not the live container stream shown here.
 </Note>

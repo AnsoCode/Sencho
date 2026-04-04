@@ -1,33 +1,33 @@
 ---
 title: Node Compatibility
-description: How Sencho handles version differences across nodes and gracefully degrades features that aren't available on older instances.
+description: How Sencho handles version differences across nodes and gracefully degrades features that are not available on older instances.
 ---
 
-When you manage multiple nodes, each running its own Sencho instance, those instances may be on different versions. A node running v0.28 won't have features that shipped in v0.31. Sencho detects this automatically and disables features that the active node doesn't support — no errors, no broken pages.
+When you manage [multiple nodes](/features/multi-node), each running its own Sencho instance, those instances may be on different versions. A node running an older version will not have features that shipped in a newer release. Sencho detects this automatically and disables features that the active node does not support, with no errors or broken pages.
 
 ## How it works
 
-Every Sencho instance exposes a `/api/meta` endpoint that returns its version and a list of **capabilities** — feature flags describing what that instance supports. When you switch to a node, your primary instance fetches this metadata and caches it for 5 minutes.
+Every Sencho instance advertises a set of **capabilities**: feature flags describing what it supports. When you switch to a node, your primary instance fetches this metadata and caches it briefly. Features that require a capability the active node does not have are visually dimmed with an explanation overlay.
 
-Features that require a capability the active node doesn't have are visually dimmed with an explanation overlay. Core features like stack management, containers, and resource monitoring are always available on every Sencho version.
+Core features like stack management, containers, and resource monitoring are always available on every Sencho version.
 
-## What you'll see
+## What you will see
 
 ### Version in the node switcher
 
-The sidebar node switcher shows each node's Sencho version next to its name. If a node is too old to report its version (pre-compatibility era), no version is shown.
+The sidebar node switcher shows each node's Sencho version next to its name. If a node is too old to report its version, no version is shown.
 
 ### Disabled features
 
-When you switch to a node that lacks a capability, the affected feature appears dimmed with a pill overlay explaining why:
+When you switch to a node that lacks a capability, the affected feature appears dimmed and blurred with a pill overlay explaining why. For example:
 
-> **Fleet Management** is not available — prod-server is running v0.28.0
+> "Fleet Management is not available - prod-server is running v0.28.0"
 
-The feature content is still visible (blurred) so you can see what you're missing, but it's non-interactive. Switch to a node that supports the feature, or update the remote node to the latest Sencho version.
+The feature content is still visible (blurred) so you can see what you are missing, but it is non-interactive. Switch to a node that supports the feature, or update the remote node to the latest Sencho version.
 
 ### Connection test details
 
-When you test a remote node's connection in **Settings > Nodes**, the result now includes the remote Sencho version alongside Docker info, container counts, and system stats.
+When you test a remote node's connection in **Settings → Nodes**, the result includes the remote Sencho version alongside Docker info, container counts, and system stats.
 
 ## Capability list
 
@@ -55,19 +55,20 @@ Every Sencho release includes a static list of capabilities. Here are the capabi
 | `api-tokens` | API token management |
 | `users` | User management |
 | `registries` | Private registry management |
+| `self-update` | Self-update from the dashboard |
 
 <Note>
-  Capabilities are flag-based, not version-based. Sencho never compares version numbers — it checks whether the remote node explicitly advertises support for a feature. This means the system stays forward-compatible as new features are added.
+  Capabilities are flag-based, not version-based. Sencho never compares version numbers; it checks whether the remote node explicitly advertises support for a feature. This means the system stays forward-compatible as new features are added.
 </Note>
 
 ## Handling older nodes
 
-Nodes running a Sencho version from before the compatibility system was introduced (pre-v0.32) don't have the `/api/meta` endpoint. Sencho handles this gracefully:
+Nodes running a Sencho version from before the compatibility system was introduced do not have the metadata endpoint. Sencho handles this gracefully:
 
 - The version shows as blank in the node switcher
 - All gated features appear as unavailable on that node
 - Core features (stacks, containers, resources, logs) work normally
-- No errors are thrown — the UI degrades cleanly
+- No errors are thrown; the UI degrades cleanly
 
 The fix is straightforward: update the remote node to the latest Sencho version. See the [upgrade guide](/operations/upgrade) for instructions.
 
@@ -75,7 +76,7 @@ The fix is straightforward: update the remote node to the latest Sencho version.
 
 Some features require both a license tier (Skipper or Admiral) **and** node capability support. When both gates apply:
 
-1. The license gate is checked first — if you're on the Community tier, you see the upgrade prompt
-2. If your license covers the feature but the node doesn't support it, you see the compatibility overlay instead
+1. The license gate is checked first. If you are on the Community tier, you see the upgrade prompt.
+2. If your license covers the feature but the node does not support it, you see the compatibility overlay instead.
 
-This means you won't see confusing "upgrade to unlock" messages for features that wouldn't work on the active node anyway.
+This means you will not see confusing "upgrade to unlock" messages for features that would not work on the active node anyway.
