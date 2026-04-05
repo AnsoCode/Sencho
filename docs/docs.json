@@ -125,9 +125,7 @@
             "pages": [
               "features/node-compatibility",
               "reference/settings",
-              "reference/security-advisories",
-              "reference/architecture",
-              "reference/development"
+              "reference/security-advisories"
             ]
           },
           {

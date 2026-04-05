@@ -61,19 +61,19 @@ ls -la /var/run/docker.sock
 # Expected: srw-rw---- 1 root docker ...
 ```
 
-If the group is not `docker`, the auto-detection still works - Sencho reads the GID from the socket file at startup.
+If the group is not `docker`, the auto-detection still works. Sencho reads the GID from the socket file at startup.
 
 ---
 
 ## "Permission denied" when deleting a stack
 
-**Symptom:** Clicking Delete on a stack fails with a permission error mentioning `EACCES`.
+**Symptom:** Clicking **Delete** on a stack fails with a permission error.
 
-**Cause:** Stack directories often contain files owned by root — for example when Docker Compose was run with `sudo`, or when containers write config/data files into the stack directory. Since Sencho runs as a non-root user, the OS denies the removal.
+**Cause:** Stack directories often contain files owned by root, for example when Docker Compose was run with `sudo`, or when containers write config/data files into the stack directory. Since Sencho runs as a non-root user, the OS denies the removal.
 
 This is especially common when installing Sencho on a server where stacks were originally created outside of Sencho (e.g. via `sudo docker compose up`). Those directories and their contents are root-owned, but Sencho can still delete them.
 
-**How Sencho handles it:** Sencho automatically detects permission errors during deletion and falls back to a Docker-based cleanup. It spawns a short-lived Alpine container that bind-mounts the stack directory and removes the root-owned files. This happens transparently — no manual intervention is needed in the standard Docker setup.
+**How Sencho handles it:** Sencho automatically detects permission errors during deletion and falls back to a Docker-based cleanup. It spawns a short-lived container that bind-mounts the stack directory and removes the root-owned files. This happens transparently, with no manual intervention needed in the standard Docker setup.
 
 **If automatic cleanup fails:** The error message will include the directory path. Remove it manually:
 
@@ -81,7 +81,7 @@ This is especially common when installing Sencho on a server where stacks were o
 sudo rm -rf /path/to/your/compose/dir/stack-name
 ```
 
-**Prerequisites:** The Docker socket must be mounted (standard setup). If Sencho cannot access Docker, the fallback will not work — see [Permission denied on the Docker socket](#permission-denied-on-the-docker-socket).
+**Prerequisites:** The Docker socket must be mounted (standard setup). If Sencho cannot access Docker, the fallback will not work. See ["Permission denied" on the Docker socket](#permission-denied-on-the-docker-socket).
 
 ---
 
@@ -96,6 +96,26 @@ sudo rm -rf /path/to/your/compose/dir/stack-name
 | `JWT_SECRET` is not set or is empty | Set a non-empty value for `JWT_SECRET` in your environment |
 | Container restarted and session cookie is stale | Clear browser cookies for the Sencho domain and try again |
 | Rate limit triggered (5 failed attempts in 15 min) | Wait 15 minutes, or restart the container to reset the limiter |
+
+---
+
+## Forgotten admin password
+
+Sencho has no password recovery flow. To regain access:
+
+1. Stop the Sencho container.
+2. Delete the database file inside your data directory (`sencho.db`). You can find it in the volume you mounted to `/app/data`.
+
+```bash
+# Example, adjust the path to match your data volume mount
+rm /path/to/data/sencho.db
+```
+
+3. Restart the container. Sencho will detect the missing database and re-enter first-boot setup mode, prompting you to create a new admin account.
+
+<Warning>
+  This resets all Sencho configuration: users, nodes, alert rules, notification settings, and labels. Your Docker stacks and their compose files are not affected (they live in `COMPOSE_DIR`, not the database). Sencho will re-discover your stacks on the next sidebar scan.
+</Warning>
 
 ---
 
@@ -115,7 +135,7 @@ proxy_set_header Connection "upgrade";
 proxy_read_timeout 3600s;
 ```
 
-Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends - no extra config needed.
+Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends, so no extra config is needed.
 
 ---
 
@@ -126,11 +146,11 @@ Traefik handles WebSocket upgrades automatically for HTTP/1.1 backends - no extr
 **Checks in order:**
 
 1. **Is the remote Sencho instance running?** SSH to that machine and verify.
-2. **Is the API URL correct?** It must include the protocol and port (e.g. `http://192.168.1.20:3001`). Open it in a browser - you should see a JSON response from `/api/health`.
+2. **Is the API URL correct?** It must include the protocol and port (e.g. `http://192.168.1.20:3001`). Open it in a browser; you should see a JSON response from `/api/health`.
 3. **Is the token correct?** Tokens are long JWT strings. Even one missing character will cause auth to fail. Regenerate the token on the remote instance and update the node config.
 4. **Is there a firewall blocking the port?** The primary Sencho host must be able to reach the remote host's Sencho port.
 
-Click the **wifi icon** on the node row to re-test connectivity after making changes.
+To re-test connectivity after making changes, open **Profile > Settings > Nodes** and click the **wifi icon** on the node row.
 
 ---
 
@@ -140,35 +160,10 @@ Click the **wifi icon** on the node row to re-test connectivity after making cha
 
 **Checks in order:**
 
-1. **Is your primary instance licensed?** Go to **Settings > License** on the primary instance and verify it shows an active Skipper or Admiral license. Remote nodes inherit the primary's tier — if the primary is on Community, all remote nodes will be Community too.
+1. **Is your primary instance licensed?** Open **Profile > Settings > License** on the primary instance and verify it shows an active Skipper or Admiral license. Remote nodes inherit the primary's tier; if the primary is on Community, all remote nodes will be Community too.
 2. **Is the remote node's token valid?** An expired or revoked token prevents the license tier from being transmitted. Regenerate the token on the remote instance and update the node config on the primary.
-3. **Is the remote node running an up-to-date version of Sencho?** Distributed license enforcement requires both the primary and remote instances to be on v0.34.0 or later. Update the remote node if it's on an older version.
+3. **Is the remote node running an up-to-date version of Sencho?** Distributed license enforcement requires both the primary and remote instances to be on a compatible version. Update the remote node if it's outdated.
 4. **Are you accessing the remote node directly?** If you navigate directly to the remote Sencho instance's URL (bypassing the primary), it uses its own local license. License inheritance only works through the primary's proxy.
-
----
-
-## Forgotten admin password
-
-Sencho has no password recovery flow. To reset the password:
-
-1. Stop the Sencho container
-2. Connect to the SQLite database directly:
-
-```bash
-sqlite3 /path/to/data/sencho.db
-```
-
-3. Delete the existing credentials so Sencho re-enters first-boot setup mode:
-
-```sql
-DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash', 'auth_jwt_secret');
-```
-
-4. Restart the container - the setup screen will appear on next visit.
-
-<Warning>
-  This resets authentication entirely. All active sessions become invalid. Your stacks, nodes, and alert rules are not affected.
-</Warning>
 
 ---
 
@@ -178,7 +173,7 @@ DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash',
 
 **Checks in order:**
 
-1. **Is the compose file in a subdirectory?** Sencho only discovers stacks inside subdirectories of `COMPOSE_DIR`. A loose `compose.yaml` sitting directly in the root of `COMPOSE_DIR` is ignored — each stack must be in its own folder (e.g. `COMPOSE_DIR/my-app/compose.yaml`).
+1. **Is the compose file in a subdirectory?** Sencho only discovers stacks inside subdirectories of `COMPOSE_DIR`. A loose `compose.yaml` sitting directly in the root of `COMPOSE_DIR` is ignored. Each stack must be in its own folder (e.g. `COMPOSE_DIR/my-app/compose.yaml`).
 
 2. **Is the compose file named correctly?** Sencho recognizes these filenames only:
    - `compose.yaml`
@@ -194,25 +189,15 @@ DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash',
 
 ---
 
-## Network creation fails with "name is required"
+## Network creation fails
 
-**Symptom:** Clicking Create in the Create Network dialog returns an error about a missing name.
+**Symptom:** Clicking **Create** in the Create Network dialog returns an error about a missing or invalid name.
 
-**Cause:** The network name field was left empty or contains only whitespace.
+**Rules for network names:**
 
-**Fix:** Enter a valid network name. Names must be non-empty and can contain letters, numbers, hyphens (`-`), underscores (`_`), and dots (`.`). Names cannot start with a dot or hyphen.
-
----
-
-## Network creation fails with "invalid name"
-
-**Symptom:** You enter a network name but the API rejects it as invalid.
-
-**Cause:** The name contains characters that are not allowed, or starts with a special character.
-
-**Allowed characters:** Letters, numbers, hyphens, underscores, and dots. The name must start with a letter, number, or underscore.
-
-**Examples:**
+- Names must be non-empty and cannot contain only whitespace.
+- Allowed characters: letters, numbers, hyphens (`-`), underscores (`_`), and dots (`.`).
+- Names must start with a letter, number, or underscore. They cannot start with a dot or hyphen.
 
 | Name | Valid? | Reason |
 |------|--------|--------|
@@ -229,25 +214,29 @@ DELETE FROM global_settings WHERE key IN ('auth_username', 'auth_password_hash',
 
 **Symptom:** The delete button is missing or disabled for certain networks.
 
-**Expected behavior:** Docker system networks (`bridge`, `host`, `none`) cannot be deleted — they are created by the Docker daemon and are required for normal operation. Sencho intentionally hides the delete action for these networks.
+**Expected behavior:** Docker system networks (`bridge`, `host`, `none`) cannot be deleted. They are created by the Docker daemon and are required for normal operation. Sencho intentionally hides the delete action for these networks.
 
-If you need to clean up unused *user-created* networks, use the **Prune Networks** button at the top of the Networks tab.
+If you need to clean up unused *user-created* networks, use the **Prune Dead Networks** button in the Quick Clean section at the top of the Resources page.
 
 ---
 
 ## Network inspect shows "Network not found"
 
-**Symptom:** Clicking the inspect (eye) icon on a network row returns a "not found" error.
+**Symptom:** Clicking the inspect icon (eye) on a network row returns a "not found" error.
 
 **Cause:** The network was deleted between the time the list loaded and when you clicked inspect. This can happen if another user or an external tool removed the network.
 
-**Fix:** Refresh the Resources page to reload the current network list.
+**Fix:** Switch to a different tab and back (or click another nav item and return to Resources) to reload the network list.
 
 ---
 
 ## Network topology is empty
 
-**Symptom:** The Topology tab shows "No user-created networks found" even though you have running containers.
+**Symptom:** Switching to the **Topology** view mode on the Networks tab shows "No user-created networks found" even though you have running containers.
+
+<Note>
+  Network Topology requires a Skipper or Admiral license.
+</Note>
 
 **Possible causes:**
 
@@ -272,29 +261,6 @@ After deploying, the topology will show these networks and their connected conta
 
 ---
 
-## Checking the health endpoint
-
-Sencho exposes a health endpoint for monitoring and container health checks:
-
-```bash
-curl http://localhost:3000/api/health
-# {"status":"ok","uptime":12345.67}
-```
-
-A `200` response confirms the backend is running. Use this endpoint in your uptime monitor or load balancer health check.
-
----
-
-## Getting logs from the Sencho container itself
-
-```bash
-docker logs sencho
-# or, to follow:
-docker logs -f sencho
-```
-
-The backend logs all route errors and service failures to stdout. This is the first place to look when the UI shows an error with no useful message.
-
 ## "Open App" doesn't appear in the context menu
 
 **Symptom:** You right-click a stack in the sidebar but "Open App" is not listed.
@@ -305,6 +271,8 @@ The backend logs all route errors and service failures to stdout. This is the fi
 2. At least one container in the stack has a **published port** (a port mapped to the host).
 
 If your container uses host networking, doesn't expose ports, or only binds to internal Docker networks, the option won't appear. You can still access the app manually by checking the container's port mappings in the stack detail view.
+
+---
 
 ## Remote update button does not appear
 
@@ -339,12 +307,12 @@ docker compose pull && docker compose up -d
 
 ## Stack labels are not visible in the sidebar
 
-**Symptom:** You created labels in Settings but no label pills appear in the sidebar.
+**Symptom:** You assigned labels to stacks but no label pills appear in the sidebar.
 
 **Checks:**
 
-1. **License tier**: Labels require a Skipper or Admiral license. Verify your tier in **Settings > License**.
-2. **At least one label must exist**: The pill bar only appears when you have created at least one label in **Settings > Labels**.
+1. **License tier**: Labels require a Skipper or Admiral license. Verify your tier in **Profile > Settings > License**.
+2. **At least one label must exist**: Labels are managed in **Profile > Settings > Labels**. Create at least one label before assigning it to stacks.
 3. **Downgrade**: If you downgraded from a paid tier to Community, the label UI is hidden but your data is preserved. Upgrading again restores all labels and assignments.
 
 ---
@@ -356,7 +324,7 @@ docker compose pull && docker compose up -d
 **Checks:**
 
 1. **Stack name match**: The stack name in the routing rule must match exactly. Stack names are case-sensitive and correspond to the directory name in your compose folder.
-2. **Rule is enabled**: Check that the route's toggle is turned on in **Settings > Routing**.
+2. **Rule is enabled**: Check that the route's toggle is turned on in **Profile > Settings > Routing**.
 3. **License tier**: Notification Routing requires an Admiral license. Skipper and Community users can only use global channels.
 
 ---
@@ -373,7 +341,7 @@ docker compose pull && docker compose up -d
 
 **Symptom:** LDAP connection test fails with a TLS/certificate error.
 
-**Fix:** If your LDAP server uses a self-signed certificate, set `SSO_LDAP_TLS_REJECT_UNAUTHORIZED=false` or toggle off "Verify TLS certificate" in **Settings > SSO**. For production, install a trusted certificate instead.
+**Fix:** If your LDAP server uses a self-signed certificate, toggle off "Verify TLS certificate" in **Profile > Settings > SSO**. For production, install a trusted certificate instead.
 
 ---
 
@@ -385,7 +353,7 @@ docker compose pull && docker compose up -d
 
 1. `SSO_CALLBACK_URL` is set to your external URL (e.g., `https://sencho.example.com`)
 2. The callback URL in your provider's settings is `https://sencho.example.com/api/auth/sso/oidc/<provider>/callback`
-3. Protocol matches - don't mix `http` and `https`
+3. Protocol matches: don't mix `http` and `https`
 
 ---
 
@@ -395,12 +363,37 @@ docker compose pull && docker compose up -d
 
 **Cause:** SSO providers only appear on the login page when they are both **configured** (saved with valid credentials) and **enabled** (toggle is on).
 
-**Fix:** Go to **Settings > SSO** and verify the provider has an **Active** badge and its toggle is enabled.
+**Fix:** Open **Profile > Settings > SSO** and verify the provider has an **Active** badge and its toggle is enabled.
 
 ---
 
 ## "Check for updates" shows rate-limit error
 
-**Symptom:** Clicking "Check for updates" shows a toast error about waiting before refreshing.
+**Symptom:** Clicking "Check for updates" shows a toast error about waiting before checking again.
 
-**Cause:** Manual update checks are rate-limited to prevent excessive requests to container registries. Wait for the cooldown period to elapse before checking again. Automatic background checks run every 6 hours regardless of this limit.
+**Cause:** Manual update checks are rate-limited to prevent excessive requests to container registries. The cooldown between manual checks is 2 minutes. Wait for it to elapse before checking again. Automatic background checks run every 6 hours regardless of this limit.
+
+---
+
+## Checking the health endpoint
+
+Sencho exposes a health endpoint for monitoring and container health checks:
+
+```bash
+curl http://localhost:3000/api/health
+# {"status":"ok","uptime":12345.67}
+```
+
+A `200` response confirms the backend is running. Use this endpoint in your uptime monitor or load balancer health check.
+
+---
+
+## Getting logs from the Sencho container itself
+
+```bash
+docker logs sencho
+# or, to follow:
+docker logs -f sencho
+```
+
+The backend logs all route errors and service failures to stdout. This is the first place to look when the UI shows an error with no useful message.
