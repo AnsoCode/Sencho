@@ -47,7 +47,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { isAdmin } = useAuth();
-    const { license, isPro } = useLicense();
+    const { license, isPaid } = useLicense();
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>(initialSection || 'account');
 
@@ -273,7 +273,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
             case 'notification-routing':
                 return <NotificationRoutingSection />;
             case 'webhooks':
-                return <WebhooksSection isPro={isPro} />;
+                return <WebhooksSection isPaid={isPaid} />;
             case 'developer':
                 return (
                     <DeveloperSection
@@ -303,7 +303,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         }
     };
 
-    const isTeamPro = isPro && license?.variant === 'team';
+    const isAdmiral = isPaid && license?.variant === 'team';
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -332,19 +332,19 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
 
                         {/* Users / SSO / API Tokens / Registries */}
                         {!isRemote && isAdmin && (
-                            <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" locked={!isPro} />
+                            <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" locked={!isPaid} />
                         )}
                         {!isRemote && isAdmin && (
-                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" locked={!isTeamPro} />
+                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" locked={!isAdmiral} />
                         )}
                         {!isRemote && isAdmin && (
-                            <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" locked={!isTeamPro} />
+                            <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" locked={!isAdmiral} />
                         )}
                         {!isRemote && isAdmin && (
-                            <NavButton section="registries" icon={<Database className="w-4 h-4 mr-2" />} label="Registries" locked={!isTeamPro} />
+                            <NavButton section="registries" icon={<Database className="w-4 h-4 mr-2" />} label="Registries" locked={!isAdmiral} />
                         )}
                         {!isRemote && (
-                            <NavButton section="labels" icon={<Tag className="w-4 h-4 mr-2" />} label="Labels" locked={!isPro} />
+                            <NavButton section="labels" icon={<Tag className="w-4 h-4 mr-2" />} label="Labels" locked={!isPaid} />
                         )}
 
                         {!isRemote && isAdmin && <Separator className="my-1.5" />}
@@ -358,10 +358,10 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         />
                         <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
                         {!isRemote && isAdmin && (
-                            <NavButton section="notification-routing" icon={<GitBranch className="w-4 h-4 mr-2" />} label="Routing" locked={!isTeamPro} />
+                            <NavButton section="notification-routing" icon={<GitBranch className="w-4 h-4 mr-2" />} label="Routing" locked={!isAdmiral} />
                         )}
                         {!isRemote && (
-                            <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPro} />
+                            <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPaid} />
                         )}
                         <NavButton
                             section="developer"

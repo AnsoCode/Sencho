@@ -838,31 +838,31 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 
 // --- License Routes (local-only, never proxied) ---
 
-// Pro feature guard: returns false and sends 403 if not Pro tier.
+// Paid feature guard: returns false and sends 403 if not on a paid tier (Skipper or Admiral).
 // Checks req.proxyTier first (set by authMiddleware for trusted node proxy requests),
 // falling back to the local LicenseService tier for direct access.
-const requirePro = (req: Request, res: Response): boolean => {
+const requirePaid = (req: Request, res: Response): boolean => {
   const tier = req.proxyTier !== undefined ? req.proxyTier : LicenseService.getInstance().getTier();
-  if (tier !== 'pro') {
-    res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+  if (tier !== 'paid') {
+    res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
     return false;
   }
   return true;
 };
 
-// Admiral feature guard: requires Pro tier with team variant.
+// Admiral feature guard: requires paid tier with team variant.
 // Checks req.proxyTier/proxyVariant first (set by authMiddleware for trusted node proxy
 // requests), falling back to the local LicenseService for direct access.
 const requireAdmiral = (req: Request, res: Response): boolean => {
   const ls = LicenseService.getInstance();
   const tier = req.proxyTier !== undefined ? req.proxyTier : ls.getTier();
   const variant = req.proxyVariant !== undefined ? req.proxyVariant : ls.getVariant();
-  if (tier !== 'pro') {
-    res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+  if (tier !== 'paid') {
+    res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
     return false;
   }
   if (variant !== 'team') {
-    res.status(403).json({ error: 'This feature requires Sencho Admiral.', code: 'ADMIRAL_REQUIRED' });
+    res.status(403).json({ error: 'This feature requires a Sencho Admiral license.', code: 'ADMIRAL_REQUIRED' });
     return false;
   }
   return true;
@@ -876,9 +876,9 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   return true;
 };
 
-// Tier gate for scheduled tasks: 'update' action requires Pro, everything else requires Admiral.
+// Tier gate for scheduled tasks: 'update' action requires Skipper+, everything else requires Admiral.
 const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
-  if (action === 'update') return requirePro(req, res);
+  if (action === 'update') return requirePaid(req, res);
   return requireAdmiral(req, res);
 };
 
@@ -1161,9 +1161,9 @@ app.get('/api/fleet/overview', async (_req: Request, res: Response): Promise<voi
   }
 });
 
-// Pro-gated: detailed stack info per node
+// Paid-gated: detailed stack info per node
 app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
@@ -1199,9 +1199,9 @@ app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): P
   }
 });
 
-// Pro-gated: container details for a specific stack on a specific node
+// Paid-gated: container details for a specific stack on a specific node
 app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
@@ -1245,7 +1245,7 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Requ
 
 // Fleet Update Status — returns version comparison and active update status for all nodes
 app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promise<void> => {
-  if (!requirePro(_req, res)) return;
+  if (!requirePaid(_req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
@@ -1309,7 +1309,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
 
 // Trigger update on a specific node
 app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
     const db = DatabaseService.getInstance();
@@ -1374,7 +1374,7 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
 
 // Trigger update on all outdated nodes
 app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
@@ -1537,7 +1537,7 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
   }
 }
 
-// ─── Fleet Snapshots (Pro) ───
+// ─── Fleet Snapshots (Skipper+) ───
 
 interface SnapshotNodeData {
   nodeId: number;
@@ -1629,7 +1629,7 @@ async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
 // Create fleet snapshot
 app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const { description = '' } = req.body;
@@ -1702,7 +1702,7 @@ app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<vo
 
 // List fleet snapshots
 app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
@@ -1719,7 +1719,7 @@ app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<voi
 
 // Get snapshot detail
 app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -1764,7 +1764,7 @@ app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise
 // Restore a stack from snapshot
 app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const snapshotId = parseInt(req.params.id as string, 10);
@@ -1869,7 +1869,7 @@ app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response)
 // Delete snapshot
 app.delete('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
 
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -1887,11 +1887,11 @@ app.delete('/api/fleet/snapshots/:id', async (req: Request, res: Response): Prom
   }
 });
 
-// ─── Webhooks (Pro) ─── CRUD requires auth + Pro, trigger is public with HMAC ───
+// ─── Webhooks (Skipper+) ─── CRUD requires auth + paid tier, trigger is public with HMAC ───
 
-// Webhook CRUD (auth + Pro required)
+// Webhook CRUD (auth + paid tier required)
 app.get('/api/webhooks', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
-  if (!requirePro(_req, res)) return;
+  if (!requirePaid(_req, res)) return;
   try {
     const webhooks = DatabaseService.getInstance().getWebhooks();
     const svc = WebhookService.getInstance();
@@ -1904,7 +1904,7 @@ app.get('/api/webhooks', authMiddleware, async (_req: Request, res: Response): P
 
 app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const { name, stack_name, action, enabled } = req.body;
     if (!name || !stack_name || !action) {
@@ -1933,7 +1933,7 @@ app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): P
 
 app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     const webhook = DatabaseService.getInstance().getWebhook(id);
@@ -1956,7 +1956,7 @@ app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response)
 
 app.delete('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     DatabaseService.getInstance().deleteWebhook(id);
@@ -1968,7 +1968,7 @@ app.delete('/api/webhooks/:id', authMiddleware, async (req: Request, res: Respon
 });
 
 app.get('/api/webhooks/:id/history', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     const executions = DatabaseService.getInstance().getWebhookExecutions(id);
@@ -1991,9 +1991,9 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
       return;
     }
 
-    // Pro gate - trigger only works with an active Pro license
-    if (LicenseService.getInstance().getTier() !== 'pro') {
-      res.status(403).json({ error: 'This feature requires Sencho Pro.', code: 'PRO_REQUIRED' });
+    // Paid tier gate - trigger only works with an active Skipper or Admiral license
+    if (LicenseService.getInstance().getTier() !== 'paid') {
+      res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
       return;
     }
 
@@ -2018,7 +2018,7 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
     // Execute asynchronously - return 202 immediately
     res.status(202).json({ message: 'Webhook accepted', action });
 
-    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
     svc.execute(id, action, triggerSource, atomic).catch(err => {
       console.error(`[Webhooks] Execution error for webhook ${id}:`, err);
     });
@@ -2028,7 +2028,7 @@ app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promi
   }
 });
 
-// --- User Management (local-only, admin + Pro gated for creation) ---
+// --- User Management (local-only, admin + paid tier gated for creation) ---
 
 app.get('/api/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (req.apiTokenScope) {
@@ -2051,7 +2051,7 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const { username, password, role } = req.body;
 
@@ -2626,9 +2626,9 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
-      // Admiral license gate — host console requires Pro (team variant)
+      // Admiral license gate: host console requires Admiral (paid + team variant)
       const ls = LicenseService.getInstance();
-      if (ls.getTier() !== 'pro' || ls.getVariant() !== 'team') {
+      if (ls.getTier() !== 'paid' || ls.getVariant() !== 'team') {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
@@ -2736,10 +2736,10 @@ app.get('/api/containers', async (req: Request, res: Response) => {
   }
 });
 
-// --- Label Routes (Pro-gated) ---
+// --- Label Routes (Skipper+) ---
 
 app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const nodeId = req.nodeId ?? 0;
     const labels = DatabaseService.getInstance().getLabels(nodeId);
@@ -2751,7 +2751,7 @@ app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Prom
 });
 
 app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const nodeId = req.nodeId ?? 0;
     const { name, color } = req.body;
@@ -2782,7 +2782,7 @@ app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Pro
 });
 
 app.get('/api/labels/assignments', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const nodeId = req.nodeId ?? 0;
     const assignments = DatabaseService.getInstance().getLabelsForStacks(nodeId);
@@ -2794,7 +2794,7 @@ app.get('/api/labels/assignments', authMiddleware, async (req: Request, res: Res
 });
 
 app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
@@ -2836,7 +2836,7 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
 });
 
 app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
@@ -2850,7 +2850,7 @@ app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response
 });
 
 app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     if (!isValidStackName(stackName)) {
@@ -2874,7 +2874,7 @@ app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, re
 });
 
 app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -3275,12 +3275,12 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
-    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
     res.json({ message: 'Deployed successfully' });
   } catch (error: any) {
     console.error('Failed to deploy stack:', error);
-    const rolledBack = LicenseService.getInstance().getTier() === 'pro';
+    const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     res.status(500).json({ error: error.message || 'Failed to deploy stack', rolledBack });
   }
 });
@@ -3373,21 +3373,21 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
-    const atomic = LicenseService.getInstance().getTier() === 'pro';
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     res.json({ status: 'Update completed' });
   } catch (error) {
-    const rolledBack = LicenseService.getInstance().getTier() === 'pro';
+    const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     res.status(500).json({ error: 'Failed to update', rolledBack });
   }
 });
 
-// Manual rollback endpoint (Pro + Admin)
+// Manual rollback endpoint (Skipper+ and Admin)
 app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
@@ -4377,7 +4377,7 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
 
 app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     let tasks = DatabaseService.getInstance().getScheduledTasks();
     // Skipper users only see 'update' tasks; Admiral sees all
@@ -4489,7 +4489,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
 
 app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4505,7 +4505,7 @@ app.get('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4604,7 +4604,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4624,7 +4624,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
 
 app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4653,7 +4653,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
 
 app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4676,7 +4676,7 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
 
 app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -4719,7 +4719,7 @@ app.get('/api/scheduled-tasks/:id/runs/export', (req: Request, res: Response): v
 
 app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePro(req, res)) return;
+  if (!requirePaid(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid task ID' }); return; }
@@ -5147,7 +5147,7 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
 
     // 4. Deploy the stack with atomic rollback
     try {
-      const atomic = LicenseService.getInstance().getTier() === 'pro';
+      const atomic = LicenseService.getInstance().getTier() === 'paid';
       await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
       res.json({ success: true, message: 'Template deployed successfully' });
     } catch (deployError: any) {

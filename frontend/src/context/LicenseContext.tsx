@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiFetch } from '@/lib/api';
 
-export type LicenseTier = 'community' | 'pro';
+export type LicenseTier = 'community' | 'paid';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
 export type LicenseVariant = 'personal' | 'team' | null;
@@ -21,7 +21,7 @@ export interface LicenseInfo {
 
 interface LicenseContextType {
     license: LicenseInfo | null;
-    isPro: boolean;
+    isPaid: boolean;
     loading: boolean;
     refresh: () => Promise<void>;
     activate: (licenseKey: string) => Promise<{ success: boolean; error?: string }>;
@@ -87,10 +87,10 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const isPro = license?.tier === 'pro';
+    const isPaid = license?.tier === 'paid';
 
     return (
-        <LicenseContext.Provider value={{ license, isPro, loading, refresh, activate, deactivate }}>
+        <LicenseContext.Provider value={{ license, isPaid, loading, refresh, activate, deactivate }}>
             {children}
         </LicenseContext.Provider>
     );

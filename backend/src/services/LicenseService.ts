@@ -2,12 +2,12 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
 
-export type LicenseTier = 'community' | 'pro';
+export type LicenseTier = 'community' | 'paid';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
 export type LicenseVariant = 'personal' | 'team' | null;
 
-const VALID_TIERS: readonly string[] = ['community', 'pro'] satisfies readonly LicenseTier[];
+const VALID_TIERS: readonly string[] = ['community', 'paid'] satisfies readonly LicenseTier[];
 const VALID_VARIANTS: readonly string[] = ['personal', 'team'] satisfies readonly LicenseVariant[];
 
 export function isLicenseTier(value: unknown): value is LicenseTier {
@@ -141,7 +141,7 @@ export class LicenseService {
             trialEnd.setDate(trialEnd.getDate() + TRIAL_DURATION_DAYS);
             db.setSystemState('license_status', 'trial');
             db.setSystemState('license_valid_until', trialEnd.toISOString());
-            console.log(`[License] 14-day Pro trial started. Expires: ${trialEnd.toISOString()}`);
+            console.log(`[License] 14-day Skipper trial started. Expires: ${trialEnd.toISOString()}`);
         }
 
         this.startPeriodicValidation();
@@ -160,7 +160,7 @@ export class LicenseService {
         if (status === 'trial') {
             const validUntil = db.getSystemState('license_valid_until');
             if (validUntil && new Date(validUntil) > new Date()) {
-                return 'pro';
+                return 'paid';
             }
             // Trial expired - update status
             db.setSystemState('license_status', 'community');
@@ -186,7 +186,7 @@ export class LicenseService {
                 return 'community';
             }
 
-            return 'pro';
+            return 'paid';
         }
 
         return 'community';

@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
-import { ProGate } from '@/components/ProGate';
+import { PaidGate } from '@/components/PaidGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
 import { TierBadge } from '@/components/TierBadge';
 import {
@@ -38,7 +38,7 @@ interface WebhookExecution {
     executed_at: number;
 }
 
-export function WebhooksSection({ isPro }: { isPro: boolean }) {
+export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
     const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -134,21 +134,21 @@ export function WebhooksSection({ isPro }: { isPro: boolean }) {
         toast.success(`${label} copied to clipboard.`);
     };
 
-    if (!isPro) {
+    if (!isPaid) {
         return (
             <div className="space-y-6">
                 <div>
                     <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
                     <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
                 </div>
-                <ProGate featureName="Webhooks">
+                <PaidGate featureName="Webhooks">
                   <CapabilityGate capability="webhooks" featureName="Webhooks">
                     <div className="space-y-3">
                         <div className="h-16 rounded-lg border bg-card" />
                         <div className="h-16 rounded-lg border bg-card" />
                     </div>
                   </CapabilityGate>
-                </ProGate>
+                </PaidGate>
             </div>
         );
     }

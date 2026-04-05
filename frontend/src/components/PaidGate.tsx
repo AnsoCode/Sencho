@@ -3,7 +3,7 @@ import { Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLicense } from '@/context/LicenseContext';
 
-interface ProGateProps {
+interface PaidGateProps {
     children: ReactNode;
     featureName?: string;
 }
@@ -16,11 +16,11 @@ function isDismissedFromStorage(): boolean {
     return !!dismissedAt && Date.now() - parseInt(dismissedAt, 10) < DISMISS_DURATION_MS;
 }
 
-export function ProGate({ children, featureName = 'This feature' }: ProGateProps) {
-    const { isPro } = useLicense();
+export function PaidGate({ children, featureName = 'This feature' }: PaidGateProps) {
+    const { isPaid } = useLicense();
     const [dismissed, setDismissed] = useState(isDismissedFromStorage);
 
-    if (isPro) return <>{children}</>;
+    if (isPaid) return <>{children}</>;
 
     if (dismissed) {
         return (
@@ -31,7 +31,7 @@ export function ProGate({ children, featureName = 'This feature' }: ProGateProps
                 <div className="absolute inset-0 flex items-start justify-center pt-8">
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs">
                         <Compass className="w-3 h-3" />
-                        Upgrade to Pro to unlock
+                        Upgrade to unlock more features
                     </div>
                 </div>
             </div>
@@ -44,9 +44,9 @@ export function ProGate({ children, featureName = 'This feature' }: ProGateProps
                 <Compass className="w-8 h-8 text-muted-foreground" />
             </div>
             <div className="text-center max-w-md">
-                <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Pro</h3>
+                <h3 className="text-lg font-semibold mb-2">{featureName} requires a paid license</h3>
                 <p className="text-sm text-muted-foreground">
-                    Unlock advanced features like fleet management, viewer accounts, and more with a Sencho Pro license.
+                    Unlock features like fleet management, viewer accounts, and more with a Skipper or Admiral license.
                 </p>
             </div>
             <div className="flex gap-3">
@@ -65,7 +65,7 @@ export function ProGate({ children, featureName = 'This feature' }: ProGateProps
                     onClick={() => window.open('https://sencho.io/pricing', '_blank')}
                 >
                     <Compass className="w-4 h-4 mr-2" />
-                    Get Sencho Pro
+                    View Plans
                 </Button>
             </div>
         </div>

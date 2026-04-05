@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { RefreshCw, Plus, Pencil, Trash2, History, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch, fetchForNode } from '@/lib/api';
-import { ProGate } from '@/components/ProGate';
+import { PaidGate } from '@/components/PaidGate';
 import cronstrue from 'cronstrue';
 
 interface ScheduledTask {
@@ -590,8 +590,8 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
 
 export default function AutoUpdatePoliciesView({ filterNodeId, onClearFilter }: AutoUpdatePoliciesProps) {
   return (
-    <ProGate featureName="Auto-Update Policies">
+    <PaidGate featureName="Auto-Update Policies">
       <AutoUpdatePoliciesContent filterNodeId={filterNodeId} onClearFilter={onClearFilter} />
-    </ProGate>
+    </PaidGate>
   );
 }

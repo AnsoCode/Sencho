@@ -99,7 +99,7 @@ describe('POST /api/system/console-token', () => {
   // Console-token requires Admiral tier — mock LicenseService for the happy-path test
   beforeAll(async () => {
     const { LicenseService } = await import('../services/LicenseService');
-    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('pro');
+    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
     vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('team');
   });
 

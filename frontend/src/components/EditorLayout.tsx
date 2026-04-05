@@ -85,7 +85,7 @@ const formatBytes = (bytes: number) => {
 
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
-  const { isPro, license } = useLicense();
+  const { isPaid, license } = useLicense();
   const { nodes, activeNode, setActiveNode, nodeMeta } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -220,16 +220,16 @@ export default function EditorLayout() {
       { value: 'templates', label: 'App Store', icon: CloudDownload },
       { value: 'global-observability', label: 'Logs', icon: Activity },
     );
-    if (isPro && isAdmin) {
+    if (isPaid && isAdmin) {
       items.push({ value: 'auto-updates', label: 'Auto-Update', icon: RefreshCw });
     }
-    if (isPro && license?.variant === 'team') {
+    if (isPaid && license?.variant === 'team') {
       if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
       if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
       if (isAdmin) items.push({ value: 'scheduled-ops', label: 'Schedules', icon: Clock });
     }
     return items;
-  }, [isAdmin, isPro, license?.variant, can]);
+  }, [isAdmin, isPaid, license?.variant, can]);
 
   // Only highlight a tab if activeView matches a nav item
   const navTabValue = navItems.some(i => i.value === activeView) ? activeView : undefined;
@@ -393,7 +393,7 @@ export default function EditorLayout() {
   };
 
   const refreshLabels = async () => {
-    if (!isPro) return;
+    if (!isPaid) return;
     try {
       const [labelsRes, assignmentsRes] = await Promise.all([
         apiFetch('/labels'),
@@ -866,8 +866,8 @@ export default function EditorLayout() {
         setContainers([]);
       }
 
-      // Load backup info (Pro only)
-      if (isPro) {
+      // Load backup info (Skipper+ only)
+      if (isPaid) {
         try {
           const backupRes = await apiFetch(`/stacks/${filename}/backup`);
           if (backupRes.ok) setBackupInfo(await backupRes.json());
@@ -1001,7 +1001,7 @@ export default function EditorLayout() {
         setContainers(Array.isArray(conts) ? conts : []);
       }
       // Refresh backup info
-      if (isPro) {
+      if (isPaid) {
         try {
           const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
           if (backupRes.ok) setBackupInfo(await backupRes.json());
@@ -1010,7 +1010,7 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to deploy:', error);
       const msg = (error as Error).message || 'Failed to deploy stack';
-      toast.error(isPro ? `${msg} - automatically rolled back to previous version.` : msg);
+      toast.error(isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
       clearStackAction(stackFile);
       refreshStacks(true);
@@ -1175,7 +1175,7 @@ export default function EditorLayout() {
         setContainers(Array.isArray(conts) ? conts : []);
       }
       if (action === 'update') fetchImageUpdates();
-      if (action === 'deploy' && isPro) {
+      if (action === 'deploy' && isPaid) {
         try {
           const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
           if (backupRes.ok) setBackupInfo(await backupRes.json());
@@ -1184,7 +1184,7 @@ export default function EditorLayout() {
     } catch (error) {
       console.error(`Failed to ${action}:`, error);
       const msg = (error as Error).message || `Failed to ${action} stack`;
-      toast.error(action === 'deploy' && isPro ? `${msg} - automatically rolled back to previous version.` : msg);
+      toast.error(action === 'deploy' && isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
       clearStackAction(stackFile);
       refreshStacks(true);
@@ -1426,7 +1426,7 @@ export default function EditorLayout() {
               {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'}K
             </kbd>
           </div>
-          {isPro && labels.length > 0 && (
+          {isPaid && labels.length > 0 && (
             <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
               {labels.map(label => (
                 <ContextMenu key={label.id}>
@@ -1500,7 +1500,7 @@ export default function EditorLayout() {
                                   : '--'}
                               </span>
                               <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
-                              {isPro && stackLabelMap[file]?.length > 0 && (
+                              {isPaid && stackLabelMap[file]?.length > 0 && (
                                 <span className="flex items-center gap-0.5 shrink-0 ml-1">
                                   {stackLabelMap[file].map(l => (
                                     <LabelDot key={l.id} color={l.color} />
@@ -1527,7 +1527,7 @@ export default function EditorLayout() {
                                       <BellRing className="h-4 w-4 mr-2" />
                                       Alerts
                                     </DropdownMenuItem>
-                                    {isPro && (
+                                    {isPaid && (
                                       <LabelAssignPopover
                                         stackName={file}
                                         allLabels={labels}
@@ -1610,7 +1610,7 @@ export default function EditorLayout() {
                           <BellRing className="h-4 w-4 mr-2" />
                           Alerts
                         </ContextMenuItem>
-                        {isPro && (
+                        {isPaid && (
                           <ContextMenuSub>
                             <ContextMenuSubTrigger>
                               <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
@@ -1931,7 +1931,7 @@ export default function EditorLayout() {
                               <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
-                            {isPro && backupInfo.exists && (
+                            {isPaid && backupInfo.exists && (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>

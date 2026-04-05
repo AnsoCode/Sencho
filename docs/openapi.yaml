@@ -25,8 +25,8 @@ info:
 
     ## License Tiers
 
-    Some endpoints require a Pro or Admiral license. Requests to gated endpoints
-    on Community Edition return `403` with `code: "PRO_REQUIRED"` or `code: "ADMIRAL_REQUIRED"`.
+    Some endpoints require a Skipper or Admiral license. Requests to gated endpoints
+    on Community Edition return `403` with `code: "PAID_REQUIRED"` or `code: "ADMIRAL_REQUIRED"`.
   contact:
     name: Sencho
     url: https://sencho.io
@@ -59,11 +59,11 @@ tags:
   - name: API Tokens
     description: Manage scoped API tokens (Admiral license required)
   - name: Webhooks
-    description: Configure and trigger deployment webhooks (Pro license required)
+    description: Configure and trigger deployment webhooks (Skipper or Admiral license required)
   - name: Nodes
     description: Manage local and remote Sencho nodes
   - name: Fleet
-    description: Multi-node fleet overview and snapshots (Pro license required)
+    description: Multi-node fleet overview and snapshots (Skipper or Admiral license required)
   - name: Scheduled Tasks
     description: Configure recurring automated operations (Admiral license required)
   - name: Registries
@@ -131,8 +131,8 @@ components:
           description: Human-readable error message.
         code:
           type: string
-          description: Machine-readable error code (e.g., `PRO_REQUIRED`, `SCOPE_DENIED`).
-          enum: [PRO_REQUIRED, ADMIRAL_REQUIRED, SCOPE_DENIED]
+          description: Machine-readable error code (e.g., `PAID_REQUIRED`, `SCOPE_DENIED`).
+          enum: [PAID_REQUIRED, ADMIRAL_REQUIRED, SCOPE_DENIED]
 
     SuccessMessage:
       type: object
@@ -503,8 +503,8 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
           example:
-            error: "This feature requires Sencho Pro."
-            code: "PRO_REQUIRED"
+            error: "This feature requires a Skipper or Admiral license."
+            code: "PAID_REQUIRED"
     NotFound:
       description: Resource not found.
       content:
@@ -931,7 +931,7 @@ paths:
       tags: [Stacks]
       summary: Deploy stack
       description: |
-        Runs `docker compose up -d` for the stack. On Pro tier, uses atomic deployment
+        Runs `docker compose up -d` for the stack. On Skipper/Admiral tier, uses atomic deployment
         with automatic rollback on failure. Requires `stack:deploy` permission.
       parameters:
         - $ref: "#/components/parameters/stackName"
@@ -959,7 +959,7 @@ paths:
                     type: string
                   rolledBack:
                     type: boolean
-                    description: Whether the stack was automatically rolled back (Pro tier).
+                    description: Whether the stack was automatically rolled back (Skipper/Admiral tier).
 
   /api/stacks/{stackName}/down:
     post:
@@ -1075,7 +1075,7 @@ paths:
       summary: Pull and recreate stack
       description: |
         Pulls latest images and recreates containers (`docker compose pull && up -d`).
-        On Pro tier, uses atomic update with automatic rollback on failure.
+        On Skipper/Admiral tier, uses atomic update with automatic rollback on failure.
         Requires `stack:deploy` permission.
       parameters:
         - $ref: "#/components/parameters/stackName"
@@ -1112,7 +1112,7 @@ paths:
       operationId: rollbackStack
       tags: [Stacks]
       summary: Rollback stack
-      description: Restores the stack to its previous deployment state. Requires Pro license and `stack:deploy` permission.
+      description: Restores the stack to its previous deployment state. Requires Skipper or Admiral license and `stack:deploy` permission.
       parameters:
         - $ref: "#/components/parameters/stackName"
         - $ref: "#/components/parameters/nodeId"
@@ -1410,7 +1410,7 @@ paths:
       operationId: listWebhooks
       tags: [Webhooks]
       summary: List webhooks
-      description: Returns all configured webhooks with masked secrets. Requires Pro license.
+      description: Returns all configured webhooks with masked secrets. Requires Skipper or Admiral license.
       responses:
         "200":
           description: Array of webhook objects.
@@ -1430,7 +1430,7 @@ paths:
       summary: Create webhook
       description: |
         Creates a new webhook for a stack. The webhook secret is auto-generated and only
-        returned in the creation response. Requires Pro license and admin role.
+        returned in the creation response. Requires Skipper or Admiral license and admin role.
       requestBody:
         required: true
         content:
@@ -1483,7 +1483,7 @@ paths:
       operationId: updateWebhook
       tags: [Webhooks]
       summary: Update webhook
-      description: Updates webhook configuration. Requires Pro license and admin role.
+      description: Updates webhook configuration. Requires Skipper or Admiral license and admin role.
       parameters:
         - $ref: "#/components/parameters/idPath"
       requestBody:
@@ -1525,7 +1525,7 @@ paths:
       operationId: deleteWebhook
       tags: [Webhooks]
       summary: Delete webhook
-      description: Permanently deletes a webhook. Requires Pro license and admin role.
+      description: Permanently deletes a webhook. Requires Skipper or Admiral license and admin role.
       parameters:
         - $ref: "#/components/parameters/idPath"
       responses:
@@ -1547,7 +1547,7 @@ paths:
       operationId: getWebhookHistory
       tags: [Webhooks]
       summary: Get webhook execution history
-      description: Returns the execution log for a webhook. Requires Pro license.
+      description: Returns the execution log for a webhook. Requires Skipper or Admiral license.
       parameters:
         - $ref: "#/components/parameters/idPath"
       responses:
@@ -1882,7 +1882,7 @@ paths:
       operationId: getFleetNodeStacks
       tags: [Fleet]
       summary: List stacks on a fleet node
-      description: Returns stack names from a specific fleet node. Requires Pro license.
+      description: Returns stack names from a specific fleet node. Requires Skipper or Admiral license.
       parameters:
         - name: nodeId
           in: path
@@ -1922,7 +1922,7 @@ paths:
       operationId: getFleetNodeStackContainers
       tags: [Fleet]
       summary: List containers in a fleet node stack
-      description: Returns containers for a specific stack on a specific fleet node. Requires Pro license.
+      description: Returns containers for a specific stack on a specific fleet node. Requires Skipper or Admiral license.
       parameters:
         - name: nodeId
           in: path
@@ -1992,7 +1992,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/ProRequired"
+          $ref: "#/components/responses/Forbidden"
 
   /api/fleet/nodes/{nodeId}/update:
     post:
@@ -2019,7 +2019,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/ProRequired"
+          $ref: "#/components/responses/Forbidden"
         "404":
           description: Node not found.
           content:
@@ -2066,14 +2066,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/ProRequired"
+          $ref: "#/components/responses/Forbidden"
 
   /api/fleet/snapshots:
     post:
       operationId: createFleetSnapshot
       tags: [Fleet]
       summary: Create fleet snapshot
-      description: Creates a point-in-time backup of all compose files across all nodes. Requires Pro license and admin role.
+      description: Creates a point-in-time backup of all compose files across all nodes. Requires Skipper or Admiral license and admin role.
       requestBody:
         required: false
         content:
@@ -2100,7 +2100,7 @@ paths:
       operationId: listFleetSnapshots
       tags: [Fleet]
       summary: List fleet snapshots
-      description: Returns paginated fleet snapshots. Requires Pro license.
+      description: Returns paginated fleet snapshots. Requires Skipper or Admiral license.
       parameters:
         - name: limit
           in: query
@@ -2138,7 +2138,7 @@ paths:
       operationId: getFleetSnapshot
       tags: [Fleet]
       summary: Get snapshot details
-      description: Returns full snapshot details including all captured files grouped by node and stack. Requires Pro license.
+      description: Returns full snapshot details including all captured files grouped by node and stack. Requires Skipper or Admiral license.
       parameters:
         - $ref: "#/components/parameters/idPath"
       responses:
@@ -2158,7 +2158,7 @@ paths:
       operationId: deleteFleetSnapshot
       tags: [Fleet]
       summary: Delete snapshot
-      description: Permanently deletes a fleet snapshot. Requires Pro license and admin role.
+      description: Permanently deletes a fleet snapshot. Requires Skipper or Admiral license and admin role.
       parameters:
         - $ref: "#/components/parameters/idPath"
       responses:
@@ -2180,7 +2180,7 @@ paths:
       operationId: restoreFleetSnapshot
       tags: [Fleet]
       summary: Restore from snapshot
-      description: Restores a specific stack on a specific node from the snapshot. Optionally redeploys after restore. Requires Pro license and admin role.
+      description: Restores a specific stack on a specific node from the snapshot. Optionally redeploys after restore. Requires Skipper or Admiral license and admin role.
       parameters:
         - $ref: "#/components/parameters/idPath"
       requestBody:

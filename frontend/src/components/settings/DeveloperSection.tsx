@@ -34,7 +34,7 @@ function SettingsSkeleton() {
 }
 
 export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, isLoading, isRemote }: DeveloperSectionProps) {
-    const { isPro, license } = useLicense();
+    const { isPaid, license } = useLicense();
 
     return (
         <div className="space-y-6">
@@ -143,7 +143,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                                 </div>
                             </div>
 
-                            {isPro && license?.variant === 'team' && (
+                            {isPaid && license?.variant === 'team' && (
                                 <div className="flex items-center justify-between gap-4 pt-4 border-t border-glass-border">
                                     <div className="space-y-0.5">
                                         <Label className="text-base">Audit Log Retention</Label>
