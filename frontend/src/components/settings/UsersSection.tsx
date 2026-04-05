@@ -267,7 +267,7 @@ export function UsersSection() {
                                     <SelectContent>
                                         <SelectItem value="admin">Admin</SelectItem>
                                         <SelectItem value="viewer">Viewer</SelectItem>
-                                        {isPaid && license?.variant === 'team' && (
+                                        {isPaid && license?.variant === 'admiral' && (
                                             <>
                                                 <SelectItem value="deployer">Deployer</SelectItem>
                                                 <SelectItem value="node-admin">Node Admin</SelectItem>
@@ -306,7 +306,7 @@ export function UsersSection() {
                         </div>
 
                         {/* Scoped Permissions (Admiral, editing only) */}
-                        {editingUser && isPaid && license?.variant === 'team' && (
+                        {editingUser && isPaid && license?.variant === 'admiral' && (
                             <div className="border border-glass-border rounded-lg p-4 space-y-3 mt-4">
                                 <h4 className="text-sm font-medium">Scoped Permissions</h4>
                                 <p className="text-xs text-muted-foreground">

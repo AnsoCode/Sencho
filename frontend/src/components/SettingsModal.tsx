@@ -303,7 +303,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         }
     };
 
-    const isAdmiral = isPaid && license?.variant === 'team';
+    const isAdmiral = isPaid && license?.variant === 'admiral';
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>

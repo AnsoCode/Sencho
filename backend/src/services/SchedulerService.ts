@@ -50,7 +50,7 @@ export class SchedulerService {
         try {
             const ls = LicenseService.getInstance();
             const isPaid = ls.getTier() === 'paid';
-            const isAdmiral = isPaid && ls.getVariant() === 'team';
+            const isAdmiral = isPaid && ls.getVariant() === 'admiral';
             if (!isPaid) return; // No scheduled tasks for unpaid tiers
 
             const db = DatabaseService.getInstance();

@@ -223,7 +223,7 @@ export default function EditorLayout() {
     if (isPaid && isAdmin) {
       items.push({ value: 'auto-updates', label: 'Auto-Update', icon: RefreshCw });
     }
-    if (isPaid && license?.variant === 'team') {
+    if (isPaid && license?.variant === 'admiral') {
       if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
       if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
       if (isAdmin) items.push({ value: 'scheduled-ops', label: 'Schedules', icon: Clock });

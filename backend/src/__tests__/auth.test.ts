@@ -100,7 +100,7 @@ describe('POST /api/system/console-token', () => {
   beforeAll(async () => {
     const { LicenseService } = await import('../services/LicenseService');
     vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
-    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('team');
+    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('admiral');
   });
 
   afterAll(() => {

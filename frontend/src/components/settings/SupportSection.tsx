@@ -49,17 +49,17 @@ export function SupportSection() {
                         Priority Support <TierBadge />
                     </h4>
                     <div className="grid gap-3">
-                        <a href={license?.variant === 'team' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
+                        <a href={license?.variant === 'admiral' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
                            className="flex items-center gap-3 p-3 rounded-lg border border-glass-border hover:bg-muted/50 transition-colors">
                             <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
                                 <Mail className="w-4 h-4" />
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium">
-                                    {license?.variant === 'team' ? 'Priority Email Support' : 'Email Support'}
+                                    {license?.variant === 'admiral' ? 'Priority Email Support' : 'Email Support'}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    {license?.variant === 'team'
+                                    {license?.variant === 'admiral'
                                         ? 'Direct support with responses within 24 hours'
                                         : 'Reach our support team directly'}
                                 </p>

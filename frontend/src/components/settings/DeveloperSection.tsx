@@ -143,7 +143,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                                 </div>
                             </div>
 
-                            {isPaid && license?.variant === 'team' && (
+                            {isPaid && license?.variant === 'admiral' && (
                                 <div className="flex items-center justify-between gap-4 pt-4 border-t border-glass-border">
                                     <div className="space-y-0.5">
                                         <Label className="text-base">Audit Log Retention</Label>

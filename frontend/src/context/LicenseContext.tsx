@@ -4,7 +4,7 @@ import { apiFetch } from '@/lib/api';
 export type LicenseTier = 'community' | 'paid';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
-export type LicenseVariant = 'personal' | 'team' | null;
+export type LicenseVariant = 'skipper' | 'admiral' | null;
 
 export interface LicenseInfo {
     tier: LicenseTier;

@@ -11,15 +11,14 @@ interface TierBadgeProps {
 
 const tierConfig = {
     community: { icon: Globe, label: 'Community' },
-    paid: { icon: Compass, label: 'Skipper' },
-    team: { icon: ShipWheel, label: 'Admiral' },
+    skipper: { icon: Compass, label: 'Skipper' },
+    admiral: { icon: ShipWheel, label: 'Admiral' },
 } as const;
 
 function resolveTier(tier: LicenseTier, variant: LicenseVariant, status: LicenseStatus) {
-    // Only show Team badge for active team licenses, not trials
-    // (trials default to team variant to unlock all features)
-    if (tier === 'paid' && variant === 'team' && status === 'active') return tierConfig.team;
-    if (tier === 'paid') return tierConfig.paid;
+    // Only show Admiral badge for active admiral licenses (trials default to skipper)
+    if (tier === 'paid' && variant === 'admiral' && status === 'active') return tierConfig.admiral;
+    if (tier === 'paid') return tierConfig.skipper;
     return tierConfig.community;
 }
 
