@@ -42,8 +42,9 @@ export function LicenseSection() {
         }
     };
 
+    const isAdmiral = isPaid && license?.variant === 'team' && license?.status === 'active';
     const showSkipperCard = !isPaid || license?.status === 'trial';
-    const showUpgradeCards = showSkipperCard || (license?.variant === 'personal' && license?.status === 'active');
+    const showUpgradeCards = !isAdmiral && (showSkipperCard || (license?.variant === 'personal' && license?.status === 'active'));
 
     return (
         <div className="space-y-6">
@@ -95,10 +96,10 @@ export function LicenseSection() {
                                 <span className="font-mono text-xs">{license.maskedKey}</span>
                             </div>
                         )}
-                        {license.validUntil && (
+                        {(license.isLifetime || license.validUntil) && (
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Renews</span>
-                                <span>{new Date(license.validUntil).toLocaleDateString()}</span>
+                                <span className="text-muted-foreground">{license.isLifetime ? 'Duration' : 'Renews'}</span>
+                                <span>{license.isLifetime ? 'Lifetime' : new Date(license.validUntil!).toLocaleDateString()}</span>
                             </div>
                         )}
                     </div>
@@ -122,20 +123,22 @@ export function LicenseSection() {
             {/* Manage Subscription (active paid license) */}
             {license?.status === 'active' && (
                 <div className="space-y-3">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={openBillingPortal}
-                        disabled={billingLoading}
-                    >
-                        {billingLoading ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                            <CreditCard className="w-4 h-4 mr-2" />
-                        )}
-                        Manage Subscription
-                        <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
-                    </Button>
+                    {!license.isLifetime && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={openBillingPortal}
+                            disabled={billingLoading}
+                        >
+                            {billingLoading ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <CreditCard className="w-4 h-4 mr-2" />
+                            )}
+                            Manage Subscription
+                            <ExternalLink className="w-3 h-3 ml-1.5 opacity-50" />
+                        </Button>
+                    )}
                     <div className="flex items-center justify-between">
                         <p className="text-sm text-muted-foreground">
                             Deactivating will revert to Community features.

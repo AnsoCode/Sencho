@@ -17,6 +17,7 @@ export interface LicenseInfo {
     trialDaysRemaining: number | null;
     instanceId: string;
     portalUrl: string | null;
+    isLifetime: boolean;
 }
 
 interface LicenseContextType {
