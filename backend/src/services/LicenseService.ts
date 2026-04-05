@@ -33,6 +33,7 @@ export interface LicenseInfo {
     trialDaysRemaining: number | null;
     instanceId: string;
     portalUrl: string | null;
+    isLifetime: boolean;
 }
 
 /** Seat limits per variant. null = unlimited. */
@@ -194,7 +195,9 @@ export class LicenseService {
 
     /**
      * Get the license variant (personal or team) from stored metadata.
-     * Trial licenses default to "personal" - Admiral features require an Admiral license.
+     * Trial licenses default to "personal"; Admiral features require an Admiral license.
+     * Maps Lemon Squeezy variant names (which may use brand names like "Admiral"
+     * or "Skipper") to the internal 'team' or 'personal' values.
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
@@ -203,8 +206,8 @@ export class LicenseService {
         const variantName = db.getSystemState('license_variant_name');
         if (!variantName) return null;
         const lower = variantName.toLowerCase();
-        if (lower.includes('team')) return 'team';
-        if (lower.includes('personal')) return 'personal';
+        if (lower.includes('team') || lower.includes('admiral')) return 'team';
+        if (lower.includes('personal') || lower.includes('skipper')) return 'personal';
         return 'personal'; // default activated licenses to personal
     }
 
@@ -233,6 +236,9 @@ export class LicenseService {
             trialDaysRemaining = Math.max(0, Math.ceil(remaining));
         }
 
+        // Lifetime license: active with a stored key but no expiry date
+        const isLifetime = status === 'active' && !!key && !validUntil;
+
         return {
             tier: this.getTier(),
             status,
@@ -244,6 +250,7 @@ export class LicenseService {
             trialDaysRemaining,
             instanceId,
             portalUrl: db.getSystemState('billing_portal_url') || db.getSystemState('customer_portal_url') || null,
+            isLifetime,
         };
     }
 

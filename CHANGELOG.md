@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **licensing:** trial users can now see Skipper/Admiral purchase cards in Settings > License (previously hidden due to a condition bug)
+* **licensing:** Admiral licenses (including lifetime) are now correctly identified as the "team" variant; previously, Lemon Squeezy variant names containing "Admiral" were not matched, causing the tier to display as "Skipper" and Admiral features to remain locked
+* **licensing:** "Manage Subscription" button is now hidden for lifetime licenses, which have no billing portal by design
+* **licensing:** license card now shows "Duration: Lifetime" for lifetime licenses instead of an empty renewal date
 
 ### Changed
 
@@ -17,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **licensing:** `ProGate` component renamed to `PaidGate`, `isPro` renamed to `isPaid` throughout the codebase
 * **licensing:** backend error code `PRO_REQUIRED` renamed to `PAID_REQUIRED`; `requirePro` guard renamed to `requirePaid`
 * **docs:** all documentation updated to replace "Sencho Pro" references with proper tier names
+* **licensing:** `LicenseInfo` API response now includes `isLifetime` boolean field
 
 ## [0.38.0](https://github.com/AnsoCode/Sencho/compare/v0.37.0...v0.38.0) (2026-04-04)
 

@@ -154,6 +154,39 @@ To re-test connectivity after making changes, open **Profile > Settings > Nodes*
 
 ---
 
+## License tier shows the wrong name
+
+**Symptom:** The license card in **Settings > License** shows the wrong tier name (e.g. "Sencho Skipper" when you purchased Admiral).
+
+**Cause:** Older versions of Sencho could misidentify certain license variant names from the payment provider.
+
+**Fix:** Update to the latest version of Sencho and restart. The correct tier name will appear automatically in **Settings > License**.
+
+---
+
+## Paid features are still locked after activation
+
+**Symptom:** Features remain locked even though you activated a valid license key.
+
+**Checks in order:**
+
+1. Open **Settings > License** and verify it shows your license as **active** with the correct tier name.
+2. If the tier shows "Skipper" but you purchased Admiral, this is the same variant identification issue described above. Update Sencho to the latest version to resolve it.
+3. If the tier shows correctly but features are still locked, restart the Sencho container.
+
+---
+
+## "No billing portal available" when clicking Manage Subscription
+
+**Symptom:** Clicking **Manage Subscription** shows an error about no billing portal being available.
+
+**Possible causes:**
+
+- **Lifetime license:** Lifetime licenses do not have a billing portal. This is expected behavior. In the latest version, the **Manage Subscription** button is hidden for lifetime licenses.
+- **Network issues:** If your Sencho instance cannot reach the internet, the billing portal URL cannot be fetched. Check your instance's outbound connectivity and try again.
+
+---
+
 ## Paid features return 403 on remote nodes
 
 **Symptom:** A Skipper or Admiral feature works on the local node but returns a 403 error when you switch to a remote node.
