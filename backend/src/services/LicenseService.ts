@@ -194,21 +194,23 @@ export class LicenseService {
     }
 
     /**
-     * Resolve a Lemon Squeezy variant name string to the internal variant type.
-     * Handles legacy names ("Team", "Personal") and current names ("Admiral", "Skipper").
+     * Resolve Lemon Squeezy metadata to the internal variant type.
+     * Checks both variant_name and product_name since LS variant names may only
+     * describe the billing period (e.g. "Lifetime", "Monthly") while the product
+     * name contains the tier (e.g. "Sencho Admiral").
      */
-    private resolveVariantType(variantName: string): 'skipper' | 'admiral' {
-        const lower = variantName.toLowerCase();
-        if (lower.includes('team') || lower.includes('admiral')) return 'admiral';
-        if (lower.includes('personal') || lower.includes('skipper')) return 'skipper';
+    private resolveVariantType(variantName: string, productName?: string): 'skipper' | 'admiral' {
+        const combined = `${variantName} ${productName || ''}`.toLowerCase();
+        if (combined.includes('team') || combined.includes('admiral')) return 'admiral';
+        if (combined.includes('personal') || combined.includes('skipper')) return 'skipper';
         return 'skipper';
     }
 
     /** Persist variant metadata from Lemon Squeezy response to DB. */
-    private storeVariantMeta(db: DatabaseService, meta: { variant_name?: string; variant_id?: number }): void {
+    private storeVariantMeta(db: DatabaseService, meta: { variant_name?: string; variant_id?: number; product_name?: string }): void {
         if (meta.variant_name) {
             db.setSystemState('license_variant_name', meta.variant_name);
-            db.setSystemState('license_variant_type', this.resolveVariantType(meta.variant_name));
+            db.setSystemState('license_variant_type', this.resolveVariantType(meta.variant_name, meta.product_name));
         }
         if (meta.variant_id) {
             db.setSystemState('license_variant_id', String(meta.variant_id));
@@ -231,10 +233,11 @@ export class LicenseService {
         const storedType = db.getSystemState('license_variant_type');
         if (isLicenseVariant(storedType)) return storedType;
 
-        // Backward compat: resolve from variant name for pre-existing installs
+        // Backward compat: resolve from variant/product name for pre-existing installs
         const variantName = db.getSystemState('license_variant_name');
         if (!variantName) return null;
-        const resolved = this.resolveVariantType(variantName);
+        const productName = db.getSystemState('license_product_name') || undefined;
+        const resolved = this.resolveVariantType(variantName, productName);
         db.setSystemState('license_variant_type', resolved);
         return resolved;
     }
