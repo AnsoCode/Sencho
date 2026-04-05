@@ -162,7 +162,7 @@ export function LicenseSection() {
                     <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
                         {/* Skipper Card - only for Community users */}
                         {license?.tier !== 'pro' && (
-                            <div className="relative border border-glass-border rounded-lg p-4 space-y-3 bg-glass">
+                            <div className="relative border border-glass-border rounded-lg p-4 space-y-3 bg-glass flex flex-col">
                                 <div className="flex items-center gap-2">
                                     <Compass className="w-4 h-4 text-amber-500" />
                                     <span className="font-medium text-sm">Skipper</span>
@@ -170,7 +170,7 @@ export function LicenseSection() {
                                 </div>
                                 <p className="text-xs text-muted-foreground">Professional tools for solo operators.</p>
                                 <ul className="space-y-1.5">
-                                    {['Fleet View with drill-down', 'RBAC viewer accounts (1 + 3)', 'Custom webhooks', 'Atomic deployment', 'Fleet-wide backups'].map((f) => (
+                                    {['Fleet View with drill-down', 'Viewer accounts (1 admin + 3 viewers)', 'Webhooks & stack labels', 'Atomic deployments & backups', 'Auto-update policies'].map((f) => (
                                         <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <Check className="w-3 h-3 shrink-0 text-success" />
                                             {f}
@@ -179,7 +179,7 @@ export function LicenseSection() {
                                 </ul>
                                 <Button
                                     size="sm"
-                                    className="w-full"
+                                    className="w-full mt-auto"
                                     onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/f75bfb65-443a-46a0-abb1-981e0ff4b382', '_blank')}
                                 >
                                     <Zap className="w-4 h-4 mr-2" />
@@ -190,7 +190,7 @@ export function LicenseSection() {
                         )}
 
                         {/* Admiral Card */}
-                        <div className="border border-glass-border rounded-lg p-4 space-y-3 bg-glass">
+                        <div className="border border-glass-border rounded-lg p-4 space-y-3 bg-glass flex flex-col">
                             <div className="flex items-center gap-2">
                                 <ShipWheel className="w-4 h-4 text-blue-500" />
                                 <span className="font-medium text-sm">Admiral</span>
@@ -199,10 +199,11 @@ export function LicenseSection() {
                             <ul className="space-y-1.5">
                                 {[
                                     ...(license?.variant === 'personal' ? ['Everything in Skipper'] : ['Everything in Community']),
-                                    'Unlimited admin accounts',
-                                    'Unlimited viewer accounts',
-                                    ...(license?.variant !== 'personal' ? ['Fleet View & webhooks', 'Atomic deployment & backups'] : []),
-                                    'Team onboarding assistance',
+                                    'Unlimited accounts & scoped RBAC',
+                                    ...(license?.variant !== 'personal' ? ['Fleet View, webhooks & labels', 'Atomic deployments & backups'] : []),
+                                    'SSO, audit log & host console',
+                                    'API tokens & private registries',
+                                    'Scheduled operations',
                                 ].map((f) => (
                                     <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
                                         <Check className="w-3 h-3 shrink-0 text-success" />
@@ -213,7 +214,7 @@ export function LicenseSection() {
                             <Button
                                 size="sm"
                                 variant={license?.tier !== 'pro' ? 'outline' : 'default'}
-                                className="w-full"
+                                className="w-full mt-auto"
                                 onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/b049b824-176a-408d-a9d3-9365c979a61f', '_blank')}
                             >
                                 <Zap className="w-4 h-4 mr-2" />
