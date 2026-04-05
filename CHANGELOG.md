@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.2](https://github.com/AnsoCode/Sencho/compare/v0.38.1...v0.38.2) (2026-04-05)
+
+
+### Fixed
+
+* **licensing:** rename variant values to skipper/admiral and store resolved type ([#379](https://github.com/AnsoCode/Sencho/issues/379)) ([797623e](https://github.com/AnsoCode/Sencho/commit/797623e56fb97e6233f27fb9cc5be12613672707))
+
 ## [0.38.1](https://github.com/AnsoCode/Sencho/compare/v0.38.0...v0.38.1) (2026-04-05)
 
 
