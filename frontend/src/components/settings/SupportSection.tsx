@@ -4,7 +4,7 @@ import { TierBadge } from '@/components/TierBadge';
 import { Book, Bug, Mail, ExternalLink, Crown } from 'lucide-react';
 
 export function SupportSection() {
-    const { isPro, license } = useLicense();
+    const { isPaid, license } = useLicense();
 
     return (
         <div className="space-y-6">
@@ -42,11 +42,11 @@ export function SupportSection() {
                 </div>
             </div>
 
-            {/* Pro support channels */}
-            {isPro && (
+            {/* Paid tier support channels */}
+            {isPaid && (
                 <div className="space-y-3">
                     <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        Pro Support <TierBadge />
+                        Priority Support <TierBadge />
                     </h4>
                     <div className="grid gap-3">
                         <a href={license?.variant === 'team' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
@@ -71,17 +71,17 @@ export function SupportSection() {
             )}
 
             {/* Upsell for Community */}
-            {!isPro && (
+            {!isPaid && (
                 <div className="rounded-lg border border-glass-border p-4 bg-muted/30">
                     <div className="flex items-start gap-3">
                         <Crown className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                         <div>
                             <p className="text-sm font-medium">Need faster support?</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                                Upgrade to Pro for direct email support and priority issue handling.
+                                Upgrade to Skipper or Admiral for direct email support and priority issue handling.
                             </p>
                             <Button size="sm" className="mt-3" onClick={() => window.open('https://sencho.io/#pricing', '_blank')}>
-                                Upgrade to Pro
+                                View Plans
                             </Button>
                         </div>
                     </div>

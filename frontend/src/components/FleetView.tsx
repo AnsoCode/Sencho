@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightI
 import { springs } from '@/lib/motion';
 import { apiFetch } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
-import { ProGate } from './ProGate';
+import { PaidGate } from './PaidGate';
 import FleetSnapshots from './FleetSnapshots';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot, type Label as StackLabel } from './LabelPill';
@@ -357,7 +357,7 @@ function ReconnectingOverlay() {
 }
 
 function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updatingNodeId }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void; labelMap?: Record<string, StackLabel[]>; updateStatus?: NodeUpdateStatus; onUpdate?: (nodeId: number) => void; updatingNodeId?: number | null }) {
-    const { isPro } = useLicense();
+    const { isPaid } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
     const [loadingStacks, setLoadingStacks] = useState(false);
@@ -368,7 +368,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
     const diskPercent = getNodeDisk(node);
 
     const handleExpand = async () => {
-        if (!isPro) return;
+        if (!isPaid) return;
         const next = !expanded;
         setExpanded(next);
 
@@ -512,8 +512,8 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                 )}
             </div>
 
-            {/* Pro Expandable Stack List with Container Drill-Down */}
-            {isOnline && isPro && (
+            {/* Paid: Expandable Stack List with Container Drill-Down */}
+            {isOnline && isPaid && (
                 <div className="border-t">
                     <button
                         onClick={handleExpand}
@@ -571,7 +571,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [fleetLabels, setFleetLabels] = useState<StackLabel[]>([]);
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<string, StackLabel[]>>({});
     const [labelFilters, setLabelFilters] = useState<Set<number>>(new Set());
-    const { isPro } = useLicense();
+    const { isPaid } = useLicense();
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
@@ -606,7 +606,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     }, []);
 
     const fetchLabels = useCallback(async () => {
-        if (!isPro) return;
+        if (!isPaid) return;
         try {
             const [labelsRes, assignmentsRes] = await Promise.all([
                 apiFetch('/labels', { localOnly: true }),
@@ -617,10 +617,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         } catch {
             // Non-critical
         }
-    }, [isPro]);
+    }, [isPaid]);
 
     const fetchUpdateStatus = useCallback(async () => {
-        if (!isPro) return;
+        if (!isPaid) return;
         try {
             const res = await apiFetch('/fleet/update-status', { localOnly: true });
             if (res.ok) {
@@ -631,7 +631,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 );
             }
         } catch { /* non-critical */ }
-    }, [isPro]);
+    }, [isPaid]);
 
     const triggerNodeUpdate = useCallback(async (nodeId: number) => {
         const status = updateStatusesRef.current.find(s => s.nodeId === nodeId);
@@ -704,12 +704,12 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         fetchUpdateStatus();
     }, [fetchOverview, fetchLabels, fetchUpdateStatus]);
 
-    // Pro: auto-refresh every 30s
+    // Paid tier: auto-refresh every 30s
     useEffect(() => {
-        if (!isPro) return;
+        if (!isPaid) return;
         const interval = setInterval(() => fetchOverview(), 30000);
         return () => clearInterval(interval);
-    }, [isPro, fetchOverview]);
+    }, [isPaid, fetchOverview]);
 
     // Fast poll (5s) when any node is actively updating — uses ref to avoid interval thrashing
     const hasUpdatingRef = useRef(false);
@@ -756,12 +756,12 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         [updateStatuses]
     );
 
-    // --- Filtering & Sorting (Pro) ---
+    // --- Filtering & Sorting (Skipper+) ---
 
     const processedNodes = useMemo(() => {
         let filtered = [...nodes];
 
-        // Search (Pro only, but harmless if applied - free users won't see the search bar)
+        // Search (paid only, but harmless if applied - free users won't see the search bar)
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter(n =>
@@ -770,7 +770,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             );
         }
 
-        if (isPro) {
+        if (isPaid) {
             // Status filter
             if (prefs.filterStatus === 'online') filtered = filtered.filter(n => n.status === 'online');
             if (prefs.filterStatus === 'offline') filtered = filtered.filter(n => n.status !== 'online');
@@ -817,7 +817,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
 
         return filtered;
-    }, [nodes, searchQuery, isPro, prefs, labelFilters, fleetStackLabelMap]);
+    }, [nodes, searchQuery, isPaid, prefs, labelFilters, fleetStackLabelMap]);
 
     return (
         <div className="h-full overflow-auto p-6">
@@ -830,7 +830,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {isPro && (
+                    {isPaid && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -865,7 +865,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         <TabsHighlightItem value="overview">
                             <TabsTrigger value="overview">Overview</TabsTrigger>
                         </TabsHighlightItem>
-                        {isPro && (
+                        {isPaid && (
                             <TabsHighlightItem value="snapshots">
                                 <TabsTrigger value="snapshots">
                                     <Camera className="w-4 h-4 mr-1.5" />Snapshots
@@ -907,8 +907,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     {/* Fleet Content */}
                     {!loading && nodes.length > 0 && (
                         <>
-                            {/* Pro: Fleet Health Summary Cards */}
-                            {isPro && onlineNodes.length > 0 && (
+                            {/* Paid: Fleet Health Summary Cards */}
+                            {isPaid && onlineNodes.length > 0 && (
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                                     <StatCard
                                         icon={Box}
@@ -938,8 +938,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </div>
                             )}
 
-                            {/* Pro: Search, Sort & Filter Toolbar */}
-                            {isPro && (
+                            {/* Paid: Search, Sort & Filter Toolbar */}
+                            {isPaid && (
                                 <div className="flex flex-wrap items-center gap-3 mb-4">
                                     {/* Search */}
                                     <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -1050,7 +1050,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             onNavigate={onNavigateToNode}
                                             labelMap={fleetStackLabelMap}
                                             updateStatus={updateStatusMap.get(node.id)}
-                                            onUpdate={isPro ? triggerNodeUpdate : undefined}
+                                            onUpdate={isPaid ? triggerNodeUpdate : undefined}
                                             updatingNodeId={updatingNodeId}
                                         />
                                     ))}
@@ -1076,18 +1076,18 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </div>
                             )}
 
-                            {/* Pro auto-refresh indicator */}
-                            {isPro && (
+                            {/* Paid tier auto-refresh indicator */}
+                            {isPaid && (
                                 <p className="text-xs text-muted-foreground text-center mt-6">
                                     Auto-refreshing every 30 seconds
                                 </p>
                             )}
 
-                            {/* Free tier: Pro gate for advanced features */}
-                            {!isPro && nodes.length > 0 && (
+                            {/* Free tier: paid gate for advanced features */}
+                            {!isPaid && nodes.length > 0 && (
                                 <div className="mt-6">
-                                    <ProGate featureName="Fleet Management">
-                                        {/* Preview of what Pro unlocks */}
+                                    <PaidGate featureName="Fleet Management">
+                                        {/* Preview of what paid tier unlocks */}
                                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                                             <div className="rounded-xl border bg-card p-4 h-24" />
                                             <div className="rounded-xl border bg-card p-4 h-24" />
@@ -1098,14 +1098,14 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             <div className="h-9 rounded-md border bg-card flex-1 max-w-sm" />
                                             <div className="h-9 rounded-md border bg-card w-[150px]" />
                                         </div>
-                                    </ProGate>
+                                    </PaidGate>
                                 </div>
                             )}
                         </>
                     )}
                 </TabsContent>
 
-                {isPro && (
+                {isPaid && (
                     <TabsContent value="snapshots">
                         <FleetSnapshots />
                     </TabsContent>

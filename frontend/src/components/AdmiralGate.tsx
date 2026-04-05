@@ -17,10 +17,10 @@ function isDismissedFromStorage(): boolean {
 }
 
 export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralGateProps) {
-    const { isPro, license } = useLicense();
+    const { isPaid, license } = useLicense();
     const [dismissed, setDismissed] = useState(isDismissedFromStorage);
 
-    if (isPro && license?.variant === 'team') return <>{children}</>;
+    if (isPaid && license?.variant === 'team') return <>{children}</>;
 
     if (dismissed) {
         return (

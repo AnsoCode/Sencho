@@ -69,7 +69,7 @@ The `code` field is present for specific error types:
 
 | Code | Meaning |
 |------|---------|
-| `PRO_REQUIRED` | Endpoint requires a Pro (Skipper or Admiral) license |
+| `PAID_REQUIRED` | Endpoint requires a Skipper or Admiral license |
 | `ADMIRAL_REQUIRED` | Endpoint requires an Admiral license |
 | `SCOPE_DENIED` | API token scope does not allow this operation |
 
@@ -104,7 +104,7 @@ Some endpoints are gated by license tier:
 
 | Tier | Gated features |
 |------|---------------|
-| **Pro (Skipper+)** | Webhooks, Fleet snapshots, Stack rollback |
+| **Skipper+** | Webhooks, Fleet snapshots, Stack rollback |
 | **Admiral** | API Tokens, Scheduled Tasks |
 
 Requests to gated endpoints on a lower tier return `403` with the appropriate error code.

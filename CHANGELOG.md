@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **licensing:** trial users can now see Skipper/Admiral purchase cards in Settings > License (previously hidden due to a condition bug)
+
+### Changed
+
+* **licensing:** rename internal tier value from `pro` to `paid` across backend and frontend; no user-facing behavior change beyond corrected branding
+* **licensing:** all user-facing text now uses actual tier names (Community, Skipper, Admiral) instead of the generic "Pro" label
+* **licensing:** `ProGate` component renamed to `PaidGate`, `isPro` renamed to `isPaid` throughout the codebase
+* **licensing:** backend error code `PRO_REQUIRED` renamed to `PAID_REQUIRED`; `requirePro` guard renamed to `requirePaid`
+* **docs:** all documentation updated to replace "Sencho Pro" references with proper tier names
+
 ## [0.38.0](https://github.com/AnsoCode/Sencho/compare/v0.37.0...v0.38.0) (2026-04-04)
 
 

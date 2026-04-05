@@ -56,7 +56,7 @@ describe('SSO Config Endpoints (Protected)', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     // Without an Admiral license, this should be 403
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PRO_REQUIRED');
+    expect(res.body.code).toBe('PAID_REQUIRED');
   });
 
   it('PUT /api/sso/config/:provider returns 401 without auth', async () => {

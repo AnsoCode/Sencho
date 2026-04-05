@@ -13,7 +13,7 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { useAuth, type UserRole } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
-import { ProGate } from '@/components/ProGate';
+import { PaidGate } from '@/components/PaidGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
 import { RefreshCw, Trash2, Plus, Pencil } from 'lucide-react';
 
@@ -35,7 +35,7 @@ interface RoleAssignmentItem {
 
 export function UsersSection() {
     const { user: currentUser } = useAuth();
-    const { isPro, license } = useLicense();
+    const { isPaid, license } = useLicense();
     const [users, setUsers] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -230,7 +230,7 @@ export function UsersSection() {
     };
 
     return (
-        <ProGate featureName="User management">
+        <PaidGate featureName="User management">
           <CapabilityGate capability="users" featureName="User Management">
             <div className="space-y-6">
                 <div className="flex items-start justify-between pr-8">
@@ -267,7 +267,7 @@ export function UsersSection() {
                                     <SelectContent>
                                         <SelectItem value="admin">Admin</SelectItem>
                                         <SelectItem value="viewer">Viewer</SelectItem>
-                                        {isPro && license?.variant === 'team' && (
+                                        {isPaid && license?.variant === 'team' && (
                                             <>
                                                 <SelectItem value="deployer">Deployer</SelectItem>
                                                 <SelectItem value="node-admin">Node Admin</SelectItem>
@@ -306,7 +306,7 @@ export function UsersSection() {
                         </div>
 
                         {/* Scoped Permissions (Admiral, editing only) */}
-                        {editingUser && isPro && license?.variant === 'team' && (
+                        {editingUser && isPaid && license?.variant === 'team' && (
                             <div className="border border-glass-border rounded-lg p-4 space-y-3 mt-4">
                                 <h4 className="text-sm font-medium">Scoped Permissions</h4>
                                 <p className="text-xs text-muted-foreground">
@@ -455,6 +455,6 @@ export function UsersSection() {
                 )}
             </div>
           </CapabilityGate>
-        </ProGate>
+        </PaidGate>
     );
 }

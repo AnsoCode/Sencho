@@ -49,9 +49,9 @@ export class SchedulerService {
         this.isProcessing = true;
         try {
             const ls = LicenseService.getInstance();
-            const isPro = ls.getTier() === 'pro';
-            const isAdmiral = isPro && ls.getVariant() === 'team';
-            if (!isPro) return; // No scheduled tasks for non-Pro tiers
+            const isPaid = ls.getTier() === 'paid';
+            const isAdmiral = isPaid && ls.getVariant() === 'team';
+            if (!isPaid) return; // No scheduled tasks for unpaid tiers
 
             const db = DatabaseService.getInstance();
             const now = Date.now();

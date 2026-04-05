@@ -51,7 +51,7 @@ The stack header shows different actions depending on whether the stack is runni
 | **Stop** | `docker compose stop` | Stops containers without removing them. State is preserved. |
 | **Restart** | `docker compose restart` | Restarts all containers in the stack. |
 | **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
-| **Rollback** | Restores backup | Reverts compose and env files to the pre-deploy snapshot and redeploys. Only shown when a backup exists (Pro). |
+| **Rollback** | Restores backup | Reverts compose and env files to the pre-deploy snapshot and redeploys. Only shown when a backup exists (Skipper+). |
 | **Delete** | `down --volumes` + removes files | Stops and removes containers and volumes, then deletes the stack directory. |
 
 **When stopped:**
@@ -89,7 +89,7 @@ Right-click any stack in the sidebar to open the context menu. The menu adapts t
 ### Available actions
 
 - **Alerts** - configure metric-based alerting rules for this stack
-- **Labels** - assign organizational labels (Pro)
+- **Labels** - assign organizational labels (Skipper+)
 - **Check for updates** - manually trigger an image update check
 - **Open App** - open the stack's web interface in a new tab (only shown when the stack is running and exposes a web port)
 - **Deploy** - start the stack (shown when stopped)

@@ -12,8 +12,14 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 
+function getTierDisplayName(tier?: string, variant?: string | null, status?: string): string {
+    if (tier === 'paid' && variant === 'team' && status === 'active') return 'Sencho Admiral';
+    if (tier === 'paid') return 'Sencho Skipper';
+    return 'Sencho Community';
+}
+
 export function LicenseSection() {
-    const { license, activate, deactivate } = useLicense();
+    const { license, isPaid, activate, deactivate } = useLicense();
     const [licenseKeyInput, setLicenseKeyInput] = useState('');
     const [isActivating, setIsActivating] = useState(false);
     const [isDeactivating, setIsDeactivating] = useState(false);
@@ -36,24 +42,27 @@ export function LicenseSection() {
         }
     };
 
+    const showSkipperCard = !isPaid || license?.status === 'trial';
+    const showUpgradeCards = showSkipperCard || (license?.variant === 'personal' && license?.status === 'active');
+
     return (
         <div className="space-y-6">
             <div>
                 <h3 className="text-lg font-medium tracking-tight">License</h3>
-                <p className="text-sm text-muted-foreground">Manage your Sencho Pro license.</p>
+                <p className="text-sm text-muted-foreground">Manage your Sencho license.</p>
             </div>
 
             {/* Current Tier Display */}
             <div className="bg-glass border border-glass-border p-4 rounded-lg space-y-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        {license?.tier === 'pro' ? (
+                        {isPaid ? (
                             <CheckCircle className="w-5 h-5 text-success" />
                         ) : (
                             <Crown className="w-5 h-5 text-muted-foreground" />
                         )}
                         <span className="font-medium text-base">
-                            {license?.tier === 'pro' ? 'Sencho Pro' : 'Sencho Community'}
+                            {getTierDisplayName(license?.tier, license?.variant, license?.status)}
                         </span>
                     </div>
                     <TierBadge />
@@ -98,7 +107,7 @@ export function LicenseSection() {
                 {license?.status === 'expired' && (
                     <div className="flex items-center gap-2 text-sm text-destructive">
                         <XCircle className="w-4 h-4" />
-                        <span>Your Pro license has expired. Renew to restore Pro features.</span>
+                        <span>Your license has expired. Renew to restore paid features.</span>
                     </div>
                 )}
 
@@ -110,7 +119,7 @@ export function LicenseSection() {
                 )}
             </div>
 
-            {/* Manage Subscription (active Pro) */}
+            {/* Manage Subscription (active paid license) */}
             {license?.status === 'active' && (
                 <div className="space-y-3">
                     <Button
@@ -155,13 +164,13 @@ export function LicenseSection() {
                 </div>
             )}
 
-            {/* Upgrade Cards */}
-            {(license?.tier !== 'pro' || (license?.variant === 'personal' && license?.status === 'active')) && (
+            {/* Upgrade Cards: show for community, trial, or active Skipper users */}
+            {showUpgradeCards && (
                 <div className="space-y-3">
                     <Label className="text-base">Upgrade your plan</Label>
-                    <div className={`grid gap-3 ${license?.tier !== 'pro' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                        {/* Skipper Card - only for Community users */}
-                        {license?.tier !== 'pro' && (
+                    <div className={`grid gap-3 ${showSkipperCard ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                        {/* Skipper Card - only for Community users and trial users */}
+                        {showSkipperCard && (
                             <div className="relative border border-glass-border rounded-lg p-4 space-y-3 bg-glass flex flex-col">
                                 <div className="flex items-center gap-2">
                                     <Compass className="w-4 h-4 text-amber-500" />
@@ -213,7 +222,7 @@ export function LicenseSection() {
                             </ul>
                             <Button
                                 size="sm"
-                                variant={license?.tier !== 'pro' ? 'outline' : 'default'}
+                                variant={showSkipperCard ? 'outline' : 'default'}
                                 className="w-full mt-auto"
                                 onClick={() => window.open('https://saelix.lemonsqueezy.com/checkout/buy/b049b824-176a-408d-a9d3-9365c979a61f', '_blank')}
                             >
@@ -244,7 +253,7 @@ export function LicenseSection() {
                                 setIsActivating(true);
                                 const result = await activate(licenseKeyInput.trim());
                                 if (result.success) {
-                                    toast.success('License activated! Welcome to Sencho Pro.');
+                                    toast.success('License activated successfully.');
                                     setLicenseKeyInput('');
                                 } else {
                                     toast.error(result.error || 'Activation failed');

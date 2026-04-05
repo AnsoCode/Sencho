@@ -20,7 +20,7 @@ import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, Alert
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
-import { ProGate } from './ProGate';
+import { PaidGate } from './PaidGate';
 import { CapabilityGate } from './CapabilityGate';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -347,7 +347,7 @@ function TableSkeleton({ cols, rows = 5 }: { cols: number; rows?: number }) {
 export default function ResourcesView() {
     const { isAdmin } = useAuth();
     const { activeNode } = useNodes();
-    const { isPro } = useLicense();
+    const { isPaid } = useLicense();
     const [networkViewMode, setNetworkViewMode] = useState<'list' | 'topology'>('list');
     const [usage, setUsage] = useState<UsageData | null>(null);
     const [images, setImages] = useState<DockerImage[]>([]);
@@ -794,7 +794,7 @@ export default function ResourcesView() {
                                         )}
                                     >
                                         Topology
-                                        {!isPro && <Badge variant="outline" className="text-[9px] h-4 px-1 border-brand/30 text-brand">Pro</Badge>}
+                                        {!isPaid && <Badge variant="outline" className="text-[9px] h-4 px-1 border-brand/30 text-brand">Skipper</Badge>}
                                     </button>
                                 </div>
                                 {isAdmin && networkViewMode === 'list' && (
@@ -813,7 +813,7 @@ export default function ResourcesView() {
 
                         {networkViewMode === 'topology' ? (
                             <div className="p-4">
-                                <ProGate featureName="Network Topology">
+                                <PaidGate featureName="Network Topology">
                                     <CapabilityGate capability="network-topology" featureName="Network Topology">
                                         <Suspense fallback={
                                             <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
@@ -823,7 +823,7 @@ export default function ResourcesView() {
                                             <NetworkTopologyView />
                                         </Suspense>
                                     </CapabilityGate>
-                                </ProGate>
+                                </PaidGate>
                             </div>
                         ) : (
                         <Table>

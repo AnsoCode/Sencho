@@ -28,7 +28,7 @@ const {
   mockCreateSnapshot: vi.fn().mockReturnValue(1),
   mockInsertSnapshotFiles: vi.fn(),
   mockClearStackUpdateStatus: vi.fn(),
-  mockGetTier: vi.fn().mockReturnValue('pro'),
+  mockGetTier: vi.fn().mockReturnValue('paid'),
   mockGetVariant: vi.fn().mockReturnValue('team'),
   mockGetContainersByStack: vi.fn().mockResolvedValue([]),
   mockRestartContainer: vi.fn().mockResolvedValue(undefined),
@@ -171,7 +171,7 @@ describe('SchedulerService - license gating', () => {
   });
 
   it('allows update tasks for non-admiral pro', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('individual');
     mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'update' })]);
     mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Image: 'nginx:latest' }]);
@@ -186,7 +186,7 @@ describe('SchedulerService - license gating', () => {
   });
 
   it('skips non-update tasks for non-admiral pro', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('individual');
     mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'restart' })]);
 
@@ -197,7 +197,7 @@ describe('SchedulerService - license gating', () => {
   });
 
   it('allows all actions for admiral (pro + team)', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('team');
     mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'restart' })]);
     mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Service: 'web' }]);
@@ -214,7 +214,7 @@ describe('SchedulerService - license gating', () => {
 
 describe('SchedulerService - concurrent task prevention', () => {
   it('does not execute a task that is already in runningTasks', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('team');
     mockGetDueScheduledTasks.mockReturnValue([{
       id: 42,
@@ -239,7 +239,7 @@ describe('SchedulerService - concurrent task prevention', () => {
   });
 
   it('removes task from runningTasks after completion', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('team');
     mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Service: 'web' }]);
 
@@ -611,7 +611,7 @@ describe('SchedulerService - error handling', () => {
 
 describe('SchedulerService - cleanup', () => {
   it('calls cleanupOldTaskRuns(30) on every tick', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('team');
     mockGetDueScheduledTasks.mockReturnValue([]);
 
@@ -626,7 +626,7 @@ describe('SchedulerService - cleanup', () => {
 
 describe('SchedulerService - isProcessing guard', () => {
   it('skips tick if already processing', async () => {
-    mockGetTier.mockReturnValue('pro');
+    mockGetTier.mockReturnValue('paid');
 
     const svc = SchedulerService.getInstance();
     (svc as any).isProcessing = true;
