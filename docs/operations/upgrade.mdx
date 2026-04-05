@@ -22,20 +22,22 @@ docker stop sencho && docker rm sencho
 
 Sencho will apply any necessary database migrations automatically on startup. No manual steps are required.
 
+<Note>
+  Skipper and Admiral users can also update remote nodes directly from the Fleet View. See [Remote Updates](/features/remote-updates) for details.
+</Note>
+
 ---
 
 ## Automatic migrations
 
-Sencho handles all schema changes internally. When the application starts, it runs a series of migration checks:
+Sencho handles all schema changes internally. When the application starts, it checks whether the database needs updating and applies any pending migrations automatically. This covers:
 
-- **Schema evolution** — New columns are added via `ALTER TABLE ADD COLUMN`. If a column already exists, the operation is silently skipped.
-- **Legacy config migration** — If upgrading from a very early version that used a `sencho.json` file, the settings are automatically imported into SQLite.
-- **Admin account migration** — Legacy admin credentials stored in `global_settings` are migrated to the `users` table.
-- **Encryption migration** — Unencrypted node API tokens are automatically encrypted at rest using AES-256-GCM.
-- **SSO columns** — SSO provider fields are added to the users table if not present.
-- **Registry tables** — Private registry storage tables are created if they don't exist.
-- **RBAC tables** — Role assignment tables are created for granular permissions.
-- **Legacy cleanup** — Obsolete columns from pre-0.7 versions (SSH/TLS fields) are dropped.
+- **New tables and columns** for features introduced in newer versions
+- **Legacy config migration** from very early versions that used a JSON config file
+- **Admin account migration** from single-admin storage to the multi-user system
+- **Encryption of sensitive values** (node API tokens, registry credentials) that were previously stored in plaintext
+- **SSO and RBAC setup** for single sign-on provider config and role-based access
+- **Legacy cleanup** of obsolete fields from pre-0.7 versions (SSH/TLS columns)
 
 You never need to run SQL commands, migration scripts, or any manual database operations.
 
@@ -43,10 +45,12 @@ You never need to run SQL commands, migration scripts, or any manual database op
 
 ## Backup before upgrading
 
-Always back up your data directory before upgrading. If something goes wrong, restoring from backup is the only recovery path — Sencho does not support downgrading or rolling back database migrations.
+Always back up your data directory before upgrading. If something goes wrong, restoring from backup is the only recovery path. Sencho does not support downgrading or rolling back database migrations.
 
 ```bash
-sqlite3 /path/to/sencho-data/sencho.db ".backup '/path/to/backup/sencho-pre-upgrade.db'"
+# Copy both the database and the encryption key
+cp /path/to/sencho-data/sencho.db /path/to/backup/sencho-pre-upgrade.db
+cp /path/to/sencho-data/encryption.key /path/to/backup/encryption-pre-upgrade.key
 ```
 
 See the [Backup & Restore guide](/operations/backup) for full backup procedures.
@@ -58,7 +62,7 @@ See the [Backup & Restore guide](/operations/backup) for full backup procedures.
 If you prefer to control exactly which version you run, pin the image tag in your `docker-compose.yml`:
 
 ```yaml
-image: saelix/sencho:0.25.3
+image: saelix/sencho:0.38.0
 ```
 
 Check [GitHub Releases](https://github.com/AnsoCode/Sencho/releases) for available versions and changelogs.
@@ -71,8 +75,8 @@ Sencho follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
 
 | Change type | Version bump | Example |
 |-------------|-------------|---------|
-| Bug fixes, performance improvements | Patch | 0.25.0 → 0.25.1 |
-| New features | Minor | 0.25.x → 0.26.0 |
+| Bug fixes, performance improvements | Patch | 0.38.0 → 0.38.1 |
+| New features | Minor | 0.38.x → 0.39.0 |
 | Breaking changes | Major | 0.x.y → 1.0.0 |
 
 <Note>

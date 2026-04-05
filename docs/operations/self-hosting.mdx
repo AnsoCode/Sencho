@@ -5,7 +5,7 @@ description: Volume mounts, Docker socket security, networking, and resource rec
 
 ## The 1:1 path rule
 
-This is the most common setup mistake. When Sencho deploys a Docker Compose stack, Docker resolves bind-mount volume paths relative to the **host filesystem**, not the Sencho container. If your compose files reference relative paths like `./data:/app/data`, Docker looks for `./data` on the host — starting from the directory where the compose file lives on the host.
+This is the most common setup mistake. When Sencho deploys a Docker Compose stack, Docker resolves bind-mount volume paths relative to the **host filesystem**, not the Sencho container. If your compose files reference relative paths like `./data:/app/data`, Docker looks for `./data` on the host, starting from the directory where the compose file lives on the host.
 
 This means the path to your compose directory **must be identical** inside and outside the container:
 
@@ -32,12 +32,12 @@ Sencho requires three volume mounts to function correctly:
 | Mount | Purpose | Required |
 |-------|---------|----------|
 | `/var/run/docker.sock:/var/run/docker.sock` | Docker Engine access for managing containers | Yes |
-| `./sencho-data:/app/data` | Persistent storage for SQLite database and encryption keys | Yes |
+| `./sencho-data:/app/data` | Persistent storage for the database and encryption key | Yes |
 | `/opt/compose:/opt/compose` | Your compose project files (must follow 1:1 path rule) | Yes |
 
-<Note>
-  The data directory contains your Sencho database and encryption keys. Losing this directory means losing your Sencho configuration entirely.
-</Note>
+<Warning>
+  The data directory contains your Sencho database (`sencho.db`) and encryption key (`encryption.key`). Losing this directory means losing your Sencho configuration entirely. See the [Backup & Restore guide](/operations/backup) for backup procedures.
+</Warning>
 
 ---
 
@@ -48,7 +48,7 @@ Mounting the Docker socket (`/var/run/docker.sock`) grants the container the abi
 Sencho mitigates this with privilege dropping:
 
 1. The container starts as root to fix volume ownership and resolve Docker socket group permissions
-2. The entrypoint script (`docker-entrypoint.sh`) then drops to a non-root `sencho` user via `su-exec`
+2. The entrypoint script then drops to a non-root `sencho` user
 3. All application code runs as the `sencho` user
 
 If your environment requires stricter isolation, consider:
@@ -63,9 +63,9 @@ If your environment requires stricter isolation, consider:
 
 | Resource | Minimum | Recommended | Notes |
 |----------|---------|-------------|-------|
-| CPU | 1 core | 1-2 cores | More cores help with concurrent stack operations |
-| RAM | 256 MB | 512 MB | Higher for multi-node setups with many stacks |
-| Disk | 100 MB | 500 MB | Database is typically < 50 MB; allocate headroom for metrics retention |
+| CPU | 1 core | 2 cores | Compose operations spawn child processes that benefit from a second core |
+| RAM | 128 MB | 256 MB | Baseline is around 100 MB at idle; increases with concurrent log streams and large fleets |
+| Disk | 200 MB | 500 MB | The Docker image is around 200 MB; the database grows with metrics retention and fleet size |
 
 Sencho itself is lightweight. The majority of resource usage on your host comes from the Docker containers it manages, not from Sencho.
 
@@ -73,7 +73,7 @@ Sencho itself is lightweight. The majority of resource usage on your host comes 
 
 ## Networking
 
-- **Listen port:** 3000 by default, configurable via the `PORT` environment variable
+- **Listen port:** 3000 (fixed). Map it to any host port using Docker's `-p` flag or `ports` in your compose file
 - **Inbound:** Only the listen port needs to be reachable (directly or through a reverse proxy)
 - **Outbound:** No outbound connections are required for local-only setups. If you use multi-node management, Sencho needs HTTP/HTTPS access to remote Sencho instances on their configured API URLs
 - **Health check:** `GET /api/health` returns `200` when the application is ready. The Docker image includes a built-in `HEALTHCHECK` that polls this endpoint every 30 seconds
@@ -86,11 +86,10 @@ Quick reference for all environment variables. See [Configuration](/getting-star
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | *(required)* | Secret key for signing JWT tokens |
 | `COMPOSE_DIR` | `/app/compose` | Path to compose project files (1:1 rule applies) |
-| `PORT` | `3000` | HTTP server listen port |
 | `DATA_DIR` | `/app/data` | Persistent data directory |
-| `NODE_ENV` | `production` | Set automatically in Docker image |
 | `FRONTEND_URL` | *(empty)* | Frontend origin for CORS; leave empty for same-origin |
+| `API_RATE_LIMIT` | `100` | Maximum API requests per minute per IP (production only) |
+| `NODE_ENV` | `production` | Set automatically in the Docker image |
 
 SSO variables are documented separately in the [SSO Quickstart](/getting-started/sso-quickstart).
