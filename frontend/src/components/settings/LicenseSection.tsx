@@ -13,7 +13,7 @@ import {
 import { apiFetch } from '@/lib/api';
 
 function getTierDisplayName(tier?: string, variant?: string | null, status?: string): string {
-    if (tier === 'paid' && variant === 'team' && status === 'active') return 'Sencho Admiral';
+    if (tier === 'paid' && variant === 'admiral' && status === 'active') return 'Sencho Admiral';
     if (tier === 'paid') return 'Sencho Skipper';
     return 'Sencho Community';
 }
@@ -42,9 +42,9 @@ export function LicenseSection() {
         }
     };
 
-    const isAdmiral = isPaid && license?.variant === 'team' && license?.status === 'active';
+    const isAdmiral = isPaid && license?.variant === 'admiral' && license?.status === 'active';
     const showSkipperCard = !isPaid || license?.status === 'trial';
-    const showUpgradeCards = !isAdmiral && (showSkipperCard || (license?.variant === 'personal' && license?.status === 'active'));
+    const showUpgradeCards = !isAdmiral && (showSkipperCard || (license?.variant === 'skipper' && license?.status === 'active'));
 
     return (
         <div className="space-y-6">
@@ -210,9 +210,9 @@ export function LicenseSection() {
                             <p className="text-xs text-muted-foreground">For teams managing shared infrastructure.</p>
                             <ul className="space-y-1.5">
                                 {[
-                                    ...(license?.variant === 'personal' ? ['Everything in Skipper'] : ['Everything in Community']),
+                                    ...(license?.variant === 'skipper' ? ['Everything in Skipper'] : ['Everything in Community']),
                                     'Unlimited accounts & scoped RBAC',
-                                    ...(license?.variant !== 'personal' ? ['Fleet View, webhooks & labels', 'Atomic deployments & backups'] : []),
+                                    ...(license?.variant !== 'skipper' ? ['Fleet View, webhooks & labels', 'Atomic deployments & backups'] : []),
                                     'SSO, audit log & host console',
                                     'API tokens & private registries',
                                     'Scheduled operations',

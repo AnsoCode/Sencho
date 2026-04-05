@@ -861,7 +861,7 @@ const requireAdmiral = (req: Request, res: Response): boolean => {
     res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
     return false;
   }
-  if (variant !== 'team') {
+  if (variant !== 'admiral') {
     res.status(403).json({ error: 'This feature requires a Sencho Admiral license.', code: 'ADMIRAL_REQUIRED' });
     return false;
   }
@@ -936,7 +936,7 @@ function checkPermission(
 
   // Scoped assignments only apply when a resource is specified and license is Admiral
   if (!resourceType || !resourceId) return false;
-  if (LicenseService.getInstance().getVariant() !== 'team') return false;
+  if (LicenseService.getInstance().getVariant() !== 'admiral') return false;
 
   const assignments = DatabaseService.getInstance().getRoleAssignments(req.user.userId, resourceType, resourceId);
   for (const assignment of assignments) {
@@ -2327,7 +2327,7 @@ app.get('/api/permissions/me', authMiddleware, (req: Request, res: Response): vo
       globalRole,
       globalPermissions,
       scopedPermissions,
-      isAdmiral: LicenseService.getInstance().getVariant() === 'team',
+      isAdmiral: LicenseService.getInstance().getVariant() === 'admiral',
     });
   } catch (error) {
     console.error('[Permissions] Error:', error);
@@ -2628,7 +2628,7 @@ server.on('upgrade', async (req, socket, head) => {
       }
       // Admiral license gate: host console requires Admiral (paid + team variant)
       const ls = LicenseService.getInstance();
-      if (ls.getTier() !== 'paid' || ls.getVariant() !== 'team') {
+      if (ls.getTier() !== 'paid' || ls.getVariant() !== 'admiral') {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
@@ -4382,7 +4382,7 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
     let tasks = DatabaseService.getInstance().getScheduledTasks();
     // Skipper users only see 'update' tasks; Admiral sees all
     const ls = LicenseService.getInstance();
-    if (ls.getVariant() !== 'team') {
+    if (ls.getVariant() !== 'admiral') {
       tasks = tasks.filter(t => t.action === 'update');
     }
     res.json(tasks);

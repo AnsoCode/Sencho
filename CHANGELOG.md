@@ -13,10 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **licensing:** internal variant values renamed from `personal`/`team` to `skipper`/`admiral`, aligning code with user-facing tier names
+* **licensing:** variant type is now resolved once at activation/validation and stored in DB, instead of string-matching the Lemon Squeezy variant name on every read; `variant_id` is also captured for future lookups
+* **licensing:** pre-existing installs auto-migrate on first `getVariant()` call (resolves from stored name, persists the result)
+
 ### Fixed
 
 * **licensing:** trial users can now see Skipper/Admiral purchase cards in Settings > License (previously hidden due to a condition bug)
-* **licensing:** Admiral licenses (including lifetime) are now correctly identified as the "team" variant; previously, Lemon Squeezy variant names containing "Admiral" were not matched, causing the tier to display as "Skipper" and Admiral features to remain locked
+* **licensing:** Admiral licenses (including lifetime) are now correctly identified; previously, Lemon Squeezy variant names containing "Admiral" were not matched, causing the tier to display as "Skipper" and Admiral features to remain locked
 * **licensing:** "Manage Subscription" button is now hidden for lifetime licenses, which have no billing portal by design
 * **licensing:** license card now shows "Duration: Lifetime" for lifetime licenses instead of an empty renewal date
 

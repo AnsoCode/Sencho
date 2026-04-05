@@ -41,7 +41,7 @@ describe('authMiddleware - distributed license headers', () => {
       .get(PAID_ROUTE)
       .set('Authorization', `Bearer ${token}`)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'personal');
+      .set('x-sencho-variant', 'skipper');
 
     // Should NOT get 403 PAID_REQUIRED; the proxy tier assertion grants access
     expect(res.status).not.toBe(403);
@@ -54,7 +54,7 @@ describe('authMiddleware - distributed license headers', () => {
       .get(PAID_ROUTE)
       .set('Authorization', `Bearer ${token}`)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'team');
+      .set('x-sencho-variant', 'admiral');
 
     // Local license is community in test env → should get 403
     expect(res.status).toBe(403);
@@ -125,24 +125,24 @@ describe('requirePaid - distributed license', () => {
 // ─── requireAdmiral guard ───────────────────────────────────────────────────
 
 describe('requireAdmiral - distributed license', () => {
-  it('allows access when proxy asserts paid tier with team variant', async () => {
+  it('allows access when proxy asserts paid tier with admiral variant', async () => {
     const token = signToken({ scope: 'node_proxy' });
     const res = await request(app)
       .get(ADMIRAL_ROUTE)
       .set('Authorization', `Bearer ${token}`)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'team');
+      .set('x-sencho-variant', 'admiral');
 
     expect(res.status).not.toBe(403);
   });
 
-  it('blocks when proxy asserts paid tier with personal variant', async () => {
+  it('blocks when proxy asserts paid tier with skipper variant', async () => {
     const token = signToken({ scope: 'node_proxy' });
     const res = await request(app)
       .get(ADMIRAL_ROUTE)
       .set('Authorization', `Bearer ${token}`)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'personal');
+      .set('x-sencho-variant', 'skipper');
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('ADMIRAL_REQUIRED');
@@ -181,7 +181,7 @@ describe('Security - tier header injection', () => {
       .get(ADMIRAL_ROUTE)
       .set('Authorization', `Bearer ${token}`)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'team');
+      .set('x-sencho-variant', 'admiral');
 
     // User session → tier headers ignored → local community tier → 403
     expect(res.status).toBe(403);
@@ -191,7 +191,7 @@ describe('Security - tier header injection', () => {
     const res = await request(app)
       .get(PAID_ROUTE)
       .set('x-sencho-tier', 'paid')
-      .set('x-sencho-variant', 'team');
+      .set('x-sencho-variant', 'admiral');
 
     expect(res.status).toBe(401);
   });

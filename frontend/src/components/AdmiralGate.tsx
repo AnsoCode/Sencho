@@ -20,7 +20,7 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
     const { isPaid, license } = useLicense();
     const [dismissed, setDismissed] = useState(isDismissedFromStorage);
 
-    if (isPaid && license?.variant === 'team') return <>{children}</>;
+    if (isPaid && license?.variant === 'admiral') return <>{children}</>;
 
     if (dismissed) {
         return (

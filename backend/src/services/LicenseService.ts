@@ -5,10 +5,10 @@ import { DatabaseService } from './DatabaseService';
 export type LicenseTier = 'community' | 'paid';
 export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
 
-export type LicenseVariant = 'personal' | 'team' | null;
+export type LicenseVariant = 'skipper' | 'admiral' | null;
 
 const VALID_TIERS: readonly string[] = ['community', 'paid'] satisfies readonly LicenseTier[];
-const VALID_VARIANTS: readonly string[] = ['personal', 'team'] satisfies readonly LicenseVariant[];
+const VALID_VARIANTS: readonly string[] = ['skipper', 'admiral'] satisfies readonly LicenseVariant[];
 
 export function isLicenseTier(value: unknown): value is LicenseTier {
     return typeof value === 'string' && (VALID_TIERS as readonly string[]).includes(value);
@@ -43,8 +43,8 @@ export interface SeatLimits {
 }
 
 const SEAT_LIMITS: Record<string, SeatLimits> = {
-    personal: { maxAdmins: 1, maxViewers: 3 },
-    team: { maxAdmins: null, maxViewers: null },
+    skipper: { maxAdmins: 1, maxViewers: 3 },
+    admiral: { maxAdmins: null, maxViewers: null },
 };
 
 interface LemonSqueezyActivationResponse {
@@ -194,21 +194,49 @@ export class LicenseService {
     }
 
     /**
-     * Get the license variant (personal or team) from stored metadata.
-     * Trial licenses default to "personal"; Admiral features require an Admiral license.
-     * Maps Lemon Squeezy variant names (which may use brand names like "Admiral"
-     * or "Skipper") to the internal 'team' or 'personal' values.
+     * Resolve a Lemon Squeezy variant name string to the internal variant type.
+     * Handles legacy names ("Team", "Personal") and current names ("Admiral", "Skipper").
+     */
+    private resolveVariantType(variantName: string): 'skipper' | 'admiral' {
+        const lower = variantName.toLowerCase();
+        if (lower.includes('team') || lower.includes('admiral')) return 'admiral';
+        if (lower.includes('personal') || lower.includes('skipper')) return 'skipper';
+        return 'skipper';
+    }
+
+    /** Persist variant metadata from Lemon Squeezy response to DB. */
+    private storeVariantMeta(db: DatabaseService, meta: { variant_name?: string; variant_id?: number }): void {
+        if (meta.variant_name) {
+            db.setSystemState('license_variant_name', meta.variant_name);
+            db.setSystemState('license_variant_type', this.resolveVariantType(meta.variant_name));
+        }
+        if (meta.variant_id) {
+            db.setSystemState('license_variant_id', String(meta.variant_id));
+        }
+    }
+
+    /**
+     * Get the license variant (skipper or admiral) from stored metadata.
+     * Trial licenses default to "skipper"; Admiral features require an Admiral license.
+     * Reads the pre-resolved `license_variant_type` from DB. Falls back to name-based
+     * resolution for pre-existing installs, then persists the result so the fallback
+     * only runs once.
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
         const status = db.getSystemState('license_status');
-        if (status === 'trial') return 'personal';
+        if (status === 'trial') return 'skipper';
+
+        // Primary path: read the pre-resolved type stored at activation/validation
+        const storedType = db.getSystemState('license_variant_type');
+        if (isLicenseVariant(storedType)) return storedType;
+
+        // Backward compat: resolve from variant name for pre-existing installs
         const variantName = db.getSystemState('license_variant_name');
         if (!variantName) return null;
-        const lower = variantName.toLowerCase();
-        if (lower.includes('team') || lower.includes('admiral')) return 'team';
-        if (lower.includes('personal') || lower.includes('skipper')) return 'personal';
-        return 'personal'; // default activated licenses to personal
+        const resolved = this.resolveVariantType(variantName);
+        db.setSystemState('license_variant_type', resolved);
+        return resolved;
     }
 
     /**
@@ -217,7 +245,7 @@ export class LicenseService {
     public getSeatLimits(): SeatLimits {
         const variant = this.getVariant();
         if (!variant) return { maxAdmins: 1, maxViewers: 0 }; // community
-        return SEAT_LIMITS[variant] || SEAT_LIMITS.personal;
+        return SEAT_LIMITS[variant] || SEAT_LIMITS.skipper;
     }
 
     /**
@@ -295,8 +323,8 @@ export class LicenseService {
             if (data.meta?.product_name) {
                 db.setSystemState('license_product_name', data.meta.product_name);
             }
-            if (data.meta?.variant_name) {
-                db.setSystemState('license_variant_name', data.meta.variant_name);
+            if (data.meta) {
+                this.storeVariantMeta(db, data.meta);
             }
             if (data.meta?.customer_id) {
                 db.setSystemState('customer_id', String(data.meta.customer_id));
@@ -353,6 +381,8 @@ export class LicenseService {
             'license_customer_name',
             'license_product_name',
             'license_variant_name',
+            'license_variant_type',
+            'license_variant_id',
             'subscription_id',
             'customer_id',
             'customer_portal_url',
@@ -428,8 +458,8 @@ export class LicenseService {
             if (data.meta?.product_name) {
                 db.setSystemState('license_product_name', data.meta.product_name);
             }
-            if (data.meta?.variant_name) {
-                db.setSystemState('license_variant_name', data.meta.variant_name);
+            if (data.meta) {
+                this.storeVariantMeta(db, data.meta);
             }
             if (data.meta?.customer_id && !db.getSystemState('customer_id')) {
                 db.setSystemState('customer_id', String(data.meta.customer_id));

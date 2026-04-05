@@ -26,6 +26,7 @@ function setLicenseState(overrides: Record<string, string>) {
     'license_status', 'license_key', 'license_valid_until',
     'license_last_validated', 'license_customer_name',
     'license_product_name', 'license_variant_name',
+    'license_variant_type', 'license_variant_id',
     'billing_portal_url', 'billing_portal_expires',
   ];
   for (const key of keys) {
@@ -37,9 +38,9 @@ function setLicenseState(overrides: Record<string, string>) {
 }
 
 describe('LicenseService.getVariant()', () => {
-  it('returns "personal" for trial licenses', () => {
+  it('returns "skipper" for trial licenses', () => {
     setLicenseState({ license_status: 'trial' });
-    expect(svc.getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('skipper');
   });
 
   it('returns null when no variant name is stored', () => {
@@ -47,39 +48,51 @@ describe('LicenseService.getVariant()', () => {
     expect(svc.getVariant()).toBeNull();
   });
 
-  it('maps "Team" variant name to "team"', () => {
+  it('reads pre-resolved variant type from DB (admiral)', () => {
+    setLicenseState({ license_status: 'active', license_variant_type: 'admiral' });
+    expect(svc.getVariant()).toBe('admiral');
+  });
+
+  it('reads pre-resolved variant type from DB (skipper)', () => {
+    setLicenseState({ license_status: 'active', license_variant_type: 'skipper' });
+    expect(svc.getVariant()).toBe('skipper');
+  });
+
+  it('falls back to name resolution and persists type (Team -> admiral)', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Team' });
-    expect(svc.getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('admiral');
+    expect(DatabaseService.getInstance().getSystemState('license_variant_type')).toBe('admiral');
   });
 
-  it('maps "Personal" variant name to "personal"', () => {
+  it('falls back to name resolution and persists type (Personal -> skipper)', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Personal' });
-    expect(svc.getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('skipper');
+    expect(DatabaseService.getInstance().getSystemState('license_variant_type')).toBe('skipper');
   });
 
-  it('maps "Admiral" variant name to "team"', () => {
+  it('maps "Admiral" variant name to "admiral"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Admiral' });
-    expect(svc.getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('admiral');
   });
 
-  it('maps "Admiral Lifetime" variant name to "team"', () => {
+  it('maps "Admiral Lifetime" variant name to "admiral"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Admiral Lifetime' });
-    expect(svc.getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('admiral');
   });
 
-  it('maps "Skipper" variant name to "personal"', () => {
+  it('maps "Skipper" variant name to "skipper"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Skipper' });
-    expect(svc.getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('skipper');
   });
 
-  it('maps "Skipper Lifetime" variant name to "personal"', () => {
+  it('maps "Skipper Lifetime" variant name to "skipper"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Skipper Lifetime' });
-    expect(svc.getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('skipper');
   });
 
-  it('defaults unknown variant names to "personal"', () => {
+  it('defaults unknown variant names to "skipper"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Unknown Variant' });
-    expect(svc.getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('skipper');
   });
 });
 
@@ -203,7 +216,7 @@ describe('LicenseService.getLicenseInfo() - full scenarios', () => {
     const info = svc.getLicenseInfo();
     expect(info.tier).toBe('paid');
     expect(info.status).toBe('active');
-    expect(info.variant).toBe('team');
+    expect(info.variant).toBe('admiral');
     expect(info.isLifetime).toBe(true);
     expect(info.trialDaysRemaining).toBeNull();
     expect(info.customerName).toBe('Test User');
@@ -226,7 +239,7 @@ describe('LicenseService.getLicenseInfo() - full scenarios', () => {
     const info = svc.getLicenseInfo();
     expect(info.tier).toBe('paid');
     expect(info.status).toBe('active');
-    expect(info.variant).toBe('personal');
+    expect(info.variant).toBe('skipper');
     expect(info.isLifetime).toBe(false);
     expect(info.trialDaysRemaining).toBeNull();
     expect(info.customerName).toBe('Another User');
