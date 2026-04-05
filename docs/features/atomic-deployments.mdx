@@ -4,30 +4,36 @@ description: Zero-downtime deployments with automatic rollback for Sencho Pro us
 ---
 
 <Note>
-  Atomic Deployments require a Sencho Pro license. Community Edition uses standard deployments without backup or rollback.
+  Atomic Deployments require a **Sencho Skipper** or **Admiral** license. Community Edition uses standard deployments without backup or rollback.
 </Note>
 
 Sencho Pro wraps every deployment in a safety net. Before applying changes, it backs up your current configuration. If the deployment fails, it automatically rolls back to the previous working state.
 
 ## How it works
 
-1. **Backup** - Before a deploy or update, Sencho copies `compose.yaml` and `.env` files to a `.sencho-backup/` directory inside the stack folder
+1. **Backup** - Before a deploy or update, Sencho copies your `compose.yaml` and `.env` files to a backup directory inside the stack folder
 2. **Deploy** - Sencho runs the requested compose operation (up, pull + recreate, etc.)
-3. **Health probe** - After deployment, Sencho checks whether any containers exited with a non-zero exit code
+3. **Health probe** - After deployment, Sencho waits briefly, then checks whether any containers exited with a non-zero exit code
 4. **Auto-rollback** - If a crash is detected, Sencho restores the backed-up files and re-deploys automatically
 
-This entire sequence happens transparently. You see a single deploy action - Sencho handles the safety logic behind the scenes.
+This entire sequence happens transparently. You see a single deploy action; Sencho handles the safety logic behind the scenes.
+
+## Which operations are protected
+
+Atomic deployments apply to:
+
+- **Deploy** from the stack editor (compose down + up)
+- **Update** from the stack editor (pull latest images + recreate)
+- **Webhook triggers** for deploy and pull actions
+- **Scheduled tasks** that perform deploys or updates
+- **App Store installs** when deploying a new stack
 
 ## Manual rollback
 
-Pro admins can manually roll back to the previous deployment at any time by clicking the **Rollback** button in the stack action bar. The button appears whenever a backup exists, and its tooltip shows the timestamp of the last backup.
+You can manually roll back to the previous deployment at any time by clicking the **Rollback** button in the stack editor's action bar. The button only appears when a backup exists from a prior deployment.
 
-Clicking Rollback restores the backed-up `compose.yaml` and `.env` files, then re-deploys the stack with the restored configuration.
-
-## Webhook support
-
-Deployments triggered via webhooks also use atomic rollback. Whether you deploy manually through the UI or automatically from a CI/CD pipeline, the same backup-and-recover flow applies.
+Hover over the Rollback button to see a tooltip with the timestamp of the last backup. Clicking it restores the backed-up `compose.yaml` and `.env` files, then re-deploys the stack with the restored configuration.
 
 ## Community Edition behavior
 
-Community users continue to use the standard deploy flow - no backup is created and no rollback is available. Upgrading to Pro enables atomic deployments immediately with no configuration required.
+Community users continue to use the standard deploy flow: no backup is created and no rollback is available. Upgrading to Skipper or Admiral enables atomic deployments immediately with no configuration required.

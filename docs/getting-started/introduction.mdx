@@ -21,12 +21,38 @@ Sencho is a self-hosted Docker Compose management dashboard. It gives you a clea
 
 ## What you can do
 
-- **Deploy and control stacks** - create, start, stop, restart, and delete Compose stacks with one click
-- **Edit files in-browser** - full Monaco editor for `compose.yaml` and `.env` files
-- **Monitor in real-time** - live CPU, RAM, disk, and network stats with historical charts
-- **Stream logs** - tail container logs individually or aggregate all stacks in one view
-- **Manage resources** - browse, filter, and prune Docker images, volumes, and networks
-- **Deploy from the App Store** - one-click deployment from a curated template registry
-- **Run a host console** - interactive terminal on the host OS directly in the browser
-- **Set alerts** - threshold-based notifications via Discord, Slack, or any webhook
-- **Manage multiple servers** - add remote Sencho instances as nodes and switch between them seamlessly
+### Stack lifecycle
+- **Deploy and control stacks** - create, start, stop, restart, update, roll back, and delete Compose stacks with one click
+- **Edit files in-browser** - full Monaco editor for `compose.yaml` and `.env` files with syntax highlighting, save-and-deploy in one step
+- **Atomic deployments** - automatic backup and rollback on every deploy. If containers crash, the previous configuration is restored automatically
+- **Stack labels** - organize stacks with custom labels for quick filtering and grouping
+
+### Monitoring & observability
+- **Real-time dashboard** - live CPU, RAM, disk, and network stats with 24-hour historical charts
+- **Global log aggregation** - stream logs from all containers across all stacks in a single view, with filtering by stack, level, and keyword search
+- **Alerts & notifications** - threshold-based alerts (CPU, memory, network, restart count) routed to Discord, Slack, or any webhook endpoint
+- **Notification routing** - fine-grained control over which alerts go to which channels
+- **Audit log** - searchable trail of every mutating action with timestamps, user attribution, and node context
+
+### Infrastructure
+- **Multi-node management** - add remote Sencho instances as nodes and manage them identically to your local machine
+- **Fleet view** - monitor your entire infrastructure from a single screen with health metrics, container counts, and resource usage
+- **Fleet-wide backups** - point-in-time snapshots of every compose and env file across all nodes, with per-stack restore
+- **Remote updates** - check for and apply Sencho updates across your fleet from the dashboard
+
+### Resources & registry
+- **Resource hub** - browse, filter, and prune Docker images, volumes, and networks with managed/external/unused classification
+- **App Store** - deploy from 190+ pre-configured application templates with category filtering and one-click setup
+- **Private registries** - store credentials for Docker Hub, GHCR, AWS ECR, or self-hosted registries with automatic injection during deploys
+
+### Automation & integration
+- **Webhooks** - trigger stack actions from CI/CD pipelines via HTTP with HMAC-SHA256 authentication
+- **Scheduled operations** - run stack actions on a cron schedule directly from the UI
+- **Auto-update policies** - configure automatic image update checks and apply updates on your terms
+- **API tokens** - create scoped tokens for programmatic access and external integrations
+
+### Administration
+- **RBAC** - create viewer accounts with read-only access while keeping deploy and edit permissions locked to admins
+- **SSO** - authenticate via external identity providers
+- **Host console** - interactive terminal on the host OS directly in the browser; no SSH required
+- **Docker Run converter** - paste any `docker run` command and convert it to a Compose stack

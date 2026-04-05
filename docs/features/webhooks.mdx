@@ -4,47 +4,66 @@ description: Trigger stack actions from CI/CD pipelines via HTTP webhooks with H
 ---
 
 <Note>
-  Webhooks require a Sencho Pro license.
+  Webhooks require a **Sencho Admiral** license.
 </Note>
 
-Sencho webhooks let external systems trigger stack actions over HTTP. The typical use case: your CI pipeline builds a new image, then calls a Sencho webhook to deploy the updated stack - no manual intervention required.
+Sencho webhooks let external systems trigger stack actions over HTTP. The typical use case: your CI pipeline builds a new image, then calls a Sencho webhook to deploy the updated stack, with no manual intervention required.
 
 ## How it works
 
-1. You create a webhook in **Settings → Webhooks**, targeting a specific stack and action
+1. You create a webhook in **Settings > Webhooks**, targeting a specific stack and action
 2. Sencho generates a unique secret for HMAC-SHA256 signature validation
 3. Your CI/CD system sends a `POST` request to the trigger URL with the correct signature
 4. Sencho validates the signature and executes the action asynchronously
 
 ## Creating a webhook
 
-<Frame>
-  <img src="/images/webhooks/webhooks-settings.png" alt="Webhooks settings panel" />
-</Frame>
+Go to **Settings > Webhooks** and click **Create Webhook**. Fill in:
 
-Open **Settings → Webhooks** and click **Create Webhook**. Fill in:
+<Frame>
+  <img src="/images/webhooks/webhooks-create-form.png" alt="Webhook creation form with Name, Stack, and Action fields" />
+</Frame>
 
 | Field | Description |
 |-------|-------------|
 | **Name** | A display name (e.g. "Deploy on push") |
 | **Stack** | The target stack to act on |
-| **Action** | One of: `deploy`, `restart`, `stop`, `start`, `pull` |
+| **Action** | One of the actions listed below |
 
-After creation, Sencho shows the webhook secret **once**. Copy it immediately - it cannot be retrieved later.
+After creation, Sencho shows the webhook secret **once** in a green banner. Copy it immediately; it cannot be retrieved later. The webhook list only shows the last four characters of the secret.
 
-### Actions explained
+<Frame>
+  <img src="/images/webhooks/webhooks-secret-reveal.png" alt="Secret reveal banner after creating a webhook, showing the full secret and a copy button" />
+</Frame>
+
+### Available actions
 
 | Action | What it does |
 |--------|-------------|
-| **Deploy** | Runs `docker compose down` then `docker compose up -d` (full redeploy) |
-| **Restart** | Runs `docker compose restart` |
-| **Stop** | Runs `docker compose stop` |
-| **Start** | Runs `docker compose start` |
-| **Pull** | Pulls latest images and recreates changed containers |
+| **Deploy (down + up)** | Stops and redeploys the entire stack |
+| **Restart** | Restarts the stack's running containers |
+| **Stop** | Stops the stack |
+| **Start** | Starts a stopped stack |
+| **Pull & Update** | Pulls the latest images and recreates changed containers |
+
+## Managing webhooks
+
+Each webhook appears as a card showing the webhook name, an action badge, a stack badge, the trigger URL with a copy button, and the masked secret.
+
+<Frame>
+  <img src="/images/webhooks/webhooks-settings.png" alt="Webhooks settings showing a configured webhook with trigger URL, masked secret, and controls" />
+</Frame>
+
+From the webhook card you can:
+
+- **Toggle** the webhook on or off with the switch
+- **Delete** the webhook with the trash icon
+- **Copy** the trigger URL with the clipboard button
+- **View execution history** by clicking **Recent executions**
 
 ## Triggering a webhook
 
-Send a POST request to the trigger URL with an HMAC-SHA256 signature:
+Send a `POST` request to the trigger URL shown on the webhook card. Include an HMAC-SHA256 signature in the `X-Webhook-Signature` header:
 
 ```
 POST /api/webhooks/{id}/trigger
@@ -52,7 +71,7 @@ Content-Type: application/json
 X-Webhook-Signature: sha256={hmac}
 ```
 
-The signature is computed as `HMAC-SHA256(request_body, webhook_secret)` and sent in the `X-Webhook-Signature` header with a `sha256=` prefix.
+The signature is computed as `HMAC-SHA256(request_body, webhook_secret)` and sent with a `sha256=` prefix.
 
 ### Example with curl
 
@@ -61,7 +80,7 @@ SECRET="your-webhook-secret"
 BODY='{}'
 SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | cut -d' ' -f2)
 
-curl -X POST https://your-sencho.com/api/webhooks/3/trigger \
+curl -X POST https://your-sencho.example.com/api/webhooks/3/trigger \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Signature: sha256=$SIGNATURE" \
   -d "$BODY"
@@ -74,6 +93,8 @@ By default, the webhook executes the action configured at creation time. You can
 ```json
 { "action": "restart" }
 ```
+
+Valid override values are: `deploy`, `restart`, `stop`, `start`, `pull`.
 
 ### Response
 
@@ -114,19 +135,20 @@ deploy:
 
 ## Execution history
 
-Each webhook tracks its last 100 executions. Click **Recent executions** on any webhook row to see:
+Each webhook tracks its recent executions. Click **Recent executions** on any webhook card to expand the history, which shows:
 
-- Status (success/failure)
-- Action performed
-- Execution time
-- Duration
-- Error message (if failed)
+- **Status** icon (green check for success, red X for failure)
+- **Action** that was performed
+- **Timestamp** of the execution
+- **Duration** in seconds
+- **Error message** if the execution failed
 
 ## Security
 
-- Webhook secrets are 64-character hex strings generated with `crypto.randomBytes(32)`
-- Signature validation uses `crypto.timingSafeEqual` to prevent timing attacks
-- Secrets are shown only once at creation - API responses return masked values
-- Signature verification uses the raw request bytes, not re-serialized JSON, to prevent serialization-induced mismatches
-- Webhook trigger endpoints are public (no session cookie required) but protected by HMAC signature validation
-- Each webhook targets a single stack - there is no way to execute arbitrary commands
+- Secrets are shown only once at creation. The webhook list displays only the last four characters.
+- Trigger endpoints do not require a session cookie, but are protected by HMAC signature validation.
+- Each webhook targets a single stack. There is no way to execute arbitrary commands through a webhook.
+
+<Note>
+  Webhooks only operate on the **local node**. You cannot trigger actions on remote nodes through webhooks.
+</Note>

@@ -81,23 +81,45 @@ SSO can be configured two ways:
 
 ### Via Settings UI
 
-Admins can manage SSO providers in **Settings → SSO**. Each provider has:
+Admins can manage SSO providers in **Settings → SSO**. Each provider is displayed as a collapsible card with:
 
-- An **enable/disable** toggle
-- Provider-specific configuration fields
+- An **enable/disable** toggle and an **Active** badge when enabled
+- Provider-specific configuration fields (expand the card to configure)
+- A **Save** button to persist changes
 - A **Test Connection** button to verify connectivity before saving
+- A **Remove** button to delete an existing provider configuration
 
 <Frame>
   <img src="/images/sso/sso-settings.png" alt="SSO settings panel showing all four identity providers" />
 </Frame>
 
-Expand a provider card to configure it. Here's the LDAP configuration form:
+Expand a provider card to configure it. The LDAP configuration form includes:
+
+| Field | Description |
+|-------|-------------|
+| **Server URL** | LDAP server URL (e.g., `ldap://ldap.example.com:389` or `ldaps://...` for TLS) |
+| **Bind DN** | Service account DN used to search the directory |
+| **Bind Password** | Service account password |
+| **Search Base** | Base DN for user searches (e.g., `ou=users,dc=example,dc=com`) |
+| **Search Filter** | LDAP filter template using `{{username}}` as placeholder |
+| **Admin Group DN** | DN of the group whose members receive the Admin role |
+| **Default Role** | Role assigned to users not in the admin group (Viewer or Admin) |
+| **Verify TLS certificate** | Toggle to enable or disable TLS certificate verification |
 
 <Frame>
   <img src="/images/sso/sso-settings-ldap.png" alt="LDAP configuration form with server URL, bind DN, search base, and role mapping" />
 </Frame>
 
-And an OIDC provider (Google) configuration form:
+OIDC providers (Google, GitHub, Okta) share a common configuration form:
+
+| Field | Description |
+|-------|-------------|
+| **Issuer URL** | (Okta only) Your Okta issuer URL |
+| **Client ID** | OAuth client ID from your identity provider |
+| **Client Secret** | OAuth client secret |
+| **Admin Claim** | JWT claim name inspected for role mapping (e.g., `groups`) |
+| **Admin Claim Value** | Value within the claim that grants Admin (e.g., `sencho-admins`) |
+| **Default Role** | Role assigned when no claim mapping matches (Viewer or Admin) |
 
 <Frame>
   <img src="/images/sso/sso-settings-oidc.png" alt="Google OIDC configuration form with client ID, client secret, and role claim mapping" />
@@ -114,6 +136,7 @@ Environment variables are useful for initial deployment or infrastructure-as-cod
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SSO_LDAP_ENABLED` | `false` | Enable LDAP authentication |
+| `SSO_LDAP_DISPLAY_NAME` | `LDAP` | Label shown on the login button (e.g., "Corporate AD") |
 | `SSO_LDAP_URL` | - | LDAP server URL (e.g., `ldap://ldap.example.com:389` or `ldaps://ldap.example.com:636`) |
 | `SSO_LDAP_BIND_DN` | - | Service account DN for searching users |
 | `SSO_LDAP_BIND_PASSWORD` | - | Service account password (encrypted at rest in the database) |
@@ -171,23 +194,8 @@ If not set, Sencho auto-detects the URL from the request's `Host` header and pro
 
 - **PKCE** - All OIDC flows use `code_challenge_method=S256` to prevent authorization code interception
 - **State parameter** - A cryptographic random value protects against CSRF attacks on the OAuth callback
-- **Encrypted secrets** - LDAP bind passwords and OIDC client secrets are encrypted at rest with AES-256-GCM
+- **Encrypted secrets** - LDAP bind passwords and OIDC client secrets are encrypted at rest
 - **No local password** - SSO users are created with an unusable password hash. They cannot bypass SSO by using the password login form
 - **Admin-only configuration** - Only Admiral administrators can enable or configure SSO providers
 
-## Troubleshooting
-
-### LDAP connection refused
-Verify the LDAP server is reachable from the Sencho container. If LDAP is on the host machine, use `host.docker.internal` (Docker Desktop) or the host's LAN IP address - not `localhost`.
-
-### TLS certificate errors
-If your LDAP server uses a self-signed certificate, set `SSO_LDAP_TLS_REJECT_UNAUTHORIZED=false`. For production, install a trusted certificate instead.
-
-### OAuth callback URL mismatch
-The redirect URI registered in your identity provider must exactly match what Sencho sends. Check:
-1. `SSO_CALLBACK_URL` is set to your external URL (e.g., `https://sencho.example.com`)
-2. The callback URL in your provider's settings is `https://sencho.example.com/api/auth/sso/oidc/<provider>/callback`
-3. Protocol matches - don't mix `http` and `https`
-
-### SSO buttons not appearing on login page
-SSO providers only appear on the login page when they are both **configured** and **enabled**. Check Settings → SSO to verify the provider is active.
+For common SSO issues (LDAP connection errors, OAuth callback mismatches, SSO buttons not appearing), see the [Troubleshooting](/operations/troubleshooting#ldap-connection-refused) page.

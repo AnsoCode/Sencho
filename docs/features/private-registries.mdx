@@ -22,7 +22,7 @@ Sencho can store credentials for your private Docker registries and inject them 
 
 1. Open **Settings Hub** and navigate to the **Registries** tab (visible to Admiral admins only).
 2. Click **Add Registry**.
-3. Select the registry type. The URL field auto-fills with the standard endpoint for Docker Hub and GHCR.
+3. Select the registry type. When you switch types, the URL field auto-fills with the standard endpoint for Docker Hub and GHCR.
 4. Enter a descriptive name, the registry URL, and your credentials.
 5. For **ECR** registries, also provide the AWS region (e.g., `us-east-1`).
 6. Click **Add**.
@@ -35,9 +35,28 @@ Sencho can store credentials for your private Docker registries and inject them 
   <img src="/images/private-registries/registries-add-form.png" alt="Add Registry form with type selector, credentials, and URL fields" />
 </Frame>
 
-## Testing connectivity
+## Managing registries
 
-After adding a registry, click the checkmark icon on the registry card to test the connection. Sencho will attempt to authenticate against the registry's `/v2/` endpoint and report success or failure.
+Each configured registry appears as a card showing:
+
+- **Name** and **type badge** (e.g., Docker Hub, GHCR, AWS ECR, Custom)
+- **Registry URL** (monospaced)
+- **Username**
+- **Secret status** (whether a secret is stored)
+- **AWS Region**, if the registry is an ECR type
+- **Created date**
+
+Each card has three action buttons:
+
+- **Test connection** (checkmark icon) to verify credentials
+- **Edit** (pencil icon) to modify the registry name, URL, credentials, or type
+- **Delete** (trash icon) to remove the registry after confirmation
+
+When editing a registry, you can leave the secret field blank to keep the existing stored secret. Only fill it in if you want to replace it.
+
+### Testing connectivity
+
+Click the checkmark icon on any registry card to test the connection. Sencho authenticates against the registry's `/v2/` endpoint and reports success or failure.
 
 For ECR registries, the test verifies that the AWS credentials can successfully obtain an authorization token.
 
@@ -103,11 +122,11 @@ AWS ECR uses short-lived authentication tokens (valid for 12 hours) derived from
 
 ## Security
 
-- **Encrypted storage** - Registry secrets are encrypted at rest using AES-256-GCM, the same encryption used for remote node tokens and SSO secrets.
+- **Encrypted storage** - Registry secrets are encrypted at rest, using the same encryption layer as remote node tokens and SSO secrets.
 - **No persistent Docker login** - Credentials are written to a temporary file for the duration of each operation and immediately deleted afterward.
 - **Secrets never exposed** - The API never returns decrypted secrets. The UI shows only whether a secret is stored.
 - **Audit trail** - Registry create, update, and delete operations are recorded in the [Audit Log](/features/audit-log).
-- **Admin-only access** - Only admin users with a Admiral license can manage registry credentials.
+- **Admin-only access** - Only admin users with an Admiral license can manage registry credentials.
 
 ## Multi-node behavior
 

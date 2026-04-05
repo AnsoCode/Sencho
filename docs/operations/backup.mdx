@@ -3,7 +3,11 @@ title: Backup & Restore
 description: What to back up, how to restore it, and how to migrate Sencho to a new host.
 ---
 
-Sencho stores all its state in two places: the **data directory** (SQLite database) and your **compose directory** (your actual stack files). Both need to be backed up for a complete recovery.
+Sencho stores all its state in two places: the **data directory** (SQLite database and encryption key) and your **compose directory** (your actual stack files). Both need to be backed up for a complete recovery.
+
+<Note>
+  Skipper and Admiral users also have access to [Fleet-Wide Backups](/features/fleet-backups), which snapshot compose files across all nodes directly from the dashboard. This page covers lower-level backup of the Sencho instance itself.
+</Note>
 
 ---
 
@@ -14,15 +18,18 @@ Sencho stores all its state in two places: the **data directory** (SQLite databa
 Default path: `/app/data` inside the container, mapped to wherever you mounted it on the host (e.g. `./sencho-data`).
 
 Contains:
-- `sencho.db` - SQLite database with all settings, nodes, alerts, metrics history, and notification history
+- `sencho.db` - SQLite database with all settings, users, nodes, alerts, metrics history, and notification config
+- `encryption.key` - Key used to encrypt sensitive values (registry credentials, node API tokens) stored in the database
 
-This single file is everything Sencho knows about itself. Back it up and you can fully restore any Sencho installation.
+<Warning>
+  Both files are required for a full restore. If you restore `sencho.db` without the matching `encryption.key`, any encrypted values in the database will be unreadable and you will need to re-enter registry credentials and re-generate node API tokens.
+</Warning>
 
 ### 2. Compose directory (`COMPOSE_DIR`)
 
-The directory containing your stack subdirectories - your `compose.yaml` files, `.env` files, and any bind-mounted config files stored there.
+The directory containing your stack subdirectories: your `compose.yaml` files, `.env` files, and any bind-mounted config files stored there.
 
-This is your actual application data. It lives entirely outside Sencho and you almost certainly already have it on a schedule, but include it in any Sencho backup plan.
+This is your actual application data. It lives entirely outside Sencho and you almost certainly already back it up on a schedule, but include it in any Sencho backup plan.
 
 ---
 
@@ -34,7 +41,7 @@ This is your actual application data. It lives entirely outside Sencho and you a
 # Stop Sencho to ensure no active transactions (recommended but not strictly required)
 docker stop sencho
 
-# Copy the data directory
+# Copy the data directory (includes both sencho.db and encryption.key)
 cp -r /path/to/sencho-data /path/to/backup/sencho-data-$(date +%Y%m%d)
 
 # Copy compose stacks
@@ -45,7 +52,7 @@ docker start sencho
 ```
 
 <Note>
-  Sencho uses SQLite's default journal mode (not WAL), so you will not see `-wal` or `-shm` sidecar files alongside `sencho.db`. If a `-journal` file exists when you copy, it indicates an interrupted write — SQLite will automatically resolve it the next time the database is opened.
+  Sencho uses SQLite's default journal mode (not WAL), so you will not see `-wal` or `-shm` sidecar files alongside `sencho.db`. If a `-journal` file exists when you copy, it indicates an interrupted write. SQLite will automatically resolve it the next time the database is opened.
 </Note>
 
 ### SQLite online backup (without stopping)
@@ -56,13 +63,15 @@ SQLite supports hot backups via its `.backup` command. This is safe to run while
 sqlite3 /path/to/sencho-data/sencho.db ".backup '/path/to/backup/sencho.db'"
 ```
 
+Remember to also copy `encryption.key` from the same directory.
+
 ### Automated daily backup (cron example)
 
 ```cron
-0 3 * * * sqlite3 /path/to/sencho-data/sencho.db ".backup '/backups/sencho-$(date +\%Y\%m\%d).db'" && find /backups -name "sencho-*.db" -mtime +30 -delete
+0 3 * * * cp /path/to/sencho-data/encryption.key /backups/encryption.key && sqlite3 /path/to/sencho-data/sencho.db ".backup '/backups/sencho-$(date +\%Y\%m\%d).db'" && find /backups -name "sencho-*.db" -mtime +30 -delete
 ```
 
-This backs up the database at 3 AM daily and deletes backups older than 30 days.
+This copies the encryption key, backs up the database at 3 AM daily, and deletes database backups older than 30 days.
 
 ---
 
@@ -79,6 +88,7 @@ This backs up the database at 3 AM daily and deletes backups older than 30 days.
    ```bash
    rm -rf /path/to/sencho-data/*
    cp /path/to/backup/sencho.db /path/to/sencho-data/sencho.db
+   cp /path/to/backup/encryption.key /path/to/sencho-data/encryption.key
    ```
 
 3. Restore your compose directory if needed:
@@ -135,9 +145,5 @@ If other Sencho instances were pointing to your old host as a remote node, updat
 | Item | Location | Notes |
 |------|----------|-------|
 | Container data volumes | Wherever each stack's volumes are mounted on the host | Back these up separately per-application |
-| Actual container images | Docker image cache | These are re-pulled on next deploy - no backup needed |
+| Actual container images | Docker image cache | These are re-pulled on next deploy; no backup needed |
 | Sencho logs (docker logs) | Container stdout | Not persisted beyond container lifetime |
-
-<Note>
-  Sencho does not currently have a built-in backup scheduler or export function. The approaches above use standard OS tools and SQLite's own backup mechanism.
-</Note>

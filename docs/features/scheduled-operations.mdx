@@ -10,7 +10,7 @@ description: Automate recurring Docker operations like stack restarts, fleet sna
 
 ## Overview
 
-Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest - including a full execution history log so you always know what ran and when.
+Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest, including a full execution history log so you always know what ran and when.
 
 <Frame>
   <img src="/images/scheduled-operations/overview.png" alt="Scheduled operations list view showing tasks with status, schedule, and actions" />
@@ -20,28 +20,44 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 
 | Action | Target | Description |
 |--------|--------|-------------|
-| **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack via the Docker Engine API |
+| **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack |
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
-| **System Prune** | A specific node (or the default node) | Prunes selected resources, optionally filtered by Docker label |
+| **System Prune** | The default node | Prunes selected resources, optionally filtered by Docker label |
 
 ## Creating a Scheduled Task
 
 1. Navigate to the **Schedules** tab in the top navigation bar (visible to Admiral admins).
 2. Click **New Schedule**.
 3. Fill in the form:
-   - **Name** - a descriptive label (e.g. "Nightly staging restart").
-   - **Action** - choose Restart Stack, Fleet Snapshot, or System Prune.
-   - **Stack / Node** - if you chose Restart Stack, select the target stack and the node it runs on.
-   - **Services** - optionally select specific services within the stack to restart. Leave empty to restart all services.
-   - **Prune Targets** - if you chose System Prune, select which resources to prune (containers, images, networks, volumes). All are selected by default.
-   - **Label Filter** - optionally filter prune operations to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`).
-   - **Cron Expression** - standard 5-field cron format. A human-readable preview appears below the input.
-   - **Enabled** - toggle the task on or off.
+   - **Name**: A descriptive label (e.g. "Nightly staging restart").
+   - **Action**: Choose Restart Stack, Fleet Snapshot, or System Prune. The form fields below change based on your selection.
+   - **Node**: (Restart Stack only) Select the node where the target stack runs.
+   - **Stack**: (Restart Stack only) Select the stack to restart. Becomes available after choosing a node.
+   - **Services**: (Restart Stack only) Optionally select specific services within the stack to restart. Leave empty to restart all services.
+   - **Prune Targets**: (System Prune only) Select which resources to prune: containers, images, networks, volumes. All are selected by default.
+   - **Label Filter**: (System Prune only) Optionally filter prune operations to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`).
+   - **Cron Expression**: Standard 5-field cron format. A human-readable preview appears below the input.
+   - **Enabled**: Toggle the task on or off.
 4. Click **Create**.
 
 <Frame>
   <img src="/images/scheduled-operations/create-dialog.png" alt="Create scheduled task dialog with action, cron expression, and prune target options" />
 </Frame>
+
+## Task List
+
+The task list is displayed as a table with the following columns:
+
+| Column | Description |
+|--------|-------------|
+| **Name** | The task name |
+| **Action** | Task type badge: Restart Stack, Fleet Snapshot, or System Prune |
+| **Target** | Stack name (with selected services, if any), or the target type for non-stack actions |
+| **Schedule** | Human-readable description with the raw cron expression below |
+| **Status** | Last run result: **Success** (green), **Failed** (red), or "Never run" |
+| **Next Run** | When the task will next execute |
+| **Enabled** | Toggle switch to enable or disable the task |
+| **Actions** | Action buttons (see [Managing Tasks](#managing-tasks)) |
 
 ## Granular Targeting
 
@@ -98,10 +114,14 @@ When creating a new task while a node filter is active, Sencho pre-selects that 
 
 ## Managing Tasks
 
-- **Enable/Disable** - Use the toggle switch in the task list to pause or resume a schedule without deleting it.
-- **Run Now** - Click the play icon to immediately execute a task. This works even on disabled tasks, allowing you to test a schedule before enabling it. Manual runs are labeled "Manual" in the execution history.
-- **Edit** - Click the pencil icon to update the task name, schedule, or target.
-- **Delete** - Click the trash icon to permanently remove the task and all its execution history.
+Each task row has four action buttons:
+
+- **Run Now** (play icon): Immediately execute the task without waiting for the next scheduled run. Manual runs are labeled "Manual" in the execution history.
+- **Execution History** (clock icon): Open the run history panel for this task.
+- **Edit** (pencil icon): Modify the task name, action, target, or schedule.
+- **Delete** (trash icon): Permanently remove the task and all its execution history after confirmation.
+
+Use the **Enabled** toggle switch in the task list to pause or resume a schedule without deleting it.
 
 ## Failure Notifications
 
@@ -117,19 +137,19 @@ To configure notification channels, go to **Settings > Notifications**.
 
 ## Execution History
 
-Click the history icon on any task to view its execution log. Each entry shows:
+Click the clock icon on any task to open the run history panel. The history is displayed as a table with the following columns:
 
-- **Timestamp** - when the task ran.
-- **Source** - whether the run was triggered by the scheduler or manually via Run Now.
-- **Status** - success or failure.
-- **Duration** - how long the execution took.
-- **Details** - output message or error description.
+| Column | Description |
+|--------|-------------|
+| **Time** | When the run started |
+| **Source** | Whether the run was triggered by the **Scheduler** or **Manual** (via Run Now) |
+| **Status** | Success, Failed, or Running |
+| **Duration** | How long the run took (in seconds) |
+| **Details** | Output summary or error message |
+
+Run history is paginated at 20 entries per page. You can export the full history as CSV using the download button in the panel header.
 
 Execution history is retained for 30 days.
-
-### Exporting History
-
-Click the download icon in the top-right corner of the execution history panel to export the full history as a CSV file. The export includes all runs within the 30-day retention window — not just the current page.
 
 <Frame>
   <img src="/images/scheduled-operations/run-history.png" alt="Execution history showing run source, status, duration, and details with export button" />

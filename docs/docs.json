@@ -102,7 +102,6 @@
               "features/global-observability",
               "features/host-console",
               "features/multi-node",
-              "features/node-compatibility",
               "features/fleet-view",
               "features/remote-updates",
               "features/stack-labels",
@@ -124,10 +123,9 @@
           {
             "group": "Reference",
             "pages": [
+              "features/node-compatibility",
               "reference/settings",
-              "reference/security-advisories",
-              "reference/architecture",
-              "reference/development"
+              "reference/security-advisories"
             ]
           },
           {

@@ -15,24 +15,26 @@ docker run -d \
   --name sencho \
   -p 3000:3000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /opt/compose:/app/compose \
+  -v /opt/compose:/opt/compose \
   -v sencho_data:/app/data \
-  -e JWT_SECRET=change-me \
+  -e COMPOSE_DIR=/opt/compose \
   saelix/sencho:latest
 ```
 
 Open `http://localhost:3000` in your browser. On first boot you'll be prompted to create an admin account.
 
 <Note>
-  Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho.
+  Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho. A `JWT_SECRET` is generated automatically on first boot; you do not need to provide one.
 </Note>
 
 ## Important: the 1:1 path rule
 
-The `-v /opt/compose:/app/compose` mount above uses a simplified path for illustration. In practice, you must mount your compose directory at the **same path** inside and outside the container. See the [Configuration guide](/getting-started/configuration#compose-directory-the-11-path-rule) for details - this is the most common setup mistake.
+The compose directory must be mounted at the **same path** inside and outside the container. The example above mounts `/opt/compose` to `/opt/compose`, which is correct. If your stacks live at a different path, adjust both sides of the mount to match. See the [Configuration guide](/getting-started/configuration#compose-directory-the-11-path-rule) for details.
 
 ## Next steps
 
-- [Configuration](/getting-started/configuration) - full environment variable reference, reverse proxy setup
+- [Configuration](/getting-started/configuration) - environment variables, volume mounts, reverse proxy setup
+- [Features Overview](/features/overview) - tour of everything Sencho can do
 - [Stack Management](/features/stack-management) - create and deploy your first stack
 - [Multi-Node](/features/multi-node) - add a remote server to manage from this dashboard
+- [App Store](/features/app-store) - deploy from 190+ pre-configured templates

@@ -3,38 +3,37 @@ title: Alerts & Notifications
 description: Set threshold-based alerts on container metrics and route them to Discord, Slack, or any webhook.
 ---
 
-Sencho can watch your containers for resource anomalies and notify you when thresholds are breached. Alerts are defined per stack, and notifications are delivered through external agents you configure.
+Sencho can watch your containers for resource anomalies and notify you when thresholds are breached. Alerts are defined per stack, and notifications are delivered through external channels you configure.
+
+## Setting up notification channels
+
+At least one channel must be enabled before alerts can be delivered externally. Go to **Settings > Notifications**.
 
 <Frame>
   <img src="/images/alerts-notifications/notifications-settings.png" alt="Notifications & Alerts settings showing Discord, Slack, and Webhook tabs" />
 </Frame>
 
-## How alerts work
-
-Sencho's monitoring service samples container metrics every minute and evaluates all defined alert rules. When a rule's condition holds true for the configured duration, a notification is dispatched. A cooldown period prevents the same alert from firing repeatedly.
-
-## Setting up a notification agent
-
-At least one agent must be enabled before alerts can be delivered. Go to **Settings → Notifications**.
+Three channel types are available, each configured with a webhook URL and an enable/disable toggle:
 
 ### Discord
 
-1. In Discord, go to your server's **Settings → Integrations → Webhooks**
+1. In Discord, go to your server's **Settings > Integrations > Webhooks**
 2. Click **New Webhook**, choose a channel, and copy the webhook URL
-3. In Sencho, open **Settings → Notifications → Discord**, paste the URL, enable the toggle, and click **Save**
-4. Click **Test** to send a test message
+3. In Sencho, open **Settings > Notifications > Discord**, paste the URL, enable the toggle, and click **Save**
+4. Click **Test** to send a test message and verify the connection
 
 ### Slack
 
 1. In Slack, go to **api.slack.com/apps**, create an app, and add the **Incoming Webhooks** feature
 2. Activate it and copy the generated webhook URL for your chosen channel
-3. In Sencho, open **Settings → Notifications → Slack**, paste the URL, enable the toggle, and click **Save**
+3. In Sencho, open **Settings > Notifications > Slack**, paste the URL, enable the toggle, and click **Save**
 
 ### Generic Webhook
 
-Any HTTP endpoint that accepts a POST with a JSON body can receive Sencho alerts. Go to **Settings → Notifications → Webhook**, enter the URL, and click **Save**.
+Any HTTP endpoint that accepts a POST with a JSON body can receive Sencho alerts. Go to **Settings > Notifications > Webhook**, enter the URL, enable the toggle, and click **Save**.
 
 The payload format is:
+
 ```json
 {
   "level": "warning",
@@ -45,76 +44,94 @@ The payload format is:
 
 ## Creating stack alerts
 
-Stack alerts are configured per-stack. Right-click a stack in the sidebar (or click the **⋮** button) and select **Alerts**.
+Stack alerts are configured per stack. Right-click a stack in the sidebar (or click the three-dot menu) and select **Alerts**. A panel slides open showing existing rules and a form to create new ones.
 
 <Frame>
-  <img src="/images/stack-management/stack-context-menu.png" alt="Stack context menu showing the Alerts option" />
+  <img src="/images/alerts-notifications/alert-panel.png" alt="Stack Alerts panel showing the notification status banner and alert rule form" />
 </Frame>
 
-The alerts panel slides open, showing existing rules for the stack and a form to create new ones.
+The panel includes:
 
-<Frame>
-  <img src="/images/alerts-notifications/alert-panel.png" alt="Alert panel showing alert rules and creation form" />
-</Frame>
+- **Notification status banner** at the top, showing whether channels are configured. If no channels are enabled, a warning explains that rules will be evaluated but no external notifications will be sent.
+- **Existing Rules** section listing all active rules for this stack, each showing the metric, condition, duration, and cooldown. Hover over a rule to reveal the delete button.
+- **Add New Rule** form with the fields described below.
 
 ### Alert fields
 
 | Field | Description |
 |-------|-------------|
-| **Metric** | The container metric to watch |
-| **Operator** | Comparison operator: `>`, `>=`, `<`, `<=`, `==` |
-| **Threshold** | The value to compare against |
-| **Duration (minutes)** | How long the condition must hold before firing |
-| **Cooldown (minutes)** | Minimum time between repeated notifications for this rule |
+| **Metric** | The container metric to watch (see table below) |
+| **Operator** | Comparison: Greater than, Greater or equal, Less than, Less or equal, Equals |
+| **Threshold** | The numerical value to compare against |
+| **Duration (mins)** | How long the condition must hold before firing (default: 5) |
+| **Cooldown (mins)** | Minimum time between repeated notifications for this rule (default: 60) |
 
 ### Available metrics
 
-| Metric | Unit | Description |
-|--------|------|-------------|
-| `cpu_percent` | % | CPU usage relative to total host cores |
-| `memory_mb` | MB | RSS memory used by the container |
-| `memory_percent` | % | Memory used as a fraction of the host total |
-| `net_rx` | bytes/s | Inbound network rate |
-| `net_tx` | bytes/s | Outbound network rate |
-| `restart_count` | count | Number of times the container has restarted |
+| Metric | Description |
+|--------|-------------|
+| CPU Usage (%) | CPU usage relative to total host cores |
+| Memory Usage (%) | Memory used as a fraction of the host total |
+| Memory Usage (MB) | RSS memory used by the container |
+| Network In (MB) | Inbound network throughput |
+| Network Out (MB) | Outbound network throughput |
+| Restart Count | Number of times the container has restarted |
 
 ### Example: alert on high CPU
 
-To alert when any container in a stack uses more than 80% CPU for over 5 consecutive minutes, with a 30-minute cooldown:
+To alert when any container in a stack uses more than 80% CPU for over 5 consecutive minutes, with a 60-minute cooldown:
 
 | Field | Value |
 |-------|-------|
-| Metric | `cpu_percent` |
-| Operator | `>` |
-| Threshold | `80` |
-| Duration | `5` |
-| Cooldown | `30` |
+| Metric | CPU Usage (%) |
+| Operator | Greater than |
+| Threshold | 80 |
+| Duration | 5 |
+| Cooldown | 60 |
 
 ## Notification history
 
-All dispatched notifications appear in the **notification bell** (top-right of the nav bar). Click it to see recent alerts with their level, message, and timestamp. Mark all as read or clear individual entries from there.
+All dispatched notifications appear in the **notification bell** in the top-right corner of the navigation bar. A red dot pulses on the bell when unread notifications exist.
+
+<Frame>
+  <img src="/images/alerts-notifications/notification-popover.png" alt="Notification popover showing recent alert entries with level badges and timestamps" />
+</Frame>
+
+Click the bell to open the notification popover, which shows:
+
+- **Level badge** for each entry (ERROR in red, WARNING in amber, INFO in default)
+- **Node name** badge for notifications from remote nodes
+- **Timestamp** of when the alert was triggered
+- **Alert message** describing what was breached
+
+The popover header includes:
+
+| Action | What it does |
+|--------|--------------|
+| **Mark all as read** | Marks all notifications as read (removes the red dot) |
+| **Clear all** | Deletes all notifications from the list |
+
+You can also dismiss individual notifications by hovering over them and clicking the dismiss button.
 
 <Note>
-  Notifications only reach external agents (Discord, Slack, Webhook) if at least one agent is enabled. Dashboard notifications appear regardless.
+  Notifications only reach external channels (Discord, Slack, Webhook) if at least one channel is enabled. Dashboard notifications appear regardless.
 </Note>
 
 ## Alerts on remote nodes
 
-Alerts work the same way on remote nodes as they do locally. When you switch to a remote node and right-click a stack, the alerts panel shows and manages rules for that remote instance.
+Alerts work the same way on remote nodes as they do locally. When you switch to a remote node and open a stack's alerts panel, you are managing rules on that remote instance.
 
-<Frame>
-  <img src="/images/alerts-notifications/alert-panel-remote.png" alt="Alert panel on a remote node" />
-</Frame>
+Key details:
 
-### How it works
+- **Alert rules are stored on each node independently.** Rules created while a remote node is selected are saved on that remote instance, not your primary instance.
+- **Monitoring runs locally on each node.** Each Sencho instance evaluates its own alert rules against its own container metrics.
+- **Notifications are sent by the node that detects the breach.** Make sure notification channels are configured on each remote node where you want to receive alerts, since channel settings are per-instance.
 
-1. **Alert rules are stored on each node independently.** When you create an alert while a remote node is selected, the rule is saved on that remote Sencho instance's database - not your primary instance.
-2. **Monitoring runs locally on each node.** The remote Sencho instance evaluates its own alert rules against its own container metrics every minute.
-3. **Notifications are sent by the node that detects the breach.** Make sure notification agents (Discord, Slack, Webhook) are configured on each remote node where you want to receive alerts - notification settings are per-instance.
+The alert panel shows a blue info banner when you are configuring alerts on a remote node, including which channels are active on that node.
 
 ### Setup checklist for remote alerts
 
-1. On the **remote** Sencho instance, go to **Settings → Notifications** and configure at least one agent
+1. On the **remote** Sencho instance, go to **Settings > Notifications** and configure at least one channel
 2. From your **primary** instance, switch to the remote node
 3. Right-click a stack and select **Alerts** to create rules
 4. The remote instance handles monitoring and notification delivery independently

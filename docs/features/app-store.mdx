@@ -3,7 +3,7 @@ title: App Store
 description: Browse and deploy pre-configured application templates in one click.
 ---
 
-The **App Store** tab lets you browse a curated catalogue of Docker Compose templates and deploy any of them as a new stack with environment-specific configuration - no YAML required.
+The **App Store** tab lets you browse a curated catalogue of Docker Compose templates and deploy any of them as a new stack with environment-specific configuration, no YAML required.
 
 <Frame>
   <img src="/images/app-store/app-store-overview.png" alt="App Store showing a grid of application templates with category filters" />
@@ -11,44 +11,58 @@ The **App Store** tab lets you browse a curated catalogue of Docker Compose temp
 
 ## Browsing templates
 
-Templates are loaded from a remote registry (configurable in **Settings → App Store**). The default registry provides 190+ self-hosted application templates.
+Templates are loaded from a remote registry (configurable in **Settings > App Store**). The default registry is LinuxServer.io. A live count of available apps is shown next to the category pills.
 
-**Search:** Type in the search bar to filter templates by name or description in real-time.
+**Search:** Type in the search bar to filter templates by name, description, or category in real-time.
 
 **Categories:** Click any category pill to narrow the list:
-`Automation` · `Books` · `Development` · `Documentation` · `Downloaders` · `Media` · `Monitoring` · `Networking` · `Other` · `Product`
+`All` · `Automation` · `Books` · `Development` · `Documentation` · `Downloaders` · `Media` · `Monitoring` · `Networking` · `Other` · `Productivity` · `Security` · `Utilities`
 
 Each template card shows:
-- Application logo
+- Application logo (or a placeholder icon if unavailable)
 - Name and short description
-- Category tags
-- Links to the GitHub repo and documentation (where available)
+- Up to three category badges (click a badge to filter by that category)
 
 ## Deploying a template
 
-Click any template card to open the **deployment sheet** on the right side of the screen. Fill in the fields and click **Deploy**.
+Click any template card to open the **deployment sheet** on the right side of the screen.
+
+<Frame>
+  <img src="/images/app-store/app-store-deploy.png" alt="Deployment sheet for heimdall showing stack name, ports, volumes, and environment variables" />
+</Frame>
+
+The sheet header displays the app logo, title, and a truncated description with a **Read more** / **Read less** toggle. Below the description you may see:
+
+- **Architecture badges** (e.g. `amd64`, `arm64`) when the template declares supported platforms
+- **GitHub stars** count
+- **Source** link to the GitHub repository
+- **Docs** link to the official documentation
+
+When deploying to a remote node, a badge at the top of the sheet shows the target node name.
 
 ### Stack name
 
-Pre-filled with the template name in lowercase. You can change it - the same [naming rules](/features/stack-management#creating-a-stack) apply (lowercase, hyphens, no spaces).
+Pre-filled with the template name in lowercase. You can change it; the same [naming rules](/features/stack-management#creating-a-stack) apply (lowercase, hyphens, no spaces).
 
-### Environment variables
+### Ports
 
-Each template declares the variables it needs. Sencho pre-fills sensible defaults where available (e.g. `PUID=1000`, `PGID=1000`, `TZ` from your browser locale).
-
-Edit any value before deploying. You can also click **Custom Env** to add arbitrary key-value pairs not defined by the template.
+For each exposed port, the sheet shows an editable **host port** field (left side) and the fixed **container port** (right side). Edit the host port to avoid conflicts with other services on the same machine.
 
 ### Volumes
 
-For each container mount point, enter the **host path** where that data should be stored. Suggested defaults (e.g. `./config`, `./data`) are shown as placeholders.
+For each container mount point, enter the **host path** where that data should be stored. Suggested defaults (e.g. `./config`, `./data`) are pre-filled.
 
 <Note>
   Relative paths like `./config` are resolved relative to the stack directory inside your `COMPOSE_DIR`. Absolute paths map directly to the host filesystem.
 </Note>
 
-### Ports
+### Environment variables
 
-For each exposed port, edit the **host port** (left side). The container port (right side) is fixed by the template and cannot be changed here - edit the compose file after deployment if needed.
+Each template declares the variables it needs. Sencho pre-fills sensible defaults where available (e.g. `PUID=1000`, `PGID=1000`, `TZ` from your browser locale). Edit any value before deploying.
+
+### Custom variables
+
+Below the template variables, an **Add Custom Variable** section lets you define arbitrary key-value pairs not declared by the template. Type a key and value, then click **+** to add it.
 
 ### What happens on Deploy
 
@@ -58,14 +72,18 @@ For each exposed port, edit the **host port** (left side). The container port (r
 4. On success: switches you to the Editor view for that stack
 5. On failure: rolls back by running `docker compose down` and deleting the stack directory
 
-A toast notification confirms success or shows the error message.
+A toast notification confirms success or shows the error message. Large images may take a few minutes to pull.
+
+<Note>
+  Deploying a template requires the `stack:create` permission. Users without this permission will see the Deploy button disabled.
+</Note>
 
 ## Custom template registry
 
 By default Sencho uses the LinuxServer.io template registry. To use your own:
 
-1. Open **Settings → App Store**
+1. Open **Settings > App Store**
 2. Enter your registry URL (must serve a JSON array of template objects in Portainer v2 format)
-3. Click **Save**
+3. Click **Save & Refresh**
 
-To force a refresh of the cached templates, click **Refresh Cache** in the same settings panel.
+Sencho saves the new URL and automatically refreshes the template cache from the new source. To revert to the default registry, click **Reset to Default**.

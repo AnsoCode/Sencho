@@ -4,67 +4,69 @@ description: Route stack alerts to specific Discord, Slack, or webhook channels 
 ---
 
 <Note>
-  Notification Routing requires a **Sencho Admiral** license. Community and Skipper users can configure global notification channels in **Settings → Notifications**.
+  Notification Routing requires a **Sencho Admiral** license. Community and Skipper users can configure global notification channels in **Settings > Notifications**.
 </Note>
 
 Notification Routing lets you direct alerts from specific stacks to dedicated channels. Instead of all alerts going to a single global endpoint, you can send production alerts to one Slack channel and staging alerts to another.
 
 <Frame>
-  <img src="/images/notification-routing/notification-routing-overview.png" alt="Notification Routing settings with a configured route" />
+  <img src="/images/notification-routing/notification-routing-overview.png" alt="Notification Routing settings showing the empty state with Add Route button" />
 </Frame>
 
 ## How routing works
 
 When Sencho dispatches an alert (container crash, threshold breach, scheduled task failure), the routing engine:
 
-1. **Checks routing rules** — sorted by priority (lowest number first). If the alert's stack matches a rule's stack list, the notification is sent to that rule's channel.
-2. **Falls back to global agents** — if no routing rule matches (or the alert has no stack context, such as host resource warnings), the notification goes to the global channels configured in **Settings → Notifications**.
+1. **Checks routing rules** sorted by priority (lowest number first). If the alert's stack matches a rule's stack list, the notification is sent to that rule's channel.
+2. **Falls back to global channels** if no routing rule matches (or the alert has no stack context, such as host resource warnings). Global channels are configured in **Settings > Notifications**.
 
-Routing rules and global agents are independent — a matched route **replaces** the global dispatch for that alert, it does not send to both.
+Routing rules and global channels are independent. A matched route **replaces** the global dispatch for that alert; it does not send to both.
 
-## Setting up routing rules
+## Creating a routing rule
 
-1. Go to **Settings → Routing** (requires admin and Admiral tier)
-2. Click **Add Route**
-3. Fill in:
+1. Go to **Settings > Routing**
+2. Click **+ Add Route**
+3. Fill in the form:
+
+<Frame>
+  <img src="/images/notification-routing/notification-routing-dialog.png" alt="New Routing Rule dialog with Name, Stacks, Channel, Priority, and Enabled fields" />
+</Frame>
 
 | Field | Description |
 |-------|-------------|
-| **Name** | A label for this rule (e.g., "Production to Discord") |
-| **Stacks** | One or more stacks this rule applies to. Use the dropdown to search and select. |
-| **Channel** | Choose Discord, Slack, or Webhook and provide the endpoint URL |
+| **Name** | A label for this rule (e.g. "Production to Discord") |
+| **Stacks** | One or more stacks this rule applies to. Use the searchable dropdown to find and add stacks. Selected stacks appear as removable pills below the dropdown. |
+| **Channel** | Choose Discord, Slack, or Webhook using the tab bar, then enter the endpoint URL. The URL must use HTTPS. |
 | **Priority** | Lower values are evaluated first. Default is 0. |
 | **Enabled** | Toggle the rule on or off without deleting it |
 
 4. Click **Create** to save the rule
 
-<Frame>
-  <img src="/images/notification-routing/notification-routing-dialog.png" alt="New Routing Rule dialog with stack selection" />
-</Frame>
-
 ## Managing rules
 
-From the routing rules list, you can:
+Each routing rule appears as a card showing the rule name, channel type badge, assigned stack pills, the channel URL (truncated), and priority (when non-zero).
+
+From the rule card, you can:
 
 - **Toggle** a rule on/off with the switch
-- **Test** a rule by clicking the lightning bolt icon — sends a test notification to the rule's channel
+- **Test** a rule by clicking the lightning bolt icon, which sends a test notification to the rule's channel
 - **Edit** a rule by clicking the pencil icon
-- **Delete** a rule via the trash icon (with confirmation)
+- **Delete** a rule via the trash icon (with a confirmation dialog)
 
 ## Priority and matching
 
-Rules are evaluated in ascending priority order. If multiple rules match the same stack, **all matching rules fire** — this allows you to send the same alert to multiple channels (e.g., both a Slack channel and a custom webhook).
+Rules are evaluated in ascending priority order. If multiple rules match the same stack, **all matching rules fire**. This lets you send the same alert to multiple channels (e.g. both a Slack channel and a custom webhook).
 
-If any rule matches, global agents are skipped for that alert.
+If any rule matches, global channels are skipped for that alert.
 
 ## Fallback behavior
 
-Alerts without a stack context always use global agents. These include:
+Alerts without a stack context always use global channels. These include:
 
 - Host CPU, memory, and disk threshold warnings
-- Docker data accumulation (janitor) notifications
+- Docker data accumulation notifications
 
-Stack-scoped alerts that don't match any routing rule also fall back to global agents.
+Stack-scoped alerts that do not match any routing rule also fall back to global channels.
 
 ## Example setup
 
@@ -72,24 +74,7 @@ Stack-scoped alerts that don't match any routing rule also fall back to global a
 
 | Rule | Stacks | Channel | Priority |
 |------|--------|---------|----------|
-| Prod to Slack | `prod-api`, `prod-web` | Slack: `https://hooks.slack.com/...` | 0 |
-| Staging to Discord | `staging-api`, `staging-web` | Discord: `https://discord.com/api/webhooks/...` | 10 |
+| Prod to Slack | `prod-api`, `prod-web` | Slack | 0 |
+| Staging to Discord | `staging-api`, `staging-web` | Discord | 10 |
 
-Any other stack alerts (e.g., `dev-tools`) would fall back to your global notification settings.
-
-## Troubleshooting
-
-<AccordionGroup>
-  <Accordion title="I created a route but alerts still go to global channels">
-    Verify the **stack name** in the route matches exactly. Stack names are case-sensitive and correspond to the Docker Compose project name (the directory name). Check that the route is **enabled**.
-  </Accordion>
-  <Accordion title="Test notification works but real alerts don't arrive">
-    Real alerts are dispatched by the monitoring service, which evaluates every 30 seconds. Make sure you have at least one alert rule or crash detection enabled. Also verify the stack name in your routing rule matches the stack that triggers the alert.
-  </Accordion>
-  <Accordion title="I see 'This feature requires Sencho Admiral' when opening Routing">
-    Notification Routing is an Admiral-tier feature. Activate an Admiral license in **Settings → License** or visit [sencho.io/pricing](https://sencho.io/pricing) to upgrade.
-  </Accordion>
-  <Accordion title="Can I route host-level alerts (CPU/disk) to a specific channel?">
-    Not currently. Host resource alerts don't have a stack context and always use global notification agents. Routing rules only apply to stack-scoped alerts.
-  </Accordion>
-</AccordionGroup>
+Any other stack alerts (e.g. `dev-tools`) would fall back to your global notification channels.

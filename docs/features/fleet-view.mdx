@@ -3,11 +3,25 @@ title: Fleet View
 description: Monitor all your nodes from a single dashboard with real-time health metrics, search, filtering, and container drill-down.
 ---
 
-The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment - local and remote - on one screen. It is available to all tiers, with advanced features unlocked by Sencho Pro.
+The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment, local and remote, on one screen. It is available to all tiers, with advanced features unlocked by Sencho Pro.
 
 <Frame>
-  <img src="/images/fleet-view/fleet-overview.png" alt="Fleet View showing health summary cards, toolbar, and node grid" />
+  <img src="/images/fleet-view/fleet-overview.png" alt="Fleet Overview showing health summary cards, toolbar, node cards, and tabs" />
 </Frame>
+
+## Page layout
+
+The Fleet page is divided into two tabs:
+
+- **Overview** - the main monitoring view described on this page
+- **Snapshots** - fleet-wide backup snapshots (covered in [Fleet Backups](/features/fleet-backups))
+
+The header shows **Fleet Overview** with a subtitle summarising the current state (e.g. "2 of 2 nodes online, 31 containers, 21 stacks"). Two buttons sit in the top-right corner:
+
+| Button | What it does |
+|--------|--------------|
+| **Check Updates** | Opens the Node Updates modal to view and apply Sencho version updates across your fleet (Pro) |
+| **Refresh** | Re-fetches data from all nodes. Shows a spinner while loading |
 
 ## Community features
 
@@ -21,12 +35,17 @@ Each node appears as a card showing:
 |------|-------------|
 | **Status badge** | Online (green) or Offline (grayed out) |
 | **Type badge** | `local` or `remote` |
+| **Version badge** | The node's Sencho version (e.g. `v0.38.0`). Remote nodes running older versions that cannot report their version show no version badge |
+| **Update available badge** | Orange pill shown when a newer Sencho version is available for this node |
+| **Critical badge** | Red pill shown when CPU or disk usage exceeds 90% |
 | **Running containers** | Count of containers in `running` state |
 | **Stopped containers** | Count of containers in `exited` state |
 | **Stacks** | Total number of Compose stacks on the node |
-| **CPU usage** | Current percentage with colour-coded bar (green → amber → red) |
+| **CPU usage** | Current percentage with colour-coded bar (green to amber to red) |
 | **RAM usage** | Used / total with percentage bar |
 | **Disk usage** | Used / total with percentage bar |
+
+Nodes with an available Sencho update also show an **Update to vX.Y.Z** button at the bottom of the card.
 
 Offline nodes are visually dimmed and show a "Node unreachable" placeholder instead of stats.
 
@@ -55,7 +74,7 @@ Four cards appear above the node grid, aggregating data across all online nodes:
 
 ### Auto-refresh
 
-Fleet data automatically refreshes every 30 seconds. A subtle indicator at the bottom of the page confirms this is active.
+Fleet data automatically refreshes every 30 seconds. A subtle indicator at the bottom of the page confirms this is active. When a node update is in progress, the refresh rate increases to every 5 seconds so you can watch status changes in near real-time.
 
 ### Search
 
@@ -82,36 +101,57 @@ Filter pills let you narrow the grid:
 
 | Filter | Options |
 |--------|---------|
-| **Status** | All · Online · Offline |
-| **Type** | All Types · Local · Remote |
+| **Status** | All, Online, Offline |
+| **Type** | All Types, Local, Remote |
 | **Critical Only** | Show only nodes with CPU or disk above 90% |
+| **Tags** | Filter by stack labels assigned to nodes |
 
 A "Clear filters" button appears when filters hide all nodes.
 
 ### Stack drill-down
 
-Click **Stack details** on any online node card to expand the stack list. Each stack shows a count of its containers.
+Click **Stack details** on any online node card to expand the stack list. The button shows the total stack count (e.g. "18 stacks"). Each stack in the list shows a container count badge.
 
 Click a stack name to expand it further and see individual containers with:
 - Container name
 - State badge (running, exited, restarting)
-- Uptime (e.g. "Up 43 hours")
+- Image name (e.g. `linuxserver/plex:latest`)
+- Uptime (e.g. "Up 4 days")
 
-Hover over any container row to reveal an **Open in editor** button that navigates you directly to that node's stack editor.
+Hover over any container row to reveal an **Open in editor** button that navigates you directly to that stack's editor on the corresponding node.
 
 <Frame>
-  <img src="/images/fleet-view/fleet-drill-down.png" alt="Fleet View with stack expanded showing container details" />
+  <img src="/images/fleet-view/fleet-drill-down.png" alt="Fleet View with Stack details expanded showing the stack list and a container drill-down" />
 </Frame>
 
 ### Critical node detection
 
 Nodes with CPU or disk usage above 90% automatically receive a red **Critical** badge. Combined with the **Critical Only** filter, this lets you quickly triage overloaded servers.
 
+### Node Updates
+
+Click **Check Updates** in the header to open the Node Updates modal. This lets you manage Sencho version updates across your entire fleet from one place.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-node-updates.png" alt="Node Updates modal showing update status for all fleet nodes" />
+</Frame>
+
+The modal shows:
+
+- **Summary cards** at the top: counts of nodes that are Up to date, have updates Available, are currently Updating, or have Failed
+- **Gateway version** label showing your primary instance's version
+- **Filter** search box to find specific nodes
+- **Node table** with columns: Node name, Type, Current version, Latest version, and Status (either an "Up to date" badge or an "Update" button)
+- **Recheck** button to re-scan for available updates
+- **Update All** button to trigger updates on all remote nodes that have a pending update
+
+When you click **Update** on a remote node, Sencho sends the update command and the node restarts with the new version. If you update the local node, a reconnection overlay appears while your primary instance restarts.
+
 ---
 
 ## How fleet data is fetched
 
-Fleet View queries all registered nodes in parallel. Each node responds independently - one slow or offline node does not block the others. Local node data comes from the Docker socket and system stats directly. Remote node data is fetched over the Distributed API proxy using each node's Bearer token.
+Fleet View queries all registered nodes in parallel. Each node responds independently; one slow or offline node does not block the others. Local node data comes from the Docker socket and system stats directly. Remote node data is fetched over the Distributed API proxy using each node's Bearer token.
 
 <Note>
   Fleet View always runs on your primary (local) Sencho instance. It is never proxied through a remote node.
