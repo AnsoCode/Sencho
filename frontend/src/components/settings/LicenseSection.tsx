@@ -96,10 +96,12 @@ export function LicenseSection() {
                                 <span className="font-mono text-xs">{license.maskedKey}</span>
                             </div>
                         )}
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground">{license.isLifetime ? 'Duration' : 'Renews'}</span>
-                            <span>{license.isLifetime ? 'Lifetime' : license.validUntil ? new Date(license.validUntil).toLocaleDateString() : 'N/A'}</span>
-                        </div>
+                        {(license.isLifetime || license.validUntil) && (
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">{license.isLifetime ? 'Duration' : 'Renews'}</span>
+                                <span>{license.isLifetime ? 'Lifetime' : new Date(license.validUntil!).toLocaleDateString()}</span>
+                            </div>
+                        )}
                     </div>
                 )}
 

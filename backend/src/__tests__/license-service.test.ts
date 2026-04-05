@@ -6,12 +6,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupTestDb, cleanupTestDb } from './helpers/setupTestDb';
 
 let tmpDir: string;
-let LicenseService: typeof import('../services/LicenseService').LicenseService;
+let svc: import('../services/LicenseService').LicenseService;
 let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
 
 beforeAll(async () => {
   tmpDir = await setupTestDb();
-  ({ LicenseService } = await import('../services/LicenseService'));
+  const licMod = await import('../services/LicenseService');
+  svc = licMod.LicenseService.getInstance();
   ({ DatabaseService } = await import('../services/DatabaseService'));
 });
 
@@ -19,10 +20,8 @@ afterAll(() => {
   cleanupTestDb(tmpDir);
 });
 
-// Helper to set license state in the DB
 function setLicenseState(overrides: Record<string, string>) {
   const db = DatabaseService.getInstance();
-  // Reset all license state first
   const keys = [
     'license_status', 'license_key', 'license_valid_until',
     'license_last_validated', 'license_customer_name',
@@ -32,84 +31,79 @@ function setLicenseState(overrides: Record<string, string>) {
   for (const key of keys) {
     db.setSystemState(key, '');
   }
-  // Apply overrides
   for (const [key, value] of Object.entries(overrides)) {
     db.setSystemState(key, value);
   }
 }
 
-// ---- getVariant() ----
-
 describe('LicenseService.getVariant()', () => {
   it('returns "personal" for trial licenses', () => {
     setLicenseState({ license_status: 'trial' });
-    expect(LicenseService.getInstance().getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('personal');
   });
 
   it('returns null when no variant name is stored', () => {
     setLicenseState({ license_status: 'active' });
-    expect(LicenseService.getInstance().getVariant()).toBeNull();
+    expect(svc.getVariant()).toBeNull();
   });
 
   it('maps "Team" variant name to "team"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Team' });
-    expect(LicenseService.getInstance().getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('team');
   });
 
   it('maps "Personal" variant name to "personal"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Personal' });
-    expect(LicenseService.getInstance().getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('personal');
   });
 
   it('maps "Admiral" variant name to "team"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Admiral' });
-    expect(LicenseService.getInstance().getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('team');
   });
 
   it('maps "Admiral Lifetime" variant name to "team"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Admiral Lifetime' });
-    expect(LicenseService.getInstance().getVariant()).toBe('team');
+    expect(svc.getVariant()).toBe('team');
   });
 
   it('maps "Skipper" variant name to "personal"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Skipper' });
-    expect(LicenseService.getInstance().getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('personal');
   });
 
   it('maps "Skipper Lifetime" variant name to "personal"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Skipper Lifetime' });
-    expect(LicenseService.getInstance().getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('personal');
   });
 
   it('defaults unknown variant names to "personal"', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Unknown Variant' });
-    expect(LicenseService.getInstance().getVariant()).toBe('personal');
+    expect(svc.getVariant()).toBe('personal');
   });
 });
-
-// ---- getTier() ----
 
 describe('LicenseService.getTier()', () => {
   it('returns "community" when no status is set', () => {
     setLicenseState({});
-    // Clear status explicitly since initialize() may have set trial
+    // initialize() sets trial on first boot; override to test the empty-status path
     DatabaseService.getInstance().setSystemState('license_status', '');
-    expect(LicenseService.getInstance().getTier()).toBe('community');
+    expect(svc.getTier()).toBe('community');
   });
 
   it('returns "community" for community status', () => {
     setLicenseState({ license_status: 'community' });
-    expect(LicenseService.getInstance().getTier()).toBe('community');
+    expect(svc.getTier()).toBe('community');
   });
 
   it('returns "community" for expired status', () => {
     setLicenseState({ license_status: 'expired' });
-    expect(LicenseService.getInstance().getTier()).toBe('community');
+    expect(svc.getTier()).toBe('community');
   });
 
   it('returns "community" for disabled status', () => {
     setLicenseState({ license_status: 'disabled' });
-    expect(LicenseService.getInstance().getTier()).toBe('community');
+    expect(svc.getTier()).toBe('community');
   });
 
   it('returns "paid" for active status with valid license', () => {
@@ -117,7 +111,7 @@ describe('LicenseService.getTier()', () => {
       license_status: 'active',
       license_last_validated: Date.now().toString(),
     });
-    expect(LicenseService.getInstance().getTier()).toBe('paid');
+    expect(svc.getTier()).toBe('paid');
   });
 
   it('returns "paid" for active trial', () => {
@@ -127,7 +121,7 @@ describe('LicenseService.getTier()', () => {
       license_status: 'trial',
       license_valid_until: future.toISOString(),
     });
-    expect(LicenseService.getInstance().getTier()).toBe('paid');
+    expect(svc.getTier()).toBe('paid');
   });
 
   it('returns "community" for expired trial', () => {
@@ -137,7 +131,7 @@ describe('LicenseService.getTier()', () => {
       license_status: 'trial',
       license_valid_until: past.toISOString(),
     });
-    expect(LicenseService.getInstance().getTier()).toBe('community');
+    expect(svc.getTier()).toBe('community');
   });
 
   it('returns "paid" for lifetime license (no expiry)', () => {
@@ -146,11 +140,9 @@ describe('LicenseService.getTier()', () => {
       license_key: 'test-key-1234',
       license_last_validated: Date.now().toString(),
     });
-    expect(LicenseService.getInstance().getTier()).toBe('paid');
+    expect(svc.getTier()).toBe('paid');
   });
 });
-
-// ---- getLicenseInfo() - isLifetime ----
 
 describe('LicenseService.getLicenseInfo() - isLifetime', () => {
   it('sets isLifetime=true for active license with key and no expiry', () => {
@@ -159,8 +151,9 @@ describe('LicenseService.getLicenseInfo() - isLifetime', () => {
       license_key: 'test-key-1234',
       license_last_validated: Date.now().toString(),
     });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.isLifetime).toBe(true);
+    expect(info.trialDaysRemaining).toBeNull();
   });
 
   it('sets isLifetime=false for active subscription with expiry', () => {
@@ -172,8 +165,9 @@ describe('LicenseService.getLicenseInfo() - isLifetime', () => {
       license_valid_until: future.toISOString(),
       license_last_validated: Date.now().toString(),
     });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.isLifetime).toBe(false);
+    expect(info.trialDaysRemaining).toBeNull();
   });
 
   it('sets isLifetime=false for trial licenses', () => {
@@ -183,20 +177,20 @@ describe('LicenseService.getLicenseInfo() - isLifetime', () => {
       license_status: 'trial',
       license_valid_until: future.toISOString(),
     });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.isLifetime).toBe(false);
+    expect(info.trialDaysRemaining).toBeGreaterThan(0);
   });
 
   it('sets isLifetime=false for community status', () => {
     setLicenseState({ license_status: 'community' });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.isLifetime).toBe(false);
+    expect(info.trialDaysRemaining).toBeNull();
   });
 });
 
-// ---- getLicenseInfo() - full Admiral lifetime scenario ----
-
-describe('LicenseService.getLicenseInfo() - Admiral lifetime', () => {
+describe('LicenseService.getLicenseInfo() - full scenarios', () => {
   it('returns correct info for an Admiral lifetime license', () => {
     setLicenseState({
       license_status: 'active',
@@ -206,11 +200,12 @@ describe('LicenseService.getLicenseInfo() - Admiral lifetime', () => {
       license_product_name: 'Sencho Admiral',
       license_last_validated: Date.now().toString(),
     });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.tier).toBe('paid');
     expect(info.status).toBe('active');
     expect(info.variant).toBe('team');
     expect(info.isLifetime).toBe(true);
+    expect(info.trialDaysRemaining).toBeNull();
     expect(info.customerName).toBe('Test User');
     expect(info.productName).toBe('Sencho Admiral');
     expect(info.maskedKey).toBe('****-****-****-MN5D');
@@ -228,11 +223,12 @@ describe('LicenseService.getLicenseInfo() - Admiral lifetime', () => {
       license_valid_until: future.toISOString(),
       license_last_validated: Date.now().toString(),
     });
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = svc.getLicenseInfo();
     expect(info.tier).toBe('paid');
     expect(info.status).toBe('active');
     expect(info.variant).toBe('personal');
     expect(info.isLifetime).toBe(false);
+    expect(info.trialDaysRemaining).toBeNull();
     expect(info.customerName).toBe('Another User');
   });
 });
