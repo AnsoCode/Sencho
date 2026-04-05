@@ -94,6 +94,26 @@ describe('LicenseService.getVariant()', () => {
     setLicenseState({ license_status: 'active', license_variant_name: 'Unknown Variant' });
     expect(svc.getVariant()).toBe('skipper');
   });
+
+  it('resolves from product_name when variant_name has no tier info (Admiral)', () => {
+    setLicenseState({
+      license_status: 'active',
+      license_variant_name: 'Lifetime',
+      license_product_name: 'Sencho Admiral',
+    });
+    expect(svc.getVariant()).toBe('admiral');
+    expect(DatabaseService.getInstance().getSystemState('license_variant_type')).toBe('admiral');
+  });
+
+  it('resolves from product_name when variant_name has no tier info (Skipper)', () => {
+    setLicenseState({
+      license_status: 'active',
+      license_variant_name: 'Monthly',
+      license_product_name: 'Sencho Skipper',
+    });
+    expect(svc.getVariant()).toBe('skipper');
+    expect(DatabaseService.getInstance().getSystemState('license_variant_type')).toBe('skipper');
+  });
 });
 
 describe('LicenseService.getTier()', () => {
