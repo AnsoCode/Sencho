@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.4](https://github.com/AnsoCode/Sencho/compare/v0.38.3...v0.38.4) (2026-04-06)
+
+
+### Fixed
+
+* **licensing:** backward-compatible tier/variant enforcement and self-healing variant detection ([#385](https://github.com/AnsoCode/Sencho/issues/385)) ([9e0c9d3](https://github.com/AnsoCode/Sencho/commit/9e0c9d3f2d59f3330becc2153e2b638823c96b10))
+
 ## [0.38.3](https://github.com/AnsoCode/Sencho/compare/v0.38.2...v0.38.3) (2026-04-05)
 
 
