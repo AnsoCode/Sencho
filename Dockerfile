@@ -33,6 +33,8 @@ RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm install
 
 COPY backend/ ./
+# prebuild hook (generate-version.js) reads the root package.json for the app version
+COPY package.json /app/package.json
 RUN npm run build
 
 # Stage 3: Production dependencies (cross-compiled - NO QEMU execution)

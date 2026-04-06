@@ -30,7 +30,7 @@ import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
-import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
+import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
@@ -1251,6 +1251,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const gatewayVersion = getSenchoVersion();
+    const gatewayValid = isValidVersion(gatewayVersion);
 
     const results = await Promise.allSettled(
       nodes.map(async (node) => {
@@ -1273,6 +1274,14 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
           }
         }
 
+        // Assume remote nodes are outdated when their version is unresolvable
+        let updateAvailable = false;
+        if (!isValidVersion(version)) {
+          updateAvailable = node.type === 'remote';
+        } else if (gatewayValid) {
+          updateAvailable = semver.lt(version, gatewayVersion!);
+        }
+
         const currentTracker = updateTracker.get(node.id);
         return {
           nodeId: node.id,
@@ -1280,9 +1289,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
           type: node.type,
           version,
           latestVersion: gatewayVersion,
-          updateAvailable: version === null
-            ? (node.type === 'remote') // Remote node without /api/meta is pre-capability-negotiation — definitely outdated
-            : (version !== gatewayVersion && !!semver.valid(version) && semver.lt(version, gatewayVersion)),
+          updateAvailable,
           updateStatus: currentTracker?.status ?? null,
         };
       })
@@ -1391,7 +1398,10 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
 
     const results = await Promise.allSettled(candidates.map(async (node) => {
       const meta = await fetchRemoteMeta(node.api_url!, node.api_token!);
-      if (!meta.version || !semver.valid(meta.version) || !semver.lt(meta.version, gatewayVersion) || !meta.capabilities.includes('self-update')) {
+      if (!meta.capabilities.includes('self-update')) {
+        return { name: node.name, triggered: false };
+      }
+      if (isValidVersion(meta.version) && isValidVersion(gatewayVersion) && !semver.lt(meta.version, gatewayVersion)) {
         return { name: node.name, triggered: false };
       }
       const response = await fetch(`${node.api_url!.replace(/\/$/, '')}/api/system/update`, {

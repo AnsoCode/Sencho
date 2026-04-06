@@ -26,6 +26,7 @@ import { LabelPill, LabelDot, type Label as StackLabel } from './LabelPill';
 import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { apiFetch, fetchForNode } from '@/lib/api';
+import { isValidVersion } from '@/lib/version';
 import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
@@ -1350,7 +1351,7 @@ export default function EditorLayout() {
                           node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
                           }`} />
                         <span>{node.name}</span>
-                        {meta?.version && meta.version !== 'unknown' && meta.version !== '0.0.0-dev' && (
+                        {isValidVersion(meta?.version) && (
                           <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60 ml-auto">
                             v{meta.version}
                           </span>
