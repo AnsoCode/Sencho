@@ -1,6 +1,7 @@
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
+import { SENCHO_VERSION } from '../generated/version';
 
 /**
  * Static registry of capabilities supported by THIS Sencho instance.
@@ -34,22 +35,27 @@ export const CAPABILITIES = [
 
 export type Capability = (typeof CAPABILITIES)[number];
 
-export function getSenchoVersion(): string {
-  // Walk up from __dirname to find the root package.json (name === 'sencho').
-  // In dev this is 3 levels up (src/services/ -> root), in Docker it's 2
-  // (dist/services/ -> /app/). Skips intermediate package.json files like
-  // backend/package.json which has a different name and version.
+// Resolved once per process at import time, then cached.
+function resolveVersion(): string {
+  if (SENCHO_VERSION !== '0.0.0-dev') return SENCHO_VERSION;
+
+  // Fallback for manual ts-node runs without the predev hook.
   let dir = __dirname;
   for (let i = 0; i < 5; i++) {
     const candidate = path.join(dir, 'package.json');
-    if (fs.existsSync(candidate)) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pkg = require(candidate);
+    try {
+      const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8'));
       if (pkg.name === 'sencho') return pkg.version;
-    }
+    } catch { /* not found, keep walking */ }
     dir = path.dirname(dir);
   }
   return 'unknown';
+}
+
+const cachedVersion = resolveVersion();
+
+export function getSenchoVersion(): string {
+  return cachedVersion;
 }
 
 export interface RemoteMeta {
