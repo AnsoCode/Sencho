@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **licensing:** license card now shows "Duration: Lifetime" for lifetime licenses instead of an empty renewal date
 * **fleet:** remote node capability detection now works reliably; `/api/meta` and `/api/health` are exempt from the global rate limiter so they are never blocked by proxied traffic, and a backend-side cache with stale-while-revalidate prevents transient failures from disabling capability-gated features (Auto-Update, Schedules, Audit, Console) on remote nodes
 * **fleet:** failed capability fetches now retry after 30 seconds instead of being cached for the full 5-minute TTL
+* **fleet:** `getSenchoVersion()` now resolves `package.json` via `__dirname` walk instead of a hardcoded relative path; the previous `require('../../../package.json')` resolved correctly in dev but crashed with a 500 in Docker (compiled path `dist/services/` has a different depth than source `src/services/`), causing `/api/meta` to always fail on containerized instances and all capability-gated features to appear unsupported on remote nodes
 
 ### Changed
 

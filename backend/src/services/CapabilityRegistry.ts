@@ -1,4 +1,6 @@
 import axios from 'axios';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * Static registry of capabilities supported by THIS Sencho instance.
@@ -33,8 +35,21 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export function getSenchoVersion(): string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('../../../package.json').version;
+  // Walk up from __dirname to find the root package.json (name === 'sencho').
+  // In dev this is 3 levels up (src/services/ -> root), in Docker it's 2
+  // (dist/services/ -> /app/). Skips intermediate package.json files like
+  // backend/package.json which has a different name and version.
+  let dir = __dirname;
+  for (let i = 0; i < 5; i++) {
+    const candidate = path.join(dir, 'package.json');
+    if (fs.existsSync(candidate)) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pkg = require(candidate);
+      if (pkg.name === 'sencho') return pkg.version;
+    }
+    dir = path.dirname(dir);
+  }
+  return 'unknown';
 }
 
 export interface RemoteMeta {
