@@ -332,7 +332,7 @@ Nodes running very old Sencho versions that predate the capability system need t
 
 - The image pull is slow on the remote host (large image, slow connection)
 - The container failed to restart after pulling
-- The remote node's version cannot be detected (shows "unknown"), though the gateway will still confirm the update by detecting a container restart
+- The remote node's version cannot be detected (shows "unknown") and it is running a version older than v0.40.0 that does not report its process start time. See [First remote update always times out](#first-remote-update-always-times-out) for details
 
 **Fix:**
 
@@ -349,6 +349,29 @@ docker compose pull && docker compose up -d
 <Note>
   Update state is tracked in memory on the gateway. Restarting the gateway clears all stuck states automatically.
 </Note>
+
+---
+
+## First remote update always times out
+
+**Symptom:** After triggering a remote update, the node successfully restarts with the new version, but the dashboard still shows **Timed out** after 5 minutes.
+
+**Cause:** The gateway detects update completion in two ways: a version change, or a change in the node's process start time. Nodes running Sencho versions older than v0.40.0 do not report either signal reliably:
+
+- **Version:** The node reports `"unknown"` because its version detection is broken (fixed in v0.39.3+).
+- **Process start time:** The node does not include `startedAt` in its `/api/meta` response (added in v0.40.0).
+
+Without either signal, the gateway cannot confirm the container restarted, so it times out.
+
+**Fix:** This only affects the **first** update from a very old version. After the update completes (even though the dashboard shows "Timed out"), the remote node will be running the latest version with both detection signals. Future updates triggered from the dashboard will complete normally.
+
+1. Click **Dismiss** on the timed-out badge to clear the state.
+2. Click **Recheck** to verify the node is now running the latest version.
+3. If the node still shows "unknown", update it manually on the remote host:
+
+```bash
+docker compose pull && docker compose up -d
+```
 
 ---
 
