@@ -30,7 +30,7 @@ import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
-import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta, getActiveCapabilities } from './services/CapabilityRegistry';
+import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
@@ -149,6 +149,7 @@ const globalApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again shortly.' },
+  skip: (req: Request) => req.path === '/meta' || req.path === '/health',
 });
 
 app.use('/api/', globalApiLimiter);
@@ -5451,6 +5452,7 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
     const id = parseInt(nodeIdParam);
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
+    remoteMetaCache.delete(id);
     res.json({ success: true });
   } catch (error: any) {
     console.error('Failed to delete node:', error);
@@ -5471,8 +5473,11 @@ app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
 
 // Fetch capability metadata for a specific node. For local nodes, returns this
 // instance's capabilities directly. For remote nodes, relays GET /api/meta from
-// the remote Sencho instance. Returns { version: null, capabilities: [] } on
-// failure (old node without /api/meta, or node offline) — never an error status.
+// the remote Sencho instance. Backend-side cache shields against rate limit
+// contention on the remote; stale data is served on transient failures.
+const remoteMetaCache = new Map<number, { data: RemoteMeta; fetchedAt: number }>();
+const REMOTE_META_CACHE_TTL = 3 * 60 * 1000;
+
 app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string);
@@ -5487,7 +5492,12 @@ app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Respons
       return;
     }
 
-    // Remote node — relay GET /api/meta
+    const cached = remoteMetaCache.get(id);
+    if (cached && Date.now() - cached.fetchedAt < REMOTE_META_CACHE_TTL) {
+      res.json(cached.data);
+      return;
+    }
+
     const baseUrl = node.api_url?.replace(/\/$/, '');
     if (!baseUrl || !node.api_token) {
       res.json({ version: null, capabilities: [] });
@@ -5495,10 +5505,22 @@ app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Respons
     }
 
     const meta = await fetchRemoteMeta(baseUrl, node.api_token);
+
+    // A successful fetch always includes a version; null version means the remote
+    // was unreachable. Only cache successful responses so transient failures retry.
+    if (meta.version !== null) {
+      remoteMetaCache.set(id, { data: meta, fetchedAt: Date.now() });
+    } else if (cached) {
+      cached.fetchedAt = Date.now();
+      res.json(cached.data);
+      return;
+    }
+
     res.json(meta);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to fetch node meta:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch node metadata' });
+    const message = error instanceof Error ? error.message : 'Failed to fetch node metadata';
+    res.status(500).json({ error: message });
   }
 });
 

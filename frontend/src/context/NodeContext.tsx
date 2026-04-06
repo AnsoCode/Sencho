@@ -32,7 +32,8 @@ interface NodeContextType {
   refreshNodeMeta: (nodeId: number) => Promise<void>;
 }
 
-const META_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const META_CACHE_TTL = 5 * 60 * 1000;
+const META_FAILURE_TTL = 30 * 1000;
 
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
@@ -50,7 +51,11 @@ export function NodeProvider({ children }: { children: React.ReactNode }) {
 
   const fetchNodeMeta = useCallback(async (nodeId: number) => {
     const cached = nodeMetaRef.current.get(nodeId);
-    if (cached && Date.now() - cached.fetchedAt < META_CACHE_TTL) return;
+    if (cached) {
+      // Use shorter TTL for failed fetches so we retry quickly after transient errors
+      const ttl = cached.capabilities.length > 0 ? META_CACHE_TTL : META_FAILURE_TTL;
+      if (Date.now() - cached.fetchedAt < ttl) return;
+    }
 
     try {
       const res = await apiFetch(`/nodes/${nodeId}/meta`, { localOnly: true });

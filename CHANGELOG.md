@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **licensing:** Admiral licenses (including lifetime) are now correctly identified; previously, Lemon Squeezy variant names containing "Admiral" were not matched, causing the tier to display as "Skipper" and Admiral features to remain locked
 * **licensing:** "Manage Subscription" button is now hidden for lifetime licenses, which have no billing portal by design
 * **licensing:** license card now shows "Duration: Lifetime" for lifetime licenses instead of an empty renewal date
+* **fleet:** remote node capability detection now works reliably; `/api/meta` and `/api/health` are exempt from the global rate limiter so they are never blocked by proxied traffic, and a backend-side cache with stale-while-revalidate prevents transient failures from disabling capability-gated features (Auto-Update, Schedules, Audit, Console) on remote nodes
+* **fleet:** failed capability fetches now retry after 30 seconds instead of being cached for the full 5-minute TTL
 
 ### Changed
 
