@@ -156,3 +156,25 @@ Fleet View queries all registered nodes in parallel. Each node responds independ
 <Note>
   Fleet View always runs on your primary (local) Sencho instance. It is never proxied through a remote node.
 </Note>
+
+---
+
+## Troubleshooting
+
+### Version shows as "unknown" for a remote node
+
+This means the remote node's `/api/meta` endpoint did not return a valid version. Common causes:
+
+- **Remote node is offline or unreachable.** Check that the node's API URL and token are correct in the node configuration.
+- **Remote node is running an older Sencho version** that predates the version reporting feature. Update the remote node manually (pull the latest Docker image and restart the container) to restore version reporting.
+
+Once the remote node is reachable and running a current Sencho version, its version will appear automatically on the next fleet refresh.
+
+### "Update All" says no updates available
+
+The **Update All** button only triggers updates on remote nodes that:
+
+1. Report a valid version lower than your primary instance's version
+2. Support the self-update capability (requires running in Docker)
+
+If a remote node's version is unresolvable ("unknown"), the **Update** button on its individual card will still be available, but **Update All** requires both versions to be known for a safe comparison.

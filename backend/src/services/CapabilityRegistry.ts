@@ -1,6 +1,7 @@
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
+import semver from 'semver';
 import { SENCHO_VERSION } from '../generated/version';
 
 /**
@@ -35,8 +36,13 @@ export const CAPABILITIES = [
 
 export type Capability = (typeof CAPABILITIES)[number];
 
+/** Returns true when the string is a usable semver version. */
+export function isValidVersion(v: string | null | undefined): v is string {
+  return !!v && v !== 'unknown' && v !== '0.0.0-dev' && !!semver.valid(v);
+}
+
 // Resolved once per process at import time, then cached.
-function resolveVersion(): string {
+function resolveVersion(): string | null {
   if (SENCHO_VERSION !== '0.0.0-dev') return SENCHO_VERSION;
 
   // Fallback for manual ts-node runs without the predev hook.
@@ -49,12 +55,13 @@ function resolveVersion(): string {
     } catch { /* not found, keep walking */ }
     dir = path.dirname(dir);
   }
-  return 'unknown';
+  console.warn('[CapabilityRegistry] Could not resolve Sencho version from any source');
+  return null;
 }
 
 const cachedVersion = resolveVersion();
 
-export function getSenchoVersion(): string {
+export function getSenchoVersion(): string | null {
   return cachedVersion;
 }
 
@@ -83,8 +90,9 @@ export async function fetchRemoteMeta(baseUrl: string, apiToken: string): Promis
       headers: { Authorization: `Bearer ${apiToken}` },
       timeout: 5000,
     });
+    const rawVersion: string | undefined = res.data.version;
     return {
-      version: res.data.version ?? null,
+      version: isValidVersion(rawVersion) ? rawVersion : null,
       capabilities: Array.isArray(res.data.capabilities) ? res.data.capabilities : [],
     };
   } catch (err) {

@@ -28,6 +28,7 @@ import FleetSnapshots from './FleetSnapshots';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot, type Label as StackLabel } from './LabelPill';
 import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
+import { formatVersion } from '@/lib/version';
 
 // --- Types ---
 
@@ -68,7 +69,7 @@ interface NodeUpdateStatus {
     name: string;
     type: 'local' | 'remote';
     version: string | null;
-    latestVersion: string;
+    latestVersion: string | null;
     updateAvailable: boolean;
     updateStatus: 'updating' | 'completed' | 'timeout' | 'failed' | null;
 }
@@ -363,6 +364,8 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
     const [loadingStacks, setLoadingStacks] = useState(false);
 
     const isOnline = node.status === 'online';
+    const formattedVersion = formatVersion(updateStatus?.version);
+    const formattedLatest = formatVersion(updateStatus?.latestVersion);
     const cpuPercent = getNodeCpu(node);
     const memPercent = getNodeMem(node);
     const diskPercent = getNodeDisk(node);
@@ -411,9 +414,9 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
                                     {node.type}
                                 </Badge>
-                                {updateStatus?.version && (
+                                {formattedVersion && (
                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-mono tabular-nums shrink-0">
-                                        v{updateStatus.version}
+                                        {formattedVersion}
                                     </Badge>
                                 )}
                                 {updateStatus?.updateStatus && <UpdateStatusBadge status={updateStatus.updateStatus} />}
@@ -498,7 +501,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                             {updatingNodeId === node.id ? (
                                 <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Triggering...</>
                             ) : (
-                                <><Download className="w-3 h-3 mr-1.5" strokeWidth={1.5} />Update to v{updateStatus.latestVersion}</>
+                                <><Download className="w-3 h-3 mr-1.5" strokeWidth={1.5} />{formattedLatest ? `Update to ${formattedLatest}` : 'Update'}</>
                             )}
                         </Button>
                     </div>
@@ -1140,6 +1143,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         const failed = updateStatuses.filter(s => s.updateStatus === 'failed' || s.updateStatus === 'timeout').length;
                         const q = modalSearch.toLowerCase();
                         const filtered = q ? updateStatuses.filter(s => s.name.toLowerCase().includes(q) || s.type.includes(q)) : updateStatuses;
+                        const gatewayLabel = formatVersion(updateStatuses[0]?.latestVersion);
 
                         return (
                             <>
@@ -1182,9 +1186,11 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             className="h-8 pl-8 text-xs"
                                         />
                                     </div>
-                                    <div className="text-[11px] text-muted-foreground shrink-0">
-                                        Gateway: <span className="font-mono tabular-nums text-foreground">v{updateStatuses[0]?.latestVersion}</span>
-                                    </div>
+                                    {gatewayLabel && (
+                                        <div className="text-[11px] text-muted-foreground shrink-0">
+                                            Gateway: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Table header */}
@@ -1218,12 +1224,12 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
                                             {/* Current version */}
                                             <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                                                {s.version && s.version !== 'unknown' && s.version !== '0.0.0-dev' ? `v${s.version}` : <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
+                                                {formatVersion(s.version) ?? <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
                                             </span>
 
                                             {/* Latest version */}
                                             <span className="text-xs font-mono tabular-nums">
-                                                v{s.latestVersion}
+                                                {formatVersion(s.latestVersion) ?? <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
                                             </span>
 
                                             {/* Status / Action */}

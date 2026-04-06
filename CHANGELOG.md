@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* **fleet:** node switcher and fleet overview no longer display "vunknown" for remote nodes running older images; invalid version strings are filtered from the UI
+* **fleet:** resolve root cause of "vunknown" version display across all UI surfaces. The Dockerfile was missing a `COPY package.json` in the backend build stage, causing version resolution to fail at runtime. Backend now returns `null` instead of the string `"unknown"` for unresolvable versions. Frontend guards all version display points (Fleet Overview cards, update buttons, Check for Updates modal). Fleet update logic correctly flags remote nodes with unresolvable versions as potentially outdated instead of silently marking them up to date. Consolidated version validation into shared utilities (`isValidVersion`, `formatVersion`) across both frontend and backend.
 
 ## [0.39.1](https://github.com/AnsoCode/Sencho/compare/v0.39.0...v0.39.1) (2026-04-06)
 
