@@ -15,7 +15,8 @@ export function CapabilityGate({ capability, featureName = 'This feature', child
   if (hasCapability(capability)) return <>{children}</>;
 
   const nodeName = activeNode?.name ?? 'this node';
-  const versionHint = activeNodeMeta?.version
+  const hasValidVersion = activeNodeMeta?.version && activeNodeMeta.version !== 'unknown' && activeNodeMeta.version !== '0.0.0-dev';
+  const versionHint = hasValidVersion
     ? `${nodeName} is running v${activeNodeMeta.version}`
     : `${nodeName} does not support this capability`;
 

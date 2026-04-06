@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **fleet:** node switcher and fleet overview no longer display "vunknown" for remote nodes running older images; invalid version strings are filtered from the UI
+
 ## [0.39.1](https://github.com/AnsoCode/Sencho/compare/v0.39.0...v0.39.1) (2026-04-06)
 
 

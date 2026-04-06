@@ -1218,7 +1218,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
                                             {/* Current version */}
                                             <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                                                {s.version ? `v${s.version}` : <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
+                                                {s.version && s.version !== 'unknown' && s.version !== '0.0.0-dev' ? `v${s.version}` : <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
                                             </span>
 
                                             {/* Latest version */}
