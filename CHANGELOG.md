@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.
-* **fleet:** fix update completion detection for remote nodes that cannot report their version. The gateway now tracks `processStartedAt` from `/api/meta` to detect container restarts, instead of relying solely on version comparison.
+* **fleet:** fix update completion detection for remote nodes that cannot report their version. The gateway now uses three completion signals: version change, process restart detection (`startedAt`), and offline/online detection (node went unreachable during update and came back). This eliminates false timeouts on nodes running older Sencho versions.
 * **fleet:** fix 409 race condition where retrying a timed-out update was rejected because the tracker still showed "updating". The POST trigger now detects expired timeouts and allows re-triggering.
 * **fleet:** populate error messages in the update tracker so users can see why an update failed or timed out.
+* **fleet:** detect probable image pull failures within 90 seconds instead of waiting the full 5-minute timeout. If the node is still running unchanged after 90 seconds, the update is marked as "Failed" with a descriptive message.
+* **fleet:** surface remote self-update pull errors via `/api/meta` so the gateway can immediately report failures instead of timing out.
 
 ### Added
 

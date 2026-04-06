@@ -43,7 +43,7 @@ Each node's status column shows one of:
 | **Updating** badge | The node is pulling the new image and restarting |
 | **Updated** badge | The node came back online with the new version |
 | **Timed out** badge | The node did not come back within 5 minutes |
-| **Failed** badge | The update command failed |
+| **Failed** badge | The update was rejected or the image pull failed on the remote host |
 
 Nodes that are too old to report their version show "unknown" in the current version column. These nodes are treated as outdated.
 
@@ -87,7 +87,9 @@ When an update is triggered on a node, Sencho:
 2. Recreates the container with the new image
 3. The node goes briefly offline during the restart
 
-The gateway monitors the remote node until it comes back online, then marks it as **Updated**. Completion is detected either by a version change or by a change in the node's process start time (indicating a container restart). The "Updated" badge clears automatically after about 60 seconds and the node returns to "Up to date" status.
+The gateway monitors the remote node until it comes back online, then marks it as **Updated**. Completion is detected by three signals: a version change, a change in the node's process start time, or detecting that the node went briefly offline and came back (indicating a container restart). The "Updated" badge clears automatically after about 60 seconds and the node returns to "Up to date" status.
+
+If the node is still reachable and unchanged after about 90 seconds, the gateway marks the update as **Failed**. This usually means the image pull failed on the remote host. Check the Docker logs on the remote node for details.
 
 ## Handling failures
 
@@ -99,7 +101,7 @@ If an update times out or fails, the badge shows **Timed out** or **Failed** wit
 Hovering over a failed or timed-out badge reveals the error message with details about what went wrong.
 
 <Frame>
-  <img src="/images/fleet-view/fleet-node-timed-out.png" alt="Node Updates dialog showing a timed-out node with retry and dismiss buttons" />
+  <img src="/images/fleet-view/fleet-node-failed.png" alt="Node Updates dialog showing a failed node with retry and dismiss buttons" />
 </Frame>
 
 You can also click **Recheck** in the dialog footer to clear all failed and timed-out states at once and fetch fresh version information from every node.
