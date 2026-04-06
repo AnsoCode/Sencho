@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.
+* **fleet:** fix 409 race condition where retrying a timed-out update was rejected because the tracker still showed "updating". The POST trigger now detects expired timeouts and allows re-triggering.
+* **fleet:** populate error messages in the update tracker so users can see why an update failed or timed out.
+
+### Added
+
+* **fleet:** retry and dismiss buttons on failed/timed-out update badges, with animated cursor hover detail showing the error message
+* **fleet:** "Recheck" button now clears all failed and timed-out states before fetching fresh status, with a loading spinner
+* **fleet:** auto-expire "completed" update status after 60 seconds so nodes return to "Up to date" automatically
+* **fleet:** "Update All" now retries nodes that previously timed out or failed
+
 ## [0.39.3](https://github.com/AnsoCode/Sencho/compare/v0.39.2...v0.39.3) (2026-04-06)
 
 

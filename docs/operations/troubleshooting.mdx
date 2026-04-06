@@ -328,13 +328,42 @@ Nodes running very old Sencho versions that predate the capability system need t
 
 **Symptom:** After clicking **Update** on a remote node, the status changes to **Timed out** instead of **Updated**.
 
-**Cause:** The image pull may be slow on the remote host, or the container failed to restart.
+**Cause:** The gateway waits up to 5 minutes for the remote node to come back with a new version. A timeout can happen if:
 
-**Fix:** Check the Docker logs on the remote host for errors. You can also update manually by running:
+- The image pull is slow on the remote host (large image, slow connection)
+- The container failed to restart after pulling
+- The remote node's version cannot be detected (shows "unknown"), which prevents the gateway from confirming the update completed
+
+**Fix:**
+
+1. Hover over the **Timed out** badge to see the error message for more detail.
+2. Click the **Retry** button (circular arrow) next to the badge to try again.
+3. If the issue persists, click **Dismiss** (X button) to clear the state, then check the Docker logs on the remote host directly.
+4. You can also click **Recheck** in the dialog footer to clear all failed states and re-scan every node.
+5. As a last resort, update manually on the remote host:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
+
+<Note>
+  Update state is tracked in memory on the gateway. Restarting the gateway clears all stuck states automatically.
+</Note>
+
+---
+
+## Remote update shows "Failed"
+
+**Symptom:** After clicking **Update**, the status immediately shows **Failed** instead of **Updating**.
+
+**Cause:** The gateway could not reach the remote node's update endpoint, or the remote node rejected the request. Common reasons include network issues, expired API tokens, or the remote node not supporting self-update.
+
+**Fix:**
+
+1. Hover over the **Failed** badge to see the specific error message.
+2. Verify the remote node is online and reachable from the gateway.
+3. Check that the API token configured for the node is still valid.
+4. Click **Retry** to attempt the update again after resolving the issue.
 
 ---
 
