@@ -25,7 +25,7 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
-import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
+import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
@@ -310,10 +310,10 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       const tierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
       const variantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
       if (isLicenseTier(tierHeader)) {
-        req.proxyTier = tierHeader;
+        req.proxyTier = normalizeTier(tierHeader);
       }
       if (isLicenseVariant(variantHeader)) {
-        req.proxyVariant = variantHeader;
+        req.proxyVariant = normalizeVariant(variantHeader);
       } else if (variantHeader === '') {
         req.proxyVariant = null;
       }

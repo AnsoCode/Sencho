@@ -66,7 +66,8 @@ export async function fetchRemoteMeta(baseUrl: string, apiToken: string): Promis
       version: res.data.version ?? null,
       capabilities: Array.isArray(res.data.capabilities) ? res.data.capabilities : [],
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[CapabilityRegistry] Failed to fetch meta from ${baseUrl}:`, (err as Error).message);
     return { version: null, capabilities: [] };
   }
 }

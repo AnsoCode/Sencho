@@ -10,12 +10,28 @@ export type LicenseVariant = 'skipper' | 'admiral' | null;
 const VALID_TIERS: readonly string[] = ['community', 'paid'] satisfies readonly LicenseTier[];
 const VALID_VARIANTS: readonly string[] = ['skipper', 'admiral'] satisfies readonly LicenseVariant[];
 
-export function isLicenseTier(value: unknown): value is LicenseTier {
-    return typeof value === 'string' && (VALID_TIERS as readonly string[]).includes(value);
+// Legacy names from pre-0.38.1 versions. Accepted on input and normalized to current names.
+const LEGACY_TIER_MAP: Record<string, LicenseTier> = { pro: 'paid' };
+const LEGACY_VARIANT_MAP: Record<string, Exclude<LicenseVariant, null>> = { personal: 'skipper', team: 'admiral' };
+
+/** Check if value is a recognized tier (current or legacy name). */
+export function isLicenseTier(value: unknown): value is string {
+    return typeof value === 'string' && ((VALID_TIERS as readonly string[]).includes(value) || value in LEGACY_TIER_MAP);
 }
 
-export function isLicenseVariant(value: unknown): value is Exclude<LicenseVariant, null> {
-    return typeof value === 'string' && (VALID_VARIANTS as readonly string[]).includes(value);
+/** Check if value is a recognized variant (current or legacy name). */
+export function isLicenseVariant(value: unknown): value is string {
+    return typeof value === 'string' && ((VALID_VARIANTS as readonly string[]).includes(value) || value in LEGACY_VARIANT_MAP);
+}
+
+/** Normalize a tier value, mapping legacy names to current equivalents. Must be called after isLicenseTier validation. */
+export function normalizeTier(value: string): LicenseTier {
+    return LEGACY_TIER_MAP[value] ?? (value as LicenseTier);
+}
+
+/** Normalize a variant value, mapping legacy names to current equivalents. Must be called after isLicenseVariant validation. */
+export function normalizeVariant(value: string): Exclude<LicenseVariant, null> {
+    return LEGACY_VARIANT_MAP[value] ?? (value as Exclude<LicenseVariant, null>);
 }
 
 /** Header names used for Distributed License Enforcement between nodes. */
@@ -220,26 +236,34 @@ export class LicenseService {
     /**
      * Get the license variant (skipper or admiral) from stored metadata.
      * Trial licenses default to "skipper"; Admiral features require an Admiral license.
-     * Reads the pre-resolved `license_variant_type` from DB. Falls back to name-based
-     * resolution for pre-existing installs, then persists the result so the fallback
-     * only runs once.
+     *
+     * Self-healing: on every call, cross-checks the stored variant_type against what
+     * resolveVariantType() produces from the current product/variant names. If they
+     * disagree (e.g. stale cache from a previous buggy version), re-resolves and
+     * persists the corrected value.
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
         const status = db.getSystemState('license_status');
         if (status === 'trial') return 'skipper';
 
-        // Primary path: read the pre-resolved type stored at activation/validation
-        const storedType = db.getSystemState('license_variant_type');
-        if (isLicenseVariant(storedType)) return storedType;
-
-        // Backward compat: resolve from variant/product name for pre-existing installs
         const variantName = db.getSystemState('license_variant_name');
-        if (!variantName) return null;
         const productName = db.getSystemState('license_product_name') || undefined;
-        const resolved = this.resolveVariantType(variantName, productName);
-        db.setSystemState('license_variant_type', resolved);
-        return resolved;
+        const storedType = db.getSystemState('license_variant_type');
+
+        // Self-heal: if we have source metadata, always cross-check the stored type
+        if (variantName) {
+            const resolved = this.resolveVariantType(variantName, productName);
+            if (resolved !== storedType) {
+                db.setSystemState('license_variant_type', resolved);
+            }
+            return resolved;
+        }
+
+        // No variant name available; trust stored type if valid
+        if (isLicenseVariant(storedType)) return normalizeVariant(storedType);
+
+        return null;
     }
 
     /**

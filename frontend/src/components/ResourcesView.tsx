@@ -387,13 +387,17 @@ export default function ResourcesView() {
                 apiFetch('/system/orphans'),
             ]);
 
-            setUsage(await usageRes.json());
-            const resources = await resourcesRes.json();
-            setImages(resources.images ?? []);
-            setVolumes(resources.volumes ?? []);
-            setNetworks(resources.networks ?? []);
-            setOrphans(await orphansRes.json());
-            setSelectedOrphans([]);
+            if (usageRes.ok) setUsage(await usageRes.json());
+            if (resourcesRes.ok) {
+                const resources = await resourcesRes.json();
+                setImages(resources.images ?? []);
+                setVolumes(resources.volumes ?? []);
+                setNetworks(resources.networks ?? []);
+            }
+            if (orphansRes.ok) {
+                setOrphans(await orphansRes.json());
+                setSelectedOrphans([]);
+            }
         } catch (err) {
             console.error('Failed to fetch data', err);
             toast.error('Failed to load resources data');
