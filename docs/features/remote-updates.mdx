@@ -87,7 +87,7 @@ When an update is triggered on a node, Sencho:
 2. Recreates the container with the new image
 3. The node goes briefly offline during the restart
 
-The gateway monitors the remote node until it comes back online with the new version, then marks it as **Updated**. The "Updated" badge clears automatically after about 60 seconds and the node returns to "Up to date" status.
+The gateway monitors the remote node until it comes back online, then marks it as **Updated**. Completion is detected either by a version change or by a change in the node's process start time (indicating a container restart). The "Updated" badge clears automatically after about 60 seconds and the node returns to "Up to date" status.
 
 ## Handling failures
 

@@ -68,6 +68,7 @@ export function getSenchoVersion(): string | null {
 export interface RemoteMeta {
   version: string | null;
   capabilities: string[];
+  startedAt: number | null;
 }
 
 // Runtime capability overrides — services call disableCapability() during init
@@ -94,9 +95,10 @@ export async function fetchRemoteMeta(baseUrl: string, apiToken: string): Promis
     return {
       version: isValidVersion(rawVersion) ? rawVersion : null,
       capabilities: Array.isArray(res.data.capabilities) ? res.data.capabilities : [],
+      startedAt: typeof res.data.startedAt === 'number' ? res.data.startedAt : null,
     };
   } catch (err) {
     console.warn(`[CapabilityRegistry] Failed to fetch meta from ${baseUrl}:`, (err as Error).message);
-    return { version: null, capabilities: [] };
+    return { version: null, capabilities: [], startedAt: null };
   }
 }

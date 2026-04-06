@@ -346,8 +346,10 @@ app.get('/api/health', (_req: Request, res: Response): void => {
 
 // Public meta endpoint - returns this instance's version and supported capabilities.
 // No auth required (like /health). Used by remote nodes during connection tests.
+const processStartedAt = Date.now();
+
 app.get('/api/meta', (_req: Request, res: Response): void => {
-  res.json({ version: getSenchoVersion(), capabilities: getActiveCapabilities() });
+  res.json({ version: getSenchoVersion(), capabilities: getActiveCapabilities(), startedAt: processStartedAt });
 });
 
 // Auth Routes (no authentication required)
@@ -1103,10 +1105,21 @@ interface UpdateTracker {
   startedAt: number;
   previousVersion: string | null;
   error?: string;
+  /** Process start time of the remote node before the update was triggered. */
+  previousProcessStart: number | null;
 }
 const updateTracker = new Map<number, UpdateTracker>();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const UPDATE_TIMEOUT_MSG = 'Node did not respond with a new version within 5 minutes.';
+const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
+
+function createTracker(
+  status: UpdateTracker['status'],
+  previousVersion: string | null,
+  previousProcessStart: number | null,
+  error?: string,
+): UpdateTracker {
+  return { status, startedAt: Date.now(), previousVersion, previousProcessStart, error };
+}
 
 interface FleetNodeOverview {
   id: number;
@@ -1259,19 +1272,31 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
         const tracker = updateTracker.get(node.id);
 
         let version: string | null = null;
+        let remoteStartedAt: number | null = null;
         if (node.type === 'local') {
           version = gatewayVersion;
         } else if (node.api_url && node.api_token) {
           const meta = await fetchRemoteMeta(node.api_url, node.api_token);
           version = meta.version;
+          remoteStartedAt = meta.startedAt;
         }
 
-        // For nodes actively updating, check if they've come back with a new version
+        // For nodes actively updating, check if they've come back
         if (tracker?.status === 'updating') {
           if (Date.now() - tracker.startedAt > UPDATE_TIMEOUT_MS) {
             updateTracker.set(node.id, { ...tracker, status: 'timeout', error: UPDATE_TIMEOUT_MSG });
-          } else if (node.type === 'remote' && version && version !== tracker.previousVersion) {
-            updateTracker.set(node.id, { ...tracker, status: 'completed' });
+          } else if (node.type === 'remote') {
+            if (version && version !== tracker.previousVersion) {
+              // Version changed: confirmed update
+              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+            } else if (
+              remoteStartedAt !== null &&
+              tracker.previousProcessStart !== null &&
+              remoteStartedAt !== tracker.previousProcessStart
+            ) {
+              // Process restarted (startedAt changed): container was recreated
+              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+            }
           }
         }
 
@@ -1353,7 +1378,7 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
         res.status(503).json({ error: 'Self-update unavailable on the local node.' });
         return;
       }
-      updateTracker.set(nodeId, { status: 'updating', startedAt: Date.now(), previousVersion: getSenchoVersion() });
+      updateTracker.set(nodeId, createTracker('updating', getSenchoVersion(), null));
       scheduleLocalUpdate(res, 'Update initiated on local node. The server will restart shortly.');
       return;
     }
@@ -1384,19 +1409,19 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       const errorMsg = (err as Record<string, string>)?.error || 'Remote node rejected update request.';
-      updateTracker.set(nodeId, { status: 'failed', startedAt: Date.now(), previousVersion: meta.version, error: errorMsg });
+      updateTracker.set(nodeId, createTracker('failed', meta.version, meta.startedAt, errorMsg));
       res.status(502).json({ error: errorMsg });
       return;
     }
 
-    updateTracker.set(nodeId, { status: 'updating', startedAt: Date.now(), previousVersion: meta.version });
+    updateTracker.set(nodeId, createTracker('updating', meta.version, meta.startedAt));
     res.status(202).json({ message: `Update initiated on ${node.name}.` });
   } catch (error) {
     console.error('[Fleet] Node update error:', error);
     const errorMsg = (error as Error)?.message || 'Failed to trigger node update.';
     const failedNodeId = parseInt(req.params.nodeId as string, 10);
     if (!isNaN(failedNodeId)) {
-      updateTracker.set(failedNodeId, { status: 'failed', startedAt: Date.now(), previousVersion: null, error: errorMsg });
+      updateTracker.set(failedNodeId, createTracker('failed', null, null, errorMsg));
     }
     res.status(500).json({ error: 'Failed to trigger node update.' });
   }
@@ -1437,7 +1462,7 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
         signal: AbortSignal.timeout(10000),
       });
       if (response.ok) {
-        updateTracker.set(node.id, { status: 'updating', startedAt: Date.now(), previousVersion: meta.version });
+        updateTracker.set(node.id, createTracker('updating', meta.version, meta.startedAt));
         return { name: node.name, triggered: true };
       }
       return { name: node.name, triggered: false };
