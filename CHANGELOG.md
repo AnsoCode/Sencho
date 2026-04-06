@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.6](https://github.com/AnsoCode/Sencho/compare/v0.38.5...v0.38.6) (2026-04-06)
+
+
+### Fixed
+
+* **fleet:** resolve getSenchoVersion crash in Docker containers ([#391](https://github.com/AnsoCode/Sencho/issues/391)) ([d437a19](https://github.com/AnsoCode/Sencho/commit/d437a195b695f6cb60411db8dbf1f23f22e298db))
+
 ## [0.38.5](https://github.com/AnsoCode/Sencho/compare/v0.38.4...v0.38.5) (2026-04-06)
 
 
