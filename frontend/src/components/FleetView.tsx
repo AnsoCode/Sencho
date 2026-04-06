@@ -707,9 +707,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     // Paid tier: auto-refresh every 30s
     useEffect(() => {
         if (!isPaid) return;
-        const interval = setInterval(() => fetchOverview(), 30000);
-        return () => clearInterval(interval);
-    }, [isPaid, fetchOverview]);
+        const overviewInterval = setInterval(fetchOverview, 30000);
+        const updateInterval = setInterval(fetchUpdateStatus, 120000);
+        return () => { clearInterval(overviewInterval); clearInterval(updateInterval); };
+    }, [isPaid, fetchOverview, fetchUpdateStatus]);
 
     // Fast poll (5s) when any node is actively updating — uses ref to avoid interval thrashing
     const hasUpdatingRef = useRef(false);
