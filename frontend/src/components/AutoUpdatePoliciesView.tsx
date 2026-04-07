@@ -115,10 +115,9 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/scheduled-tasks', { localOnly: true });
+      const res = await apiFetch('/scheduled-tasks?action=update', { localOnly: true });
       if (res.ok) {
-        const all: ScheduledTask[] = await res.json();
-        setPolicies(all.filter(t => t.action === 'update'));
+        setPolicies(await res.json());
       }
     } catch {
       // Non-critical
