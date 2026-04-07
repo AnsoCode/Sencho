@@ -4518,6 +4518,14 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
     if (ls.getVariant() !== 'admiral') {
       tasks = tasks.filter(t => t.action === 'update');
     }
+    // Separate Auto-Update and Scheduled Operations into distinct views
+    const actionFilter = typeof req.query.action === 'string' ? req.query.action : undefined;
+    const excludeAction = typeof req.query.exclude_action === 'string' ? req.query.exclude_action : undefined;
+    if (actionFilter) {
+      tasks = tasks.filter(t => t.action === actionFilter);
+    } else if (excludeAction) {
+      tasks = tasks.filter(t => t.action !== excludeAction);
+    }
     res.json(tasks);
   } catch (error) {
     console.error('[ScheduledTasks] List error:', error);

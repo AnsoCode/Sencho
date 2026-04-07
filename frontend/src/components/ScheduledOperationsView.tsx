@@ -118,7 +118,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/scheduled-tasks', { localOnly: true });
+      const res = await apiFetch('/scheduled-tasks?exclude_action=update', { localOnly: true });
       if (res.ok) {
         setTasks(await res.json());
       }
