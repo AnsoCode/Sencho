@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **console:** fix remote node Host Console failing with "Connection error" / 502. The gateway's console-token request to the remote node was missing license tier headers, causing the remote's Admiral license gate to reject the request. Both the HTTP fetch and the WS upgrade handler now correctly propagate proxy tier headers for console_session tokens.
 * **auto-update:** resolve failure when executing auto-update policies on remote Distributed API nodes. Previously, the scheduler tried to access the remote Docker daemon directly, which is not supported. Now the update execution is proxied to the remote Sencho instance via HTTP, matching the existing Distributed API architecture.
 * **schedules:** auto-update policies no longer appear in the Scheduled Operations list. Each view now fetches only its relevant task type via server-side action filtering.
 
