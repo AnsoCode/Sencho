@@ -3,7 +3,7 @@ import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle, Box, Activity,
     Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
-    CircleCheck, CircleAlert, Globe, Monitor,
+    CircleCheck, CircleAlert, Globe, Monitor, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,7 @@ import { toast } from '@/components/ui/toast-store';
 import { LabelDot, type Label as StackLabel } from './LabelPill';
 import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 import { formatVersion } from '@/lib/version';
+import { CursorProvider, Cursor, CursorFollow, CursorContainer } from '@/components/animate-ui/primitives/animate/cursor';
 
 // --- Types ---
 
@@ -72,6 +73,7 @@ interface NodeUpdateStatus {
     latestVersion: string | null;
     updateAvailable: boolean;
     updateStatus: 'updating' | 'completed' | 'timeout' | 'failed' | null;
+    error?: string | null;
 }
 
 type SortField = 'name' | 'cpu' | 'memory' | 'containers' | 'status';
@@ -288,7 +290,12 @@ function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
     );
 }
 
-function UpdateStatusBadge({ status }: { status: NodeUpdateStatus['updateStatus'] }) {
+function UpdateStatusBadge({ status, error, onRetry, onDismiss }: {
+    status: NodeUpdateStatus['updateStatus'];
+    error?: string | null;
+    onRetry?: () => void;
+    onDismiss?: () => void;
+}) {
     if (status === 'updating') return (
         <Badge className="text-[10px] px-1.5 py-0 h-4 bg-info/15 text-info border-info/30 shrink-0">
             <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" /> Updating
@@ -299,12 +306,46 @@ function UpdateStatusBadge({ status }: { status: NodeUpdateStatus['updateStatus'
             <Check className="w-2.5 h-2.5 mr-0.5" /> Updated
         </Badge>
     );
-    if (status === 'timeout') return (
-        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Timed out</Badge>
-    );
-    if (status === 'failed') return (
-        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Failed</Badge>
-    );
+    if (status === 'timeout' || status === 'failed') {
+        const label = status === 'timeout' ? 'Timed out' : 'Failed';
+        return (
+            <CursorProvider>
+                <CursorContainer className="flex items-center gap-1">
+                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{label}</Badge>
+                    {onRetry && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            title="Retry update"
+                        >
+                            <RotateCcw className="w-3 h-3" strokeWidth={1.5} />
+                        </button>
+                    )}
+                    {onDismiss && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            title="Dismiss"
+                        >
+                            <X className="w-3 h-3" strokeWidth={1.5} />
+                        </button>
+                    )}
+                    {error && (
+                        <>
+                            <Cursor>
+                                <div className="h-2 w-2 rounded-full bg-destructive/60" />
+                            </Cursor>
+                            <CursorFollow side="bottom" sideOffset={8} align="end" alignOffset={0}>
+                                <div className="bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] border border-card-border shadow-md rounded-lg px-3 py-2 max-w-xs">
+                                    <p className="font-mono tabular-nums text-xs text-stat-subtitle">{error}</p>
+                                </div>
+                            </CursorFollow>
+                        </>
+                    )}
+                </CursorContainer>
+            </CursorProvider>
+        );
+    }
     return null;
 }
 
@@ -357,7 +398,18 @@ function ReconnectingOverlay() {
     );
 }
 
-function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updatingNodeId }: { node: FleetNode; onNavigate: (nodeId: number, stackName: string) => void; labelMap?: Record<string, StackLabel[]>; updateStatus?: NodeUpdateStatus; onUpdate?: (nodeId: number) => void; updatingNodeId?: number | null }) {
+interface NodeCardProps {
+    node: FleetNode;
+    onNavigate: (nodeId: number, stackName: string) => void;
+    labelMap?: Record<string, StackLabel[]>;
+    updateStatus?: NodeUpdateStatus;
+    onUpdate?: (nodeId: number) => void;
+    updatingNodeId?: number | null;
+    onRetryUpdate?: (nodeId: number) => void;
+    onDismissUpdate?: (nodeId: number) => void;
+}
+
+function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updatingNodeId, onRetryUpdate, onDismissUpdate }: NodeCardProps) {
     const { isPaid } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
@@ -419,7 +471,14 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                         {formattedVersion}
                                     </Badge>
                                 )}
-                                {updateStatus?.updateStatus && <UpdateStatusBadge status={updateStatus.updateStatus} />}
+                                {updateStatus?.updateStatus && (
+                                    <UpdateStatusBadge
+                                        status={updateStatus.updateStatus}
+                                        error={updateStatus.error}
+                                        onRetry={onRetryUpdate ? () => onRetryUpdate(node.id) : undefined}
+                                        onDismiss={onDismissUpdate ? () => onDismissUpdate(node.id) : undefined}
+                                    />
+                                )}
                                 {updateStatus?.updateAvailable && !updateStatus.updateStatus && (
                                     <Badge className="text-[10px] px-1.5 py-0 h-4 bg-warning/15 text-warning border-warning/30 shrink-0">
                                         Update available
@@ -700,6 +759,19 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             toast.error((e as Error)?.message || 'Something went wrong.');
         }
     }, [fetchUpdateStatus]);
+
+    const dismissNodeUpdate = useCallback(async (nodeId: number) => {
+        try {
+            await apiFetch(`/fleet/nodes/${nodeId}/update-status`, { method: 'DELETE', localOnly: true });
+            fetchUpdateStatus();
+        } catch (error) {
+            console.error('[Fleet] Failed to dismiss update status:', error);
+        }
+    }, [fetchUpdateStatus]);
+
+    const retryNodeUpdate = useCallback(async (nodeId: number) => {
+        triggerNodeUpdate(nodeId);
+    }, [triggerNodeUpdate]);
 
     useEffect(() => {
         fetchOverview();
@@ -1056,6 +1128,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             updateStatus={updateStatusMap.get(node.id)}
                                             onUpdate={isPaid ? triggerNodeUpdate : undefined}
                                             updatingNodeId={updatingNodeId}
+                                            onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
+                                            onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
                                         />
                                     ))}
                                 </div>
@@ -1234,7 +1308,14 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
                                             {/* Status / Action */}
                                             <div className="flex justify-end">
-                                                {s.updateStatus && <UpdateStatusBadge status={s.updateStatus} />}
+                                                {s.updateStatus && (
+                                                    <UpdateStatusBadge
+                                                        status={s.updateStatus}
+                                                        error={s.error}
+                                                        onRetry={() => retryNodeUpdate(s.nodeId)}
+                                                        onDismiss={() => dismissNodeUpdate(s.nodeId)}
+                                                    />
+                                                )}
                                                 {!s.updateStatus && !s.updateAvailable && (
                                                     <Badge className="text-[10px] px-1.5 py-0 h-5 bg-success-muted text-success border-success/30">
                                                         <Check className="w-2.5 h-2.5 mr-0.5" /> Up to date
@@ -1271,9 +1352,15 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         variant="ghost"
                                         size="sm"
                                         className="h-7 text-xs text-muted-foreground"
-                                        onClick={async () => { setCheckingUpdates(true); await fetchUpdateStatus(); setCheckingUpdates(false); }}
+                                        disabled={checkingUpdates}
+                                        onClick={async () => {
+                                            setCheckingUpdates(true);
+                                            await apiFetch('/fleet/update-status', { method: 'DELETE', localOnly: true });
+                                            await fetchUpdateStatus();
+                                            setCheckingUpdates(false);
+                                        }}
                                     >
-                                        <RefreshCw className="w-3 h-3 mr-1.5" strokeWidth={1.5} />
+                                        <RefreshCw className={`w-3 h-3 mr-1.5 ${checkingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                                         Recheck
                                     </Button>
                                     {updatableRemoteCount > 0 && (

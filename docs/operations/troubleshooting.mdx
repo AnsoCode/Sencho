@@ -328,9 +328,60 @@ Nodes running very old Sencho versions that predate the capability system need t
 
 **Symptom:** After clicking **Update** on a remote node, the status changes to **Timed out** instead of **Updated**.
 
-**Cause:** The image pull may be slow on the remote host, or the container failed to restart.
+**Cause:** The gateway waits up to 5 minutes for the remote node to come back online after triggering the update. A timeout can happen if:
 
-**Fix:** Check the Docker logs on the remote host for errors. You can also update manually by running:
+- The image pull is very slow on the remote host (large image, slow connection)
+- The container failed to restart after pulling
+- Network connectivity was lost between the gateway and remote node during the update
+
+**Fix:**
+
+1. Hover over the **Timed out** badge to see the error message for more detail.
+2. Click the **Retry** button (circular arrow) next to the badge to try again.
+3. If the issue persists, click **Dismiss** (X button) to clear the state, then check the Docker logs on the remote host directly.
+4. You can also click **Recheck** in the dialog footer to clear all failed states and re-scan every node.
+5. As a last resort, update manually on the remote host:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+<Note>
+  Update state is tracked in memory on the gateway. Restarting the gateway clears all stuck states automatically.
+</Note>
+
+---
+
+## Remote update shows "Failed"
+
+**Symptom:** After clicking **Update**, the status shows **Failed** with an error message.
+
+**Cause:** There are two common scenarios:
+
+1. **Immediate failure:** The gateway could not reach the remote node's update endpoint, or the remote node rejected the request. Common reasons include network issues, expired API tokens, or the remote node not supporting self-update.
+
+2. **Delayed failure (after ~90 seconds):** The update was accepted by the remote node, but the node never restarted. This usually means the image pull failed on the remote host. The error message will read: *"Update may have failed. The node is still running and its version has not changed."*
+
+**Fix:**
+
+1. Hover over the **Failed** badge to see the specific error message.
+2. For immediate failures: verify the remote node is online and the API token is valid.
+3. For delayed failures: check the Docker logs on the remote host. The pull may have failed due to network issues, registry authentication, or disk space.
+4. Click **Retry** to attempt the update again after resolving the issue.
+
+---
+
+## First remote update always times out on old nodes
+
+**Symptom:** After triggering a remote update on a node running a very old Sencho version (pre-v0.39.3), the node successfully restarts with the new version, but the dashboard shows **Timed out** or **Failed** instead of **Updated**.
+
+**Cause:** The gateway detects update completion using three signals: a version change, a process restart (via `startedAt`), or temporary offline detection. Nodes running Sencho versions older than v0.39.3 report their version as `"unknown"` and do not include `startedAt` in their metadata. If the container restart is brief enough that the gateway does not detect the node going offline, none of the three signals fire.
+
+**Fix:** This only affects the **first** update from a very old version. After the update completes (even though the dashboard may show "Failed" or "Timed out"), the remote node will be running the latest version with proper version reporting and restart detection. Future updates triggered from the dashboard will complete normally.
+
+1. Click **Dismiss** on the badge to clear the state.
+2. Click **Recheck** to verify the node is now running the latest version.
+3. If the node still shows "unknown", update it manually on the remote host:
 
 ```bash
 docker compose pull && docker compose up -d

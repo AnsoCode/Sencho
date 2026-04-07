@@ -12,6 +12,7 @@ class SelfUpdateService {
   private static instance: SelfUpdateService;
   private canSelfUpdate = false;
   private composeContext: ComposeContext | null = null;
+  private lastUpdateError: string | null = null;
 
   public static getInstance(): SelfUpdateService {
     if (!SelfUpdateService.instance) {
@@ -57,10 +58,21 @@ class SelfUpdateService {
     return this.canSelfUpdate;
   }
 
+  /** Returns the error message from the last failed update attempt, or null. */
+  getLastError(): string | null {
+    return this.lastUpdateError;
+  }
+
+  /** Clears the stored update error (call after reading it). */
+  clearLastError(): void {
+    this.lastUpdateError = null;
+  }
+
   triggerUpdate(): void {
     if (!this.composeContext) return;
     const { workingDir, configFiles, serviceName } = this.composeContext;
     const env = { ...process.env, PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' };
+    this.lastUpdateError = null;
 
     console.log(`[SelfUpdate] Pulling latest image for ${serviceName}...`);
     try {
@@ -71,7 +83,8 @@ class SelfUpdateService {
         timeout: 300_000, // 5 min max for pull
       });
     } catch (error) {
-      console.error('[SelfUpdate] Pull failed:', (error as Error).message);
+      this.lastUpdateError = (error as Error).message;
+      console.error('[SelfUpdate] Pull failed:', this.lastUpdateError);
       return;
     }
 

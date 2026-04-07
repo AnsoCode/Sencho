@@ -43,9 +43,17 @@ Each node's status column shows one of:
 | **Updating** badge | The node is pulling the new image and restarting |
 | **Updated** badge | The node came back online with the new version |
 | **Timed out** badge | The node did not come back within 5 minutes |
-| **Failed** badge | The update command failed |
+| **Failed** badge | The update was rejected or the image pull failed on the remote host |
 
 Nodes that are too old to report their version show "unknown" in the current version column. These nodes are treated as outdated.
+
+### Updating state
+
+When an update is in progress, the dialog shows a spinning "Updating" badge and the summary card count changes in real time. The Fleet View polls every 5 seconds while an update is active.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-node-updating.png" alt="Node Updates dialog showing a node in the updating state" />
+</Frame>
 
 ## Updating a single node
 
@@ -58,7 +66,7 @@ For remote nodes, the update happens in the background. The Fleet View automatic
 
 ## Updating all nodes
 
-Click **Update All (N)** in the footer of the Node Updates dialog to trigger updates on all outdated remote nodes simultaneously. The local node is excluded from bulk updates to avoid losing dashboard connectivity.
+Click **Update All (N)** in the footer of the Node Updates dialog to trigger updates on all outdated remote nodes simultaneously. The local node is excluded from bulk updates to avoid losing dashboard connectivity. Nodes that previously failed or timed out are automatically retried in a bulk update.
 
 ## Local node updates
 
@@ -79,6 +87,27 @@ When an update is triggered on a node, Sencho:
 2. Recreates the container with the new image
 3. The node goes briefly offline during the restart
 
-The gateway monitors the remote node until it comes back online with the new version, then marks it as **Updated**.
+The gateway monitors the remote node until it comes back online, then marks it as **Updated**. Completion is detected by three signals: a version change, a change in the node's process start time, or detecting that the node went briefly offline and came back (indicating a container restart). The "Updated" badge clears automatically after about 60 seconds and the node returns to "Up to date" status.
+
+If the node is still reachable and unchanged after about 90 seconds, the gateway marks the update as **Failed**. This usually means the image pull failed on the remote host. Check the Docker logs on the remote node for details.
+
+## Handling failures
+
+If an update times out or fails, the badge shows **Timed out** or **Failed** with two action buttons:
+
+- **Retry** (circular arrow icon) clears the failed state and re-triggers the update
+- **Dismiss** (X icon) clears the failed state without retrying, returning the node to "Update available"
+
+Hovering over a failed or timed-out badge reveals the error message with details about what went wrong.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-node-failed.png" alt="Node Updates dialog showing a failed node with retry and dismiss buttons" />
+</Frame>
+
+You can also click **Recheck** in the dialog footer to clear all failed and timed-out states at once and fetch fresh version information from every node.
+
+<Note>
+  Update tracking is stored in memory on the gateway. Restarting the gateway clears all update states, so any stuck "Timed out" or "Failed" badges will resolve on their own after a restart.
+</Note>
 
 If you run into issues with remote updates, see the [Troubleshooting](/operations/troubleshooting#remote-update-button-does-not-appear) page.

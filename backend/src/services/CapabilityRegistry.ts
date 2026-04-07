@@ -68,6 +68,11 @@ export function getSenchoVersion(): string | null {
 export interface RemoteMeta {
   version: string | null;
   capabilities: string[];
+  startedAt: number | null;
+  /** Error message from a failed self-update attempt on the remote node. */
+  updateError: string | null;
+  /** True when the /api/meta request succeeded (node is reachable). */
+  online: boolean;
 }
 
 // Runtime capability overrides — services call disableCapability() during init
@@ -94,9 +99,12 @@ export async function fetchRemoteMeta(baseUrl: string, apiToken: string): Promis
     return {
       version: isValidVersion(rawVersion) ? rawVersion : null,
       capabilities: Array.isArray(res.data.capabilities) ? res.data.capabilities : [],
+      startedAt: typeof res.data.startedAt === 'number' ? res.data.startedAt : null,
+      updateError: typeof res.data.updateError === 'string' ? res.data.updateError : null,
+      online: true,
     };
   } catch (err) {
     console.warn(`[CapabilityRegistry] Failed to fetch meta from ${baseUrl}:`, (err as Error).message);
-    return { version: null, capabilities: [] };
+    return { version: null, capabilities: [], startedAt: null, updateError: null, online: false };
   }
 }

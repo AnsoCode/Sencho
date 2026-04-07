@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.
+* **fleet:** fix update completion detection for remote nodes that cannot report their version. The gateway now uses three completion signals: version change, process restart detection (`startedAt`), and offline/online detection (node went unreachable during update and came back). This eliminates false timeouts on nodes running older Sencho versions.
+* **fleet:** fix 409 race condition where retrying a timed-out update was rejected because the tracker still showed "updating". The POST trigger now detects expired timeouts and allows re-triggering.
+* **fleet:** populate error messages in the update tracker so users can see why an update failed or timed out.
+* **fleet:** detect probable image pull failures within 90 seconds instead of waiting the full 5-minute timeout. If the node is still running unchanged after 90 seconds, the update is marked as "Failed" with a descriptive message.
+* **fleet:** surface remote self-update pull errors via `/api/meta` so the gateway can immediately report failures instead of timing out.
+
+### Added
+
+* **fleet:** retry and dismiss buttons on failed/timed-out update badges, with animated cursor hover detail showing the error message
+* **fleet:** "Recheck" button now clears all failed and timed-out states before fetching fresh status, with a loading spinner
+* **fleet:** auto-expire "completed" update status after 60 seconds so nodes return to "Up to date" automatically
+* **fleet:** "Update All" now retries nodes that previously timed out or failed
+
 ## [0.39.3](https://github.com/AnsoCode/Sencho/compare/v0.39.2...v0.39.3) (2026-04-06)
 
 
@@ -17,12 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **fleet:** filter invalid version strings from UI display ([#399](https://github.com/AnsoCode/Sencho/issues/399)) ([2089e75](https://github.com/AnsoCode/Sencho/commit/2089e75ef1e973f3e04aa6cc448211db35d95848))
-
-## [Unreleased]
-
-### Fixed
-
-* **fleet:** resolve root cause of "vunknown" version display across all UI surfaces. The Dockerfile was missing a `COPY package.json` in the backend build stage, causing version resolution to fail at runtime. Backend now returns `null` instead of the string `"unknown"` for unresolvable versions. Frontend guards all version display points (Fleet Overview cards, update buttons, Check for Updates modal). Fleet update logic correctly flags remote nodes with unresolvable versions as potentially outdated instead of silently marking them up to date. Consolidated version validation into shared utilities (`isValidVersion`, `formatVersion`) across both frontend and backend.
 
 ## [0.39.1](https://github.com/AnsoCode/Sencho/compare/v0.39.0...v0.39.1) (2026-04-06)
 
