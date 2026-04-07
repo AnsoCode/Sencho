@@ -4518,10 +4518,9 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
     if (ls.getVariant() !== 'admiral') {
       tasks = tasks.filter(t => t.action === 'update');
     }
-    // Optional action filter: ?action=update returns only that action,
-    // ?exclude_action=update excludes it. Useful for separating views.
-    const actionFilter = req.query.action as string | undefined;
-    const excludeAction = req.query.exclude_action as string | undefined;
+    // Separate Auto-Update and Scheduled Operations into distinct views
+    const actionFilter = typeof req.query.action === 'string' ? req.query.action : undefined;
+    const excludeAction = typeof req.query.exclude_action === 'string' ? req.query.exclude_action : undefined;
     if (actionFilter) {
       tasks = tasks.filter(t => t.action === actionFilter);
     } else if (excludeAction) {
