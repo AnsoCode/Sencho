@@ -43,9 +43,9 @@ export function isValidVersion(v: string | null | undefined): v is string {
 
 // Resolved once per process at import time, then cached.
 function resolveVersion(): string | null {
-  if (SENCHO_VERSION !== '0.0.0-dev') return SENCHO_VERSION;
-
-  // Fallback for manual ts-node runs without the predev hook.
+  // Primary: walk up to find the root package.json (always authoritative).
+  // The generated SENCHO_VERSION constant can be stale when a branch falls
+  // behind a release-please version bump, so we prefer the live value.
   let dir = __dirname;
   for (let i = 0; i < 5; i++) {
     const candidate = path.join(dir, 'package.json');
@@ -55,6 +55,8 @@ function resolveVersion(): string | null {
     } catch { /* not found, keep walking */ }
     dir = path.dirname(dir);
   }
+  // Fallback: build-time constant (may be stale in dev, but correct in Docker)
+  if (SENCHO_VERSION !== '0.0.0-dev') return SENCHO_VERSION;
   console.warn('[CapabilityRegistry] Could not resolve Sencho version from any source');
   return null;
 }

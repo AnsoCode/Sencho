@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **fleet:** fix version detection returning stale value from `generated/version.ts` instead of the authoritative `package.json`. This caused remote nodes to show "unknown" version and false "Update available" badges when both nodes were on the same version. `resolveVersion()` now reads the root `package.json` first and only falls back to the build-time constant if the walk fails.
 * **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.
 * **fleet:** fix update completion detection for remote nodes that cannot report their version. The gateway now uses three completion signals: version change, process restart detection (`startedAt`), and offline/online detection (node went unreachable during update and came back). This eliminates false timeouts on nodes running older Sencho versions.
 * **fleet:** fix 409 race condition where retrying a timed-out update was rejected because the tracker still showed "updating". The POST trigger now detects expired timeouts and allows re-triggering.
