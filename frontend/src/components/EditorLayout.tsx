@@ -249,12 +249,9 @@ export default function EditorLayout() {
     setIsEditing(false);
   };
 
-  // Navigation handler with toggle support
   const handleNavigate = (value: string) => {
-    if (value === activeView) {
-      // Toggle off: return to editor if a file is open, else dashboard
-      setActiveView(selectedFile ? 'editor' : 'dashboard');
-    } else if (value === 'dashboard') {
+    if (value === activeView) return;
+    if (value === 'dashboard') {
       resetEditorState();
       setActiveView('dashboard');
     } else {
