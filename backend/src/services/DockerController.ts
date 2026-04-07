@@ -11,6 +11,13 @@ import { NodeRegistry } from './NodeRegistry';
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
 
+/** Canonical compose file name variants, checked in priority order. */
+const COMPOSE_FILE_NAMES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'] as const;
+
+/** Cached mapping from compose `name:` field to stack directory name. TTL-based to avoid re-parsing YAML on every poll. */
+const PROJECT_NAME_CACHE_TTL_MS = 60_000;
+let projectNameCache: { map: Record<string, string>; builtAt: number } | null = null;
+
 /** Common web-UI private ports, checked in priority order when detecting the main app port. */
 const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
 /** Ports that should never be treated as the main app port. */
@@ -374,9 +381,55 @@ class DockerController {
     return this.validateApiData<any[]>(containers);
   }
 
+  /**
+   * Builds (or returns cached) mapping from Docker project name to Sencho stack directory name.
+   * Compose files with a top-level `name:` field override the default project name.
+   */
+  private static async resolveProjectNameMap(stackNames: string[]): Promise<Record<string, string>> {
+    if (projectNameCache && Date.now() - projectNameCache.builtAt < PROJECT_NAME_CACHE_TTL_MS) {
+      return projectNameCache.map;
+    }
+
+    const map: Record<string, string> = {};
+
+    await Promise.all(stackNames.map(async (stackDir) => {
+      map[stackDir] = stackDir;
+
+      for (const fileName of COMPOSE_FILE_NAMES) {
+        const filePath = path.join(COMPOSE_DIR, stackDir, fileName);
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          const parsed = yaml.parse(content);
+          if (parsed?.name && typeof parsed.name === 'string') {
+            map[parsed.name] = stackDir;
+          }
+          break;
+        } catch (err: unknown) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+            console.error(`[DockerController] Failed to read ${filePath}:`, err);
+            break;
+          }
+        }
+      }
+    }));
+
+    projectNameCache = { map, builtAt: Date.now() };
+    return map;
+  }
+
   public async getBulkStackStatuses(stackNames: string[]): Promise<Record<string, BulkStackInfo>> {
-    const allContainers = await this.docker.listContainers({ all: true });
-    const knownSet = new Set(stackNames);
+    // Run Docker API call and project name resolution in parallel
+    const [allContainers, projectToStack] = await Promise.all([
+      this.docker.listContainers({ all: true }),
+      DockerController.resolveProjectNameMap(stackNames),
+    ]);
+
+    // Fallback lookup by absolute working_dir path
+    const absDirToStack: Record<string, string> = {};
+    for (const stackDir of stackNames) {
+      absDirToStack[path.join(COMPOSE_DIR, stackDir)] = stackDir;
+    }
 
     const result: Record<string, BulkStackInfo> = {};
     for (const name of stackNames) {
@@ -385,13 +438,23 @@ class DockerController {
 
     for (const container of allContainers as any[]) {
       const project: string | undefined = container.Labels?.['com.docker.compose.project'];
-      if (!project || !knownSet.has(project)) continue;
+      let stackDir = project ? projectToStack[project] : undefined;
+
+      // Fallback: match by com.docker.compose.project.working_dir label
+      if (!stackDir) {
+        const workingDir: string | undefined = container.Labels?.['com.docker.compose.project.working_dir'];
+        if (workingDir) {
+          stackDir = absDirToStack[workingDir] ?? absDirToStack[path.resolve(workingDir)];
+        }
+      }
+
+      if (!stackDir || !result[stackDir]) continue;
 
       if (container.State === 'running') {
-        result[project].status = 'running';
+        result[stackDir].status = 'running';
 
         // Detect main web port (first running container with a matchable port wins)
-        if (result[project].mainPort === undefined && Array.isArray(container.Ports) && container.Ports.length > 0) {
+        if (result[stackDir].mainPort === undefined && Array.isArray(container.Ports) && container.Ports.length > 0) {
           const ports = container.Ports as { PrivatePort?: number; PublicPort?: number }[];
           let match = ports.find(p => p.PrivatePort && WEB_UI_PORTS.includes(p.PrivatePort));
           if (!match) match = ports.find(p => p.PublicPort && WEB_UI_PORTS.includes(p.PublicPort));
@@ -401,11 +464,11 @@ class DockerController {
           );
           const chosen = match || ports[0];
           if (chosen?.PublicPort) {
-            result[project].mainPort = chosen.PublicPort;
+            result[stackDir].mainPort = chosen.PublicPort;
           }
         }
-      } else if (result[project].status !== 'running') {
-        result[project].status = 'exited';
+      } else if (result[stackDir].status !== 'running') {
+        result[stackDir].status = 'exited';
       }
     }
 
@@ -502,7 +565,7 @@ class DockerController {
     try {
       // 1. Flexible Compose File Discovery
       // Try multiple valid compose file names
-      const composeFileNames = ['compose.yaml', 'docker-compose.yml', 'compose.yml', 'docker-compose.yaml'];
+      const composeFileNames = COMPOSE_FILE_NAMES;
       let yamlContent: string | null = null;
 
       for (const fileName of composeFileNames) {
