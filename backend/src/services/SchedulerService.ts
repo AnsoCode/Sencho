@@ -369,12 +369,18 @@ export class SchedulerService {
             throw new Error('Auto-update requires target_id (stack name or "*") and node_id');
         }
 
-        // Resolve target stacks: "*" means all stacks on the node
+        // For remote nodes, proxy the entire execution to the remote Sencho instance
+        const node = NodeRegistry.getInstance().getNode(task.node_id);
+        if (node?.type === 'remote') {
+            return this.executeUpdateRemote(task.node_id, task.target_id);
+        }
+
+        // Local node: execute directly
         let stackNames: string[];
         if (task.target_id === '*') {
             stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
             if (stackNames.length === 0) {
-                return 'No stacks found on node — skipped.';
+                return 'No stacks found on node; skipped.';
             }
         } else {
             stackNames = [task.target_id];
@@ -400,6 +406,36 @@ export class SchedulerService {
         return results.join('\n');
     }
 
+    /**
+     * Proxy auto-update execution to a remote Sencho instance.
+     * The remote node runs the image checks and compose update locally.
+     */
+    private async executeUpdateRemote(nodeId: number, target: string): Promise<string> {
+        const proxyTarget = NodeRegistry.getInstance().getProxyTarget(nodeId);
+        if (!proxyTarget) {
+            throw new Error('Remote node is not configured or missing API credentials');
+        }
+
+        const baseUrl = proxyTarget.apiUrl.replace(/\/$/, '');
+        const response = await fetch(`${baseUrl}/api/auto-update/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${proxyTarget.apiToken}`,
+            },
+            body: JSON.stringify({ target }),
+            signal: AbortSignal.timeout(300_000), // 5 minute timeout for long updates
+        });
+
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+            throw new Error((body as { error?: string }).error || `Remote node returned ${response.status}`);
+        }
+
+        const body = await response.json() as { result?: string };
+        return body.result || 'Remote auto-update completed (no details returned).';
+    }
+
     private async executeUpdateForStack(
         stackName: string,
         nodeId: number,
@@ -410,7 +446,7 @@ export class SchedulerService {
     ): Promise<string> {
         const containers = await docker.getContainersByStack(stackName);
         if (!containers || containers.length === 0) {
-            return `Stack "${stackName}": no containers found — skipped.`;
+            return `Stack "${stackName}": no containers found; skipped.`;
         }
 
         const imageRefs = [...new Set(
@@ -420,7 +456,7 @@ export class SchedulerService {
         )];
 
         if (imageRefs.length === 0) {
-            return `Stack "${stackName}": no pullable images — skipped.`;
+            return `Stack "${stackName}": no pullable images; skipped.`;
         }
 
         let hasUpdate = false;

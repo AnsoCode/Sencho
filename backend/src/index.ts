@@ -5413,6 +5413,103 @@ app.get('/api/image-updates/fleet', authMiddleware, async (_req: Request, res: R
 });
 
 // =========================
+// Auto-Update Execution API
+// =========================
+
+// Execute auto-update for a single stack (or all stacks with target "*").
+// This runs locally on whichever Sencho instance receives the request.
+// The gateway scheduler proxies this to remote nodes via HTTP.
+app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { target } = req.body as { target?: string };
+    if (!target || typeof target !== 'string') {
+      return res.status(400).json({ error: 'Missing "target" (stack name or "*" for all)' });
+    }
+
+    let stackNames: string[];
+    if (target === '*') {
+      stackNames = await FileSystemService.getInstance(req.nodeId).getStacks();
+      if (stackNames.length === 0) {
+        return res.json({ result: 'No stacks found on node; skipped.' });
+      }
+    } else {
+      if (!isValidStackName(target)) {
+        return res.status(400).json({ error: 'Invalid stack name' });
+      }
+      stackNames = [target];
+    }
+
+    const docker = DockerController.getInstance(req.nodeId);
+    const imageUpdateService = ImageUpdateService.getInstance();
+    const compose = ComposeService.getInstance(req.nodeId);
+    const db = DatabaseService.getInstance();
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
+    const results: string[] = [];
+
+    for (const stackName of stackNames) {
+      try {
+        const containers = await docker.getContainersByStack(stackName);
+        if (!containers || containers.length === 0) {
+          results.push(`Stack "${stackName}": no containers found; skipped.`);
+          continue;
+        }
+
+        const imageRefs = [...new Set(
+          containers
+            .map((c: { Image?: string }) => c.Image)
+            .filter((img): img is string => !!img && !img.startsWith('sha256:'))
+        )];
+
+        if (imageRefs.length === 0) {
+          results.push(`Stack "${stackName}": no pullable images; skipped.`);
+          continue;
+        }
+
+        let hasUpdate = false;
+        const updatedImages: string[] = [];
+        for (const imageRef of imageRefs) {
+          try {
+            if (await imageUpdateService.checkImage(docker, imageRef)) {
+              hasUpdate = true;
+              updatedImages.push(imageRef);
+            }
+          } catch (e) {
+            console.warn(`[AutoUpdate] Failed to check image ${imageRef}:`, e);
+          }
+        }
+
+        if (!hasUpdate) {
+          results.push(`Stack "${stackName}": all images up to date.`);
+          continue;
+        }
+
+        await compose.updateStack(stackName, undefined, atomic);
+        db.clearStackUpdateStatus(req.nodeId, stackName);
+
+        NotificationService.getInstance().dispatchAlert(
+          'info',
+          `Auto-update: stack "${stackName}" updated with new images`,
+          stackName
+        );
+
+        results.push(`Stack "${stackName}": updated (${updatedImages.join(', ')}).`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push(`Stack "${stackName}" failed: ${msg}`);
+        console.error(`[AutoUpdate] Failed for stack "${stackName}":`, e);
+      }
+    }
+
+    res.json({ result: results.join('\n') });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Auto-update execution failed';
+    console.error('[AutoUpdate] Execute error:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// =========================
 // Node Management API
 // =========================
 
