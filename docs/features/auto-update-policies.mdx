@@ -99,6 +99,12 @@ Click the clock icon on any policy to open the run history panel. The history is
 
 Run history is paginated at 20 entries per page. You can export the full history as CSV using the download button in the panel header.
 
+## Multi-node support
+
+Auto-Update Policies work seamlessly across both local and remote nodes. When a policy targets a remote node, Sencho automatically proxies the update execution to the remote Sencho instance via the Distributed API. The remote node performs all image checks and compose updates locally on its own machine, then reports the results back.
+
+No additional configuration is required. As long as your remote node is connected and reachable, auto-update policies will execute on it just like they do on the local node.
+
 ## How it works
 
 Under the hood, Auto-Update Policies are built on the same scheduling engine as [Scheduled Operations](/features/scheduled-operations). The key difference is that auto-update policies:
