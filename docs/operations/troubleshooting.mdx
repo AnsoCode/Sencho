@@ -226,9 +226,12 @@ To re-test connectivity after making changes, open **Profile > Settings > Nodes*
 
 **Symptom:** A stack appears in the sidebar with no status indicator (shown as "--"), but clicking on it reveals running containers with active stats.
 
-**Cause:** This was a bug in versions before 0.40.0 where the sidebar status check matched containers by the Docker Compose project name, assuming it equals the stack's directory name. If your compose file declares a top-level `name:` field (e.g. `name: my-custom-name`), Docker Compose uses that as the project label instead, causing the mismatch.
+**Cause:** The sidebar status check matches containers by their Docker Compose project label. A mismatch can happen when:
 
-**Fix:** Update to Sencho 0.40.0 or later. The status check now reads the `name:` field from compose files and matches correctly regardless of whether a custom project name is set.
+- The compose file declares a top-level `name:` field that overrides the default project name.
+- Containers were created before Sencho reorganized compose files into subdirectories, so their labels still reference the old layout.
+
+**Fix:** Update to the latest version of Sencho. The status check uses multiple fallback strategies (project name mapping, service name, and config file paths) to match containers regardless of how they were originally started.
 
 ---
 

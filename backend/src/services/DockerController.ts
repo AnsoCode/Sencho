@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import * as yaml from 'yaml';
 
 import { NodeRegistry } from './NodeRegistry';
+import { isPathWithinBase } from '../utils/validation';
 
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
@@ -425,8 +426,11 @@ class DockerController {
       DockerController.resolveProjectNameMap(stackNames),
     ]);
 
-    // Fallback lookup by absolute working_dir path
+    // Fallback lookup maps for matching containers whose labels don't directly match stack directory names.
+    // This happens when containers predate Sencho's reorganization of compose files into subdirectories.
     const absDirToStack: Record<string, string> = {};
+    const knownStackSet = new Set(stackNames);
+    const resolvedBase = path.resolve(COMPOSE_DIR);
     for (const stackDir of stackNames) {
       absDirToStack[path.join(COMPOSE_DIR, stackDir)] = stackDir;
     }
@@ -440,11 +444,37 @@ class DockerController {
       const project: string | undefined = container.Labels?.['com.docker.compose.project'];
       let stackDir = project ? projectToStack[project] : undefined;
 
-      // Fallback: match by com.docker.compose.project.working_dir label
+      // Fallback 1: match by com.docker.compose.project.working_dir label
       if (!stackDir) {
         const workingDir: string | undefined = container.Labels?.['com.docker.compose.project.working_dir'];
         if (workingDir) {
           stackDir = absDirToStack[workingDir] ?? absDirToStack[path.resolve(workingDir)];
+        }
+      }
+
+      // Fallback 2: match by service name (handles pre-reorganization containers whose
+      // project label is the COMPOSE_DIR basename rather than the stack name)
+      if (!stackDir) {
+        const serviceName: string | undefined = container.Labels?.['com.docker.compose.service'];
+        if (serviceName && knownStackSet.has(serviceName)) {
+          stackDir = serviceName;
+        }
+      }
+
+      // Fallback 3: extract stack name from the config_files label path
+      if (!stackDir) {
+        const configFiles: string | undefined = container.Labels?.['com.docker.compose.project.config_files'];
+        if (configFiles) {
+          const firstFile = configFiles.split(',')[0].trim();
+          const resolvedFile = path.resolve(firstFile);
+          if (isPathWithinBase(resolvedFile, resolvedBase)) {
+            const relative = resolvedFile.slice(resolvedBase.length + 1);
+            // "prowlarr/compose.yaml" (subdirectory) or "prowlarr.yml" (flat file)
+            const firstSegment = relative.split(path.sep)[0].replace(/\.(ya?ml)$/, '');
+            if (knownStackSet.has(firstSegment)) {
+              stackDir = firstSegment;
+            }
+          }
         }
       }
 
