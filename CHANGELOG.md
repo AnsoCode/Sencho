@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.4](https://github.com/AnsoCode/Sencho/compare/v0.39.3...v0.39.4) (2026-04-07)
+
+
+### Fixed
+
+* **fleet:** resolve stuck update states and improve detection ([#405](https://github.com/AnsoCode/Sencho/issues/405)) ([cc2da99](https://github.com/AnsoCode/Sencho/commit/cc2da99d6f2ac4fad5fba03006377f54262a6dd2))
+
 ## [Unreleased]
 
 ### Fixed
