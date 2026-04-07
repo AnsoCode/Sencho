@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.5](https://github.com/AnsoCode/Sencho/compare/v0.39.4...v0.39.5) (2026-04-07)
+
+
+### Fixed
+
+* **fleet:** resolve version detection using package.json over stale generated constant ([#410](https://github.com/AnsoCode/Sencho/issues/410)) ([8ba4532](https://github.com/AnsoCode/Sencho/commit/8ba4532995bd8c92c92dae2a2c05b5d8c6abc4d5))
+
 ## [0.39.4](https://github.com/AnsoCode/Sencho/compare/v0.39.3...v0.39.4) (2026-04-07)
 
 
