@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **auto-update:** resolve failure when executing auto-update policies on remote Distributed API nodes. Previously, the scheduler tried to access the remote Docker daemon directly, which is not supported. Now the update execution is proxied to the remote Sencho instance via HTTP, matching the existing Distributed API architecture.
 * **schedules:** auto-update policies no longer appear in the Scheduled Operations list. Each view now fetches only its relevant task type via server-side action filtering.
+* **console:** fix remote node Console returning 502 by injecting proxy tier headers into console-token fetch and WS upgrade handler.
+* **sidebar:** strengthen stack-to-container resolution with a multi-fallback strategy (project label, working_dir, service name, config_files path) to handle containers that predate Sencho's compose file reorganization.
+* **resources:** fix incorrect "External" tagging in Resources Hub by applying the same multi-fallback resolution to image, volume, and network classification. Extracted shared helpers (`resolveContainerStack`, `resolveProjectLabel`, `buildAbsDirMap`) to unify logic across all classification and prune methods.
+* **dashboard:** fix "active" label on Containers card to use correct plural form ("actives").
 
 ## [0.39.6](https://github.com/AnsoCode/Sencho/compare/v0.39.5...v0.39.6) (2026-04-07)
 

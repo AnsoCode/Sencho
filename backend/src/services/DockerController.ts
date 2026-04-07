@@ -187,46 +187,53 @@ class DockerController {
     const SYSTEM_NETWORKS = new Set(['bridge', 'host', 'none']);
     const knownSet = new Set(knownStackNames);
 
-    const [rawImages, rawVolumeData, rawNetworks, allContainers] = await Promise.all([
+    const [rawImages, rawVolumeData, rawNetworks, allContainers, projectToStack] = await Promise.all([
       this.docker.listImages({ all: false }),
       this.docker.listVolumes(),
       this.docker.listNetworks(),
       this.docker.listContainers({ all: true }),
+      DockerController.resolveProjectNameMap(knownStackNames),
     ]);
 
     const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
 
-    // Build imageId → project mapping from container labels
-    const imageToProject = new Map<string, string>();
+    // Build fallback lookup structures for container-to-stack resolution
+    const absDirToStack = DockerController.buildAbsDirMap(knownStackNames);
+    const resolvedBase = path.resolve(COMPOSE_DIR);
+
+    // Build imageId → stack mapping using the full fallback resolution chain
+    const imageToStack = new Map<string, string>();
     for (const c of allContainers as any[]) {
-      const project: string | undefined = c.Labels?.['com.docker.compose.project'];
-      if (project && c.ImageID) imageToProject.set(c.ImageID, project);
+      if (!c.ImageID) continue;
+      const stack = DockerController.resolveContainerStack(
+        c.Labels, projectToStack, knownSet, absDirToStack, resolvedBase,
+      );
+      if (stack) imageToStack.set(c.ImageID, stack);
     }
 
     const images: ClassifiedImage[] = this.validateApiData<any[]>(rawImages).map((img: any) => {
-      const project = imageToProject.get(img.Id) ?? null;
+      const stack = imageToStack.get(img.Id) ?? null;
       const managedStatus: ClassifiedImage['managedStatus'] =
         img.Containers === 0 ? 'unused' :
-        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+        stack ? 'managed' : 'unmanaged';
       return {
         Id: img.Id,
         RepoTags: img.RepoTags ?? [],
         Size: img.Size ?? 0,
         Containers: img.Containers ?? 0,
-        managedBy: managedStatus === 'managed' ? project : null,
+        managedBy: stack,
         managedStatus,
       };
     });
 
     const volumes: ClassifiedVolume[] = rawVolumes.map((vol: any) => {
-      const project: string | undefined = vol.Labels?.['com.docker.compose.project'];
-      const managedStatus: ClassifiedVolume['managedStatus'] =
-        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+      const stack = DockerController.resolveProjectLabel(vol.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
+      const managedStatus: ClassifiedVolume['managedStatus'] = stack ? 'managed' : 'unmanaged';
       return {
         Name: vol.Name,
         Driver: vol.Driver,
         Mountpoint: vol.Mountpoint,
-        managedBy: managedStatus === 'managed' ? project! : null,
+        managedBy: stack,
         managedStatus,
       };
     });
@@ -235,15 +242,14 @@ class DockerController {
       if (SYSTEM_NETWORKS.has(net.Name)) {
         return { Id: net.Id, Name: net.Name, Driver: net.Driver, Scope: net.Scope, managedBy: null, managedStatus: 'system' as const };
       }
-      const project: string | undefined = net.Labels?.['com.docker.compose.project'];
-      const managedStatus: ClassifiedNetwork['managedStatus'] =
-        project && knownSet.has(project) ? 'managed' : 'unmanaged';
+      const stack = DockerController.resolveProjectLabel(net.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
+      const managedStatus: ClassifiedNetwork['managedStatus'] = stack ? 'managed' : 'unmanaged';
       return {
         Id: net.Id,
         Name: net.Name,
         Driver: net.Driver,
         Scope: net.Scope,
-        managedBy: managedStatus === 'managed' ? project! : null,
+        managedBy: stack,
         managedStatus,
       };
     });
@@ -256,14 +262,15 @@ class DockerController {
     knownStackNames: string[]
   ): Promise<{ success: boolean; reclaimedBytes: number }> {
     const knownSet = new Set(knownStackNames);
+    const projectToStack = await DockerController.resolveProjectNameMap(knownStackNames);
     let reclaimedBytes = 0;
 
     if (target === 'volumes') {
       const rawVolumeData = await this.docker.listVolumes();
       const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
       const prunable = rawVolumes.filter((v: any) => {
-        const project: string | undefined = v.Labels?.['com.docker.compose.project'];
-        return project && knownSet.has(project) && (v.UsageData?.RefCount ?? 1) === 0;
+        return !!DockerController.resolveProjectLabel(v.Labels?.['com.docker.compose.project'], knownSet, projectToStack)
+          && (v.UsageData?.RefCount ?? 1) === 0;
       });
       for (const vol of prunable) {
         try {
@@ -276,8 +283,7 @@ class DockerController {
     } else if (target === 'networks') {
       const rawNetworks = await this.docker.listNetworks();
       const prunable = (rawNetworks as any[]).filter((n: any) => {
-        const project: string | undefined = n.Labels?.['com.docker.compose.project'];
-        return project && knownSet.has(project);
+        return !!DockerController.resolveProjectLabel(n.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
       });
       for (const net of prunable) {
         try {
@@ -288,10 +294,14 @@ class DockerController {
       }
     } else if (target === 'images') {
       const allContainers = await this.docker.listContainers({ all: true });
+      const resolvedBase = path.resolve(COMPOSE_DIR);
+      const absDirToStack = DockerController.buildAbsDirMap(knownStackNames);
       const unmanagedImageIds = new Set<string>();
       for (const c of allContainers as any[]) {
-        const project: string | undefined = c.Labels?.['com.docker.compose.project'];
-        if (!project || !knownSet.has(project)) unmanagedImageIds.add(c.ImageID);
+        const stack = DockerController.resolveContainerStack(
+          c.Labels, projectToStack, knownSet, absDirToStack, resolvedBase,
+        );
+        if (!stack) unmanagedImageIds.add(c.ImageID);
       }
       const rawImages = await this.docker.listImages({ all: false });
       const prunable = (rawImages as any[]).filter((img: any) =>
@@ -331,15 +341,20 @@ class DockerController {
       .filter(i => i.managedStatus === 'unmanaged')
       .reduce((acc, i) => acc + i.Size, 0);
 
+    // Volume disk usage: query raw volumes for UsageData (not available in classified resources)
     const rawVolumeData = await this.docker.listVolumes();
     const rawVolumes: any[] = (this.validateApiData<any>(rawVolumeData)).Volumes || [];
+    const projectToStack = await DockerController.resolveProjectNameMap(knownStackNames);
     const knownSet = new Set(knownStackNames);
 
+    const isVolumeManaged = (v: any): boolean =>
+      !!DockerController.resolveProjectLabel(v.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
+
     const managedVolumeBytes = rawVolumes
-      .filter((v: any) => knownSet.has(v.Labels?.['com.docker.compose.project'] ?? ''))
+      .filter(isVolumeManaged)
       .reduce((acc: number, v: any) => acc + (v.UsageData?.Size ?? 0), 0);
     const unmanagedVolumeBytes = rawVolumes
-      .filter((v: any) => !knownSet.has(v.Labels?.['com.docker.compose.project'] ?? ''))
+      .filter((v: any) => !isVolumeManaged(v))
       .reduce((acc: number, v: any) => acc + (v.UsageData?.Size ?? 0), 0);
 
     return { ...base, managedImageBytes, unmanagedImageBytes, managedVolumeBytes, unmanagedVolumeBytes };
@@ -380,6 +395,70 @@ class DockerController {
   public async getAllContainers() {
     const containers = await this.docker.listContainers({ all: true });
     return this.validateApiData<any[]>(containers);
+  }
+
+  /** Resolves a Docker Compose project label to a known Sencho stack name, or null. */
+  private static resolveProjectLabel(
+    project: string | undefined,
+    knownSet: Set<string>,
+    projectToStack: Record<string, string>,
+  ): string | null {
+    if (!project) return null;
+    if (knownSet.has(project)) return project;
+    if (projectToStack[project]) return projectToStack[project];
+    return null;
+  }
+
+  /** Builds a map from absolute stack directory paths to stack names. */
+  private static buildAbsDirMap(stackNames: string[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const stackDir of stackNames) {
+      map[path.join(COMPOSE_DIR, stackDir)] = stackDir;
+    }
+    return map;
+  }
+
+  /**
+   * Resolves which Sencho stack a container belongs to using a multi-fallback strategy.
+   * Handles containers whose labels predate Sencho's reorganization of compose files into subdirectories.
+   */
+  private static resolveContainerStack(
+    containerLabels: Record<string, string> | undefined,
+    projectToStack: Record<string, string>,
+    knownStackSet: Set<string>,
+    absDirToStack: Record<string, string>,
+    resolvedBase: string,
+  ): string | null {
+    if (!containerLabels) return null;
+
+    // Primary: match by project name (handles name: overrides and standard directory-based names)
+    const project = containerLabels['com.docker.compose.project'];
+    if (project && projectToStack[project]) return projectToStack[project];
+
+    // Fallback 1: match by working_dir
+    const workingDir = containerLabels['com.docker.compose.project.working_dir'];
+    if (workingDir) {
+      const match = absDirToStack[workingDir] ?? absDirToStack[path.resolve(workingDir)];
+      if (match) return match;
+    }
+
+    // Fallback 2: match by service name
+    const serviceName = containerLabels['com.docker.compose.service'];
+    if (serviceName && knownStackSet.has(serviceName)) return serviceName;
+
+    // Fallback 3: extract stack from config_files path
+    const configFiles = containerLabels['com.docker.compose.project.config_files'];
+    if (configFiles) {
+      const firstFile = configFiles.split(',')[0].trim();
+      const resolvedFile = path.resolve(firstFile);
+      if (isPathWithinBase(resolvedFile, resolvedBase)) {
+        const relative = resolvedFile.slice(resolvedBase.length + 1);
+        const firstSegment = relative.split(path.sep)[0].replace(/\.(ya?ml)$/, '');
+        if (knownStackSet.has(firstSegment)) return firstSegment;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -426,14 +505,9 @@ class DockerController {
       DockerController.resolveProjectNameMap(stackNames),
     ]);
 
-    // Fallback lookup maps for matching containers whose labels don't directly match stack directory names.
-    // This happens when containers predate Sencho's reorganization of compose files into subdirectories.
-    const absDirToStack: Record<string, string> = {};
+    const absDirToStack = DockerController.buildAbsDirMap(stackNames);
     const knownStackSet = new Set(stackNames);
     const resolvedBase = path.resolve(COMPOSE_DIR);
-    for (const stackDir of stackNames) {
-      absDirToStack[path.join(COMPOSE_DIR, stackDir)] = stackDir;
-    }
 
     const result: Record<string, BulkStackInfo> = {};
     for (const name of stackNames) {
@@ -441,42 +515,9 @@ class DockerController {
     }
 
     for (const container of allContainers as any[]) {
-      const project: string | undefined = container.Labels?.['com.docker.compose.project'];
-      let stackDir = project ? projectToStack[project] : undefined;
-
-      // Fallback 1: match by com.docker.compose.project.working_dir label
-      if (!stackDir) {
-        const workingDir: string | undefined = container.Labels?.['com.docker.compose.project.working_dir'];
-        if (workingDir) {
-          stackDir = absDirToStack[workingDir] ?? absDirToStack[path.resolve(workingDir)];
-        }
-      }
-
-      // Fallback 2: match by service name (handles pre-reorganization containers whose
-      // project label is the COMPOSE_DIR basename rather than the stack name)
-      if (!stackDir) {
-        const serviceName: string | undefined = container.Labels?.['com.docker.compose.service'];
-        if (serviceName && knownStackSet.has(serviceName)) {
-          stackDir = serviceName;
-        }
-      }
-
-      // Fallback 3: extract stack name from the config_files label path
-      if (!stackDir) {
-        const configFiles: string | undefined = container.Labels?.['com.docker.compose.project.config_files'];
-        if (configFiles) {
-          const firstFile = configFiles.split(',')[0].trim();
-          const resolvedFile = path.resolve(firstFile);
-          if (isPathWithinBase(resolvedFile, resolvedBase)) {
-            const relative = resolvedFile.slice(resolvedBase.length + 1);
-            // "prowlarr/compose.yaml" (subdirectory) or "prowlarr.yml" (flat file)
-            const firstSegment = relative.split(path.sep)[0].replace(/\.(ya?ml)$/, '');
-            if (knownStackSet.has(firstSegment)) {
-              stackDir = firstSegment;
-            }
-          }
-        }
-      }
+      const stackDir = DockerController.resolveContainerStack(
+        container.Labels, projectToStack, knownStackSet, absDirToStack, resolvedBase,
+      );
 
       if (!stackDir || !result[stackDir]) continue;
 
