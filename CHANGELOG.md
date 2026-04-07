@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **sidebar:** fix stacks showing "--" (unknown) instead of "UP" when their compose file uses a top-level `name:` field. The bulk status endpoint matched containers by the `com.docker.compose.project` Docker label against directory names, but a `name:` override causes the label to differ. The fix parses compose files to build a correct project-name-to-directory mapping (cached with 60s TTL), with a fallback to the `working_dir` label for edge cases.
 * **fleet:** fix `spawnSync /bin/sh ENOENT` when triggering remote node self-update. The `execSync` call used `cwd: workingDir` from Docker Compose labels, which is a host-side path that does not exist inside the container. Removed `cwd` (the `-f` flag already provides the absolute compose file path), added `shell: true`, and added a Docker Compose CLI availability check at startup.
 * **fleet:** fix version detection returning stale value from `generated/version.ts` instead of the authoritative `package.json`. This caused remote nodes to show "unknown" version and false "Update available" badges when both nodes were on the same version. `resolveVersion()` now reads the root `package.json` first and only falls back to the build-time constant if the walk fails.
 * **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.
