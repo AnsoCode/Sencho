@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.6](https://github.com/AnsoCode/Sencho/compare/v0.39.5...v0.39.6) (2026-04-07)
+
+
+### Fixed
+
+* **fleet:** resolve ENOENT when triggering remote node self-update ([#413](https://github.com/AnsoCode/Sencho/issues/413)) ([1b890b4](https://github.com/AnsoCode/Sencho/commit/1b890b4d03f1e3dcf813cb74105192f49328df17))
+
 ## [0.39.5](https://github.com/AnsoCode/Sencho/compare/v0.39.4...v0.39.5) (2026-04-07)
 
 
