@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **resources:** loading toast notification during prune, delete, and purge operations in the Resources Hub. A spinning indicator with an indeterminate progress bar now appears while the operation runs, replacing the previous dead moment between confirmation and result.
+
 ### Fixed
 
 * **auto-update:** resolve failure when executing auto-update policies on remote Distributed API nodes. Previously, the scheduler tried to access the remote Docker daemon directly, which is not supported. Now the update execution is proxied to the remote Sencho instance via HTTP, matching the existing Distributed API architecture.
