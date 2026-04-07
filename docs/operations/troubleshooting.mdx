@@ -389,6 +389,20 @@ docker compose pull && docker compose up -d
 
 ---
 
+## Remote node version shows "unknown"
+
+**Symptom:** A remote node appears online in the Fleet View but its version badge is missing or the Node Updates modal shows "unknown" in the current version column.
+
+**Common causes:**
+
+1. **Network issue:** The gateway cannot reach the remote node's `/api/meta` endpoint. Check that the API URL configured for the node is correct and accessible from the gateway host.
+2. **Old Sencho version:** Nodes running Sencho versions older than v0.39.0 do not report a version in their metadata. Update the remote node manually to resolve this.
+3. **Development build:** If running from source, ensure you have run `npm install` in the backend directory so the `predev` hook regenerates the version file.
+
+**To verify:** Open your browser's developer tools and check the response from `GET /api/fleet/update-status`. Each node's `version` field should contain a semver string (e.g., `"0.39.4"`). If it shows `null`, the gateway could not determine the remote's version.
+
+---
+
 ## Stack labels are not visible in the sidebar
 
 **Symptom:** You assigned labels to stacks but no label pills appear in the sidebar.
