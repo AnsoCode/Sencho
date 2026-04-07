@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0](https://github.com/AnsoCode/Sencho/compare/v0.39.6...v0.40.0) (2026-04-07)
+
+
+### Added
+
+* **nav:** add pulsing animation to local node status dot ([#418](https://github.com/AnsoCode/Sencho/issues/418)) ([8920d8c](https://github.com/AnsoCode/Sencho/commit/8920d8c55a95e3b4e799489dd757627f218a3d11))
+
+
+### Fixed
+
+* **auto-update:** proxy update execution to remote nodes via Distributed API ([#419](https://github.com/AnsoCode/Sencho/issues/419)) ([ca8f227](https://github.com/AnsoCode/Sencho/commit/ca8f22734d1c6f960cf564cf9fa9588396fbd1fd))
+* **nav:** remove toggle behavior on navigation tabs ([#417](https://github.com/AnsoCode/Sencho/issues/417)) ([5b06992](https://github.com/AnsoCode/Sencho/commit/5b06992e055a8a30c2b3f1cf746cbd2c9b099061))
+* **schedules:** filter auto-update policies from Scheduled Operations view ([#420](https://github.com/AnsoCode/Sencho/issues/420)) ([455bfa8](https://github.com/AnsoCode/Sencho/commit/455bfa8734bf70ffad54b6fc3192ba1f9f16ce39))
+* **sidebar:** resolve stacks showing unknown status when compose name field is set ([#416](https://github.com/AnsoCode/Sencho/issues/416)) ([88011e1](https://github.com/AnsoCode/Sencho/commit/88011e1b16975033e9212de3d61aa4987237ead2))
+
 ## [Unreleased]
 
 ### Fixed
