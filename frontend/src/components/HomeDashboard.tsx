@@ -16,7 +16,7 @@ interface HomeDashboardProps {
 }
 
 export default function HomeDashboard({ onNavigateToStack, notifications, onClearNotifications }: HomeDashboardProps) {
-  const { activeNode } = useNodes();
+  const { activeNode, nodes } = useNodes();
   const data = useDashboardData();
 
   return (
@@ -48,6 +48,7 @@ export default function HomeDashboard({ onNavigateToStack, notifications, onClea
 
       <RecentAlerts
         notifications={notifications}
+        nodes={nodes}
         onCleared={onClearNotifications}
       />
     </div>

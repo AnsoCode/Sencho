@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import type { NotificationItem } from './types';
+import type { Node } from '@/context/NodeContext';
 
 interface RecentAlertsProps {
   notifications: NotificationItem[];
+  nodes?: Node[];
   onCleared?: () => void | Promise<void>;
 }
 
@@ -28,7 +31,7 @@ function formatRelativeTime(timestamp: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-export function RecentAlerts({ notifications, onCleared }: RecentAlertsProps) {
+export function RecentAlerts({ notifications, nodes, onCleared }: RecentAlertsProps) {
   const [clearing, setClearing] = useState(false);
   const [page, setPage] = useState(0);
 
@@ -103,6 +106,11 @@ export function RecentAlerts({ notifications, onCleared }: RecentAlertsProps) {
                     className="flex items-center gap-2.5 py-1.5 px-1 rounded-sm hover:bg-accent/5"
                   >
                     <Icon className={`h-3.5 w-3.5 shrink-0 ${config.className}`} strokeWidth={1.5} />
+                    {n.nodeName && nodes?.find(nd => nd.id === n.nodeId)?.type === 'remote' && (
+                      <Badge variant="outline" className="text-[10px] font-normal shrink-0 py-0 px-1.5">
+                        {n.nodeName}
+                      </Badge>
+                    )}
                     <span className={`text-xs flex-1 truncate ${n.is_read ? 'text-stat-subtitle' : 'text-stat-value'}`}>
                       {n.message}
                     </span>
