@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0](https://github.com/AnsoCode/Sencho/compare/v0.40.0...v0.41.0) (2026-04-08)
+
+
+### Added
+
+* **contact:** add official contact emails throughout app and docs ([#428](https://github.com/AnsoCode/Sencho/issues/428)) ([8e0857e](https://github.com/AnsoCode/Sencho/commit/8e0857e7f62d89434768da5f57223ae25276b33d))
+* **dashboard:** add node badge to Recent Alerts for remote node alerts ([#423](https://github.com/AnsoCode/Sencho/issues/423)) ([a6849ae](https://github.com/AnsoCode/Sencho/commit/a6849aedabc06cd85a74a915445765ff6f857f6f))
+* **resources:** add loading toast for prune, delete, and purge operations ([#426](https://github.com/AnsoCode/Sencho/issues/426)) ([f6d2199](https://github.com/AnsoCode/Sencho/commit/f6d219997875be46c5c207a7960dd13dad118f3e))
+
+
+### Fixed
+
+* **billing:** hide billing portal for lifetime licenses ([#427](https://github.com/AnsoCode/Sencho/issues/427)) ([be7eda8](https://github.com/AnsoCode/Sencho/commit/be7eda85f19afe34c311f1fcf751f9a3180cc837))
+* **console:** send proxy tier headers for remote node console-token requests ([#424](https://github.com/AnsoCode/Sencho/issues/424)) ([2354bee](https://github.com/AnsoCode/Sencho/commit/2354beed02b52ef4ddd90a861e0037e7d3d090b8))
+* **resources:** unify container/resource classification with multi-fallback resolution ([#425](https://github.com/AnsoCode/Sencho/issues/425)) ([662bc1a](https://github.com/AnsoCode/Sencho/commit/662bc1a210386e32cd24b33f155ecf6adfda6d8f))
+
 ## [Unreleased]
 
 ### Added
