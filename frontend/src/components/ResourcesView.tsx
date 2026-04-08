@@ -411,6 +411,7 @@ export default function ResourcesView() {
     const handlePrune = async () => {
         if (!confirmPrune) return;
         setIsActioning(true);
+        const loadingId = toast.loading(`Pruning ${confirmPrune.target}...`);
         try {
             const res = await apiFetch('/system/prune/system', {
                 method: 'POST',
@@ -427,6 +428,7 @@ export default function ResourcesView() {
         } catch {
             toast.error(confirmPrune ? `Failed to prune ${confirmPrune.target}` : 'Prune failed');
         } finally {
+            toast.dismiss(loadingId);
             setIsActioning(false);
             setConfirmPrune(null);
         }
@@ -435,6 +437,7 @@ export default function ResourcesView() {
     const handleDelete = async () => {
         if (!confirmDelete) return;
         setIsActioning(true);
+        const loadingId = toast.loading(`Deleting ${confirmDelete.type.slice(0, -1)}...`);
         try {
             const res = await apiFetch(`/system/${confirmDelete.type}/delete`, {
                 method: 'POST',
@@ -446,6 +449,7 @@ export default function ResourcesView() {
         } catch {
             toast.error(`Failed to delete ${confirmDelete.type.slice(0, -1)}`);
         } finally {
+            toast.dismiss(loadingId);
             setIsActioning(false);
             setConfirmDelete(null);
         }
@@ -462,6 +466,7 @@ export default function ResourcesView() {
 
     const handlePurgeOrphans = async () => {
         setIsActioning(true);
+        const loadingId = toast.loading('Purging unmanaged containers...');
         try {
             const res = await apiFetch('/system/prune/orphans', {
                 method: 'POST',
@@ -474,6 +479,7 @@ export default function ResourcesView() {
         } catch {
             toast.error('Failed to purge selected containers.');
         } finally {
+            toast.dismiss(loadingId);
             setIsActioning(false);
         }
     };

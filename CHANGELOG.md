@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **resources:** loading toast notification during prune, delete, and purge operations in the Resources Hub. A spinning indicator with an indeterminate progress bar now appears while the operation runs, replacing the previous dead moment between confirmation and result.
+
 ### Fixed
 
 * **console:** fix remote node Host Console failing with "Connection error" / 502. The gateway's console-token request to the remote node was missing license tier headers, causing the remote's Admiral license gate to reject the request. Both the HTTP fetch and the WS upgrade handler now correctly propagate proxy tier headers for console_session tokens.

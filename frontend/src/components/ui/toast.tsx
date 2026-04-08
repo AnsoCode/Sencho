@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
+import { Loader2 } from 'lucide-react';
 import { useToasts, removeToast, type ToastType } from './toast-store';
 
 /* ── Durations & Config ── */
@@ -10,6 +11,7 @@ const DURATIONS: Record<ToastType, number> = {
   error: 6000,
   warning: 5000,
   info: 4000,
+  loading: Infinity,
 };
 
 const MAX_VISIBLE = 5;
@@ -73,6 +75,11 @@ const notificationConfig: Record<ToastType, {
     icon: <ErrorIcon className="h-6 w-6" />,
     gradient: 'from-destructive-muted to-transparent',
   },
+  loading: {
+    iconColor: 'text-brand',
+    icon: <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.5} />,
+    gradient: 'from-info-muted to-transparent',
+  },
 };
 
 /* ── ToastItem — faithful Sera UI Notification replica ── */
@@ -89,8 +96,9 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
     removeToast(id);
   }, [id]);
 
-  // Auto-dismiss timer with hover pause
+  // Auto-dismiss timer with hover pause (loading toasts never auto-dismiss)
   useEffect(() => {
+    if (type === 'loading') return;
     if (hovered) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -104,7 +112,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [hovered, dismiss]);
+  }, [hovered, dismiss, type]);
 
   return (
     <motion.div
@@ -137,14 +145,23 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
         </button>
       </div>
 
-      {/* Progress bar — Sera UI style with Framer Motion */}
+      {/* Progress bar */}
       <div className="absolute bottom-0 left-0 h-1 w-full bg-glass-border rounded-b-xl overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: hovered ? undefined : '100%' }}
-          transition={{ duration: duration / 1000, ease: 'linear' }}
-          className="h-full bg-gradient-to-r from-success via-info to-brand"
-        />
+        {type === 'loading' ? (
+          <motion.div
+            initial={{ x: '-100%' }}
+            animate={{ x: '200%' }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            className="h-full w-1/3 bg-gradient-to-r from-transparent via-brand to-transparent"
+          />
+        ) : (
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: hovered ? undefined : '100%' }}
+            transition={{ duration: duration / 1000, ease: 'linear' }}
+            className="h-full bg-gradient-to-r from-success via-info to-brand"
+          />
+        )}
       </div>
     </motion.div>
   );

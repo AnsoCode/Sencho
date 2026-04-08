@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
+export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
 export interface Toast {
   id: string;
@@ -17,10 +17,11 @@ function notify() {
   listeners.forEach((fn) => fn());
 }
 
-function addToast(type: ToastType, message: string) {
+function addToast(type: ToastType, message: string): string {
   const id = `toast-${++idCounter}-${Date.now()}`;
   toasts = [...toasts, { id, type, message, createdAt: Date.now() }];
   notify();
+  return id;
 }
 
 export function removeToast(id: string) {
@@ -48,4 +49,6 @@ export const toast = {
   error: (message: string) => addToast('error', message),
   warning: (message: string) => addToast('warning', message),
   info: (message: string) => addToast('info', message),
+  loading: (message: string) => addToast('loading', message),
+  dismiss: (id: string) => removeToast(id),
 };
