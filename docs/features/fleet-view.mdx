@@ -145,7 +145,11 @@ The modal shows:
 - **Recheck** button to re-scan for available updates
 - **Update All** button to trigger updates on all remote nodes that have a pending update
 
-When you click **Update** on a remote node, Sencho sends the update command and the node restarts with the new version. If you update the local node, a reconnection overlay appears while your primary instance restarts.
+When you click **Update** on a remote node, Sencho sends the update command to the remote instance. The remote pulls the latest Docker image, then spawns a short-lived helper container that performs the compose recreate. The node restarts with the new version, and the status badge transitions from "Updating" to "Updated" once the gateway detects the version change.
+
+If you update the local node, a confirmation dialog appears first, then a reconnection overlay shows while your primary instance restarts.
+
+**How self-update works:** Each Sencho instance reads its own Docker Compose labels to determine the image name, compose file path, and service name. It pulls the latest image directly, then spawns a helper container that mounts the compose directory from the host and runs `docker compose up --force-recreate`. This approach works regardless of the container's own volume mounts.
 
 ---
 
@@ -178,3 +182,24 @@ The **Update All** button only triggers updates on remote nodes that:
 2. Support the self-update capability (requires running in Docker)
 
 If a remote node's version is unresolvable ("unknown"), the **Update** button on its individual card will still be available, but **Update All** requires both versions to be known for a safe comparison.
+
+### Update fails with "no such file or directory"
+
+If a remote node update fails with an error mentioning a compose file path (e.g. "open /path/to/compose.yaml: no such file or directory"), the remote node is running an older Sencho version (prior to v0.42.0) that attempted to access the compose file directly inside the container, where the host path does not exist.
+
+**Resolution:** Update the remote node manually once by SSH-ing into the host and running:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+After this one-time manual update, the node will have the fixed self-update mechanism and all future updates can be triggered from Fleet Overview.
+
+### Update shows "Remote node is unreachable"
+
+This means the gateway could not connect to the remote node's `/api/meta` endpoint. Check that:
+
+- The remote node is powered on and running
+- The API URL configured for this node is correct and reachable from the gateway
+- The network allows traffic between the gateway and remote node on the configured port
+- The remote node's Sencho container is healthy (`docker ps` should show it as running)
