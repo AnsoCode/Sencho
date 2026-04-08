@@ -2690,9 +2690,14 @@ server.on('upgrade', async (req, socket, head) => {
       let bearerTokenForProxy = node.api_token;
       if (isInteractiveConsolePath) {
         try {
+          const ls = LicenseService.getInstance();
           const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${node.api_token}` },
+            headers: {
+              'Authorization': `Bearer ${node.api_token}`,
+              [PROXY_TIER_HEADER]: ls.getTier(),
+              [PROXY_VARIANT_HEADER]: ls.getVariant() || '',
+            },
           });
           if (tokenRes.ok) {
             const data = await tokenRes.json() as { token?: string };
@@ -2759,9 +2764,20 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
-      // Admiral license gate: host console requires Admiral (paid + team variant)
+      // Admiral license gate: host console requires Admiral (paid + team variant).
+      // For proxied connections (console_session tokens), trust the tier headers sent by the gateway;
+      // for direct connections, check the local LicenseService.
+      const isConsoleSession = decoded.scope === 'console_session';
+      const consoleTierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
+      const consoleVariantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
       const ls = LicenseService.getInstance();
-      if (ls.getTier() !== 'paid' || ls.getVariant() !== 'admiral') {
+      const consoleTier = (isConsoleSession && isLicenseTier(consoleTierHeader))
+        ? normalizeTier(consoleTierHeader)
+        : ls.getTier();
+      const consoleVariant = (isConsoleSession && consoleVariantHeader !== undefined && isLicenseVariant(consoleVariantHeader))
+        ? normalizeVariant(consoleVariantHeader)
+        : ls.getVariant();
+      if (consoleTier !== 'paid' || consoleVariant !== 'admiral') {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
