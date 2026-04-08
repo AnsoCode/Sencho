@@ -47,6 +47,8 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
                 <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Admiral</h3>
                 <p className="text-sm text-muted-foreground">
                     Unlock team features like SSO authentication, audit logging, API tokens, and unlimited user accounts with a Sencho Admiral license.
+                    For enterprise pricing or questions, contact{' '}
+                    <a href="mailto:licensing@sencho.io" className="text-brand hover:underline">licensing@sencho.io</a>.
                 </p>
             </div>
             <div className="flex gap-3">

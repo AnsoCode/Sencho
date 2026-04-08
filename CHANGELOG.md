@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * **resources:** loading toast notification during prune, delete, and purge operations in the Resources Hub. A spinning indicator with an indeterminate progress bar now appears while the operation runs, replacing the previous dead moment between confirmation and result.
+* **contact:** add official contact emails throughout the app, website, and documentation. Six dedicated channels (support, contact, licensing, security, privacy, conduct) are now surfaced in contextually appropriate locations including upgrade prompts, legal pages, security policy, and a new Contact & Support docs page.
+* **security:** add `.well-known/security.txt` to both the app and marketing website per RFC 9116.
 
 ### Fixed
 
