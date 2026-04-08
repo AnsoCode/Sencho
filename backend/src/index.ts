@@ -1095,7 +1095,8 @@ function scheduleLocalUpdate(res: Response, message: string): void {
   });
 }
 
-app.post('/api/system/update', (_req: Request, res: Response): void => {
+app.post('/api/system/update', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
   if (!SelfUpdateService.getInstance().isAvailable()) {
     res.status(503).json({ error: 'Self-update unavailable. Sencho must be deployed via Docker Compose.' });
     return;
@@ -1119,7 +1120,7 @@ interface UpdateTracker {
 const updateTracker = new Map<number, UpdateTracker>();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
-const EARLY_FAIL_MS = 90 * 1000; // 90 seconds before declaring a probable pull failure
+const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
 function createTracker(
   status: UpdateTracker['status'],
@@ -1323,8 +1324,18 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
             } else if (tracker.wasOffline && remoteOnline) {
               // Signal 3: Node went offline and is back online (container was recreated)
               updateTracker.set(node.id, { ...tracker, status: 'completed' });
+            } else if (
+              elapsed > 15_000 &&
+              isValidVersion(version) &&
+              gatewayValid &&
+              !semver.lt(version, gatewayVersion!)
+            ) {
+              // Signal 4: Remote is now at or above gateway version (after minimum processing time).
+              // Catches fast restarts where the 5s polling interval misses the offline window
+              // and startedAt hasn't been observed to change yet.
+              updateTracker.set(node.id, { ...tracker, status: 'completed' });
             } else if (elapsed > EARLY_FAIL_MS) {
-              // Heuristic: node never went offline and nothing changed after 90s
+              // Heuristic: node never went offline and nothing changed after 3 min
               updateTracker.set(node.id, {
                 ...tracker,
                 status: 'failed',
@@ -1430,8 +1441,12 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
       return;
     }
 
-    // Check remote capabilities
+    // Check remote availability and capabilities
     const meta = await fetchRemoteMeta(node.api_url, node.api_token);
+    if (!meta.online) {
+      res.status(503).json({ error: 'Remote node is unreachable. Verify the node is running and the API URL is correct.' });
+      return;
+    }
     if (!meta.capabilities.includes('self-update')) {
       res.status(503).json({ error: 'Remote node does not support self-update. It may need to be updated manually first.' });
       return;
@@ -1491,6 +1506,9 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
 
     const results = await Promise.allSettled(candidates.map(async (node) => {
       const meta = await fetchRemoteMeta(node.api_url!, node.api_token!);
+      if (!meta.online) {
+        return { name: node.name, triggered: false };
+      }
       if (!meta.capabilities.includes('self-update')) {
         return { name: node.name, triggered: false };
       }

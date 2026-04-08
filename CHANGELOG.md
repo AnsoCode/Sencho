@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **dashboard:** show remote node badge on Recent Alerts card, matching the notification panel style, so users can identify which node generated each alert.
 
+### Fixed
+
+* **fleet:** resolve self-update "compose file not found" failure by using a helper container that mounts the compose directory from the host, eliminating the dependency on the compose file being accessible inside the main container.
+* **fleet:** improve update completion detection with a new "version current" signal (fires when the remote reaches the gateway version) and extend the early failure heuristic from 90 seconds to 3 minutes for slower connections.
+* **fleet:** distinguish between "node unreachable" and "node does not support self-update" error messages when triggering remote updates.
+* **fleet:** add admin role requirement to the `/api/system/update` endpoint, preventing non-admin users from triggering self-updates.
+
 ## [0.40.0](https://github.com/AnsoCode/Sencho/compare/v0.39.6...v0.40.0) (2026-04-07)
 
 

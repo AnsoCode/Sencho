@@ -1,4 +1,4 @@
-import { execSync, exec } from 'child_process';
+import { execFileSync, execFile } from 'child_process';
 import DockerController from './DockerController';
 import { disableCapability } from './CapabilityRegistry';
 
@@ -6,6 +6,7 @@ interface ComposeContext {
   workingDir: string;
   configFiles: string;
   serviceName: string;
+  imageName: string;
 }
 
 class SelfUpdateService {
@@ -47,16 +48,24 @@ class SelfUpdateService {
 
       // Verify docker compose CLI is available inside the container
       try {
-        execSync('docker compose version', { shell: '/bin/sh', stdio: 'pipe', timeout: 5000 });
+        execFileSync('docker', ['compose', 'version'], { stdio: 'pipe', timeout: 5000 });
       } catch {
         console.log('[SelfUpdate] docker compose CLI not available in container');
         disableCapability('self-update');
         return;
       }
 
-      this.composeContext = { workingDir, configFiles, serviceName };
+      // Read the container's own image name for direct docker pull
+      const imageName = info.Config?.Image;
+      if (!imageName) {
+        console.log('[SelfUpdate] Could not determine container image name');
+        disableCapability('self-update');
+        return;
+      }
+
+      this.composeContext = { workingDir, configFiles, serviceName, imageName };
       this.canSelfUpdate = true;
-      console.log(`[SelfUpdate] Ready - service="${serviceName}" in ${workingDir}`);
+      console.log(`[SelfUpdate] Ready - service="${serviceName}" image="${imageName}" in ${workingDir}`);
     } catch (error) {
       console.log('[SelfUpdate] Could not inspect own container - self-update unavailable:', (error as Error).message);
       disableCapability('self-update');
@@ -79,15 +88,15 @@ class SelfUpdateService {
 
   triggerUpdate(): void {
     if (!this.composeContext) return;
-    const { configFiles, serviceName } = this.composeContext;
+    const { workingDir, configFiles, serviceName, imageName } = this.composeContext;
     const env = { ...process.env, PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' };
     this.lastUpdateError = null;
 
-    console.log(`[SelfUpdate] Pulling latest image for ${serviceName}...`);
+    // Step 1: Pull latest image directly (no compose file needed)
+    console.log(`[SelfUpdate] Pulling latest image: ${imageName}...`);
     try {
-      execSync(`docker compose -f ${configFiles} pull ${serviceName}`, {
+      execFileSync('docker', ['pull', imageName], {
         env,
-        shell: '/bin/sh',
         stdio: 'pipe',
         timeout: 300_000, // 5 min max for pull
       });
@@ -98,12 +107,27 @@ class SelfUpdateService {
       return;
     }
 
-    console.log(`[SelfUpdate] Recreating container for ${serviceName}... (last breath)`);
-    exec(`docker compose -f ${configFiles} up -d --force-recreate ${serviceName}`, {
-      env,
-      shell: '/bin/sh',
-    });
-    // Process will be killed by Docker during recreate, no code runs after this
+    // Step 2: Spawn a helper container to run docker compose recreate.
+    // The main container cannot access the compose file because the host path
+    // from Docker labels does not exist inside this container. The helper
+    // explicitly mounts the compose working directory from the host, so the
+    // compose file is accessible at the original path.
+    console.log(`[SelfUpdate] Spawning updater container... (last breath)`);
+    const fFlags = configFiles.split(',').flatMap(f => ['-f', f.trim()]);
+    const composeCmd = ['sleep 3 && docker compose', ...fFlags, 'up -d --force-recreate', serviceName].join(' ');
+    const args = [
+      'run', '--rm', '-d',
+      '--user', 'root',
+      '--entrypoint', 'sh',
+      '-v', '/var/run/docker.sock:/var/run/docker.sock',
+      '-v', `${workingDir}:${workingDir}:ro`,
+      '-w', workingDir,
+      imageName,
+      '-c', composeCmd,
+    ];
+
+    execFile('docker', args, { env });
+    // Process will be killed by Docker during recreate; no code runs after this
   }
 }
 
