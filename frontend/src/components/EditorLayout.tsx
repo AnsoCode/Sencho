@@ -51,6 +51,8 @@ import ScheduledOperationsView from './ScheduledOperationsView';
 import AutoUpdatePoliciesView from './AutoUpdatePoliciesView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
+import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
+import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -1269,6 +1271,18 @@ export default function EditorLayout() {
     setLogViewerOpen(false);
     setLogContainer(null);
   };
+
+  // Listen for topology click-to-logs events (ref avoids stale closure)
+  const openLogViewerRef = useRef(openLogViewer);
+  openLogViewerRef.current = openLogViewer;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { containerId, containerName } = (e as CustomEvent<SenchoOpenLogsDetail>).detail;
+      openLogViewerRef.current(containerId, containerName);
+    };
+    window.addEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
+    return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
+  }, []);
 
   // Safe container list with fallback
   const safeContainers = containers || [];

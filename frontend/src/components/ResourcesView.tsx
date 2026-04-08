@@ -24,6 +24,8 @@ import { PaidGate } from './PaidGate';
 import { CapabilityGate } from './CapabilityGate';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
+import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { lazy, Suspense } from 'react';
 
 const NetworkTopologyView = lazy(() => import('./NetworkTopologyView'));
@@ -830,7 +832,13 @@ export default function ResourcesView() {
                                                 <span className="text-sm">Loading topology...</span>
                                             </div>
                                         }>
-                                            <NetworkTopologyView />
+                                            <NetworkTopologyView
+                                                onContainerClick={(id, name) => {
+                                                    window.dispatchEvent(new CustomEvent<SenchoOpenLogsDetail>(SENCHO_OPEN_LOGS_EVENT, {
+                                                        detail: { containerId: id, containerName: name },
+                                                    }));
+                                                }}
+                                            />
                                         </Suspense>
                                     </CapabilityGate>
                                 </PaidGate>
