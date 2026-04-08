@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **console:** fix remote node Host Console failing with "Connection error" / 502. The gateway's console-token request to the remote node was missing license tier headers, causing the remote's Admiral license gate to reject the request. Both the HTTP fetch and the WS upgrade handler now correctly propagate proxy tier headers for console_session tokens.
 * **auto-update:** resolve failure when executing auto-update policies on remote Distributed API nodes. Previously, the scheduler tried to access the remote Docker daemon directly, which is not supported. Now the update execution is proxied to the remote Sencho instance via HTTP, matching the existing Distributed API architecture.
 * **schedules:** auto-update policies no longer appear in the Scheduled Operations list. Each view now fetches only its relevant task type via server-side action filtering.
+* **console:** fix remote node Console returning 502 by injecting proxy tier headers into console-token fetch and WS upgrade handler.
+* **sidebar:** strengthen stack-to-container resolution with a multi-fallback strategy (project label, working_dir, service name, config_files path) to handle containers that predate Sencho's compose file reorganization.
+* **resources:** fix incorrect "External" tagging in Resources Hub by applying the same multi-fallback resolution to image, volume, and network classification. Extracted shared helpers (`resolveContainerStack`, `resolveProjectLabel`, `buildAbsDirMap`) to unify logic across all classification and prune methods.
+* **dashboard:** fix "active" label on Containers card to use correct plural form ("actives").
 
 ## [0.39.6](https://github.com/AnsoCode/Sencho/compare/v0.39.5...v0.39.6) (2026-04-07)
 
@@ -59,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **sidebar:** fix stacks showing "--" (unknown) instead of "UP" when their compose file uses a top-level `name:` field. The bulk status endpoint matched containers by the `com.docker.compose.project` Docker label against directory names, but a `name:` override causes the label to differ. The fix parses compose files to build a correct project-name-to-directory mapping (cached with 60s TTL), with a fallback to the `working_dir` label for edge cases.
+* **sidebar:** fix stacks still showing "--" after Sencho reorganized compose files into subdirectories. Containers that predate the reorganization carry stale Docker labels (project set to the COMPOSE_DIR basename). Added service name and config_files path fallbacks to the container-to-stack matching logic.
 * **fleet:** fix `spawnSync /bin/sh ENOENT` when triggering remote node self-update. The `execSync` call used `cwd: workingDir` from Docker Compose labels, which is a host-side path that does not exist inside the container. Removed `cwd` (the `-f` flag already provides the absolute compose file path), added `shell: true`, and added a Docker Compose CLI availability check at startup.
 * **fleet:** fix version detection returning stale value from `generated/version.ts` instead of the authoritative `package.json`. This caused remote nodes to show "unknown" version and false "Update available" badges when both nodes were on the same version. `resolveVersion()` now reads the root `package.json` first and only falls back to the build-time constant if the walk fails.
 * **fleet:** fix permanently stuck "Timed out" / "Failed" badges after node update attempts. The in-memory update tracker now supports clearing via a new DELETE endpoint, and terminal states are automatically clearable through the Recheck button.

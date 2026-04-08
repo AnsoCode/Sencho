@@ -113,7 +113,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
             <CursorProvider>
               <CursorContainer className="inline-flex items-baseline">
                 <span className="text-2xl font-medium font-mono tabular-nums tracking-tight text-stat-value">{stats.active}</span>
-                <span className="text-sm text-stat-subtitle ml-1.5">active</span>
+                <span className="text-sm text-stat-subtitle ml-1.5">{stats.active === 1 ? 'active' : 'actives'}</span>
               </CursorContainer>
               <Cursor>
                 <div className="h-2 w-2 rounded-full bg-brand" />
