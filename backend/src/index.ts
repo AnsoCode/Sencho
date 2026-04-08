@@ -1073,12 +1073,12 @@ app.post('/api/license/validate', async (_req: Request, res: Response): Promise<
 
 app.get('/api/license/billing-portal', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const url = await LicenseService.getInstance().getBillingPortalUrl();
-    if (!url) {
-      res.status(404).json({ error: 'No billing portal available. Ensure you have an active license.' });
+    const result = await LicenseService.getInstance().getBillingPortalUrl();
+    if ('error' in result) {
+      res.status(404).json({ error: result.error });
       return;
     }
-    res.json({ url });
+    res.json({ url: result.url });
   } catch (error) {
     console.error('[License] Billing portal error:', error);
     res.status(500).json({ error: 'Failed to retrieve billing portal URL' });

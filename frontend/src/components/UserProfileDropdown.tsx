@@ -77,7 +77,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                         <Settings className="w-4 h-4 text-muted-foreground" />
                         Settings
                     </button>
-                    {license?.status === 'active' && (
+                    {license?.status === 'active' && !license?.isLifetime && (
                         <button
                             onClick={openBillingPortal}
                             disabled={billingLoading}

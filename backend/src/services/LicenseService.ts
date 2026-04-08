@@ -506,20 +506,26 @@ export class LicenseService {
      * Returns a pre-signed Lemon Squeezy Customer Portal URL (valid 24hrs).
      * Caches the URL for 12 hours to reduce external API calls.
      */
-    public async getBillingPortalUrl(): Promise<string | null> {
+    public async getBillingPortalUrl(): Promise<{ url: string } | { error: string }> {
         const db = DatabaseService.getInstance();
         const status = db.getSystemState('license_status');
         const licenseKey = db.getSystemState('license_key');
 
         if (status !== 'active' || !licenseKey) {
-            return null;
+            return { error: 'No billing portal available. Ensure you have an active license.' };
+        }
+
+        // Lifetime licenses have no recurring subscription to manage
+        const validUntil = db.getSystemState('license_valid_until');
+        if (!validUntil) {
+            return { error: 'Billing portal is not available for lifetime licenses.' };
         }
 
         // Check cache (12hr TTL)
         const cachedUrl = db.getSystemState('billing_portal_url');
         const cachedExpires = db.getSystemState('billing_portal_expires');
         if (cachedUrl && cachedExpires && Date.now() < parseInt(cachedExpires, 10)) {
-            return cachedUrl;
+            return { url: cachedUrl };
         }
 
         try {
@@ -531,7 +537,7 @@ export class LicenseService {
 
             const url = response.data?.url;
             if (!url) {
-                return null;
+                return { error: 'No billing portal available. Ensure you have an active license.' };
             }
 
             // Cache for 12 hours
@@ -539,12 +545,12 @@ export class LicenseService {
             db.setSystemState('billing_portal_url', url);
             db.setSystemState('billing_portal_expires', String(Date.now() + ttl));
 
-            return url;
+            return { url };
         } catch (err) {
             console.warn('[License] Failed to fetch billing portal URL:', (err as Error).message);
             // Return stale cache if available
-            if (cachedUrl) return cachedUrl;
-            return null;
+            if (cachedUrl) return { url: cachedUrl };
+            return { error: 'Failed to retrieve billing portal URL.' };
         }
     }
 
