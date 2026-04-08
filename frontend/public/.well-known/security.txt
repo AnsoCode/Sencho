@@ -1,0 +1,6 @@
+Contact: mailto:security@sencho.io
+Contact: https://github.com/AnsoCode/Sencho/security/advisories/new
+Expires: 2027-12-31T23:59:00.000Z
+Preferred-Languages: en
+Canonical: https://sencho.io/.well-known/security.txt
+Policy: https://github.com/AnsoCode/Sencho/blob/main/SECURITY.md

@@ -47,6 +47,8 @@ export function PaidGate({ children, featureName = 'This feature' }: PaidGatePro
                 <h3 className="text-lg font-semibold mb-2">{featureName} requires a paid license</h3>
                 <p className="text-sm text-muted-foreground">
                     Unlock features like fleet management, viewer accounts, and more with a Skipper or Admiral license.
+                    For enterprise pricing or questions, contact{' '}
+                    <a href="mailto:licensing@sencho.io" className="text-brand hover:underline">licensing@sencho.io</a>.
                 </p>
             </div>
             <div className="flex gap-3">
