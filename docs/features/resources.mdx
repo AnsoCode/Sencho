@@ -105,17 +105,26 @@ Click the eye icon on any network row to open a detail panel showing:
 
 #### Network topology <span style={{fontSize: '0.75em', color: 'var(--brand)'}}>Skipper</span>
 
-Switch to the **Topology** view to see an interactive graph of your Docker networks and the containers connected to them. System networks (`bridge`, `host`, `none`) are excluded for clarity.
+Switch to the **Topology** view to see an interactive graph of your Docker networks and the containers connected to them. The graph uses automatic hierarchical layout (networks on top, containers below) that scales cleanly regardless of how many networks and containers you have.
 
 <Frame>
   <img src="/images/networks/network-topology.png" alt="Network topology visualization showing containers connected to networks" />
 </Frame>
 
 - **Network nodes** - Dashed border cards showing network name and driver, color-coded by status (managed, external, system)
-- **Container nodes** - Cards showing container name with IP addresses per network
-- **Edges** - Animated connections between networks and their containers
+- **Container nodes** - Cards showing container name, state indicator, stack badge, image name, and IP addresses per network
+- **Edges** - Animated color-coded connections between networks and their containers
+- **Click-to-logs** - Click any running container node to open its log viewer directly
 - Pan, zoom, and drag nodes to explore the topology
 - A mini map in the bottom-right provides an overview
+
+##### Show system networks
+
+By default, system networks (`bridge`, `host`, `none`) are hidden. Toggle **Show system networks** to include them in the graph, which is useful for debugging containers attached to the default bridge network.
+
+<Frame>
+  <img src="/images/networks/network-topology-toggle.png" alt="Network topology with system networks visible" />
+</Frame>
 
 <Note>
   Network Topology requires a Skipper or Admiral license. Community users see an upgrade prompt.
