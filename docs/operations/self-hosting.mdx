@@ -89,7 +89,8 @@ Quick reference for all environment variables. See [Configuration](/getting-star
 | `COMPOSE_DIR` | `/app/compose` | Path to compose project files (1:1 rule applies) |
 | `DATA_DIR` | `/app/data` | Persistent data directory |
 | `FRONTEND_URL` | *(empty)* | Frontend origin for CORS; leave empty for same-origin |
-| `API_RATE_LIMIT` | `100` | Maximum API requests per minute per IP (production only) |
+| `API_RATE_LIMIT` | `200` | Maximum API requests per minute per user session (production only) |
+| `API_POLLING_RATE_LIMIT` | `300` | Rate limit for dashboard polling endpoints (production only) |
 | `NODE_ENV` | `production` | Set automatically in the Docker image |
 
 SSO variables are documented separately in the [SSO Quickstart](/getting-started/sso-quickstart).
