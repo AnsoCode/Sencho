@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0](https://github.com/AnsoCode/Sencho/compare/v0.41.2...v0.42.0) (2026-04-09)
+
+
+### Added
+
+* **topology:** overhaul network topology with dagre layout, enriched nodes, and click-to-logs ([#447](https://github.com/AnsoCode/Sencho/issues/447)) ([3ee4fe6](https://github.com/AnsoCode/Sencho/commit/3ee4fe6e447a503c94d3199ab93c2504ee58a7da))
+
 ## [0.41.2](https://github.com/AnsoCode/Sencho/compare/v0.41.1...v0.41.2) (2026-04-08)
 
 
