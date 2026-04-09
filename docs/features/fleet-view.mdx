@@ -139,10 +139,10 @@ Click **Check Updates** in the header to open the Node Updates modal. This lets 
 The modal shows:
 
 - **Summary cards** at the top: counts of nodes that are Up to date, have updates Available, are currently Updating, or have Failed
-- **Gateway version** label showing your primary instance's version
+- **Latest version** label showing the newest available Sencho release (checked via GitHub Releases, cached for 30 minutes)
 - **Filter** search box to find specific nodes
 - **Node table** with columns: Node name, Type, Current version, Latest version, and Status (either an "Up to date" badge or an "Update" button)
-- **Recheck** button to re-scan for available updates
+- **Recheck** button to refresh the latest version from GitHub and re-scan for available updates
 - **Update All** button to trigger updates on all remote nodes that have a pending update
 
 When you click **Update** on a remote node, Sencho sends the update command to the remote instance. The remote pulls the latest Docker image, then spawns a short-lived helper container that performs the compose recreate. The node restarts with the new version, and the status badge transitions from "Updating" to "Updated" once the gateway detects the version change.
@@ -178,7 +178,7 @@ Once the remote node is reachable and running a current Sencho version, its vers
 
 The **Update All** button only triggers updates on remote nodes that:
 
-1. Report a valid version lower than your primary instance's version
+1. Report a valid version lower than the latest available Sencho release
 2. Support the self-update capability (requires running in Docker)
 
 If a remote node's version is unresolvable ("unknown"), the **Update** button on its individual card will still be available, but **Update All** requires both versions to be known for a safe comparison.

@@ -1122,6 +1122,58 @@ const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
+// Latest Sencho version cache (fetched from GitHub Releases)
+let latestVersionCache: { version: string; fetchedAt: number } | null = null;
+let latestVersionInflight: Promise<string | null> | null = null;
+const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+async function fetchLatestSenchoVersion(): Promise<string | null> {
+  try {
+    const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { tag_name?: string };
+    const tag = data.tag_name?.replace(/^v/, '') ?? null;
+    return tag && semver.valid(tag) ? tag : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getLatestVersion(forceRefresh = false): Promise<string | null> {
+  if (
+    !forceRefresh &&
+    latestVersionCache &&
+    Date.now() - latestVersionCache.fetchedAt < LATEST_VERSION_CACHE_TTL
+  ) {
+    return latestVersionCache.version;
+  }
+  // Deduplicate concurrent requests (thundering herd protection)
+  if (!latestVersionInflight) {
+    latestVersionInflight = fetchLatestSenchoVersion().finally(() => { latestVersionInflight = null; });
+  }
+  const version = await latestVersionInflight;
+  if (version) {
+    latestVersionCache = { version, fetchedAt: Date.now() };
+  }
+  // On failure, return stale cache if available (graceful degradation)
+  return version ?? latestVersionCache?.version ?? null;
+}
+
+/** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
+async function getCompareTarget(gatewayVersion: string | null) {
+  const latestVersion = await getLatestVersion();
+  const latestValid = latestVersion !== null && isValidVersion(latestVersion);
+  return {
+    latestVersion,
+    latestValid,
+    compareVersion: latestValid ? latestVersion : gatewayVersion,
+    compareValid: latestValid || isValidVersion(gatewayVersion),
+  };
+}
+
 function createTracker(
   status: UpdateTracker['status'],
   previousVersion: string | null,
@@ -1277,6 +1329,8 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
     const gatewayVersion = getSenchoVersion();
     const gatewayValid = isValidVersion(gatewayVersion);
 
+    const { latestVersion, latestValid, compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
+
     const results = await Promise.allSettled(
       nodes.map(async (node) => {
         const tracker = updateTracker.get(node.id);
@@ -1328,7 +1382,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
               elapsed > 15_000 &&
               isValidVersion(version) &&
               gatewayValid &&
-              !semver.lt(version, gatewayVersion!)
+              !semver.lt(version, compareVersion!)
             ) {
               // Signal 4: Remote is now at or above gateway version (after minimum processing time).
               // Catches fast restarts where the 5s polling interval misses the offline window
@@ -1361,8 +1415,8 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
         let updateAvailable = false;
         if (!isValidVersion(version)) {
           updateAvailable = node.type === 'remote';
-        } else if (gatewayValid) {
-          updateAvailable = semver.lt(version, gatewayVersion!);
+        } else if (compareValid) {
+          updateAvailable = semver.lt(version, compareVersion!);
         }
 
         const currentTracker = updateTracker.get(node.id);
@@ -1371,7 +1425,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
           name: node.name,
           type: node.type,
           version,
-          latestVersion: gatewayVersion,
+          latestVersion: latestValid ? latestVersion : gatewayVersion,
           updateAvailable,
           updateStatus: currentTracker?.status ?? null,
           error: currentTracker?.error ?? null,
@@ -1386,7 +1440,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
         name: nodes[i].name,
         type: nodes[i].type,
         version: null,
-        latestVersion: gatewayVersion,
+        latestVersion: latestValid ? latestVersion : gatewayVersion,
         updateAvailable: false,
         updateStatus: null,
       };
@@ -1490,6 +1544,7 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const gatewayVersion = getSenchoVersion();
+    const { compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
 
     // Filter to eligible candidates, then trigger all in parallel
     const candidates = nodes.filter(node => {
@@ -1512,7 +1567,7 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
       if (!meta.capabilities.includes('self-update')) {
         return { name: node.name, triggered: false };
       }
-      if (isValidVersion(meta.version) && isValidVersion(gatewayVersion) && !semver.lt(meta.version, gatewayVersion)) {
+      if (isValidVersion(meta.version) && compareValid && !semver.lt(meta.version, compareVersion!)) {
         return { name: node.name, triggered: false };
       }
       const response = await fetch(`${node.api_url!.replace(/\/$/, '')}/api/system/update`, {
@@ -1562,6 +1617,10 @@ app.delete('/api/fleet/nodes/:nodeId/update-status', async (req: Request, res: R
 // Clear all terminal (timed-out, failed, completed) tracker entries at once
 app.delete('/api/fleet/update-status', async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  // Pre-fetch fresh latest version so the next GET has up-to-date data
+  if (req.query.recheck === 'true') {
+    await getLatestVersion(true);
+  }
   for (const [nodeId, tracker] of updateTracker) {
     if (tracker.status === 'timeout' || tracker.status === 'failed' || tracker.status === 'completed') {
       updateTracker.delete(nodeId);
