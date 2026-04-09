@@ -55,6 +55,25 @@ export interface ClassifiedNetwork {
   managedStatus: 'managed' | 'unmanaged' | 'system';
 }
 
+export interface TopologyContainer {
+  id: string;
+  name: string;
+  ip: string;
+  state: string;
+  image: string;
+  stack: string | null;
+}
+
+export interface TopologyNetwork {
+  Id: string;
+  Name: string;
+  Driver: string;
+  Scope: string;
+  managedBy: string | null;
+  managedStatus: 'managed' | 'unmanaged' | 'system';
+  containers: TopologyContainer[];
+}
+
 export type NetworkDriver = 'bridge' | 'overlay' | 'macvlan' | 'host' | 'none';
 
 export interface CreateNetworkOptions {
@@ -67,6 +86,7 @@ export interface CreateNetworkOptions {
 }
 
 class DockerController {
+  private static readonly SYSTEM_NETWORKS = new Set(['bridge', 'host', 'none']);
   private docker: Docker;
   private nodeId: number;
 
@@ -184,7 +204,6 @@ class DockerController {
     volumes: ClassifiedVolume[];
     networks: ClassifiedNetwork[];
   }> {
-    const SYSTEM_NETWORKS = new Set(['bridge', 'host', 'none']);
     const knownSet = new Set(knownStackNames);
 
     const [rawImages, rawVolumeData, rawNetworks, allContainers, projectToStack] = await Promise.all([
@@ -239,7 +258,7 @@ class DockerController {
     });
 
     const networks: ClassifiedNetwork[] = this.validateApiData<any[]>(rawNetworks).map((net: any) => {
-      if (SYSTEM_NETWORKS.has(net.Name)) {
+      if (DockerController.SYSTEM_NETWORKS.has(net.Name)) {
         return { Id: net.Id, Name: net.Name, Driver: net.Driver, Scope: net.Scope, managedBy: null, managedStatus: 'system' as const };
       }
       const stack = DockerController.resolveProjectLabel(net.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
@@ -395,6 +414,94 @@ class DockerController {
   public async getAllContainers() {
     const containers = await this.docker.listContainers({ all: true });
     return this.validateApiData<any[]>(containers);
+  }
+
+  /**
+   * Builds topology data with 2 Docker API calls instead of N+1.
+   * Fetches all networks + all containers in parallel, then maps
+   * container-to-network relationships in memory using NetworkSettings.
+   */
+  public async getTopologyData(
+    knownStackNames: string[],
+    includeSystem: boolean,
+  ): Promise<TopologyNetwork[]> {
+    const knownSet = new Set(knownStackNames);
+
+    const [rawNetworks, rawContainers, projectToStack] = await Promise.all([
+      this.docker.listNetworks(),
+      this.docker.listContainers({ all: true }),
+      DockerController.resolveProjectNameMap(knownStackNames),
+    ]);
+
+    const absDirToStack = DockerController.buildAbsDirMap(knownStackNames);
+    const resolvedBase = path.resolve(COMPOSE_DIR);
+
+    const networks = this.validateApiData<any[]>(rawNetworks);
+    const containers = this.validateApiData<any[]>(rawContainers);
+
+    // Build network map, optionally filtering system networks
+    const networkMap = new Map<string, TopologyNetwork>();
+    for (const net of networks) {
+      const isSystem = DockerController.SYSTEM_NETWORKS.has(net.Name);
+      if (isSystem && !includeSystem) continue;
+
+      const stack = isSystem
+        ? null
+        : DockerController.resolveProjectLabel(
+            net.Labels?.['com.docker.compose.project'],
+            knownSet,
+            projectToStack,
+          );
+      const managedStatus: TopologyNetwork['managedStatus'] = isSystem
+        ? 'system'
+        : stack ? 'managed' : 'unmanaged';
+
+      networkMap.set(net.Id, {
+        Id: net.Id,
+        Name: net.Name,
+        Driver: net.Driver ?? 'bridge',
+        Scope: net.Scope ?? 'local',
+        managedBy: stack,
+        managedStatus,
+        containers: [],
+      });
+    }
+
+    // Map containers to their networks via NetworkSettings.
+    // Stack resolution is deferred until a network match is found to avoid
+    // wasted work for containers not attached to any tracked network.
+    for (const c of containers) {
+      const netSettings: Record<string, { NetworkID?: string; IPAddress?: string }> =
+        c.NetworkSettings?.Networks ?? {};
+
+      let containerStack: string | null | undefined;
+      let stackResolved = false;
+
+      for (const [, netInfo] of Object.entries(netSettings)) {
+        const netId = netInfo.NetworkID;
+        if (!netId) continue;
+        const topology = networkMap.get(netId);
+        if (!topology) continue;
+
+        if (!stackResolved) {
+          containerStack = DockerController.resolveContainerStack(
+            c.Labels, projectToStack, knownSet, absDirToStack, resolvedBase,
+          );
+          stackResolved = true;
+        }
+
+        topology.containers.push({
+          id: c.Id,
+          name: (c.Names?.[0] ?? '').replace(/^\//, ''),
+          ip: netInfo.IPAddress ?? '',
+          state: c.State ?? 'unknown',
+          image: c.Image ?? '',
+          stack: containerStack ?? null,
+        });
+      }
+    }
+
+    return Array.from(networkMap.values());
   }
 
   /** Resolves a Docker Compose project label to a known Sencho stack name, or null. */

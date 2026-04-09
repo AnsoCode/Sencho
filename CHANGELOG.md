@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **topology:** Replace N+1 Docker API calls with container-centric approach (2 calls instead of N+1). Resolves performance issues on hosts with many networks.
+* **topology:** Add dagre auto-layout algorithm for hierarchical DAG visualization, replacing the static two-row layout that caused spaghetti edges at scale.
+* **topology:** Add "Show system networks" toggle to display bridge, host, and none networks (off by default).
+* **topology:** Enrich container nodes with running state indicator, stack badge, and base image name.
+* **topology:** Click a running container node to open its log viewer directly from the topology graph.
+
 ### Fixed
 
 * **fleet:** fix false "Update available" on remote nodes whose `api_url` has a trailing slash, causing `fetchRemoteMeta` to construct a double-slash URL that fails silently

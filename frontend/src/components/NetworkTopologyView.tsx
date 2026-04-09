@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     ReactFlow,
     Background,
@@ -13,39 +13,75 @@ import {
     Position,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import dagre from '@dagrejs/dagre';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { Container, Network, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface TopologyContainer {
+    id: string;
+    name: string;
+    ip: string;
+    state: string;
+    image: string;
+    stack: string | null;
+}
 
 interface TopologyNetwork {
     Id: string;
     Name: string;
     Driver: string;
     managedStatus: 'managed' | 'unmanaged' | 'system';
-    containers: Array<{ id: string; name: string; ip: string }>;
+    containers: TopologyContainer[];
 }
 
-interface ContainerNode {
-    id: string;
-    name: string;
-    networks: string[];
-    ipAddresses: Record<string, string>;
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function stateColor(state: string): string {
+    switch (state) {
+        case 'running': return 'bg-success';
+        case 'restarting':
+        case 'paused':
+        case 'created': return 'bg-warning';
+        default: return 'bg-destructive';
+    }
 }
 
 // ── Custom Nodes ──────────────────────────────────────────────────────────────
 
-function ContainerNodeComponent({ data }: { data: { label: string; networks: string[]; ipAddresses: Record<string, string> } }) {
+interface ContainerNodeData {
+    label: string;
+    containerId: string;
+    networks: string[];
+    ipAddresses: Record<string, string>;
+    state: string;
+    image: string;
+    stack: string | null;
+}
+
+function ContainerNodeComponent({ data }: { data: ContainerNodeData }) {
     return (
-        <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 min-w-[160px]">
+        <div
+            className={cn(
+                'rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 min-w-[160px]',
+                (!data.state || data.state === 'running') && 'cursor-pointer hover:border-t-card-border-hover',
+            )}
+        >
             <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2" />
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1">
+                <span className={cn('w-2 h-2 rounded-full shrink-0', stateColor(data.state))} />
                 <Container className="w-3.5 h-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span className="text-xs font-medium truncate max-w-[140px]">{data.label}</span>
             </div>
+            {data.stack && (
+                <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono mb-1">{data.stack}</Badge>
+            )}
             {data.networks.length > 0 && (
                 <div className="space-y-0.5">
                     {data.networks.map(netName => (
@@ -58,6 +94,9 @@ function ContainerNodeComponent({ data }: { data: { label: string; networks: str
                     ))}
                 </div>
             )}
+            <span className="block font-mono text-[10px] text-muted-foreground/60 truncate max-w-[180px] mt-0.5">
+                {data.image}
+            </span>
             <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2" />
         </div>
     );
@@ -99,81 +138,123 @@ const EDGE_COLORS = [
     'oklch(0.70 0.10 340)', // pink
 ];
 
-// ── Layout Helper ─────────────────────────────────────────────────────────────
+// ── Layout Helper (dagre) ────────────────────────────────────���───────────────
 
 function layoutGraph(
     networksList: TopologyNetwork[],
 ): { nodes: Node[]; edges: Edge[] } {
-    const flowNodes: Node[] = [];
-    const flowEdges: Edge[] = [];
-    const containerDataMap = new Map<string, ContainerNode>();
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({ rankdir: 'TB', ranksep: 120, nodesep: 60 });
+    g.setDefaultEdgeLabel(() => ({}));
 
-    networksList.forEach(net => {
-        net.containers.forEach(c => {
-            if (!containerDataMap.has(c.id)) {
-                containerDataMap.set(c.id, { id: c.id, name: c.name, networks: [], ipAddresses: {} });
+    // Deduplicate containers across networks
+    const containerMap = new Map<string, {
+        name: string;
+        networks: string[];
+        ipAddresses: Record<string, string>;
+        state: string;
+        image: string;
+        stack: string | null;
+    }>();
+    for (const net of networksList) {
+        for (const c of net.containers) {
+            if (!containerMap.has(c.id)) {
+                containerMap.set(c.id, {
+                    name: c.name, networks: [], ipAddresses: {},
+                    state: c.state, image: c.image, stack: c.stack,
+                });
             }
-            const cd = containerDataMap.get(c.id)!;
-            cd.networks.push(net.Name);
-            cd.ipAddresses[net.Name] = c.ip;
-        });
+            const entry = containerMap.get(c.id)!;
+            entry.networks.push(net.Name);
+            entry.ipAddresses[net.Name] = c.ip;
+        }
+    }
+
+    // Add nodes to dagre graph
+    for (const net of networksList) {
+        g.setNode(`net-${net.Id}`, { width: 160, height: 60 });
+    }
+    for (const [id] of containerMap) {
+        g.setNode(`ctr-${id}`, { width: 200, height: 100 });
+    }
+
+    // Add edges and collect for React Flow
+    const seenEdges = new Set<string>();
+    const edgeList: { netId: string; ctrId: string; color: string }[] = [];
+    networksList.forEach((net, ni) => {
+        const color = EDGE_COLORS[ni % EDGE_COLORS.length];
+        for (const c of net.containers) {
+            const edgeKey = `${net.Id}-${c.id}`;
+            if (!seenEdges.has(edgeKey)) {
+                seenEdges.add(edgeKey);
+                g.setEdge(`net-${net.Id}`, `ctr-${c.id}`);
+                edgeList.push({ netId: net.Id, ctrId: c.id, color });
+            }
+        }
     });
 
-    const networkSpacing = 240;
-    const containerSpacing = 220;
+    dagre.layout(g);
 
-    networksList.forEach((net, i) => {
+    // Convert dagre positions (center-based) to React Flow positions (top-left)
+    const flowNodes: Node[] = [];
+    for (const net of networksList) {
+        const pos = g.node(`net-${net.Id}`);
         flowNodes.push({
             id: `net-${net.Id}`,
             type: 'network',
-            position: { x: i * networkSpacing, y: 0 },
+            position: { x: pos.x - pos.width / 2, y: pos.y - pos.height / 2 },
             data: { label: net.Name, driver: net.Driver, status: net.managedStatus },
             draggable: true,
         });
-    });
-
-    const allContainers = Array.from(containerDataMap.values());
-    allContainers.forEach((container, i) => {
+    }
+    for (const [id, ctr] of containerMap) {
+        const pos = g.node(`ctr-${id}`);
         flowNodes.push({
-            id: `ctr-${container.id}`,
+            id: `ctr-${id}`,
             type: 'container',
-            position: { x: i * containerSpacing, y: 180 },
+            position: { x: pos.x - pos.width / 2, y: pos.y - pos.height / 2 },
             data: {
-                label: container.name,
-                networks: container.networks,
-                ipAddresses: container.ipAddresses,
+                label: ctr.name,
+                containerId: id,
+                networks: ctr.networks,
+                ipAddresses: ctr.ipAddresses,
+                state: ctr.state,
+                image: ctr.image,
+                stack: ctr.stack,
             },
             draggable: true,
         });
-    });
+    }
 
-    networksList.forEach((net, ni) => {
-        const color = EDGE_COLORS[ni % EDGE_COLORS.length];
-        net.containers.forEach(c => {
-            flowEdges.push({
-                id: `edge-${net.Id}-${c.id}`,
-                source: `net-${net.Id}`,
-                target: `ctr-${c.id}`,
-                animated: true,
-                style: { stroke: color, strokeWidth: 1.5 },
-            });
-        });
-    });
+    const flowEdges: Edge[] = edgeList.map(({ netId, ctrId, color }) => ({
+        id: `edge-${netId}-${ctrId}`,
+        source: `net-${netId}`,
+        target: `ctr-${ctrId}`,
+        animated: true,
+        style: { stroke: color, strokeWidth: 1.5 },
+    }));
 
     return { nodes: flowNodes, edges: flowEdges };
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function NetworkTopologyView() {
+interface NetworkTopologyViewProps {
+    onContainerClick?: (containerId: string, containerName: string) => void;
+}
+
+export default function NetworkTopologyView({ onContainerClick }: NetworkTopologyViewProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [loading, setLoading] = useState(true);
+    const [includeSystem, setIncludeSystem] = useState(false);
+    const onContainerClickRef = useRef(onContainerClick);
+    onContainerClickRef.current = onContainerClick;
 
     const fetchTopology = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await apiFetch('/system/networks/topology');
+            const res = await apiFetch(`/system/networks/topology?includeSystem=${includeSystem}`);
             if (!res.ok) throw new Error('Failed to fetch topology');
             const inspected = await res.json();
 
@@ -186,9 +267,15 @@ export default function NetworkTopologyView() {
         } finally {
             setLoading(false);
         }
-    }, [setNodes, setEdges]);
+    }, [setNodes, setEdges, includeSystem]);
 
     useEffect(() => { fetchTopology(); }, [fetchTopology]);
+
+    const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+        if (node.type === 'container' && (!node.data.state || node.data.state === 'running')) {
+            onContainerClickRef.current?.(node.data.containerId as string, node.data.label as string);
+        }
+    }, []);
 
     if (loading) {
         return (
@@ -203,36 +290,51 @@ export default function NetworkTopologyView() {
         return (
             <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground gap-3">
                 <Network className="w-8 h-8 opacity-40" strokeWidth={1.5} />
-                <p className="text-sm">No user-created networks found.</p>
-                <p className="text-xs opacity-70">Create a network or deploy stacks with custom networks to see the topology.</p>
+                <p className="text-sm">
+                    {includeSystem ? 'No networks found.' : 'No user-created networks found.'}
+                </p>
+                <p className="text-xs opacity-70">
+                    {includeSystem
+                        ? 'No Docker networks are available on this node.'
+                        : 'Create a network or deploy stacks with custom networks to see the topology.'}
+                </p>
             </div>
         );
     }
 
     return (
-        <div className="h-[500px] w-full rounded-lg border border-card-border bg-card shadow-card-bevel overflow-hidden">
-            <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                nodeTypes={nodeTypes}
-                fitView
-                fitViewOptions={{ padding: 0.3 }}
-                proOptions={{ hideAttribution: true }}
-                className="bg-background"
-            >
-                <Background gap={20} size={1} className="opacity-30" />
-                <Controls className="!bg-card !border-card-border !shadow-card-bevel [&>button]:!bg-card [&>button]:!border-card-border [&>button]:!text-foreground [&>button:hover]:!bg-muted" />
-                <MiniMap
-                    className="!bg-card !border-card-border !shadow-card-bevel"
-                    nodeColor={(node) => {
-                        if (node.type === 'network') return 'oklch(0.75 0.08 192)';
-                        return 'oklch(0.50 0 0)';
-                    }}
-                    maskColor="oklch(0 0 0 / 0.2)"
-                />
-            </ReactFlow>
+        <div className="rounded-lg border border-card-border bg-card shadow-card-bevel overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-card-border">
+                <Switch id="show-system" checked={includeSystem} onCheckedChange={setIncludeSystem} />
+                <Label htmlFor="show-system" className="text-xs cursor-pointer">
+                    Show system networks
+                </Label>
+            </div>
+            <div className="h-[500px] w-full">
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeClick={handleNodeClick}
+                    nodeTypes={nodeTypes}
+                    fitView
+                    fitViewOptions={{ padding: 0.3 }}
+                    proOptions={{ hideAttribution: true }}
+                    className="bg-background"
+                >
+                    <Background gap={20} size={1} className="opacity-30" />
+                    <Controls className="!bg-card !border-card-border !shadow-card-bevel [&>button]:!bg-card [&>button]:!border-card-border [&>button]:!text-foreground [&>button:hover]:!bg-muted" />
+                    <MiniMap
+                        className="!bg-card !border-card-border !shadow-card-bevel"
+                        nodeColor={(node) => {
+                            if (node.type === 'network') return 'oklch(0.75 0.08 192)';
+                            return 'oklch(0.50 0 0)';
+                        }}
+                        maskColor="oklch(0 0 0 / 0.2)"
+                    />
+                </ReactFlow>
+            </div>
         </div>
     );
 }

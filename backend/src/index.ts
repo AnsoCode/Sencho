@@ -5194,27 +5194,11 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
 
 app.get('/api/system/networks/topology', async (req: Request, res: Response) => {
   try {
+    const includeSystem = req.query.includeSystem === 'true';
     const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     const dockerController = DockerController.getInstance(req.nodeId);
-    const { networks } = await dockerController.getClassifiedResources(knownStacks);
-    const userNetworks = networks.filter(n => n.managedStatus !== 'system');
-
-    const inspected = await Promise.all(
-      userNetworks.map(async (net) => {
-        try {
-          const detail = await dockerController.inspectNetwork(net.Id);
-          const containers = Object.entries(detail.Containers || {}).map(([id, c]) => {
-            const info = c as { Name: string; IPv4Address: string };
-            return { id, name: info.Name, ip: info.IPv4Address };
-          });
-          return { ...net, containers };
-        } catch {
-          return { ...net, containers: [] };
-        }
-      })
-    );
-
-    res.json(inspected);
+    const topology = await dockerController.getTopologyData(knownStacks, includeSystem);
+    res.json(topology);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to fetch network topology';
     console.error('Failed to fetch network topology:', error);
