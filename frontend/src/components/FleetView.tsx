@@ -1262,7 +1262,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </div>
                                     {gatewayLabel && (
                                         <div className="text-[11px] text-muted-foreground shrink-0">
-                                            Gateway: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
+                                            Latest: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
                                         </div>
                                     )}
                                 </div>
@@ -1355,7 +1355,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         disabled={checkingUpdates}
                                         onClick={async () => {
                                             setCheckingUpdates(true);
-                                            await apiFetch('/fleet/update-status', { method: 'DELETE', localOnly: true });
+                                            await apiFetch('/fleet/update-status?recheck=true', { method: 'DELETE', localOnly: true });
                                             await fetchUpdateStatus();
                                             setCheckingUpdates(false);
                                         }}
