@@ -486,6 +486,16 @@ docker compose pull && docker compose up -d
 
 ---
 
+## Dashboard stats briefly lag behind external changes
+
+**Symptom:** You start, stop, or restart a container directly via `docker` CLI (not through Sencho), and the Sencho dashboard takes a couple of seconds to reflect the change.
+
+**Cause:** Sencho caches expensive dashboard queries (container counts, stack statuses, host CPU/memory) for a few seconds to keep the UI responsive under heavy polling. Changes made *inside* Sencho invalidate the cache immediately, so your own actions are always reflected instantly. Changes made *outside* Sencho (e.g. another `docker compose up` on the host) fall through the cache window.
+
+**Fix:** Wait a few seconds, or switch tabs and back to force a fresh read. This is working as intended and has no effect on correctness, only on freshness.
+
+---
+
 ## Checking the health endpoint
 
 Sencho exposes a health endpoint for monitoring and container health checks:

@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import * as yaml from 'yaml';
 
 import { NodeRegistry } from './NodeRegistry';
+import { CacheService } from './CacheService';
 import { isPathWithinBase } from '../utils/validation';
 
 const execAsync = promisify(exec);
@@ -17,7 +18,7 @@ const COMPOSE_FILE_NAMES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml'
 
 /** Cached mapping from compose `name:` field to stack directory name. TTL-based to avoid re-parsing YAML on every poll. */
 const PROJECT_NAME_CACHE_TTL_MS = 60_000;
-let projectNameCache: { map: Record<string, string>; builtAt: number } | null = null;
+const PROJECT_NAME_CACHE_KEY = 'project-name-map';
 
 /** Common web-UI private ports, checked in priority order when detecting the main app port. */
 const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
@@ -573,36 +574,37 @@ class DockerController {
    * Compose files with a top-level `name:` field override the default project name.
    */
   private static async resolveProjectNameMap(stackNames: string[]): Promise<Record<string, string>> {
-    if (projectNameCache && Date.now() - projectNameCache.builtAt < PROJECT_NAME_CACHE_TTL_MS) {
-      return projectNameCache.map;
-    }
+    return CacheService.getInstance().getOrFetch(
+      PROJECT_NAME_CACHE_KEY,
+      PROJECT_NAME_CACHE_TTL_MS,
+      async () => {
+        const map: Record<string, string> = {};
 
-    const map: Record<string, string> = {};
+        await Promise.all(stackNames.map(async (stackDir) => {
+          map[stackDir] = stackDir;
 
-    await Promise.all(stackNames.map(async (stackDir) => {
-      map[stackDir] = stackDir;
-
-      for (const fileName of COMPOSE_FILE_NAMES) {
-        const filePath = path.join(COMPOSE_DIR, stackDir, fileName);
-        try {
-          const content = await fs.readFile(filePath, 'utf-8');
-          const parsed = yaml.parse(content);
-          if (parsed?.name && typeof parsed.name === 'string') {
-            map[parsed.name] = stackDir;
+          for (const fileName of COMPOSE_FILE_NAMES) {
+            const filePath = path.join(COMPOSE_DIR, stackDir, fileName);
+            try {
+              const content = await fs.readFile(filePath, 'utf-8');
+              const parsed = yaml.parse(content);
+              if (parsed?.name && typeof parsed.name === 'string') {
+                map[parsed.name] = stackDir;
+              }
+              break;
+            } catch (err: unknown) {
+              const code = (err as NodeJS.ErrnoException)?.code;
+              if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+                console.error(`[DockerController] Failed to read ${filePath}:`, err);
+                break;
+              }
+            }
           }
-          break;
-        } catch (err: unknown) {
-          const code = (err as NodeJS.ErrnoException)?.code;
-          if (code !== 'ENOENT' && code !== 'ENOTDIR') {
-            console.error(`[DockerController] Failed to read ${filePath}:`, err);
-            break;
-          }
-        }
-      }
-    }));
+        }));
 
-    projectNameCache = { map, builtAt: Date.now() };
-    return map;
+        return map;
+      },
+    );
   }
 
   public async getBulkStackStatuses(stackNames: string[]): Promise<Record<string, BulkStackInfo>> {

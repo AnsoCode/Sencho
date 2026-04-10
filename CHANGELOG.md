@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **perf:** unify caching across the backend behind a single internal service with
+  per-namespace hit/miss/stale observability. Hot-path dashboard endpoints
+  (`/api/stats`, `/api/system/stats`, `/api/stacks/statuses`) now cache expensive
+  Docker and system sampling calls for 2 to 3 seconds with write-path invalidation,
+  so user actions inside Sencho stay instantly reflected while heavy polling no
+  longer hammers the Docker socket or the `systeminformation` CPU sampler. A new
+  admin-only `GET /api/system/cache-stats` endpoint exposes per-namespace counters
+  for operators who want to observe cache effectiveness.
+* **perf:** enable HTTP response compression (gzip) for JSON responses site-wide.
+  Large payloads like `/api/templates` shrink roughly 5x on the wire, with
+  Server-Sent Event streams explicitly excluded so real-time log tails and system
+  metrics are not buffered.
+
 ### Fixed
 
 * **api:** add tiered rate limiting to prevent dashboard polling lockouts. High-frequency

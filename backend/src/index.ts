@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -30,7 +31,31 @@ import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
+import { CacheService } from './services/CacheService';
 import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
+
+// ── Hot-path cache TTLs ────────────────────────────────────────────────
+// Short TTLs collapse concurrent polling pressure across browser tabs and
+// overlapping service samplers without introducing noticeable UI staleness.
+// Keys are per-node: "stats:<nodeId>", "system-stats:<nodeId>", "stack-statuses:<nodeId>".
+const STATS_CACHE_TTL_MS = 2_000;
+const SYSTEM_STATS_CACHE_TTL_MS = 3_000;
+const STACK_STATUSES_CACHE_TTL_MS = 3_000;
+
+/**
+ * Invalidate the per-node caches affected by a stack/container mutation so
+ * the next dashboard poll shows fresh state instead of stale reads. Called
+ * from every endpoint that changes the Docker or filesystem state.
+ *
+ * Also drops the global `project-name-map` since stack writes (create, delete,
+ * rename, compose edits) can reshape the on-disk layout used to build it.
+ */
+function invalidateNodeCaches(nodeId: number): void {
+  const cache = CacheService.getInstance();
+  cache.invalidate(`stats:${nodeId}`);
+  cache.invalidate(`stack-statuses:${nodeId}`);
+  cache.invalidate('project-name-map');
+}
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
@@ -136,6 +161,19 @@ const corsOrigin = process.env.NODE_ENV === 'production'
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
+}));
+
+// Gzip JSON and HTML responses. SSE streams (Content-Type: text/event-stream)
+// MUST NOT be compressed because compression buffers output and would delay
+// event delivery until a flush, breaking live log and status streams.
+app.use(compression({
+  filter: (req: Request, res: Response) => {
+    const ct = res.getHeader('Content-Type');
+    if (typeof ct === 'string' && ct.includes('text/event-stream')) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
 }));
 
 // Cookie parser must run before rate limiters so the hybrid key generator
@@ -1236,9 +1274,10 @@ const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
-// Latest Sencho version cache (fetched from GitHub Releases)
-let latestVersionCache: { version: string; fetchedAt: number } | null = null;
-let latestVersionInflight: Promise<string | null> | null = null;
+// Latest Sencho version cache (fetched from GitHub Releases).
+// Backed by CacheService: TTL, inflight dedup, and stale-on-error are all
+// handled by the unified cache layer.
+const LATEST_VERSION_CACHE_KEY = 'latest-version';
 const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 async function fetchFromGitHub(): Promise<string | null> {
@@ -1267,7 +1306,7 @@ async function fetchFromDockerHub(): Promise<string | null> {
   return tags[0];
 }
 
-async function fetchLatestSenchoVersion(): Promise<string | null> {
+async function fetchLatestSenchoVersion(): Promise<string> {
   try {
     const gh = await fetchFromGitHub();
     if (gh) return gh;
@@ -1276,31 +1315,29 @@ async function fetchLatestSenchoVersion(): Promise<string | null> {
     console.warn('[VersionCheck] GitHub fetch failed:', (err as Error).message);
   }
   try {
-    return await fetchFromDockerHub();
+    const hub = await fetchFromDockerHub();
+    if (hub) return hub;
   } catch (err) {
     console.warn('[VersionCheck] Docker Hub fetch failed:', (err as Error).message);
-    return null;
   }
+  // Throw so CacheService falls back to a stale value if one exists,
+  // and so we do not poison the cache with null.
+  throw new Error('Both GitHub and Docker Hub version lookups failed');
 }
 
 async function getLatestVersion(forceRefresh = false): Promise<string | null> {
-  if (
-    !forceRefresh &&
-    latestVersionCache &&
-    Date.now() - latestVersionCache.fetchedAt < LATEST_VERSION_CACHE_TTL
-  ) {
-    return latestVersionCache.version;
+  if (forceRefresh) {
+    CacheService.getInstance().invalidate(LATEST_VERSION_CACHE_KEY);
   }
-  // Deduplicate concurrent requests (thundering herd protection)
-  if (!latestVersionInflight) {
-    latestVersionInflight = fetchLatestSenchoVersion().finally(() => { latestVersionInflight = null; });
+  try {
+    return await CacheService.getInstance().getOrFetch<string>(
+      LATEST_VERSION_CACHE_KEY,
+      LATEST_VERSION_CACHE_TTL,
+      fetchLatestSenchoVersion,
+    );
+  } catch {
+    return null;
   }
-  const version = await latestVersionInflight;
-  if (version) {
-    latestVersionCache = { version, fetchedAt: Date.now() };
-  }
-  // On failure, return stale cache if available (graceful degradation)
-  return version ?? latestVersionCache?.version ?? null;
 }
 
 /** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
@@ -3280,6 +3317,9 @@ app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Res
       }
     }
 
+    if (results.some(r => r.success)) {
+      invalidateNodeCaches(req.nodeId);
+    }
     res.json({ results });
   } catch (error) {
     console.error('[Labels] Bulk action error:', error);
@@ -3300,16 +3340,23 @@ app.get('/api/stacks', async (req: Request, res: Response) => {
 
 app.get('/api/stacks/statuses', async (req: Request, res: Response) => {
   try {
-    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
-    const stackNames = stacks.map((s: string) => s.replace(/\.(yml|yaml)$/, ''));
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const bulkInfo = await dockerController.getBulkStackStatuses(stackNames);
-    // Map back to filenames to match frontend expectations
-    const result: Record<string, { status: 'running' | 'exited' | 'unknown'; mainPort?: number }> = {};
-    for (const stack of stacks) {
-      const name = stack.replace(/\.(yml|yaml)$/, '');
-      result[stack] = bulkInfo[name] ?? { status: 'unknown' };
-    }
+    const result = await CacheService.getInstance().getOrFetch(
+      `stack-statuses:${req.nodeId}`,
+      STACK_STATUSES_CACHE_TTL_MS,
+      async () => {
+        const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+        const stackNames = stacks.map((s: string) => s.replace(/\.(yml|yaml)$/, ''));
+        const dockerController = DockerController.getInstance(req.nodeId);
+        const bulkInfo = await dockerController.getBulkStackStatuses(stackNames);
+        // Map back to filenames to match frontend expectations
+        const data: Record<string, { status: 'running' | 'exited' | 'unknown'; mainPort?: number }> = {};
+        for (const stack of stacks) {
+          const name = stack.replace(/\.(yml|yaml)$/, '');
+          data[stack] = bulkInfo[name] ?? { status: 'unknown' };
+        }
+        return data;
+      },
+    );
     res.json(result);
   } catch (error) {
     console.error('Failed to fetch stack statuses:', error);
@@ -3343,6 +3390,7 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Content must be a string' });
     }
     await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
     console.error('Failed to save stack:', error);
@@ -3524,6 +3572,7 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters and hyphens' });
     }
     await FileSystemService.getInstance(req.nodeId).createStack(stackName);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Stack created successfully', name: stackName });
   } catch (error: any) {
     if (error.message && error.message.includes('already exists')) {
@@ -3551,6 +3600,7 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
     // Stage 2: Obliterate the files
     await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
 
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to delete stack' });
@@ -3604,6 +3654,7 @@ app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.startContainer(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Container started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start container' });
@@ -3616,6 +3667,7 @@ app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.stopContainer(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Container stopped' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to stop container' });
@@ -3628,6 +3680,7 @@ app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
     const id = req.params.id as string;
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.restartContainer(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Container restarted' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to restart container' });
@@ -3644,6 +3697,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
   try {
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Deployed successfully' });
   } catch (error: any) {
     console.error('Failed to deploy stack:', error);
@@ -3660,6 +3714,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   }
   try {
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
+    invalidateNodeCaches(req.nodeId);
     res.json({ status: 'Command started' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start command' });
@@ -3681,6 +3736,7 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
     }
 
     await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Restart completed via Engine API.' });
   } catch (error: any) {
     console.error('Failed to restart containers:', error);
@@ -3703,6 +3759,7 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
     }
 
     await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Stop completed via Engine API.' });
   } catch (error: any) {
     console.error('Failed to stop containers:', error);
@@ -3725,6 +3782,7 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
     }
 
     await Promise.all(containers.map(c => dockerController.startContainer(c.Id)));
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Start completed via Engine API.' });
   } catch (error: any) {
     console.error('Failed to start containers:', error);
@@ -3743,6 +3801,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
+    invalidateNodeCaches(req.nodeId);
     res.json({ status: 'Update completed' });
   } catch (error) {
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
@@ -3767,6 +3826,7 @@ app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) 
     await fsSvc.restoreStackFiles(stackName);
     // Re-deploy with restored files (non-atomic to avoid loops)
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, false);
+    invalidateNodeCaches(req.nodeId);
     res.json({ message: 'Stack rolled back successfully.' });
   } catch (error: any) {
     console.error('Rollback failed:', error);
@@ -3805,30 +3865,39 @@ app.post('/api/convert', async (req: Request, res: Response) => {
   }
 });
 
-// Get all containers stats for dashboard
+// Get all containers stats for dashboard.
+// Cached per-node for 2s to collapse multi-tab polling pressure. Invalidated
+// by stack/container write endpoints (deploy, down, start, stop, restart, etc).
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
     const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(req.nodeId));
-    const allContainers = await DockerController.getInstance(req.nodeId).getAllContainers();
+    const result = await CacheService.getInstance().getOrFetch(
+      `stats:${req.nodeId}`,
+      STATS_CACHE_TTL_MS,
+      async () => {
+        const allContainers = await DockerController.getInstance(req.nodeId).getAllContainers();
 
-    // A container is "managed" if Docker started it from within COMPOSE_DIR.
-    // We use com.docker.compose.project.working_dir rather than project name because
-    // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
-    // project name of the root folder - causing false "external" classification.
-    const isManagedByComposeDir = (c: any): boolean => {
-      const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
-      if (!workingDir) return false;
-      const resolved = path.resolve(workingDir);
-      return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
-    };
+        // A container is "managed" if Docker started it from within COMPOSE_DIR.
+        // We use com.docker.compose.project.working_dir rather than project name because
+        // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
+        // project name of the root folder, causing false "external" classification.
+        const isManagedByComposeDir = (c: any): boolean => {
+          const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+          if (!workingDir) return false;
+          const resolved = path.resolve(workingDir);
+          return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
+        };
 
-    const active = allContainers.filter((c: any) => c.State === 'running').length;
-    const exited = allContainers.filter((c: any) => c.State === 'exited').length;
-    const total = allContainers.length;
-    const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
-    const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
+        const active = allContainers.filter((c: any) => c.State === 'running').length;
+        const exited = allContainers.filter((c: any) => c.State === 'exited').length;
+        const total = allContainers.length;
+        const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
+        const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
 
-    res.json({ active, managed, unmanaged, exited, total });
+        return { active, managed, unmanaged, exited, total };
+      },
+    );
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
@@ -4037,46 +4106,71 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
   }
 });
 
-// Get host system stats
+// Get host system stats.
+// Cached for 3s to collapse overlapping samplers: the dashboard polls every 5s,
+// MonitorService samples every 30s, and si.currentLoad() blocks for ~200ms per
+// call. A short TTL makes concurrent polls share one sample without noticeable
+// UX staleness. No write-path invalidation: these are pure host metrics.
 app.get('/api/system/stats', async (req: Request, res: Response) => {
   try {
+    // Network is read outside the cache because it is cheap and per-request.
     const rxSec = Math.max(0, globalDockerNetwork.rxSec);
     const txSec = Math.max(0, globalDockerNetwork.txSec);
 
-    // Remote node requests are intercepted and proxied by remoteNodeProxy before reaching here.
-    // This handler only runs for local nodes.
-    const [currentLoad, mem, fsSize] = await Promise.all([
-      si.currentLoad(),
-      si.mem(),
-      si.fsSize()
-    ]);
+    const sample = await CacheService.getInstance().getOrFetch(
+      `system-stats:${req.nodeId}`,
+      SYSTEM_STATS_CACHE_TTL_MS,
+      async () => {
+        // Remote node requests are intercepted and proxied by remoteNodeProxy
+        // before reaching here. This fetcher only runs for local nodes.
+        const [currentLoad, mem, fsSize] = await Promise.all([
+          si.currentLoad(),
+          si.mem(),
+          si.fsSize(),
+        ]);
 
-    const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
+        const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
 
-    res.json({
-      cpu: {
-        usage: currentLoad.currentLoad.toFixed(1),
-        cores: currentLoad.cpus.length,
+        return {
+          cpu: {
+            usage: currentLoad.currentLoad.toFixed(1),
+            cores: currentLoad.cpus.length,
+          },
+          memory: {
+            total: mem.total,
+            used: mem.used,
+            free: mem.free,
+            usagePercent: ((mem.used / mem.total) * 100).toFixed(1),
+          },
+          disk: mainDisk ? {
+            fs: mainDisk.fs,
+            mount: mainDisk.mount,
+            total: mainDisk.size,
+            used: mainDisk.used,
+            free: mainDisk.available,
+            usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
+          } : null,
+        };
       },
-      memory: {
-        total: mem.total,
-        used: mem.used,
-        free: mem.free,
-        usagePercent: ((mem.used / mem.total) * 100).toFixed(1),
-      },
-      disk: mainDisk ? {
-        fs: mainDisk.fs,
-        mount: mainDisk.mount,
-        total: mainDisk.size,
-        used: mainDisk.used,
-        free: mainDisk.available,
-        usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
-      } : null,
-      network: { rxBytes: 0, txBytes: 0, rxSec, txSec },
-    });
+    );
+
+    res.json({ ...sample, network: { rxBytes: 0, txBytes: 0, rxSec, txSec } });
   } catch (error) {
     console.error('Failed to fetch system stats:', error);
     res.status(500).json({ error: 'Failed to fetch system stats' });
+  }
+});
+
+// Admin-only cache observability: per-namespace hit/miss/stale counters and
+// live entry counts for the unified CacheService. Used by Settings → About and
+// for post-deployment verification that cache hit rates look healthy.
+app.get('/api/system/cache-stats', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(CacheService.getInstance().getStats());
+  } catch (error) {
+    console.error('Failed to fetch cache stats:', error);
+    res.status(500).json({ error: 'Failed to fetch cache stats' });
   }
 });
 
@@ -5257,6 +5351,7 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
     }
     const dockerController = DockerController.getInstance(req.nodeId);
     const results = await dockerController.removeContainers(containerIds);
+    invalidateNodeCaches(req.nodeId);
     res.json({ results });
   } catch (error) {
     console.error('Failed to prune orphan containers:', error);
@@ -5286,6 +5381,9 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
       result = await dockerController.pruneSystem(target as 'containers' | 'images' | 'networks' | 'volumes');
     }
 
+    if (target === 'containers') {
+      invalidateNodeCaches(req.nodeId);
+    }
     res.json({ message: 'Prune completed', ...result });
   } catch (error: any) {
     console.error('System prune error:', error);
@@ -5508,6 +5606,7 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
     try {
       const atomic = LicenseService.getInstance().getTier() === 'paid';
       await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
+      invalidateNodeCaches(req.nodeId);
       res.json({ success: true, message: 'Template deployed successfully' });
     } catch (deployError: any) {
       const rawError = deployError.message || String(deployError);
@@ -5531,6 +5630,9 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
         }
       }
 
+      // Partial state may linger (directory created, deploy failed, rollback
+      // may or may not have cleaned up). Drop node caches either way.
+      invalidateNodeCaches(req.nodeId);
       res.status(500).json({
         error: parsed.message,
         rolledBack: shouldRollback,
@@ -5578,59 +5680,60 @@ app.get('/api/image-updates/status', authMiddleware, (_req: Request, res: Respon
 });
 
 // Fleet-wide image update aggregation (local DB + remote node APIs)
-let fleetUpdateCache: { data: Record<number, Record<string, boolean>>; fetchedAt: number } | null = null;
+const FLEET_UPDATE_CACHE_KEY = 'fleet-updates';
 const FLEET_CACHE_TTL = 120_000; // 2 minutes
 
 app.get('/api/image-updates/fleet', authMiddleware, async (_req: Request, res: Response) => {
   try {
-    if (fleetUpdateCache && Date.now() - fleetUpdateCache.fetchedAt < FLEET_CACHE_TTL) {
-      res.json(fleetUpdateCache.data);
-      return;
-    }
+    const result = await CacheService.getInstance().getOrFetch<Record<number, Record<string, boolean>>>(
+      FLEET_UPDATE_CACHE_KEY,
+      FLEET_CACHE_TTL,
+      async () => {
+        const db = DatabaseService.getInstance();
+        const nodes = db.getNodes();
+        const nr = NodeRegistry.getInstance();
+        const data: Record<number, Record<string, boolean>> = {};
 
-    const db = DatabaseService.getInstance();
-    const nodes = db.getNodes();
-    const nr = NodeRegistry.getInstance();
-    const result: Record<number, Record<string, boolean>> = {};
-
-    // Local nodes: synchronous DB reads
-    for (const node of nodes) {
-      if (node.type === 'local') {
-        result[node.id] = db.getStackUpdateStatus(node.id);
-      }
-    }
-
-    // Remote nodes: parallel fetches with individual timeouts
-    const remoteNodes = nodes.filter(n => n.type === 'remote' && n.status === 'online' && n.api_url);
-    const remoteResults = await Promise.allSettled(
-      remoteNodes.map(async (node) => {
-        const proxyTarget = nr.getProxyTarget(node.id);
-        const baseUrl = node.api_url!.replace(/\/$/, '');
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        try {
-          const resp = await fetch(`${baseUrl}/api/image-updates`, {
-            headers: proxyTarget?.apiToken
-              ? { Authorization: `Bearer ${proxyTarget.apiToken}` }
-              : {},
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-          if (resp.ok) return { nodeId: node.id, data: await resp.json() as Record<string, boolean> };
-        } catch {
-          clearTimeout(timeout);
+        // Local nodes: synchronous DB reads
+        for (const node of nodes) {
+          if (node.type === 'local') {
+            data[node.id] = db.getStackUpdateStatus(node.id);
+          }
         }
-        return null;
-      })
+
+        // Remote nodes: parallel fetches with individual timeouts
+        const remoteNodes = nodes.filter(n => n.type === 'remote' && n.status === 'online' && n.api_url);
+        const remoteResults = await Promise.allSettled(
+          remoteNodes.map(async (node) => {
+            const proxyTarget = nr.getProxyTarget(node.id);
+            const baseUrl = node.api_url!.replace(/\/$/, '');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            try {
+              const resp = await fetch(`${baseUrl}/api/image-updates`, {
+                headers: proxyTarget?.apiToken
+                  ? { Authorization: `Bearer ${proxyTarget.apiToken}` }
+                  : {},
+                signal: controller.signal,
+              });
+              clearTimeout(timeout);
+              if (resp.ok) return { nodeId: node.id, data: await resp.json() as Record<string, boolean> };
+            } catch {
+              clearTimeout(timeout);
+            }
+            return null;
+          })
+        );
+
+        for (const entry of remoteResults) {
+          if (entry.status === 'fulfilled' && entry.value) {
+            data[entry.value.nodeId] = entry.value.data;
+          }
+        }
+
+        return data;
+      },
     );
-
-    for (const entry of remoteResults) {
-      if (entry.status === 'fulfilled' && entry.value) {
-        result[entry.value.nodeId] = entry.value.data;
-      }
-    }
-
-    fleetUpdateCache = { data: result, fetchedAt: Date.now() };
     res.json(result);
   } catch (error) {
     console.error('Failed to aggregate fleet update status:', error);
@@ -5907,7 +6010,7 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
     const id = parseInt(nodeIdParam);
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
-    remoteMetaCache.delete(id);
+    CacheService.getInstance().invalidate(`${REMOTE_META_NAMESPACE}:${id}`);
     res.json({ success: true });
   } catch (error: any) {
     console.error('Failed to delete node:', error);
@@ -5928,9 +6031,11 @@ app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
 
 // Fetch capability metadata for a specific node. For local nodes, returns this
 // instance's capabilities directly. For remote nodes, relays GET /api/meta from
-// the remote Sencho instance. Backend-side cache shields against rate limit
-// contention on the remote; stale data is served on transient failures.
-const remoteMetaCache = new Map<number, { data: RemoteMeta; fetchedAt: number }>();
+// the remote Sencho instance. Backend-side cache (via CacheService) shields
+// against rate limit contention on the remote and serves stale data on
+// transient failures. Keys are "remote-meta:<nodeId>" so we can invalidate by
+// namespace when a node is deleted.
+const REMOTE_META_NAMESPACE = 'remote-meta';
 const REMOTE_META_CACHE_TTL = 3 * 60 * 1000;
 
 app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Response) => {
@@ -5947,29 +6052,27 @@ app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Respons
       return;
     }
 
-    const cached = remoteMetaCache.get(id);
-    if (cached && Date.now() - cached.fetchedAt < REMOTE_META_CACHE_TTL) {
-      res.json(cached.data);
-      return;
-    }
-
     const baseUrl = node.api_url?.replace(/\/$/, '');
     if (!baseUrl || !node.api_token) {
       res.json({ version: null, capabilities: [] });
       return;
     }
 
-    const meta = await fetchRemoteMeta(baseUrl, node.api_token);
-
-    // A successful fetch always includes a version; null version means the remote
-    // was unreachable. Only cache successful responses so transient failures retry.
-    if (meta.version !== null) {
-      remoteMetaCache.set(id, { data: meta, fetchedAt: Date.now() });
-    } else if (cached) {
-      cached.fetchedAt = Date.now();
-      res.json(cached.data);
-      return;
-    }
+    const cacheKey = `${REMOTE_META_NAMESPACE}:${id}`;
+    const meta = await CacheService.getInstance().getOrFetch<RemoteMeta>(
+      cacheKey,
+      REMOTE_META_CACHE_TTL,
+      async () => {
+        const fetched = await fetchRemoteMeta(baseUrl, node.api_token!);
+        // A successful fetch always includes a version; null version means the
+        // remote was unreachable. Throw so CacheService serves stale on error
+        // instead of caching an empty result.
+        if (fetched.version === null) {
+          throw new Error('Remote meta fetch returned null version');
+        }
+        return fetched;
+      },
+    );
 
     res.json(meta);
   } catch (error: unknown) {
