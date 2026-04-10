@@ -131,6 +131,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Computed once per job run. Feeds Dockerfile's APK_CACHE_BUST arg so
+      # the `apk upgrade` layer rebuilds at least once per calendar day, even
+      # when every other input to the layer is cached. See Dockerfile:115-122
+      # for the rationale.
+      - name: Compute daily apk cache bust value
+        id: apk-bust
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Build Docker image (validation only)
         uses: docker/build-push-action@v7
         with:
@@ -140,6 +148,8 @@ jobs:
           tags: sencho:pr-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            APK_CACHE_BUST=${{ steps.apk-bust.outputs.date }}
 
       - name: Scan image for vulnerabilities (Trivy)
         # Hard-fails the PR on any HIGH or CRITICAL finding that is not listed

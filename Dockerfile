@@ -112,9 +112,19 @@ FROM node:22-alpine
 ARG DOCKER_VERSION=29.3.1
 ARG COMPOSE_VERSION=v5.1.1
 
+# Daily cache-bust for the apk upgrade layer. CI passes the current date
+# (YYYY-MM-DD) as a build-arg, so this RUN layer's hash changes at most
+# once per calendar day. Without this, buildx reuses the cached layer
+# indefinitely and a new Alpine package fix (e.g. an openssl CVE patched
+# upstream in alpine 3.23) sits behind the stale cache until an unrelated
+# change invalidates this line by coincidence. Default value lets local
+# developers build without the arg; production CI always sets it.
+ARG APK_CACHE_BUST=unset
+
 # Upgrade all Alpine system packages, install runtime deps, then fetch Docker
 # CLI + Compose plugin from official static binaries.
-RUN apk upgrade --no-cache && \
+RUN echo "apk cache bust: ${APK_CACHE_BUST}" && \
+    apk upgrade --no-cache && \
     apk add --no-cache bash su-exec curl && \
     ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-${DOCKER_VERSION}.tgz" \
