@@ -2,7 +2,26 @@
 **/dist
 .git
 .gitignore
+.DS_Store
+
+# Docs and non-runtime content. Not needed in the image, bloats build context.
 plans/
 Product Requirements Document
 *.md
-.DS_Store
+docs/
+website/
+
+# Tests and reports. Never shipped in the image.
+e2e/
+tests/
+test-results/
+playwright-report/
+
+# CI config runs on GitHub Actions, not inside the image.
+.github/
+
+# Secrets and key material. Defense in depth against accidental context leaks.
+.env
+.env.*
+*.key
+*.pem
