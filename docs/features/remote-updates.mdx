@@ -3,7 +3,7 @@ title: Remote Updates
 description: Check for outdated nodes and trigger over-the-air Sencho updates from the Fleet View.
 ---
 
-Sencho can update remote nodes directly from the dashboard. When your primary instance is running a newer version than a remote node, a one-click update pulls the latest image and recreates the container automatically.
+Sencho can update remote nodes directly from the dashboard. When a node is running an older version than the latest available release, a one-click update pulls the latest image and recreates the container automatically. This includes the local (gateway) node itself.
 
 <Note>
   Remote updates require a **Skipper** or **Admiral** license.
@@ -30,7 +30,7 @@ Open the **Fleet** tab and click **Check Updates** in the header. This opens the
 The dialog includes:
 
 - **Summary cards** at the top showing counts of nodes that are Up to date, have updates Available, are currently Updating, or have Failed
-- **Gateway version** label showing your primary instance's version
+- **Latest version** label showing the newest available Sencho release
 - **Filter** search box to find specific nodes by name or type
 - **Node table** with columns for name, type, current version, latest version, and status
 
@@ -38,7 +38,7 @@ Each node's status column shows one of:
 
 | Status | Meaning |
 |--------|---------|
-| **Up to date** badge | Node is running the same version as the gateway |
+| **Up to date** badge | Node is running the latest available version |
 | **Update** button | A newer version is available; click to update |
 | **Updating** badge | The node is pulling the new image and restarting |
 | **Updated** badge | The node came back online with the new version |
@@ -104,7 +104,7 @@ Hovering over a failed or timed-out badge reveals the error message with details
   <img src="/images/fleet-view/fleet-node-failed.png" alt="Node Updates dialog showing a failed node with retry and dismiss buttons" />
 </Frame>
 
-You can also click **Recheck** in the dialog footer to clear all failed and timed-out states at once and fetch fresh version information from every node.
+You can also click **Recheck** in the dialog footer to clear all failed and timed-out states at once, refresh the cached latest version from GitHub, and fetch fresh version information from every node.
 
 <Note>
   Update tracking is stored in memory on the gateway. Restarting the gateway clears all update states, so any stuck "Timed out" or "Failed" badges will resolve on their own after a restart.

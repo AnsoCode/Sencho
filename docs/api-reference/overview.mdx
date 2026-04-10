@@ -88,7 +88,20 @@ This applies to all stack endpoints: read, write, deploy, down, restart, stop, s
 
 ## Rate limiting
 
-All API endpoints are rate-limited per IP address. Authentication endpoints have stricter limits to prevent brute-force attacks. When exceeded, the server responds with `429 Too Many Requests`:
+Sencho uses a tiered rate limiting system that balances security with usability:
+
+| Tier | Limit | Applies to | Keyed by |
+|------|-------|------------|----------|
+| **Polling** | 300/min | Dashboard status endpoints (`/stats`, `/system/stats`, `/stacks/statuses`, etc.) | User session |
+| **Standard** | 200/min | All other API endpoints | User session |
+| **Webhooks** | 500/min | `POST /webhooks/:id/trigger` | IP address |
+| **Auth** | 5-10/15min | Login, setup, SSO endpoints | IP address |
+
+Authenticated requests (browser sessions and API tokens) are rate-limited per user, not per IP. This prevents teams behind shared NAT or VPN from pooling rate limit budgets. Unauthenticated requests fall back to IP-based limiting.
+
+Internal node-to-node traffic (requests authenticated with node proxy tokens) bypasses rate limiting entirely.
+
+When exceeded, the server responds with `429 Too Many Requests`:
 
 ```json
 {
@@ -97,6 +110,8 @@ All API endpoints are rate-limited per IP address. Authentication endpoints have
 ```
 
 Standard rate limit headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) are included in all API responses, so clients can self-throttle accordingly.
+
+The default limits can be tuned via environment variables (`API_RATE_LIMIT`, `API_POLLING_RATE_LIMIT`). See [Self-Hosting](/operations/self-hosting) for details.
 
 ## License tier requirements
 

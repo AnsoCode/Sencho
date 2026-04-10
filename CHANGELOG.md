@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.5](https://github.com/AnsoCode/Sencho/compare/v0.42.4...v0.42.5) (2026-04-10)
+
+
+### Fixed
+
+* **fleet:** add Docker Hub fallback for version detection on private repos ([#463](https://github.com/AnsoCode/Sencho/issues/463)) ([8adcef8](https://github.com/AnsoCode/Sencho/commit/8adcef8e4744a16e08a0841b6c5b8e775e92f36f))
+
+## [0.42.4](https://github.com/AnsoCode/Sencho/compare/v0.42.3...v0.42.4) (2026-04-09)
+
+
+### Fixed
+
+* **api:** add tiered rate limiting to prevent polling lockouts ([#460](https://github.com/AnsoCode/Sencho/issues/460)) ([8e1b982](https://github.com/AnsoCode/Sencho/commit/8e1b9826cf2eb4128d7e9d6d1c667db7c664728f))
+
+## [Unreleased]
+
+### Fixed
+
+* **api:** add tiered rate limiting to prevent dashboard polling lockouts. High-frequency
+  polling endpoints (stats, system stats, stack statuses) are now exempt from the global
+  rate limiter and governed by a separate 300 req/min safety net. The global limit is
+  raised from 100 to 200 req/min. Authenticated requests are now keyed by user session
+  instead of IP address, preventing shared NAT/VPN environments from pooling rate limit
+  budgets. Internal node-to-node traffic (node_proxy tokens) bypasses all rate limiters.
+  Webhook triggers get a dedicated 500 req/min limit for CI/CD integrations.
+
+## [0.42.3](https://github.com/AnsoCode/Sencho/compare/v0.42.2...v0.42.3) (2026-04-09)
+
+
+### Fixed
+
+* **fleet:** prevent modal flash when clicking Recheck button ([#457](https://github.com/AnsoCode/Sencho/issues/457)) ([8de82ed](https://github.com/AnsoCode/Sencho/commit/8de82ed81f52b00b537788edc1dd134fede986a9))
+
+## [0.42.2](https://github.com/AnsoCode/Sencho/compare/v0.42.1...v0.42.2) (2026-04-09)
+
+
+### Fixed
+
+* **fleet:** detect updates via GitHub Releases instead of gateway self-comparison ([#454](https://github.com/AnsoCode/Sencho/issues/454)) ([368bef2](https://github.com/AnsoCode/Sencho/commit/368bef20d3512165b74848ecea4669605fcea88a))
+
+## [0.42.1](https://github.com/AnsoCode/Sencho/compare/v0.42.0...v0.42.1) (2026-04-09)
+
+
+### Fixed
+
+* **ui:** standardize toast background to match floating overlay glass style ([#451](https://github.com/AnsoCode/Sencho/issues/451)) ([089d43b](https://github.com/AnsoCode/Sencho/commit/089d43b8556c1418e23c93816391a52476edd9db))
+
+## [0.42.0](https://github.com/AnsoCode/Sencho/compare/v0.41.2...v0.42.0) (2026-04-09)
+
+
+### Added
+
+* **topology:** overhaul network topology with dagre layout, enriched nodes, and click-to-logs ([#447](https://github.com/AnsoCode/Sencho/issues/447)) ([3ee4fe6](https://github.com/AnsoCode/Sencho/commit/3ee4fe6e447a503c94d3199ab93c2504ee58a7da))
+
 ## [0.41.2](https://github.com/AnsoCode/Sencho/compare/v0.41.1...v0.41.2) (2026-04-08)
 
 
@@ -24,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * **fleet:** fix false "Update available" on remote nodes whose `api_url` has a trailing slash, causing `fetchRemoteMeta` to construct a double-slash URL that fails silently
+* **fleet:** detect updates via GitHub Releases API instead of comparing against the gateway's own version. Previously, the local node could never appear outdated because it compared its version to itself. The Recheck button now invalidates the 30-minute version cache and fetches the actual latest release.
+* **fleet:** add Docker Hub tags API as fallback for version detection when the GitHub repo is private. The GitHub Releases API returns 404 for private repos, causing version detection to silently fail and fall back to the gateway's own version.
 
 ## [0.41.1](https://github.com/AnsoCode/Sencho/compare/v0.41.0...v0.41.1) (2026-04-08)
 

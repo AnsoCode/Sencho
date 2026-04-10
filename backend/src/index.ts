@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
@@ -138,21 +138,136 @@ app.use(cors({
   credentials: true,
 }));
 
-// Global API rate limiter — caps total requests per IP across all /api/ routes.
-// Auth-specific limiters (authRateLimiter, ssoRateLimiter) apply additional,
-// stricter limits on their respective routes and stack independently.
-const globalApiLimiter = rateLimit({
+// Cookie parser must run before rate limiters so the hybrid key generator
+// can read req.cookies for per-user rate limit bucketing.
+app.use(cookieParser());
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+//
+// Tiered rate limiting to prevent UX lockouts while maintaining security:
+//   Tier 0/1 (Polling):  High-frequency GET endpoints exempt from global limit,
+//                         with a 300/min safety net to prevent resource exhaustion.
+//   Tier W   (Webhooks): CI/CD webhook triggers at 500/min (shared datacenter IPs).
+//   Tier 2   (Standard): All other endpoints at 200/min (raised from 100).
+//   Tier 3   (Auth):     Strict brute-force protection (5-10 attempts / 15min).
+//
+// Enterprise adaptations:
+//   - Internal node-to-node traffic (node_proxy JWTs) bypasses all rate limiters.
+//   - Authenticated requests are keyed by user ID (not IP) to prevent shared
+//     NAT/VPN environments from pooling rate limit budgets.
+
+/** Read-only GET endpoints polled at high frequency by the dashboard/fleet UI. */
+const POLLING_EXEMPT_PATHS = new Set([
+  '/meta', '/health', '/stats', '/system/stats',
+  '/stacks/statuses', '/metrics/historical',
+  '/auth/status', '/auth/sso/providers', '/license',
+]);
+
+const WEBHOOK_TRIGGER_RE = /^\/webhooks\/\d+\/trigger$/;
+
+/**
+ * Returns true if the request bears a node_proxy Bearer token.
+ * Uses jwt.decode() (no signature verification) to avoid crypto overhead on the
+ * hot path; authMiddleware performs full verification downstream. Worst case for
+ * a forged token: it skips the rate limiter but is still rejected by auth.
+ * Result is memoized on the request object so the two sequential limiters
+ * don't repeat the work.
+ */
+function isNodeProxyRequest(req: Request): boolean {
+  const cached = (req as any)._isNodeProxy;
+  if (cached !== undefined) return cached;
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) {
+    (req as any)._isNodeProxy = false;
+    return false;
+  }
+  try {
+    const decoded = jwt.decode(auth.slice(7)) as { scope?: string } | null;
+    const result = decoded?.scope === 'node_proxy';
+    (req as any)._isNodeProxy = result;
+    return result;
+  } catch {
+    (req as any)._isNodeProxy = false;
+    return false;
+  }
+}
+
+/**
+ * Hybrid rate limit key: uses the JWT username/sub claim for authenticated
+ * requests (per-user budgets) and falls back to IP for unauthenticated ones.
+ * Uses jwt.decode() (no verification) to avoid double-verification cost;
+ * authMiddleware handles signature checks downstream.
+ */
+function rateLimitKeyGenerator(req: Request): string {
+  const cookie = req.cookies?.[COOKIE_NAME];
+  if (cookie) {
+    try {
+      const decoded = jwt.decode(cookie) as { username?: string } | null;
+      if (decoded?.username) return `user:${decoded.username}`;
+    } catch { /* fall through to IP */ }
+  }
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.decode(auth.slice(7)) as { username?: string; sub?: string } | null;
+      if (decoded?.username) return `user:${decoded.username}`;
+      if (decoded?.sub) return `user:${decoded.sub}`;
+    } catch { /* fall through to IP */ }
+  }
+  return ipKeyGenerator(req.ip || 'unknown');
+}
+
+/** Shared config for all rate limiters (1-minute window, standard headers). */
+const rateLimitBase = {
   windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.API_RATE_LIMIT || '100', 10)
-    : 1000,
   standardHeaders: true,
   legacyHeaders: false,
+} as const;
+
+// Tier 2: Global API rate limiter. Skips polling endpoints (Tier 0/1), webhook
+// triggers (Tier W), and internal node-to-node traffic (node_proxy).
+const globalApiLimiter = rateLimit({
+  ...rateLimitBase,
+  max: process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.API_RATE_LIMIT || '200', 10)
+    : 1000,
+  keyGenerator: rateLimitKeyGenerator,
   message: { error: 'Too many requests. Please try again shortly.' },
-  skip: (req: Request) => req.path === '/meta' || req.path === '/health',
+  skip: (req: Request) => {
+    if (req.method === 'GET' && POLLING_EXEMPT_PATHS.has(req.path)) return true;
+    if (req.method === 'POST' && WEBHOOK_TRIGGER_RE.test(req.path)) return true;
+    if (isNodeProxyRequest(req)) return true;
+    return false;
+  },
 });
 
 app.use('/api/', globalApiLimiter);
+
+// Tier 0/1: Polling safety net. Applies only to polling-exempt endpoints to
+// prevent resource exhaustion from runaway or malicious polling.
+const pollingLimiter = rateLimit({
+  ...rateLimitBase,
+  max: process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.API_POLLING_RATE_LIMIT || '300', 10)
+    : 3000,
+  keyGenerator: rateLimitKeyGenerator,
+  message: { error: 'Too many polling requests. Please try again shortly.' },
+  skip: (req: Request) => {
+    if (isNodeProxyRequest(req)) return true;
+    return !(req.method === 'GET' && POLLING_EXEMPT_PATHS.has(req.path));
+  },
+});
+
+app.use('/api/', pollingLimiter);
+
+// Tier W: Webhook trigger limiter. Applied inline on the trigger route handler.
+// CI/CD platforms (GitHub Actions, GitLab runners) often share datacenter IPs,
+// so a higher ceiling prevents dropped deployments during burst activity.
+const webhookTriggerLimiter = rateLimit({
+  ...rateLimitBase,
+  max: process.env.NODE_ENV === 'production' ? 500 : 5000,
+  message: { error: 'Too many webhook triggers. Please try again shortly.' },
+});
 
 // JSON body parser that also captures the raw bytes for HMAC verification.
 const jsonParser = express.json({
@@ -191,7 +306,6 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
   }
   jsonParser(req, res, next);
 });
-app.use(cookieParser());
 
 // Node Context Middleware
 const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) => {
@@ -1122,6 +1236,85 @@ const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
+// Latest Sencho version cache (fetched from GitHub Releases)
+let latestVersionCache: { version: string; fetchedAt: number } | null = null;
+let latestVersionInflight: Promise<string | null> | null = null;
+const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+async function fetchFromGitHub(): Promise<string | null> {
+  const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) return null;
+  const data = await res.json() as { tag_name?: string };
+  const tag = data.tag_name?.replace(/^v/, '') ?? null;
+  return tag && semver.valid(tag) ? tag : null;
+}
+
+async function fetchFromDockerHub(): Promise<string | null> {
+  const res = await fetch(
+    'https://hub.docker.com/v2/repositories/saelix/sencho/tags/?page_size=50&ordering=last_updated',
+    { headers: { 'User-Agent': 'Sencho' }, signal: AbortSignal.timeout(10000) },
+  );
+  if (!res.ok) return null;
+  const data = await res.json() as { results?: { name: string }[] };
+  const tags = (data.results ?? [])
+    .map(t => t.name)
+    .filter(n => semver.valid(n));
+  if (tags.length === 0) return null;
+  tags.sort(semver.rcompare);
+  return tags[0];
+}
+
+async function fetchLatestSenchoVersion(): Promise<string | null> {
+  try {
+    const gh = await fetchFromGitHub();
+    if (gh) return gh;
+  } catch (err) {
+    // GitHub API fails for private repos or rate limits; try Docker Hub
+    console.warn('[VersionCheck] GitHub fetch failed:', (err as Error).message);
+  }
+  try {
+    return await fetchFromDockerHub();
+  } catch (err) {
+    console.warn('[VersionCheck] Docker Hub fetch failed:', (err as Error).message);
+    return null;
+  }
+}
+
+async function getLatestVersion(forceRefresh = false): Promise<string | null> {
+  if (
+    !forceRefresh &&
+    latestVersionCache &&
+    Date.now() - latestVersionCache.fetchedAt < LATEST_VERSION_CACHE_TTL
+  ) {
+    return latestVersionCache.version;
+  }
+  // Deduplicate concurrent requests (thundering herd protection)
+  if (!latestVersionInflight) {
+    latestVersionInflight = fetchLatestSenchoVersion().finally(() => { latestVersionInflight = null; });
+  }
+  const version = await latestVersionInflight;
+  if (version) {
+    latestVersionCache = { version, fetchedAt: Date.now() };
+  }
+  // On failure, return stale cache if available (graceful degradation)
+  return version ?? latestVersionCache?.version ?? null;
+}
+
+/** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
+async function getCompareTarget(gatewayVersion: string | null) {
+  const latestVersion = await getLatestVersion();
+  const latestValid = latestVersion !== null && isValidVersion(latestVersion);
+  return {
+    latestVersion,
+    latestValid,
+    compareVersion: latestValid ? latestVersion : gatewayVersion,
+    compareValid: latestValid || isValidVersion(gatewayVersion),
+  };
+}
+
 function createTracker(
   status: UpdateTracker['status'],
   previousVersion: string | null,
@@ -1277,6 +1470,8 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
     const gatewayVersion = getSenchoVersion();
     const gatewayValid = isValidVersion(gatewayVersion);
 
+    const { latestVersion, latestValid, compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
+
     const results = await Promise.allSettled(
       nodes.map(async (node) => {
         const tracker = updateTracker.get(node.id);
@@ -1328,7 +1523,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
               elapsed > 15_000 &&
               isValidVersion(version) &&
               gatewayValid &&
-              !semver.lt(version, gatewayVersion!)
+              !semver.lt(version, compareVersion!)
             ) {
               // Signal 4: Remote is now at or above gateway version (after minimum processing time).
               // Catches fast restarts where the 5s polling interval misses the offline window
@@ -1361,8 +1556,8 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
         let updateAvailable = false;
         if (!isValidVersion(version)) {
           updateAvailable = node.type === 'remote';
-        } else if (gatewayValid) {
-          updateAvailable = semver.lt(version, gatewayVersion!);
+        } else if (compareValid) {
+          updateAvailable = semver.lt(version, compareVersion!);
         }
 
         const currentTracker = updateTracker.get(node.id);
@@ -1371,7 +1566,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
           name: node.name,
           type: node.type,
           version,
-          latestVersion: gatewayVersion,
+          latestVersion: latestValid ? latestVersion : gatewayVersion,
           updateAvailable,
           updateStatus: currentTracker?.status ?? null,
           error: currentTracker?.error ?? null,
@@ -1386,7 +1581,7 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
         name: nodes[i].name,
         type: nodes[i].type,
         version: null,
-        latestVersion: gatewayVersion,
+        latestVersion: latestValid ? latestVersion : gatewayVersion,
         updateAvailable: false,
         updateStatus: null,
       };
@@ -1490,6 +1685,7 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const gatewayVersion = getSenchoVersion();
+    const { compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
 
     // Filter to eligible candidates, then trigger all in parallel
     const candidates = nodes.filter(node => {
@@ -1512,7 +1708,7 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
       if (!meta.capabilities.includes('self-update')) {
         return { name: node.name, triggered: false };
       }
-      if (isValidVersion(meta.version) && isValidVersion(gatewayVersion) && !semver.lt(meta.version, gatewayVersion)) {
+      if (isValidVersion(meta.version) && compareValid && !semver.lt(meta.version, compareVersion!)) {
         return { name: node.name, triggered: false };
       }
       const response = await fetch(`${node.api_url!.replace(/\/$/, '')}/api/system/update`, {
@@ -1562,6 +1758,10 @@ app.delete('/api/fleet/nodes/:nodeId/update-status', async (req: Request, res: R
 // Clear all terminal (timed-out, failed, completed) tracker entries at once
 app.delete('/api/fleet/update-status', async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  // Pre-fetch fresh latest version so the next GET has up-to-date data
+  if (req.query.recheck === 'true') {
+    await getLatestVersion(true);
+  }
   for (const [nodeId, tracker] of updateTracker) {
     if (tracker.status === 'timeout' || tracker.status === 'failed' || tracker.status === 'completed') {
       updateTracker.delete(nodeId);
@@ -2131,7 +2331,7 @@ app.get('/api/webhooks/:id/history', authMiddleware, async (req: Request, res: R
 });
 
 // Webhook trigger - public endpoint, authenticated via HMAC signature
-app.post('/api/webhooks/:id/trigger', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/webhooks/:id/trigger', webhookTriggerLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const id = parseInt(req.params.id as string, 10);
     const db = DatabaseService.getInstance();

@@ -640,6 +640,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [localUpdateConfirm, setLocalUpdateConfirm] = useState<number | null>(null);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
     const [checkingUpdates, setCheckingUpdates] = useState(false);
+    const [recheckingUpdates, setRecheckingUpdates] = useState(false);
     const [modalSearch, setModalSearch] = useState('');
     const updateStatusesRef = useRef(updateStatuses);
     updateStatusesRef.current = updateStatuses;
@@ -1262,7 +1263,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </div>
                                     {gatewayLabel && (
                                         <div className="text-[11px] text-muted-foreground shrink-0">
-                                            Gateway: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
+                                            Latest: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
                                         </div>
                                     )}
                                 </div>
@@ -1352,15 +1353,15 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         variant="ghost"
                                         size="sm"
                                         className="h-7 text-xs text-muted-foreground"
-                                        disabled={checkingUpdates}
+                                        disabled={recheckingUpdates}
                                         onClick={async () => {
-                                            setCheckingUpdates(true);
-                                            await apiFetch('/fleet/update-status', { method: 'DELETE', localOnly: true });
+                                            setRecheckingUpdates(true);
+                                            await apiFetch('/fleet/update-status?recheck=true', { method: 'DELETE', localOnly: true });
                                             await fetchUpdateStatus();
-                                            setCheckingUpdates(false);
+                                            setRecheckingUpdates(false);
                                         }}
                                     >
-                                        <RefreshCw className={`w-3 h-3 mr-1.5 ${checkingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+                                        <RefreshCw className={`w-3 h-3 mr-1.5 ${recheckingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                                         Recheck
                                     </Button>
                                     {updatableRemoteCount > 0 && (
