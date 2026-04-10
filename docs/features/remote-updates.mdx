@@ -74,10 +74,10 @@ When you update the local (gateway) node:
 
 1. A confirmation dialog appears explaining that the dashboard will briefly disconnect.
 2. After confirming, the server pulls the latest image and restarts.
-3. A reconnecting overlay appears and polls the server every few seconds.
-4. The page automatically reloads when the server comes back.
+3. A reconnecting overlay appears and polls the server every few seconds. It stays visible for the entire pull and restart cycle, even if the API briefly responds in between, so the page does not reload until the new container has actually booted.
+4. Once the new container reports a fresh boot timestamp, the page automatically reloads with the new version.
 
-If the server does not return within 5 minutes, a timeout message appears with a manual reload option.
+If the new container does not come up within 5 minutes, a timeout message appears with a manual reload option. If the gateway can detect that the update did not complete (for example, the image pull failed or the restart helper container could not spawn), the local node card surfaces a "Failed" badge with the underlying error within about 3 minutes instead of waiting for the full timeout.
 
 ## What happens during an update
 
