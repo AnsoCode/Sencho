@@ -294,6 +294,14 @@ export class MonitorService {
                             }
                         }
                     } catch (e) {
+                        // Containers can be removed between getRunningContainers() and the
+                        // per-container stats call (e.g., during a stack update). Dockerode
+                        // throws a 404 in that case. That's expected churn, not a real
+                        // error, so skip silently rather than flooding the logs.
+                        const err = e as { statusCode?: number; reason?: string };
+                        if (err?.statusCode === 404 || err?.reason === 'no such container') {
+                            continue;
+                        }
                         console.error(`Error parsing stats for container ${container.Id} on node ${node.name}`, e);
                     }
                 }
