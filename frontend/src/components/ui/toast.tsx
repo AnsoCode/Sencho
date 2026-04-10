@@ -53,32 +53,26 @@ const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
 const notificationConfig: Record<ToastType, {
   iconColor: string;
   icon: React.ReactNode;
-  gradient: string;
 }> = {
   info: {
     iconColor: 'text-info',
     icon: <InfoIcon className="h-6 w-6" />,
-    gradient: 'from-info-muted to-transparent',
   },
   success: {
     iconColor: 'text-success',
     icon: <SuccessIcon className="h-6 w-6" />,
-    gradient: 'from-success-muted to-transparent',
   },
   warning: {
     iconColor: 'text-warning',
     icon: <WarningIcon className="h-6 w-6" />,
-    gradient: 'from-warning-muted to-transparent',
   },
   error: {
     iconColor: 'text-destructive',
     icon: <ErrorIcon className="h-6 w-6" />,
-    gradient: 'from-destructive-muted to-transparent',
   },
   loading: {
     iconColor: 'text-brand',
     icon: <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.5} />,
-    gradient: 'from-info-muted to-transparent',
   },
 };
 
@@ -121,15 +115,11 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 100 }}
       transition={{ duration: 0.3 }}
-      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-xl bg-card/80 border border-glass-border overflow-hidden ring-1 ring-glass-border drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
+      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-[10px] backdrop-saturate-[1.15] bg-popover/95 border border-glass-border overflow-hidden ring-1 ring-glass-border drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Gradient overlay — exact Sera UI pattern */}
-      <div className={`absolute top-0 left-0 h-full w-full bg-gradient-to-br ${config.gradient} opacity-50`} />
-
-      {/* Content */}
-      <div className="relative z-10 flex items-center space-x-4">
+      <div className="flex items-center space-x-4">
         <div className={`flex-shrink-0 ${config.iconColor}`}>
           {config.icon}
         </div>
@@ -159,7 +149,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
             initial={{ width: 0 }}
             animate={{ width: hovered ? undefined : '100%' }}
             transition={{ duration: duration / 1000, ease: 'linear' }}
-            className="h-full bg-gradient-to-r from-success via-info to-brand"
+            className="h-full bg-gradient-to-r from-transparent via-brand to-transparent"
           />
         )}
       </div>

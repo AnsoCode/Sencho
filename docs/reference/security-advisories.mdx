@@ -13,7 +13,7 @@ A comprehensive security audit was performed before the Sencho paid tiers launch
 
 - **Path traversal prevention** in `env_file` resolution, preventing reads outside the compose directory
 - **Stack name validation** enforced on all routes, rejecting names with special characters or path components
-- **Global API rate limiting** to protect against brute-force and abuse
+- **Tiered API rate limiting** with per-user session keying to protect against brute-force and abuse
 
 ### Authentication and secrets
 
