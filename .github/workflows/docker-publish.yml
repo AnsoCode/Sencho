@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      # Required for cosign keyless signing via GitHub OIDC.
+      id-token: write
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
@@ -35,16 +37,27 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: saelix/sencho
+          # On a v-tag push we publish:
+          #   latest           always points at the newest release
+          #   X.Y.Z            the immutable semver tag
+          #   X.Y              moving minor tag for users who want latest patch
+          # The pre-1.0 constraint hides the {{major}}-only tag until we ship 1.0,
+          # since on 0.x every minor is potentially breaking.
           tags: |
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -54,3 +67,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=saelix/sencho:buildcache
           cache-to: type=registry,ref=saelix/sencho:buildcache,mode=max
+          # SBOM + provenance attestations are embedded as OCI referrers on the
+          # published image. Inspect with: docker buildx imagetools inspect <img>
+          sbom: true
+          provenance: mode=max
+
+      - name: Sign published image with cosign (keyless)
+        # Signs every tag produced by metadata-action using the ambient GitHub
+        # OIDC token. No private keys, no secrets. Users verify with:
+        #   cosign verify saelix/sencho:<tag> \
+        #     --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+        #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          # Build a single cosign invocation with every tag pinned to the digest.
+          # All tags resolve to the same manifest, so one call signs them all and
+          # saves N-1 Rekor/Fulcio round trips. On workflow_dispatch $TAGS is empty
+          # and the refs array stays empty, so we no-op cleanly.
+          refs=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            refs+=("${tag}@${DIGEST}")
+          done <<< "$TAGS"
+          if [ ${#refs[@]} -gt 0 ]; then
+            cosign sign --yes "${refs[@]}"
+          else
+            echo "No tags to sign (likely a workflow_dispatch run on a non-tag ref)."
+          fi
