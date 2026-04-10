@@ -100,6 +100,34 @@ jobs:
           severity: 'CRITICAL,HIGH'
           format: 'table'
 
+      # Start the scanned image headless on the runner and poll /api/health
+      # until it returns 200. Catches entrypoint regressions, native module
+      # ABI breakage, and first-boot crashes on the exact artifact that the
+      # multi-arch push below will republish moments later. Intentionally
+      # placed BEFORE the publish step so a smoke failure does not move
+      # `latest` or the semver tags on Docker Hub. The health endpoint is
+      # public and returns before any DB or Docker-socket work, so the
+      # container only needs a free port, no env vars, and no volume mounts.
+      - name: Smoke test release image (pre-publish)
+        run: |
+          set -euo pipefail
+          # Not using --rm so that a crashed container sticks around long
+          # enough for `docker logs` in the trap to surface the stack trace.
+          # The trap force-removes it explicitly whether it is still running
+          # or already exited.
+          docker run -d --name sencho-smoke -p 3000:3000 localhost/sencho:release-scan
+          trap 'docker logs sencho-smoke 2>&1 || true; docker rm -f sencho-smoke >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
+              echo "Container healthy after ${i}s"
+              curl -s http://localhost:3000/api/health
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAILED: /api/health did not become ready within 30s"
+          exit 1
+
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v7
