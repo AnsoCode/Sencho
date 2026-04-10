@@ -8,6 +8,7 @@ node_modules/
 
 # Build Outputs
 dist/
+*.tsbuildinfo
 
 # Sencho User Data & Mocks
 data/
