@@ -17,6 +17,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for every job. Individual jobs may override (e.g.
+# update-screenshots needs contents: write + pull-requests: write to open a PR).
+permissions:
+  contents: read
+
 # ---------------------------------------------------------------------------
 # Build & Validation (PRs only, skipped for release-please PRs)
 # ---------------------------------------------------------------------------
@@ -118,7 +123,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: sencho:pr-test
           exit-code: '1'
@@ -195,7 +200,7 @@ jobs:
 
       - name: Open / update screenshots PR
         id: create-pr
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ secrets.DOCS_REPO_TOKEN }}
           branch: chore/refresh-screenshots
