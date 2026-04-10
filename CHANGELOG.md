@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Large payloads like `/api/templates` shrink roughly 5x on the wire, with
   Server-Sent Event streams explicitly excluded so real-time log tails and system
   metrics are not buffered.
+* **release:** sign every published Docker image with Sigstore cosign keyless
+  signing, and embed an SBOM plus SLSA provenance attestation as OCI referrers on
+  the image. Users can now independently verify that a pulled image came from the
+  official GitHub Actions build pipeline (see the new "Verifying Docker Images"
+  reference page in the docs). The release pipeline also publishes a new moving
+  minor tag `saelix/sencho:X.Y` alongside the existing `latest` and immutable
+  `X.Y.Z` tags, so operators who want the latest patch on a given minor line can
+  pin without chasing every release.
 
 ### Fixed
 
