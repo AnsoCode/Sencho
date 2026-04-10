@@ -1,9 +1,25 @@
 import crypto from 'crypto';
 import { Client as LdapClient } from 'ldapts';
-import { Issuer, Client as OIDCClient, generators } from 'openid-client';
+import {
+    Configuration,
+    discovery,
+    buildAuthorizationUrl,
+    authorizationCodeGrant,
+    fetchUserInfo,
+    randomState,
+    randomPKCECodeVerifier,
+    calculatePKCECodeChallenge,
+} from 'openid-client';
 import { DatabaseService, User, AuthProvider } from './DatabaseService';
 import { CryptoService } from './CryptoService';
 import { LicenseService } from './LicenseService';
+import { CacheService } from './CacheService';
+
+// OIDC discovery metadata changes rarely; caching it eliminates the redundant
+// HTTPS round-trip between getOIDCAuthorizationUrl and handleOIDCCallback in
+// the same login flow, and across back-to-back logins.
+const OIDC_CONFIG_TTL_MS = 5 * 60 * 1000;
+const OIDC_CONFIG_NS = 'oidc-config';
 
 export interface SSOProviderConfig {
     provider: string;
@@ -121,6 +137,11 @@ export class SSOService {
             configForStorage.oidcClientSecret = cryptoSvc.encrypt(configForStorage.oidcClientSecret);
         }
         db.upsertSSOConfig(provider, true, JSON.stringify(configForStorage));
+        this.invalidateOIDCConfigCache(provider);
+    }
+
+    private invalidateOIDCConfigCache(provider: string): void {
+        CacheService.getInstance().invalidate(`${OIDC_CONFIG_NS}:${provider}`);
     }
 
     // --- Config Management ---
@@ -173,10 +194,13 @@ export class SSOService {
             config.enabled,
             JSON.stringify(configForStorage)
         );
+        // Client ID, secret, or issuer URL may have changed, so drop the cached Configuration.
+        this.invalidateOIDCConfigCache(config.provider);
     }
 
     public deleteProviderConfig(provider: string): void {
         DatabaseService.getInstance().deleteSSOConfig(provider);
+        this.invalidateOIDCConfigCache(provider);
     }
 
     // --- LDAP Authentication ---
@@ -313,21 +337,22 @@ export class SSOService {
             throw new Error(`SSO provider ${provider} is missing client ID`);
         }
 
-        const { client } = await this.getOIDCClient(provider, config, callbackUrl);
-        const state = generators.state();
-        const codeVerifier = generators.codeVerifier();
-        const codeChallenge = generators.codeChallenge(codeVerifier);
+        const oidcConfig = await this.getOIDCConfig(provider, config);
+        const state = randomState();
+        const codeVerifier = randomPKCECodeVerifier();
+        const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
 
         const scopes = config.oidcScopes || 'openid email profile';
 
-        const url = client.authorizationUrl({
+        const url = buildAuthorizationUrl(oidcConfig, {
+            redirect_uri: callbackUrl,
             scope: scopes,
             state,
             code_challenge: codeChallenge,
             code_challenge_method: 'S256',
         });
 
-        return { url, state, codeVerifier };
+        return { url: url.href, state, codeVerifier };
     }
 
     public async handleOIDCCallback(
@@ -337,39 +362,43 @@ export class SSOService {
         expectedState: string,
         codeVerifier: string
     ): Promise<SSOAuthResult> {
-        if (params.state !== expectedState) {
-            return { success: false, error: 'Invalid state parameter (possible CSRF attack)' };
-        }
-
         const config = this.getProviderConfigDecrypted(provider);
         if (!config || !config.enabled) {
             return { success: false, error: `SSO provider ${provider} is not configured` };
         }
 
         try {
-            const { client } = await this.getOIDCClient(provider, config, callbackUrl);
+            const oidcConfig = await this.getOIDCConfig(provider, config);
 
-            const tokenSet = await client.callback(callbackUrl, { code: params.code, state: params.state }, {
-                state: expectedState,
-                code_verifier: codeVerifier,
+            const currentUrl = new URL(callbackUrl);
+            currentUrl.searchParams.set('code', params.code);
+            currentUrl.searchParams.set('state', params.state);
+
+            const tokens = await authorizationCodeGrant(oidcConfig, currentUrl, {
+                pkceCodeVerifier: codeVerifier,
+                expectedState,
             });
 
             let userInfo: Record<string, unknown>;
 
             if (provider === 'oidc_github') {
                 // GitHub doesn't support standard OIDC userinfo; use their API
-                userInfo = await this.fetchGitHubUserInfo(tokenSet.access_token as string);
-            } else if (tokenSet.id_token) {
-                const claims = tokenSet.claims();
-                // Also fetch userinfo for complete profile
-                try {
-                    const info = await client.userinfo(tokenSet.access_token as string);
-                    userInfo = { ...claims, ...info };
-                } catch {
-                    userInfo = claims as Record<string, unknown>;
-                }
+                userInfo = await this.fetchGitHubUserInfo(tokens.access_token);
             } else {
-                userInfo = await client.userinfo(tokenSet.access_token as string) as Record<string, unknown>;
+                const claims = tokens.claims();
+                if (!claims) {
+                    return { success: false, error: 'OIDC provider did not return an ID token' };
+                }
+                // Pass claims.sub so v6 rejects userinfo/id_token subject mismatches.
+                try {
+                    const info = await fetchUserInfo(oidcConfig, tokens.access_token, String(claims.sub));
+                    userInfo = { ...claims, ...info };
+                } catch (err) {
+                    // Log so a subject-mismatch rejection is not silently hidden.
+                    const message = err instanceof Error ? err.message : String(err);
+                    console.warn(`[SSO] fetchUserInfo failed, falling back to id_token claims: ${message}`);
+                    userInfo = { ...claims };
+                }
             }
 
             const sub = String(userInfo.sub || userInfo.id || '');
@@ -424,38 +453,37 @@ export class SSOService {
         };
     }
 
-    private async getOIDCClient(
+    private async getOIDCConfig(
         provider: string,
         config: SSOProviderConfig,
-        callbackUrl: string
-    ): Promise<{ client: OIDCClient; issuer: InstanceType<typeof Issuer> }> {
-        let issuer: InstanceType<typeof Issuer>;
+    ): Promise<Configuration> {
+        const clientId = config.oidcClientId || '';
+        const clientSecret = config.oidcClientSecret || undefined;
 
         if (provider === 'oidc_github') {
-            // GitHub is not a standard OIDC provider - manually configure
-            issuer = new Issuer({
-                issuer: 'https://github.com',
-                authorization_endpoint: 'https://github.com/login/oauth/authorize',
-                token_endpoint: 'https://github.com/login/oauth/access_token',
-                userinfo_endpoint: 'https://api.github.com/user',
-            });
-        } else {
-            const issuerUrl = config.oidcIssuerUrl || WELL_KNOWN_ISSUERS[provider];
-            if (!issuerUrl) {
-                throw new Error(`Issuer URL not configured for ${provider}`);
-            }
-            issuer = await Issuer.discover(issuerUrl);
+            // GitHub is not a standard OIDC provider. Construct Configuration
+            // directly from known endpoints instead of going through discovery.
+            return new Configuration(
+                {
+                    issuer: 'https://github.com',
+                    authorization_endpoint: 'https://github.com/login/oauth/authorize',
+                    token_endpoint: 'https://github.com/login/oauth/access_token',
+                    userinfo_endpoint: 'https://api.github.com/user',
+                },
+                clientId,
+                clientSecret,
+            );
         }
 
-        const client = new issuer.Client({
-            client_id: config.oidcClientId || '',
-            client_secret: config.oidcClientSecret || '',
-            redirect_uris: [callbackUrl],
-            response_types: ['code'],
-            token_endpoint_auth_method: 'client_secret_post',
-        });
-
-        return { client, issuer };
+        const issuerUrl = config.oidcIssuerUrl || WELL_KNOWN_ISSUERS[provider];
+        if (!issuerUrl) {
+            throw new Error(`Issuer URL not configured for ${provider}`);
+        }
+        return CacheService.getInstance().getOrFetch(
+            `${OIDC_CONFIG_NS}:${provider}`,
+            OIDC_CONFIG_TTL_MS,
+            () => discovery(new URL(issuerUrl), clientId, clientSecret),
+        );
     }
 
     private resolveRoleFromOidc(userInfo: Record<string, unknown>, config: SSOProviderConfig): 'admin' | 'viewer' {
@@ -568,17 +596,24 @@ export class SSOService {
         if (!config) {
             return { success: false, error: `Provider ${provider} not configured` };
         }
+        if (provider === 'oidc_github') {
+            return { success: true, issuer: 'https://github.com (OAuth2, non-standard OIDC)' };
+        }
+        const issuerUrl = config.oidcIssuerUrl || WELL_KNOWN_ISSUERS[provider];
+        if (!issuerUrl) {
+            return { success: false, error: 'Issuer URL not configured' };
+        }
+        if (!config.oidcClientId) {
+            return { success: false, error: 'Client ID is required to test discovery' };
+        }
 
         try {
-            if (provider === 'oidc_github') {
-                return { success: true, issuer: 'https://github.com (OAuth2, non-standard OIDC)' };
-            }
-            const issuerUrl = config.oidcIssuerUrl || WELL_KNOWN_ISSUERS[provider];
-            if (!issuerUrl) {
-                return { success: false, error: 'Issuer URL not configured' };
-            }
-            const issuer = await Issuer.discover(issuerUrl);
-            return { success: true, issuer: issuer.metadata.issuer };
+            const oidcConfig = await discovery(
+                new URL(issuerUrl),
+                config.oidcClientId,
+                config.oidcClientSecret || undefined,
+            );
+            return { success: true, issuer: oidcConfig.serverMetadata().issuer };
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Discovery failed';
             return { success: false, error: message };
