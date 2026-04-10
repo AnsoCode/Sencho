@@ -68,6 +68,17 @@ jobs:
         working-directory: ./backend
         run: npm audit --audit-level=high
 
+      # Hand the freshly-verified dist/ to the E2E job so it does not have to
+      # re-run `tsc` on the same source. retention-days is the minimum; this
+      # artifact is only needed for the downstream e2e job in the same run.
+      - name: Upload backend dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-dist
+          path: backend/dist
+          retention-days: 1
+          if-no-files-found: error
+
   frontend:
     name: Frontend (Build, Lint)
     runs-on: ubuntu-latest
@@ -158,8 +169,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
 
+      # Reuse the dist/ that the `backend` job produced and verified, instead
+      # of running `tsc` a second time against the same source tree. The
+      # composite action's `skip-backend-build` input short-circuits its build
+      # step when this artifact is already in place.
+      - name: Download backend dist
+        uses: actions/download-artifact@v7
+        with:
+          name: backend-dist
+          path: backend/dist
+
       - name: Start app & install Playwright
         uses: ./.github/actions/start-app
+        with:
+          skip-backend-build: 'true'
 
       - name: Run E2E tests
         run: npx playwright test
