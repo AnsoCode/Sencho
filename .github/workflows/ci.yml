@@ -225,10 +225,24 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Mint a short-lived installation token for the `sencho-token-app`
+      # GitHub App. Reused by the checkout, PR creation, and auto-merge
+      # steps below so we make exactly one /app/installations token call.
+      - name: Generate GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Sencho
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout Code
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.DOCS_REPO_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Start app & install Playwright
         uses: ./.github/actions/start-app
@@ -240,7 +254,7 @@ jobs:
         id: create-pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
-          token: ${{ secrets.DOCS_REPO_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           branch: chore/refresh-screenshots
           commit-message: "docs: refresh screenshots"
           title: "docs: refresh screenshots"
@@ -251,7 +265,7 @@ jobs:
       - name: Auto-merge screenshots PR
         if: steps.create-pr.outputs.pull-request-number != ''
         env:
-          GH_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
             --squash \
@@ -263,6 +277,21 @@ jobs:
     timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      # This job mirrors docs/ into the sibling sencho-docs repo. The token
+      # must therefore be scoped to `sencho-docs`, not the current repo, so
+      # we mint an installation token explicitly targeting that repo.
+      # Minted unconditionally so the step graph stays simple; the token
+      # auto-revokes on post-step even when the gate below is false.
+      - name: Generate GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: sencho-docs
+          permission-contents: write
+
       - name: Checkout Sencho repo
         uses: actions/checkout@v6
         with:
@@ -289,7 +318,7 @@ jobs:
       - name: Clone or init sencho-docs
         if: steps.detect.outputs.changed == 'true'
         env:
-          DOCS_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
+          DOCS_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           rm -rf sencho-docs
 
