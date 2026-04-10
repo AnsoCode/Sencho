@@ -1241,17 +1241,44 @@ let latestVersionCache: { version: string; fetchedAt: number } | null = null;
 let latestVersionInflight: Promise<string | null> | null = null;
 const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+async function fetchFromGitHub(): Promise<string | null> {
+  const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) return null;
+  const data = await res.json() as { tag_name?: string };
+  const tag = data.tag_name?.replace(/^v/, '') ?? null;
+  return tag && semver.valid(tag) ? tag : null;
+}
+
+async function fetchFromDockerHub(): Promise<string | null> {
+  const res = await fetch(
+    'https://hub.docker.com/v2/repositories/saelix/sencho/tags/?page_size=50&ordering=last_updated',
+    { headers: { 'User-Agent': 'Sencho' }, signal: AbortSignal.timeout(10000) },
+  );
+  if (!res.ok) return null;
+  const data = await res.json() as { results?: { name: string }[] };
+  const tags = (data.results ?? [])
+    .map(t => t.name)
+    .filter(n => semver.valid(n));
+  if (tags.length === 0) return null;
+  tags.sort(semver.rcompare);
+  return tags[0];
+}
+
 async function fetchLatestSenchoVersion(): Promise<string | null> {
   try {
-    const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { tag_name?: string };
-    const tag = data.tag_name?.replace(/^v/, '') ?? null;
-    return tag && semver.valid(tag) ? tag : null;
-  } catch {
+    const gh = await fetchFromGitHub();
+    if (gh) return gh;
+  } catch (err) {
+    // GitHub API fails for private repos or rate limits; try Docker Hub
+    console.warn('[VersionCheck] GitHub fetch failed:', (err as Error).message);
+  }
+  try {
+    return await fetchFromDockerHub();
+  } catch (err) {
+    console.warn('[VersionCheck] Docker Hub fetch failed:', (err as Error).message);
     return null;
   }
 }

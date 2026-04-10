@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **fleet:** fix false "Update available" on remote nodes whose `api_url` has a trailing slash, causing `fetchRemoteMeta` to construct a double-slash URL that fails silently
 * **fleet:** detect updates via GitHub Releases API instead of comparing against the gateway's own version. Previously, the local node could never appear outdated because it compared its version to itself. The Recheck button now invalidates the 30-minute version cache and fetches the actual latest release.
+* **fleet:** add Docker Hub tags API as fallback for version detection when the GitHub repo is private. The GitHub Releases API returns 404 for private repos, causing version detection to silently fail and fall back to the gateway's own version.
 
 ## [0.41.1](https://github.com/AnsoCode/Sencho/compare/v0.41.0...v0.41.1) (2026-04-08)
 
