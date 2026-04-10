@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.6](https://github.com/AnsoCode/Sencho/compare/v0.42.5...v0.42.6) (2026-04-10)
+
+
+### Fixed
+
+* unify caching behind a single CacheService and enable HTTP compression ([#468](https://github.com/AnsoCode/Sencho/issues/468)) ([c0c3212](https://github.com/AnsoCode/Sencho/commit/c0c321227bd5b8b3fb9f992c8cb64182de00056a))
+
 ## [0.42.5](https://github.com/AnsoCode/Sencho/compare/v0.42.4...v0.42.5) (2026-04-10)
 
 
