@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+* **deps:** migrate SSO OIDC integration from `openid-client` v5 to v6. The v5 `Issuer` / `Client` / `generators` API was removed upstream; the service now uses `Configuration`, `discovery`, `buildAuthorizationUrl`, `authorizationCodeGrant`, and `fetchUserInfo`. Discovery metadata is cached for 5 minutes via `CacheService` so a single login flow does not pay the HTTPS round trip twice, and the cache is invalidated on every SSO config write. `fetchUserInfo` failures now log the underlying error instead of silently falling back to id_token claims.
+
 ## [0.43.0](https://github.com/AnsoCode/Sencho/compare/v0.42.7...v0.43.0) (2026-04-10)
 
 
