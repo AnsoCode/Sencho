@@ -153,11 +153,8 @@ jobs:
 
       - name: Run E2E tests
         run: npx playwright test
-        env:
-          E2E_USERNAME: admin
-          E2E_PASSWORD: password123
 
-      - name: Upload E2E report
+      - name: Upload E2E report and service logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
@@ -165,6 +162,7 @@ jobs:
           path: |
             e2e/report/
             test-results/
+            ci-logs/
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -194,9 +192,6 @@ jobs:
 
       - name: Capture screenshots
         run: npx playwright test e2e/screenshots.spec.ts --project=chromium
-        env:
-          E2E_USERNAME: admin
-          E2E_PASSWORD: password123
 
       - name: Open / update screenshots PR
         id: create-pr
