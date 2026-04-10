@@ -47,13 +47,20 @@ runs:
       run: npm ci
       working-directory: ./frontend
 
-    - name: Create compose directory
+    - name: Create compose directory and log dir
       shell: bash
-      run: mkdir -p ${{ inputs.compose-dir }}
+      run: |
+        mkdir -p ${{ inputs.compose-dir }}
+        mkdir -p "${{ github.workspace }}/ci-logs"
 
+    # Log files live under $GITHUB_WORKSPACE so actions/upload-artifact@v4+ can
+    # include them alongside repo-relative paths like e2e/report/. Mixing those
+    # with /tmp paths makes '/' the common root and v4+ strips the absolute
+    # entries from the artifact. `stdbuf -oL -eL` forces line-buffered output
+    # so a crash doesn't lose the final few hundred lines to block buffering.
     - name: Start backend
       shell: bash
-      run: node dist/index.js &
+      run: stdbuf -oL -eL node dist/index.js > "${{ github.workspace }}/ci-logs/backend.log" 2>&1 &
       working-directory: ./backend
       env:
         JWT_SECRET: ${{ inputs.jwt-secret }}
@@ -63,7 +70,7 @@ runs:
 
     - name: Start frontend dev server
       shell: bash
-      run: npm run dev &
+      run: stdbuf -oL -eL npm run dev > "${{ github.workspace }}/ci-logs/frontend.log" 2>&1 &
       working-directory: ./frontend
 
     - name: Wait for services to be ready
