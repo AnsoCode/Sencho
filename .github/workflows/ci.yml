@@ -30,9 +30,13 @@ jobs:
     name: Backend (Build, Test, Lint)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Skip on bot PRs that only touch version metadata (release-please) or
+    # doc screenshots. Neither changes the backend surface, so running the
+    # full build+test+lint+audit stack is pure action-minute waste.
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
+      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -68,9 +72,11 @@ jobs:
     name: Frontend (Build, Lint)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # See backend job rationale: skip bot PRs that cannot affect the frontend.
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
+      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -102,9 +108,11 @@ jobs:
     name: Docker Build & Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # See backend job rationale.
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
+      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -141,9 +149,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [backend, frontend]
+    # See backend job rationale.
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
+      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -224,8 +234,27 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: sencho
+          # Need the previous commit to diff against for the docs-change gate.
+          fetch-depth: 2
+
+      # Skip the clone/rsync/commit work entirely when the push doesn't touch
+      # docs/. rsync --delete is a no-op in that case anyway, but spinning up
+      # the runner + cloning sencho-docs + computing the diff still burns
+      # ~30s of action minutes per non-docs push to main. With multiple
+      # non-docs merges per day this adds up fast.
+      - name: Detect docs changes
+        id: detect
+        working-directory: sencho
+        run: |
+          if git diff --name-only HEAD~1 HEAD -- docs/ | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes under docs/ in this commit; skipping sync."
+          fi
 
       - name: Clone or init sencho-docs
+        if: steps.detect.outputs.changed == 'true'
         env:
           DOCS_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
         run: |
@@ -245,9 +274,11 @@ jobs:
           fi
 
       - name: Copy /docs into sencho-docs root
+        if: steps.detect.outputs.changed == 'true'
         run: rsync -av --delete --exclude='.git' sencho/docs/ sencho-docs/
 
       - name: Commit and push to sencho-docs
+        if: steps.detect.outputs.changed == 'true'
         working-directory: sencho-docs
         run: |
           git config user.email "docs-bot@sencho.io"

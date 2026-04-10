@@ -66,9 +66,13 @@ jobs:
       # Build an amd64-only variant into the local daemon first so Trivy can
       # scan the exact release artifact before it is tagged and pushed. This
       # keeps vulnerable releases out of the `latest` and semver tags that
-      # users actually pull. The scan-build inherits layers from the shared
-      # buildcache so the amd64 leg of the subsequent push-build is mostly a
-      # cache hit; we intentionally do NOT write `cache-to` here because the
+      # users actually pull. Because the push-build step that follows runs in
+      # the same job against the same buildkit daemon, it reuses this build's
+      # layers from the daemon's in-memory cache (observed wall-time: the
+      # push-build typically finishes faster than the scan-build despite
+      # producing multi-arch output). The `cache-from` pull is just a
+      # cold-start fallback for the first-ever run or when the buildkit daemon
+      # is fresh; we intentionally do NOT write `cache-to` here because the
       # push-build below writes a strictly better (multi-arch, mode=max)
       # cache entry moments later. The tag lives in the `localhost/` namespace
       # so a future `push: false` -> `push: true` mistake cannot publish it.
