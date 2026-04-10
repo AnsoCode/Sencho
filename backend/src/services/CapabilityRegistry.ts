@@ -93,7 +93,7 @@ export function getActiveCapabilities(): readonly string[] {
 /** Fetch /api/meta from a remote Sencho instance. Returns empty data on failure. */
 export async function fetchRemoteMeta(baseUrl: string, apiToken: string): Promise<RemoteMeta> {
   try {
-    const res = await axios.get(`${baseUrl}/api/meta`, {
+    const res = await axios.get(`${baseUrl.replace(/\/$/, '')}/api/meta`, {
       headers: { Authorization: `Bearer ${apiToken}` },
       timeout: 5000,
     });

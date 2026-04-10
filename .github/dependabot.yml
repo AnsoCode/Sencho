@@ -7,6 +7,9 @@ updates:
     labels:
       - "dependencies"
     open-pull-requests-limit: 10
+    groups:
+      all-npm-root:
+        patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/backend"
@@ -15,6 +18,9 @@ updates:
     labels:
       - "dependencies"
     open-pull-requests-limit: 10
+    groups:
+      all-npm-backend:
+        patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -23,6 +29,9 @@ updates:
     labels:
       - "dependencies"
     open-pull-requests-limit: 10
+    groups:
+      all-npm-frontend:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -30,3 +39,6 @@ updates:
       interval: "weekly"
     labels:
       - "ci"
+    groups:
+      all-actions:
+        patterns: ["*"]
