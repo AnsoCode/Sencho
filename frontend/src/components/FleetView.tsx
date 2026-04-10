@@ -349,7 +349,12 @@ function UpdateStatusBadge({ status, error, onRetry, onDismiss }: {
     return null;
 }
 
-function ReconnectingOverlay() {
+interface ReconnectingOverlayProps {
+    /** Gateway boot timestamp captured pre-update. Null falls back to offline-then-online detection. */
+    preUpdateStartedAt: number | null;
+}
+
+function ReconnectingOverlay({ preUpdateStartedAt }: ReconnectingOverlayProps) {
     const [elapsed, setElapsed] = useState(0);
     const timedOut = elapsed >= 300; // 5 minutes
 
@@ -360,14 +365,35 @@ function ReconnectingOverlay() {
 
     useEffect(() => {
         if (timedOut) return;
+        let sawOffline = false;
         const poll = setInterval(async () => {
             try {
                 const res = await fetch('/api/health');
-                if (res.ok) window.location.reload();
-            } catch { /* still down */ }
+                if (!res.ok) {
+                    sawOffline = true;
+                    return;
+                }
+                const data = await res.json().catch(() => null) as { startedAt?: number } | null;
+                const currentStartedAt = typeof data?.startedAt === 'number' ? data.startedAt : null;
+
+                if (preUpdateStartedAt !== null && currentStartedAt !== null) {
+                    if (currentStartedAt !== preUpdateStartedAt) {
+                        window.location.reload();
+                    }
+                    return;
+                }
+
+                // Fallback when we don't know the original startedAt: require an offline
+                // response first so we don't reload while the old process is still mid-pull.
+                if (sawOffline) {
+                    window.location.reload();
+                }
+            } catch {
+                sawOffline = true;
+            }
         }, 3000);
         return () => clearInterval(poll);
-    }, [timedOut]);
+    }, [timedOut, preUpdateStartedAt]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-[10px] backdrop-saturate-[1.15]">
@@ -637,6 +663,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
+    const [preUpdateStartedAt, setPreUpdateStartedAt] = useState<number | null>(null);
     const [localUpdateConfirm, setLocalUpdateConfirm] = useState<number | null>(null);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
     const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -727,8 +754,20 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
         setUpdatingNodeId(nodeId);
         try {
+            // Capture pre-update boot timestamp so the overlay can detect a real restart
+            // vs a false "online" response from the still-running old process mid-pull.
+            let bootBefore: number | null = null;
+            try {
+                const healthRes = await fetch('/api/health');
+                if (healthRes.ok) {
+                    const data = await healthRes.json();
+                    if (typeof data?.startedAt === 'number') bootBefore = data.startedAt;
+                }
+            } catch { /* fall back to offline-then-online detection */ }
+
             const res = await apiFetch(`/fleet/nodes/${nodeId}/update`, { method: 'POST', localOnly: true });
             if (res.ok) {
+                setPreUpdateStartedAt(bootBefore);
                 setReconnecting(true);
             } else {
                 const err = await res.json().catch(() => ({}));
@@ -1192,7 +1231,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             </Tabs>
 
             {/* Reconnecting overlay — shown when local node is updating */}
-            {reconnecting && <ReconnectingOverlay />}
+            {reconnecting && <ReconnectingOverlay preUpdateStartedAt={preUpdateStartedAt} />}
 
             {/* Node Updates modal */}
             <Dialog open={showUpdateModal} onOpenChange={(open) => { setShowUpdateModal(open); if (!open) setModalSearch(''); }}>

@@ -491,15 +491,17 @@ const authRateLimiter = rateLimit({
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
 });
 
+// Captured at boot. Exposed via /api/health and /api/meta so the Fleet update overlay
+// can distinguish a brand-new process from the old one still mid-pull.
+const processStartedAt = Date.now();
+
 // Public health endpoint - no auth required (used by Docker HEALTHCHECK and uptime monitors)
 app.get('/api/health', (_req: Request, res: Response): void => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({ status: 'ok', uptime: process.uptime(), startedAt: processStartedAt });
 });
 
 // Public meta endpoint - returns this instance's version and supported capabilities.
 // No auth required (like /health). Used by remote nodes during connection tests.
-const processStartedAt = Date.now();
-
 app.get('/api/meta', (_req: Request, res: Response): void => {
   const updateError = SelfUpdateService.getInstance().getLastError();
   res.json({
@@ -1243,7 +1245,13 @@ app.get('/api/license/billing-portal', async (_req: Request, res: Response): Pro
 function scheduleLocalUpdate(res: Response, message: string): void {
   res.status(202).json({ message });
   res.on('finish', () => {
-    setTimeout(() => SelfUpdateService.getInstance().triggerUpdate(), 500);
+    setTimeout(() => {
+      // Defense in depth: triggerUpdate records its own errors into lastUpdateError,
+      // but guard against an unexpected throw becoming an unhandled rejection.
+      SelfUpdateService.getInstance().triggerUpdate().catch((err) => {
+        console.error('[SelfUpdate] Unexpected error during triggerUpdate:', err);
+      });
+    }, 500);
   });
 }
 
@@ -1575,11 +1583,22 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
               });
             }
           } else if (node.type === 'local') {
-            // Local node: check if SelfUpdateService reported a pull failure
-            const localError = SelfUpdateService.getInstance().getLastError();
+            // Local node has only two failure signals: an explicit pull/spawn error,
+            // or the early-fail heuristic. Success is observed by the frontend overlay
+            // (it reloads the page when /api/health reports a new startedAt), at which
+            // point the new process starts with an empty tracker map.
+            const selfUpdate = SelfUpdateService.getInstance();
+            const localError = selfUpdate.getLastError();
             if (localError) {
               updateTracker.set(node.id, { ...tracker, status: 'failed', error: localError });
-              SelfUpdateService.getInstance().clearLastError();
+              selfUpdate.clearLastError();
+            } else if (elapsed > EARLY_FAIL_MS) {
+              // Helper container likely failed silently. Surface failure before the 5 min timeout.
+              updateTracker.set(node.id, {
+                ...tracker,
+                status: 'failed',
+                error: 'Local update did not complete. The container may not have restarted; check Docker logs on the host.',
+              });
             }
           }
         }

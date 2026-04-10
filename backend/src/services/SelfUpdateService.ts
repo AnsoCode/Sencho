@@ -1,6 +1,9 @@
 import { execFileSync, execFile } from 'child_process';
+import { promisify } from 'util';
 import DockerController from './DockerController';
 import { disableCapability } from './CapabilityRegistry';
+
+const execFileAsync = promisify(execFile);
 
 interface ComposeContext {
   workingDir: string;
@@ -86,22 +89,22 @@ class SelfUpdateService {
     this.lastUpdateError = null;
   }
 
-  triggerUpdate(): void {
+  async triggerUpdate(): Promise<void> {
     if (!this.composeContext) return;
     const { workingDir, configFiles, serviceName, imageName } = this.composeContext;
     const env = { ...process.env, PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' };
     this.lastUpdateError = null;
 
-    // Step 1: Pull latest image directly (no compose file needed)
+    // Async pull: a sync execFileSync blocks the event loop, which lets the frontend
+    // overlay see a false "online" response between the pull finishing and the restart.
     console.log(`[SelfUpdate] Pulling latest image: ${imageName}...`);
     try {
-      execFileSync('docker', ['pull', imageName], {
+      await execFileAsync('docker', ['pull', imageName], {
         env,
-        stdio: 'pipe',
         timeout: 300_000, // 5 min max for pull
       });
     } catch (error) {
-      const stderr = (error as { stderr?: Buffer })?.stderr?.toString().trim();
+      const stderr = (error as { stderr?: Buffer | string })?.stderr?.toString().trim();
       this.lastUpdateError = stderr || (error as Error).message;
       console.error('[SelfUpdate] Pull failed:', this.lastUpdateError);
       return;
@@ -126,8 +129,16 @@ class SelfUpdateService {
       '-c', composeCmd,
     ];
 
-    execFile('docker', args, { env });
-    // Process will be killed by Docker during recreate; no code runs after this
+    // Capture spawn errors (bad image, missing socket, permission denied) so they
+    // land in lastUpdateError instead of vanishing silently.
+    execFile('docker', args, { env }, (err, _stdout, stderr) => {
+      if (err) {
+        const stderrText = stderr?.toString().trim();
+        this.lastUpdateError = stderrText || err.message || 'Helper container failed to spawn';
+        console.error('[SelfUpdate] Helper container spawn failed:', this.lastUpdateError);
+      }
+    });
+    // No code after this point is guaranteed to run: the helper recreates this container.
   }
 }
 

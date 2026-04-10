@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **fleet:** fix local (gateway) self-update flow end-to-end. The "Updating Sencho..."
+  overlay no longer dismisses prematurely while the image pull is still running; it now
+  compares the gateway's boot timestamp via `/api/health` and only reloads after a real
+  container restart is observed. The image pull was made fully async so the API stays
+  responsive throughout (previously a sync `execFileSync` blocked the event loop, which
+  caused the overlay to reload the moment the pull finished, while still on the old
+  process). Helper container spawn errors are now captured into `lastUpdateError` instead
+  of being silently swallowed, so a failed `docker run` for the compose recreate surfaces
+  immediately on the Fleet Overview. A 3-minute early-fail heuristic surfaces a clear
+  failure message when the helper container fails silently, instead of users waiting the
+  full 5-minute timeout for an unknown failure.
+
 * **api:** add tiered rate limiting to prevent dashboard polling lockouts. High-frequency
   polling endpoints (stats, system stats, stack statuses) are now exempt from the global
   rate limiter and governed by a separate 300 req/min safety net. The global limit is
