@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
+import { CacheService } from './CacheService';
 
 
 export interface TemplateEnv {
@@ -191,76 +192,67 @@ function getCategoriesForApp(name: string): string[] {
 }
 
 export class TemplateService {
-    private cachedTemplates: Template[] = [];
-    private lastFetchTime: number = 0;
+    private static readonly CACHE_KEY = 'templates:all';
     private readonly CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
     public clearCache(): void {
-        this.cachedTemplates = [];
-        this.lastFetchTime = 0;
+        CacheService.getInstance().invalidate(TemplateService.CACHE_KEY);
     }
 
     public async getTemplates(): Promise<Template[]> {
-        const now = Date.now();
-        if (this.cachedTemplates.length > 0 && now - this.lastFetchTime < this.CACHE_DURATION_MS) {
-            return this.cachedTemplates;
-        }
-
         try {
-            const settings = DatabaseService.getInstance().getGlobalSettings();
-            // Default to a reliable LSIO Portainer v2 template registry if not set
-            const registryUrl = settings.template_registry_url || 'https://api.linuxserver.io/api/v1/images?include_config=true';
+            return await CacheService.getInstance().getOrFetch<Template[]>(
+                TemplateService.CACHE_KEY,
+                this.CACHE_DURATION_MS,
+                async () => {
+                    const settings = DatabaseService.getInstance().getGlobalSettings();
+                    // Default to a reliable LSIO Portainer v2 template registry if not set
+                    const registryUrl = settings.template_registry_url || 'https://api.linuxserver.io/api/v1/images?include_config=true';
 
-            const response = await axios.get<any>(registryUrl);
+                    const response = await axios.get<any>(registryUrl);
 
-            if (registryUrl.includes('api.linuxserver.io')) {
-                // Official LSIO API Schema Mapping
-                const lsioApps = response.data?.data?.repositories?.linuxserver || [];
+                    if (registryUrl.includes('api.linuxserver.io')) {
+                        // Official LSIO API Schema Mapping
+                        const lsioApps = response.data?.data?.repositories?.linuxserver || [];
 
-                this.cachedTemplates = Object.values(lsioApps).map((app: any) => {
-                    return {
-                        type: 1,
-                        title: app.name,
-                        description: app.description || '',
-                        logo: app.logo || `https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/${app.name}-logo.png`,
-                        image: `lscr.io/linuxserver/${app.name}:latest`,
-                        github_url: app.github,
-                        docs_url: app.readme,
-                        architectures: app.arch,
-                        stars: app.stars,
-                        categories: getCategoriesForApp(app.name),
-                        source: 'linuxserver',
-                        // Map configs if available, otherwise default to empty arrays
-                        ports: (app.config?.ports || []).map((p: any) => `${p.external || p.internal}:${p.internal}/${p.protocol || 'tcp'}`),
-                        volumes: (app.config?.volumes || []).map((v: any) => {
-                            const folderName = v.path.split('/').filter(Boolean).pop() || 'data';
-                            return {
-                                container: v.path,
-                                bind: `./${folderName}` // Proactively create a clean relative path
-                            };
-                        }),
-                        env: (app.config?.environment || []).map((e: any) => ({
-                            name: e.name,
-                            label: e.desc || e.name,
-                            default: e.default || ''
-                        }))
-                    };
-                });
-            } else {
-                // Legacy Portainer v2 Format (Fallback for custom registries)
-                // The Portainer v2 spec includes a native `categories` field - pass it through.
-                this.cachedTemplates = (response.data.templates || [])
-                    .filter((t: Template) => !!t.image && t.type === 1)
-                    .map((t: Template) => ({ ...t, source: 'custom' }));
-            }
+                        return Object.values(lsioApps).map((app: any) => ({
+                            type: 1,
+                            title: app.name,
+                            description: app.description || '',
+                            logo: app.logo || `https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/${app.name}-logo.png`,
+                            image: `lscr.io/linuxserver/${app.name}:latest`,
+                            github_url: app.github,
+                            docs_url: app.readme,
+                            architectures: app.arch,
+                            stars: app.stars,
+                            categories: getCategoriesForApp(app.name),
+                            source: 'linuxserver',
+                            // Map configs if available, otherwise default to empty arrays
+                            ports: (app.config?.ports || []).map((p: any) => `${p.external || p.internal}:${p.internal}/${p.protocol || 'tcp'}`),
+                            volumes: (app.config?.volumes || []).map((v: any) => {
+                                const folderName = v.path.split('/').filter(Boolean).pop() || 'data';
+                                return {
+                                    container: v.path,
+                                    bind: `./${folderName}` // Proactively create a clean relative path
+                                };
+                            }),
+                            env: (app.config?.environment || []).map((e: any) => ({
+                                name: e.name,
+                                label: e.desc || e.name,
+                                default: e.default || ''
+                            }))
+                        }));
+                    }
 
-            this.lastFetchTime = now;
-            return this.cachedTemplates;
+                    // Legacy Portainer v2 Format (Fallback for custom registries)
+                    // The Portainer v2 spec includes a native `categories` field - pass it through.
+                    return (response.data.templates || [])
+                        .filter((t: Template) => !!t.image && t.type === 1)
+                        .map((t: Template) => ({ ...t, source: 'custom' }));
+                },
+            );
         } catch (error) {
             console.error('Failed to fetch templates', error);
-            if (this.cachedTemplates.length > 0) {
-                return this.cachedTemplates;
-            }
             throw new Error('Could not fetch templates from registry');
         }
     }

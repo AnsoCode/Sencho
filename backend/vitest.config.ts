@@ -10,6 +10,9 @@ export default defineConfig({
     pool: 'forks',
     // Timeout generous for DB init and HTTP calls.
     testTimeout: 15_000,
+    // beforeAll hooks that import the full Express stack can exceed the
+    // default 10s hook timeout under CPU contention from parallel fork workers.
+    hookTimeout: 15_000,
     // Sequential within each file (DB state is shared per file).
     sequence: { concurrent: false },
   },
