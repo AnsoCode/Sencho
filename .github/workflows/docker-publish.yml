@@ -15,6 +15,13 @@ jobs:
     name: Push Docker image to Docker Hub
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN live in the `production` environment,
+    # not repo-wide secrets. Any future workflow that tries to push to Docker Hub
+    # without declaring this environment will fail to resolve the credentials,
+    # which is exactly the blast-radius reduction we want. Adding a required
+    # reviewer to the environment in repo settings also turns every release into
+    # a manual-approval gate without any workflow change.
+    environment: production
     permissions:
       contents: read
       # Required for cosign keyless signing via GitHub OIDC.
