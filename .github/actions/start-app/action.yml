@@ -87,6 +87,33 @@ runs:
       shell: bash
       run: npx wait-on http://localhost:${{ inputs.port }}/api/health http://localhost:5173 --timeout 30000
 
-    - name: Install Playwright browsers
+    # Playwright bundles Chrome for Testing (~170MB) and FFmpeg. Downloading
+    # them on every E2E run is the single largest cost in this composite:
+    # observed ~4m15s cold vs ~10s warm when the path is cached. Cache the
+    # download under a key pinned to the @playwright/test version so a
+    # future bump invalidates automatically.
+    - name: Read Playwright version
+      id: playwright-version
       shell: bash
-      run: npx playwright install --with-deps chromium
+      run: |
+        version=$(node -p "require('./package.json').devDependencies['@playwright/test'].replace(/^[\^~]/, '')")
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Playwright browsers
+      id: playwright-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+    # OS deps are apt packages under /var, which actions/cache does not
+    # preserve, so they have to be reinstalled every run regardless of the
+    # browser cache state. It is fast (~10s).
+    - name: Install Playwright OS dependencies
+      shell: bash
+      run: npx playwright install-deps chromium
+
+    - name: Install Playwright browsers
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: npx playwright install chromium
