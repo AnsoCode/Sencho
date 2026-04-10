@@ -13,11 +13,26 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived installation token for the `sencho-token-app`
+      # GitHub App instead of using a long-lived user PAT. The token:
+      #   - is scoped to this one repository (least privilege)
+      #   - requests only the permissions release-please actually needs
+      #   - is auto-revoked by the action's post step at job end
+      #   - unlike GITHUB_TOKEN, CAN trigger downstream workflow runs, so the
+      #     tag push from release-please still cascades to docker-publish.yml
+      - name: Generate GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Sencho
+          permission-contents: write
+          permission-pull-requests: write
+
       - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         with:
-          # GITHUB_TOKEN cannot trigger other workflows (GitHub security restriction).
-          # Using DOCS_REPO_TOKEN (PAT) ensures the tag push from release-please
-          # cascades to docker-publish.yml and publishes to Docker Hub.
-          token: ${{ secrets.DOCS_REPO_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
