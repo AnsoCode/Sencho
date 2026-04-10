@@ -123,15 +123,15 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities (Trivy)
+        # Hard-fails the PR on any HIGH or CRITICAL finding that is not listed
+        # in .trivyignore at the repo root. To accept a CVE, add it to that
+        # file with a human-readable justification comment, not here.
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: sencho:pr-test
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
-        # Findings surface as a visible warning on the job without blocking the PR.
-        # Base-image CVEs are often outside our control - review manually before ignoring.
-        continue-on-error: true
 
   # ---------------------------------------------------------------------------
   # E2E Tests (PRs only, skipped for release-please PRs)

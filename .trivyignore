@@ -1,0 +1,20 @@
+# Trivy ignore list
+#
+# Every entry in this file is a known HIGH or CRITICAL CVE that we have
+# consciously accepted risk on and decided not to block CI over. Format:
+#
+#   CVE-YYYY-NNNNN
+#   # Justification: why we're accepting this risk, and a link or note about
+#   # when to revisit (e.g. "blocked on upstream base image update, revisit
+#   # when alpine/node:22 ships a fix").
+#
+# Rules:
+#   - Every CVE MUST have a justification comment directly above it.
+#   - If there is no justification, the CVE is not ignored - add it here only
+#     after a human review and a decision to accept the risk.
+#   - Review this file on every release; remove entries whose upstream fix has
+#     landed.
+#
+# Picked up automatically by aquasecurity/trivy-action from the repo root
+# working directory. Both the pre-push PR scan (.github/workflows/ci.yml) and
+# the release-time re-scan (.github/workflows/docker-publish.yml) honor it.

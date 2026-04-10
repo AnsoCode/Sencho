@@ -63,6 +63,39 @@ jobs:
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
+      # Build an amd64-only variant into the local daemon first so Trivy can
+      # scan the exact release artifact before it is tagged and pushed. This
+      # keeps vulnerable releases out of the `latest` and semver tags that
+      # users actually pull. The scan-build inherits layers from the shared
+      # buildcache so the amd64 leg of the subsequent push-build is mostly a
+      # cache hit; we intentionally do NOT write `cache-to` here because the
+      # push-build below writes a strictly better (multi-arch, mode=max)
+      # cache entry moments later. The tag lives in the `localhost/` namespace
+      # so a future `push: false` -> `push: true` mistake cannot publish it.
+      # Scanning only amd64 is a defensible proxy for the multi-arch release:
+      # distro package CVEs are arch-agnostic at the manifest level, and
+      # arch-specific container-relevant CVEs are extraordinarily rare.
+      - name: Build release image for pre-publish scan (amd64, loaded)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          platforms: linux/amd64
+          tags: localhost/sencho:release-scan
+          cache-from: type=registry,ref=saelix/sencho:buildcache
+
+      - name: Re-scan release image for vulnerabilities (Trivy)
+        # Gates the release on the same HIGH/CRITICAL policy as the PR scan.
+        # Entries in .trivyignore at the repo root are honored so the acknowledged
+        # CVE list is the single source of truth across PR CI and release CI.
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: localhost/sencho:release-scan
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v7
