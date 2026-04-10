@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0](https://github.com/AnsoCode/Sencho/compare/v0.42.7...v0.43.0) (2026-04-10)
+
+
+### Added
+
+* **release:** sign and attest published docker images ([#480](https://github.com/AnsoCode/Sencho/issues/480)) ([2a2efb8](https://github.com/AnsoCode/Sencho/commit/2a2efb847e1847908e2f3ab9d0c38da01f36bd0b))
+
 ## [0.42.7](https://github.com/AnsoCode/Sencho/compare/v0.42.6...v0.42.7) (2026-04-10)
 
 
