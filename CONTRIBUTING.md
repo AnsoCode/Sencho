@@ -33,7 +33,7 @@ Thank you for your interest in contributing to Sencho!
 - Update documentation if your change affects user-facing behavior
 - Add tests for new functionality
 - Keep PRs focused - one feature or fix per PR
-- Update `CHANGELOG.md` under `## [Unreleased]` for user-facing changes
+- Do not edit `CHANGELOG.md` directly. It is generated from your conventional-commit subjects by release-please. If a user-facing change needs more context than the commit subject captures, enrich the auto-opened Release PR description before it is merged.
 
 ## Reporting Bugs
 
