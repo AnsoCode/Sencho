@@ -11,7 +11,7 @@ Sencho wraps every deployment in a safety net on Skipper and Admiral tiers. Befo
 
 ## How it works
 
-1. **Backup** - Before a deploy or update, Sencho copies your `compose.yaml` and `.env` files to a backup directory inside the stack folder
+1. **Backup** - Before a deploy or update, Sencho copies your `compose.yaml` and `.env` files to a safe internal location
 2. **Deploy** - Sencho runs the requested compose operation (up, pull + recreate, etc.)
 3. **Health probe** - After deployment, Sencho waits briefly, then checks whether any containers exited with a non-zero exit code
 4. **Auto-rollback** - If a crash is detected, Sencho restores the backed-up files and re-deploys automatically

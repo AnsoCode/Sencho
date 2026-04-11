@@ -4,6 +4,16 @@ import { spawn } from 'child_process';
 import { NodeRegistry } from './NodeRegistry';
 
 /**
+ * Resolves the writable Sencho data directory (same one DatabaseService /
+ * CryptoService use). Recomputed lazily so test harnesses that override
+ * `process.env.DATA_DIR` after module load still take effect.
+ */
+function getBackupBaseDir(): string {
+  const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+  return path.join(dataDir, 'backups');
+}
+
+/**
  * FileSystemService - local-only file I/O for compose stack management.
  *
  * In the Distributed API model, remote node file operations are handled
@@ -289,11 +299,17 @@ export class FileSystemService {
   }
 
   /**
-   * Backup stack files (compose.yaml + .env) to .sencho-backup/ within the stack dir.
+   * Backup stack files (compose.yaml + .env) into Sencho's data dir.
+   *
+   * Backups live at <DATA_DIR>/backups/<stackName>/ (NOT inside the user's
+   * compose folder) so the operation always succeeds even when the stack
+   * folder is owned by another UID (e.g., a container running as root has
+   * chowned its bind mount). DATA_DIR is the same writable location that
+   * holds sencho.db and encryption.key.
    */
   async backupStackFiles(stackName: string): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
-    const backupDir = path.join(stackDir, '.sencho-backup');
+    const backupDir = path.join(getBackupBaseDir(), stackName);
     await fsPromises.mkdir(backupDir, { recursive: true });
 
     // Copy compose file
@@ -327,12 +343,9 @@ export class FileSystemService {
     await fsPromises.writeFile(path.join(backupDir, '.timestamp'), Date.now().toString(), 'utf-8');
   }
 
-  /**
-   * Restore stack files from .sencho-backup/ back to the stack dir.
-   */
   async restoreStackFiles(stackName: string): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
-    const backupDir = path.join(stackDir, '.sencho-backup');
+    const backupDir = path.join(getBackupBaseDir(), stackName);
 
     const items = await fsPromises.readdir(backupDir);
     for (const item of items) {
@@ -341,11 +354,8 @@ export class FileSystemService {
     }
   }
 
-  /**
-   * Get backup info for a stack.
-   */
   async getBackupInfo(stackName: string): Promise<{ exists: boolean; timestamp: number | null }> {
-    const backupDir = path.join(this.baseDir, stackName, '.sencho-backup');
+    const backupDir = path.join(getBackupBaseDir(), stackName);
     try {
       await fsPromises.access(backupDir);
       const tsFile = path.join(backupDir, '.timestamp');
