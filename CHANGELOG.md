@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.4](https://github.com/AnsoCode/Sencho/compare/v0.43.3...v0.43.4) (2026-04-11)
+
+
+### Fixed
+
+* run as root by default to eliminate stack-folder permission failures ([#501](https://github.com/AnsoCode/Sencho/issues/501)) ([9eb945a](https://github.com/AnsoCode/Sencho/commit/9eb945a6f0a1481b3bf6f06cef28a06474f7fa6c))
+
 ## [0.43.3](https://github.com/AnsoCode/Sencho/compare/v0.43.2...v0.43.3) (2026-04-11)
 
 
