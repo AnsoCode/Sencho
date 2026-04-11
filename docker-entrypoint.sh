@@ -4,62 +4,64 @@ set -e
 # Resolve the data directory, mirroring DatabaseService.ts logic.
 DATA_DIR="${DATA_DIR:-/app/data}"
 
-# If running as root (the default Docker container start), fix volume ownership,
-# fix Docker socket group access, then drop privileges before executing the app.
+# Sencho runs as root by default inside the container. It needs access to
+# /var/run/docker.sock (which is equivalent to root on the host regardless
+# of the user Sencho itself runs as) and to user-supplied bind mounts that
+# containers in those stacks commonly chown to arbitrary UIDs. Running as
+# root is the same posture used by Portainer, Dockge, Komodo, and Yacht.
 #
-# This is the industry-standard pattern used by the official PostgreSQL, Redis,
-# and MariaDB Docker images, and by Docker management tools like Portainer and
-# Dockge that also require access to /var/run/docker.sock as a non-root user.
+# Users who need the container to drop privileges (organisational policy,
+# compliance scanners, rootless Docker with UID mapping) can set
+# SENCHO_USER=sencho at runtime to opt into the legacy non-root mode. The
+# opt-out path does all the work the old entrypoint used to do: fix data
+# volume ownership, match the Docker socket GID, and exec via su-exec.
 #
-# The UID guard also ensures compatibility with strict environments like
-# Kubernetes (runAsNonRoot: true) or OpenShift, where the container is forced to
-# run as a random high UID. In that case both blocks are skipped and the app
-# exec's directly without crashing.
+# The "id -u = 0" guard keeps Kubernetes / OpenShift forced-non-root
+# deployments (runAsNonRoot: true with a random high UID) working: the
+# entire setup block is skipped and the app exec's directly.
 if [ "$(id -u)" = '0' ]; then
 
-    # 1. Fix data volume ownership.
-    # Handles host volumes previously created by root or a different UID, which
-    # would cause SQLITE_READONLY errors when the non-root sencho user starts.
-    # Only touches files with wrong user OR group (efficient on large dirs).
     mkdir -p "$DATA_DIR"
-    find "$DATA_DIR" \( \! -user sencho -o \! -group sencho \) \
-        -exec chown sencho:sencho '{}' +
-    # Restrict encryption key to owner-only access (rw-------)
+    # Restrict encryption key to owner-only access regardless of runtime user.
     [ -f "$DATA_DIR/encryption.key" ] && chmod 600 "$DATA_DIR/encryption.key"
-    echo "[entrypoint] Data directory ownership ensured: $DATA_DIR"
 
-    # 2. Fix Docker socket group access.
-    # The Docker socket on the host is owned by the host's docker group, whose
-    # GID varies by Linux distribution and does not match any group inside the
-    # container by default.
-    if [ -S /var/run/docker.sock ]; then
-        DOCKER_SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
-        DOCKER_SOCK_MODE=$(stat -c '%a' /var/run/docker.sock)
-        echo "[entrypoint] Docker socket found: GID=$DOCKER_SOCK_GID mode=$DOCKER_SOCK_MODE"
-
-        if [ "$DOCKER_SOCK_GID" = "0" ]; then
-            echo "[entrypoint] WARNING: Docker socket is root:root -- adding sencho to root group"
-            addgroup sencho root 2>/dev/null || true
-        else
-            if ! getent group "$DOCKER_SOCK_GID" > /dev/null 2>&1; then
-                addgroup -S -g "$DOCKER_SOCK_GID" docker-host
-                echo "[entrypoint] Created group docker-host with GID $DOCKER_SOCK_GID"
-            fi
-            DOCKER_GROUP=$(getent group "$DOCKER_SOCK_GID" | cut -d: -f1)
-            addgroup sencho "$DOCKER_GROUP" 2>/dev/null || true
-            echo "[entrypoint] Added sencho to group '$DOCKER_GROUP' (GID $DOCKER_SOCK_GID)"
+    if [ -n "$SENCHO_USER" ]; then
+        # Fail fast if the opted-in user does not exist inside the container.
+        # Without this, the su-exec call below would error out with a cryptic
+        # "su-exec: getpwnam($SENCHO_USER): No such file or directory" and the
+        # operator would have no hint that the variable itself is the cause.
+        if ! id "$SENCHO_USER" >/dev/null 2>&1; then
+            echo "[entrypoint] ERROR: SENCHO_USER=$SENCHO_USER does not exist inside the container." >&2
+            echo "[entrypoint] Use 'sencho' (pre-created) or unset SENCHO_USER to run as root." >&2
+            exit 1
         fi
-    else
-        echo "[entrypoint] WARNING: /var/run/docker.sock not found -- Docker features unavailable"
+
+        # Re-own the data dir so SQLite and the encryption key are readable
+        # after the privilege drop. `|| true` tolerates a read-only /app/data
+        # (rare but possible with some bind-mount configurations); chown
+        # errors still surface in the log so operators see them.
+        find "$DATA_DIR" \( \! -user "$SENCHO_USER" -o \! -group "$SENCHO_USER" \) \
+            -exec chown "$SENCHO_USER:$SENCHO_USER" '{}' + || true
+
+        # Match the Docker socket GID so the dropped user can reach Docker.
+        if [ -S /var/run/docker.sock ]; then
+            DOCKER_SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
+            if [ "$DOCKER_SOCK_GID" = "0" ]; then
+                addgroup "$SENCHO_USER" root 2>/dev/null || true
+            else
+                if ! getent group "$DOCKER_SOCK_GID" > /dev/null 2>&1; then
+                    addgroup -S -g "$DOCKER_SOCK_GID" docker-host
+                fi
+                DOCKER_GROUP=$(getent group "$DOCKER_SOCK_GID" | cut -d: -f1)
+                addgroup "$SENCHO_USER" "$DOCKER_GROUP" 2>/dev/null || true
+            fi
+        fi
+
+        echo "[entrypoint] SENCHO_USER=$SENCHO_USER set; dropping privileges."
+        exec su-exec "$SENCHO_USER" "$@"
     fi
 
-    echo "[entrypoint] Dropping privileges to sencho (uid=$(id -u sencho))"
-
-    # 3. Drop privileges.
-    # Replace this shell with su-exec so Node becomes PID 1 and receives
-    # SIGTERM/SIGINT directly. su-exec calls getgrouplist() for named users,
-    # so all supplementary groups added above are inherited by the process.
-    exec su-exec sencho "$@"
+    echo "[entrypoint] Running as root. Set SENCHO_USER=sencho to drop privileges."
 fi
 
 exec "$@"

@@ -150,22 +150,28 @@ COPY --from=frontend-builder /app/frontend/dist ./public
 # Set environment to production
 ENV NODE_ENV=production
 
-# Create a non-root user and ensure the data/compose directories are writable.
-# The actual volume paths are mounted at runtime, so we only pre-create the
-# default data dir here; the compose dir is user-supplied via COMPOSE_DIR.
+# Pre-create the sencho user and group so the SENCHO_USER=sencho opt-out path
+# in docker-entrypoint.sh works out of the box. The default runtime is root;
+# this user only becomes relevant when an operator explicitly sets
+# SENCHO_USER at runtime to drop privileges.
 RUN addgroup -S sencho && adduser -S -G sencho sencho \
   && mkdir -p /app/data \
   && chown -R sencho:sencho /app
 
-# Copy the entrypoint script that fixes data-volume ownership at startup and
-# then drops privileges to the sencho user via su-exec (the idiomatic Alpine
-# equivalent of gosu). This mirrors the pattern used by official Docker images
-# such as PostgreSQL, Redis, and MariaDB.
+# Sencho runs as root by default. Docker management tools like Portainer,
+# Dockge, Komodo, and Yacht all ship this way because mounting
+# /var/run/docker.sock is already equivalent to root-on-host; a non-root
+# container user buys essentially no extra isolation while breaking
+# filesystem operations against bind mounts that user stacks have chowned.
 #
-# NOTE: USER directive is intentionally absent here. The entrypoint starts as
-# root so it can chown the mounted data volume, then exec's as sencho. Static
-# security scanners (Trivy, Clair) may flag "running as root" - this is a known
-# and accepted trade-off for self-hosted apps with user-supplied volume mounts.
+# Operators who need a non-root container (compliance scanners, rootless
+# Docker with UID mapping, organisational policy) can set SENCHO_USER=sencho
+# at runtime. The entrypoint handles the privilege drop, data-volume
+# ownership, and Docker socket GID matching in that path.
+#
+# USER directive intentionally absent so the entrypoint controls the runtime
+# user. Static security scanners (Trivy, Docker Scout) may flag this as
+# "running as root" which is the documented and intended default.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Strip Windows CRLF line endings that can sneak in on Windows dev machines
 # even with .gitattributes eol=lf, then make executable. A shell script with
