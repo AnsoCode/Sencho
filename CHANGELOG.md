@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.3](https://github.com/AnsoCode/Sencho/compare/v0.43.2...v0.43.3) (2026-04-11)
+
+
+### Fixed
+
+* **compose:** move atomic backup out of stack folder, silence stale stats 404s ([#498](https://github.com/AnsoCode/Sencho/issues/498)) ([ba9c4f4](https://github.com/AnsoCode/Sencho/commit/ba9c4f4aa62f44b4631e2478e03618b2e59891d5))
+
 ## [0.43.2](https://github.com/AnsoCode/Sencho/compare/v0.43.1...v0.43.2) (2026-04-10)
 
 
