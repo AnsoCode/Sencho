@@ -186,7 +186,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
-# Entrypoint fixes volume ownership as root then drops to sencho via su-exec.
+# Entrypoint ensures /app/data is writable and execs the CMD as root by default,
+# or drops to $SENCHO_USER via su-exec when that env var is set (see comment above).
 # CMD provides the default arguments passed through to the entrypoint.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]
