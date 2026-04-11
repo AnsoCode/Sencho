@@ -3,12 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, ChevronLeft, Layers } from 'lucide-react';
-import type { StackStatusEntry, MetricPoint, SystemStats } from './types';
+import type { StackStatusEntry, MetricPoint } from './types';
 
 interface StackHealthTableProps {
   stackStatuses: Record<string, StackStatusEntry>;
   metrics: MetricPoint[];
-  systemStats: SystemStats | null;
   onNavigateToStack: (stackFile: string) => void;
 }
 
@@ -19,8 +18,7 @@ const formatMemory = (mb: number): string => {
   return `${mb.toFixed(0)} MB`;
 };
 
-export function StackHealthTable({ stackStatuses, metrics, systemStats, onNavigateToStack }: StackHealthTableProps) {
-  const cores = systemStats?.cpu.cores || 1;
+export function StackHealthTable({ stackStatuses, metrics, onNavigateToStack }: StackHealthTableProps) {
   const [page, setPage] = useState(0);
 
   const stackMetrics = useMemo(() => {
@@ -35,15 +33,13 @@ export function StackHealthTable({ stackStatuses, metrics, systemStats, onNaviga
       }
     }
 
-    const result: Record<string, { cpu: number; mem: number }> = {};
+    const result: Record<string, { mem: number }> = {};
     for (const [stack, containers] of Object.entries(latestPerContainer)) {
-      let cpu = 0;
       let mem = 0;
       for (const m of Object.values(containers)) {
-        cpu += m.cpu_percent;
         mem += m.memory_mb;
       }
-      result[stack] = { cpu, mem };
+      result[stack] = { mem };
     }
     return result;
   }, [metrics]);
@@ -57,7 +53,6 @@ export function StackHealthTable({ stackStatuses, metrics, systemStats, onNaviga
           file,
           name,
           status: entry.status,
-          cpu: m?.cpu ?? null,
           memory: m?.mem ?? null,
         };
       })
@@ -132,7 +127,6 @@ export function StackHealthTable({ stackStatuses, metrics, systemStats, onNaviga
             <TableRow className="hover:bg-transparent border-b border-border">
               <TableHead className="text-xs text-stat-icon font-medium h-8">Stack</TableHead>
               <TableHead className="text-xs text-stat-icon font-medium h-8 w-[60px]">Status</TableHead>
-              <TableHead className="text-xs text-stat-icon font-medium h-8 w-[80px] text-right">CPU</TableHead>
               <TableHead className="text-xs text-stat-icon font-medium h-8 w-[90px] text-right">Memory</TableHead>
               <TableHead className="h-8 w-[40px]" />
             </TableRow>
@@ -151,11 +145,6 @@ export function StackHealthTable({ stackStatuses, metrics, systemStats, onNaviga
                   </TableCell>
                   <TableCell className="py-2.5">
                     <span className={`font-mono text-xs font-medium ${sd.className}`}>{sd.label}</span>
-                  </TableCell>
-                  <TableCell className="py-2.5 text-right">
-                    <span className="font-mono text-xs tabular-nums text-stat-subtitle">
-                      {row.cpu !== null ? `${(row.cpu / cores).toFixed(1)}%` : '--'}
-                    </span>
                   </TableCell>
                   <TableCell className="py-2.5 text-right">
                     <span className="font-mono text-xs tabular-nums text-stat-subtitle">

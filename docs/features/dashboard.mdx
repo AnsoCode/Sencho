@@ -19,7 +19,7 @@ The top bar provides an at-a-glance health assessment for the active node. Sench
 | **Degraded** | At least one resource is above 80%, or there are unread error alerts. |
 | **Critical** | At least one resource is above 90%, or there are exited containers with unread errors. |
 
-The bar also shows the active node name, the number of running containers, the current alert count, and a relative timestamp for the last data refresh.
+The bar also shows the active node name, the number of running containers, and the current alert count.
 
 ## Resource gauges
 
@@ -43,10 +43,9 @@ A table listing every stack in your `COMPOSE_DIR` with live status and resource 
 |--------|-------------|
 | **Stack** | Stack name (derived from the directory name) |
 | **Status** | `UP` (running) or `DN` (exited) |
-| **CPU** | Aggregate CPU usage across all containers in the stack, normalized over host cores |
 | **Memory** | Total memory allocated by the stack's containers |
 
-Click any row to navigate directly to that stack's editor. Stacks are sorted with running stacks first, then alphabetically. If you have more than 8 stacks, the table paginates automatically.
+Click any row to navigate directly to that stack's editor. Stacks are sorted with running stacks first, then alphabetically. If you have more than 8 stacks, the table paginates automatically. For fleet-wide CPU usage, see the **CPU** resource gauge card at the top of the dashboard and the **CPU Usage** historical chart below the table.
 
 ## Historical metrics charts
 

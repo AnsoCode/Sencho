@@ -14,7 +14,6 @@ interface HealthStatusBarProps {
   systemStats: SystemStats | null;
   notifications: NotificationItem[];
   activeNodeName: string;
-  lastUpdated: number;
 }
 
 interface HealthResult {
@@ -57,16 +56,7 @@ const healthConfig: Record<HealthLevel, { label: string; dotClass: string; textC
   critical: { label: 'Critical', dotClass: 'bg-destructive animate-pulse', textClass: 'text-destructive' },
 };
 
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 5) return 'just now';
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
-}
-
-export function HealthStatusBar({ stats, systemStats, notifications, activeNodeName, lastUpdated }: HealthStatusBarProps) {
+export function HealthStatusBar({ stats, systemStats, notifications, activeNodeName }: HealthStatusBarProps) {
   const { level, reasons } = useMemo(
     () => deriveHealth(stats, systemStats, notifications),
     [stats, systemStats, notifications]
@@ -124,10 +114,6 @@ export function HealthStatusBar({ stats, systemStats, notifications, activeNodeN
               <span>alert{unreadAlerts !== 1 ? 's' : ''}</span>
             </div>
           )}
-          <div className="h-4 w-px bg-border" />
-          <span className="text-xs text-stat-icon font-mono">
-            {formatRelativeTime(lastUpdated)}
-          </span>
         </div>
       </div>
     </Card>
