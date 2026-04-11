@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* **runtime:** Sencho now runs as `root` inside the container by default. Every filesystem operation against user compose folders (save, create, deploy, update, rollback, template install, fleet snapshot restore) previously failed with `EACCES` whenever a stack container had chowned its own bind mount to another UID, which is extremely common with `linuxserver/*` images and anything that runs as root by default. Running as root eliminates the entire class of permission bugs at the source, matching the default posture of Portainer, Dockge, Komodo, and Yacht. Mounting `/var/run/docker.sock` is already equivalent to root-on-host, so the previous non-root hardening provided essentially no additional isolation while breaking real features. The brittle entrypoint logic that tried to dynamically match the host's Docker socket GID is removed from the default path, and the `forceDeleteViaDocker` fallback in `FileSystemService.deleteStack` is no longer needed. Files Sencho creates inside your compose folder will now be owned by `root` on the host; use `sudo` or `chown` if you need to edit them outside Sencho, same as Portainer.
+
+### Added
+
+* **runtime:** `SENCHO_USER` env var opt-out for operators who need a non-root container (compliance scanners, rootless Docker with UID mapping, organisational policy). Set `SENCHO_USER=sencho` at runtime and the entrypoint will chown `/app/data` to the sencho user, match the host Docker socket GID, and drop privileges via `su-exec` before Node starts. This restores the previous hardened behavior bit-for-bit. Operators opting in accept that filesystem writes to compose folders owned by another UID will fail with `EACCES`; this is the documented limitation the default mode exists to avoid.
+
 ### Fixed
 
 * **compose:** fix atomic backup `EACCES` for stacks whose compose folder is owned by another UID. The Skipper/Admiral atomic deploy/update path used to create `.sencho-backup/` *inside* the user's stack folder, which silently failed (and broke auto-rollback and the manual rollback endpoint) for any stack where a container had chowned its bind mount (e.g. `swag`, `tautulli`, `linuxserver/*` images). Stack backups now live under `<DATA_DIR>/backups/<stackName>/` next to `sencho.db`, which is always writable by the Sencho user. **One-time transition note:** any pre-existing `.sencho-backup/` folders inside compose dirs become orphaned (safe to delete manually); rollback for the most recent pre-upgrade deploy is unavailable until the next deploy/update creates a new backup in the new location.

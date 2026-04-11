@@ -43,19 +43,16 @@ Sencho requires three volume mounts to function correctly:
 
 ## Docker socket security
 
-Mounting the Docker socket (`/var/run/docker.sock`) grants the container the ability to manage all containers, images, volumes, and networks on the host. This is equivalent to root access on the host machine.
+Mounting the Docker socket (`/var/run/docker.sock`) grants the container the ability to manage all containers, images, volumes, and networks on the host. This is equivalent to root access on the host machine, regardless of which user the Sencho process itself runs as.
 
-Sencho mitigates this with privilege dropping:
+Because the Docker socket is already the effective privilege boundary, Sencho runs as `root` inside the container by default. This matches Portainer, Dockge, Komodo, and Yacht, and ensures Sencho can always write to your compose folders, even when a stack container (for example anything from `linuxserver/*`) has chowned its own bind mount. See [Configuration: Container user](/getting-started/configuration#container-user) for details on the default and the `SENCHO_USER` opt-out.
 
-1. The container starts as root to fix volume ownership and resolve Docker socket group permissions
-2. The entrypoint script then drops to a non-root `sencho` user
-3. All application code runs as the `sencho` user
+If your environment requires stricter isolation, the Docker socket itself is the right place to focus:
 
-If your environment requires stricter isolation, consider:
-
-- Running Sencho on a dedicated Docker host
-- Using Docker's `--userns-remap` for user namespace isolation
-- Placing Sencho behind a reverse proxy with authentication (see [Configuration](/getting-started/configuration#reverse-proxy-setup))
+- Running Sencho on a dedicated Docker host so a compromise cannot reach unrelated workloads
+- Using Docker's `--userns-remap` for user namespace isolation at the daemon level
+- Running Sencho behind a reverse proxy with authentication (see [Configuration](/getting-started/configuration#reverse-proxy-setup)) so the UI is not exposed to untrusted networks
+- Setting `SENCHO_USER=sencho` to drop privileges inside the container as a defense-in-depth measure, accepting that filesystem writes to permission-restricted stack folders will fail in that mode
 
 ---
 

@@ -54,34 +54,36 @@ volumes:
   - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-On Linux, the Docker socket is owned by the `docker` group. The Sencho entrypoint detects the socket's GID automatically and adds the internal `sencho` user to the matching group. If you see permission errors despite a correct mount, check that the socket file is readable:
+If you see permission errors despite a correct mount, check that the socket file exists and is a socket:
 
 ```bash
 ls -la /var/run/docker.sock
 # Expected: srw-rw---- 1 root docker ...
 ```
 
-If the group is not `docker`, the auto-detection still works. Sencho reads the GID from the socket file at startup.
+Because Sencho runs as `root` inside the container by default, it can read the socket regardless of which group owns it on the host. Permission errors here usually mean the socket is not mounted at all, or it is mounted read-only.
+
+<Note>
+  If you have opted into non-root mode via `SENCHO_USER=sencho`, the entrypoint will detect the socket's GID and add the sencho user to the matching group automatically. Socket errors in that mode most often mean the `SENCHO_USER` was set to an account that does not exist inside the container.
+</Note>
 
 ---
 
-## "Permission denied" when deleting a stack
+## "Permission denied" when editing or deleting a stack
 
-**Symptom:** Clicking **Delete** on a stack fails with a permission error.
+**Symptom:** Saving `compose.yaml`, creating a new stack, or deleting a stack fails with a permission error.
 
-**Cause:** Stack directories often contain files owned by root, for example when Docker Compose was run with `sudo`, or when containers write config/data files into the stack directory. Since Sencho runs as a non-root user, the OS denies the removal.
+Sencho runs as `root` inside the container by default specifically to avoid this class of failure. If you are seeing permission errors, one of the following is true:
 
-This is especially common when installing Sencho on a server where stacks were originally created outside of Sencho (e.g. via `sudo docker compose up`). Those directories and their contents are root-owned, but Sencho can still delete them.
+- **You are running in non-root mode** (`SENCHO_USER` is set). In this mode, filesystem writes to stack folders owned by a different UID will fail. Either `chown` the affected stack folder to the opted-in user inside the container, or unset `SENCHO_USER` to return to the default root mode.
+- **The compose directory mount is read-only.** Check your Sencho container's volume mounts for a trailing `:ro` on the compose dir bind.
+- **The underlying filesystem is read-only** (e.g. a full disk, a failed disk, or a remote filesystem that lost connectivity).
 
-**How Sencho handles it:** Sencho automatically detects permission errors during deletion and falls back to a Docker-based cleanup. It spawns a short-lived container that bind-mounts the stack directory and removes the root-owned files. This happens transparently, with no manual intervention needed in the standard Docker setup.
-
-**If automatic cleanup fails:** The error message will include the directory path. Remove it manually:
+If you need to clean up a leftover stack directory manually:
 
 ```bash
 sudo rm -rf /path/to/your/compose/dir/stack-name
 ```
-
-**Prerequisites:** The Docker socket must be mounted (standard setup). If Sencho cannot access Docker, the fallback will not work. See ["Permission denied" on the Docker socket](#permission-denied-on-the-docker-socket).
 
 ---
 

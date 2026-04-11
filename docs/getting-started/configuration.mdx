@@ -27,6 +27,37 @@ When you point `COMPOSE_DIR` at a directory, Sencho expects each stack to live i
 | `DATA_DIR` | `/app/data` | Directory where Sencho stores its SQLite database, node registry, and cached metrics. |
 | `FRONTEND_URL` | *(empty)* | Frontend origin for CORS. Only needed if the UI is served from a different domain than the API. Leave empty for same-origin setups. |
 | `NODE_ENV` | `production` | Set automatically in the Docker image. Only change this for local development. |
+| `SENCHO_USER` | *(unset)* | Optional. When set to a username present inside the container (`sencho` is pre-created for this purpose), the entrypoint drops privileges to that user at startup instead of running as `root`. See [Running as a non-root user](#running-as-a-non-root-user) below. |
+
+## Container user
+
+Sencho runs as `root` inside the container by default, matching Portainer, Dockge, Komodo, and Yacht. This is required so Sencho can always write to your compose folders, even when a stack container (commonly anything from `linuxserver/*`) has chowned its own bind mount to another UID. Mounting `/var/run/docker.sock` already grants root-equivalent access to the host, so running the Sencho process itself as root does not change the effective privilege boundary.
+
+**What this means for you:**
+
+- Files Sencho creates inside your compose directory (new stacks, edited `compose.yaml`, generated `.env` files) will be owned by `root` on the host. If you edit those files outside Sencho using your own editor, you will need `sudo` or a one-time `chown`.
+- The `/app/data` directory is internal to Sencho; its ownership does not matter for host-side tooling.
+
+### Running as a non-root user
+
+If organisational policy, compliance scanners, or a rootless Docker setup requires the container to drop privileges, set `SENCHO_USER=sencho` in the environment. The entrypoint will chown `/app/data` to the sencho user, match the host's Docker socket group, and exec Node under that user.
+
+```yaml
+services:
+  sencho:
+    image: saelix/sencho:latest
+    environment:
+      - COMPOSE_DIR=/opt/compose
+      - SENCHO_USER=sencho          # opt into non-root mode
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/compose:/opt/compose
+      - ./sencho-data:/app/data
+```
+
+<Warning>
+  Non-root mode can cause filesystem write failures for any stack whose compose folder is owned by a UID other than `sencho`. If you hit "Failed to save stack" or similar errors after opting in, either `chown` the affected stack folder to the sencho user inside the container, or unset `SENCHO_USER` to return to the default (root) mode.
+</Warning>
 
 ## SSO environment variables
 
