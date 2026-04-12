@@ -138,6 +138,19 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             toast.error("Stack name is required");
             return;
         }
+
+        // Pre-check for duplicate stack name
+        try {
+            const checkRes = await apiFetch('/stacks');
+            if (checkRes.ok) {
+                const existingStacks: string[] = await checkRes.json();
+                if (existingStacks.includes(stackName.trim())) {
+                    toast.error(`A stack named "${stackName.trim()}" already exists. Choose a different name.`);
+                    return;
+                }
+            }
+        } catch { /* proceed to deploy; backend will catch duplicates */ }
+
         setIsDeploying(true);
 
         const modifiedTemplate = { ...selectedTemplate };

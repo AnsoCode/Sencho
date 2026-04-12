@@ -30,6 +30,30 @@ describe('isValidStackName', () => {
     expect(isValidStackName('foo;rm -rf /')).toBe(false);
     expect(isValidStackName('')).toBe(false);
   });
+
+  it('rejects URL-encoded traversal attempts', () => {
+    // These would already be decoded by decodeURIComponent before validation,
+    // but the raw encoded forms should also fail
+    expect(isValidStackName('%2e%2e%2f')).toBe(false);
+    expect(isValidStackName('foo%2fbar')).toBe(false);
+    expect(isValidStackName('..%2fetc')).toBe(false);
+  });
+
+  it('rejects unicode characters', () => {
+    expect(isValidStackName('stäck')).toBe(false);
+    expect(isValidStackName('stack\u0000')).toBe(false);
+    expect(isValidStackName('\u202Estack')).toBe(false);
+  });
+
+  it('handles very long names', () => {
+    // The regex itself has no length limit, but 255 chars should still pass
+    const longValid = 'a'.repeat(255);
+    expect(isValidStackName(longValid)).toBe(true);
+
+    // Names with only valid chars remain valid regardless of length
+    const veryLong = 'stack-' + 'x'.repeat(1000);
+    expect(isValidStackName(veryLong)).toBe(true);
+  });
 });
 
 // ─── isValidRemoteUrl ────────────────────────────────────────────────────────

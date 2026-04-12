@@ -10,6 +10,8 @@ import { LogFormatter } from './LogFormatter';
 import { NodeRegistry } from './NodeRegistry';
 import { RegistryService } from './RegistryService';
 
+import { isDebugEnabled } from '../utils/debug';
+
 /**
  * ComposeService - local docker compose CLI execution.
  *
@@ -113,6 +115,9 @@ export class ComposeService {
 
   async deployStack(stackName: string, ws?: WebSocket, atomic?: boolean): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
+    const debug = isDebugEnabled();
+    const t0 = Date.now();
+    if (debug) console.debug('[ComposeService:debug] deployStack', { stackName, stackDir, atomic });
     const sendOutput = (data: string) => {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
     };
@@ -166,6 +171,7 @@ export class ComposeService {
           }
         }
       }
+      if (debug) console.debug(`[ComposeService:debug] deployStack completed in ${Date.now() - t0}ms`, { stackName });
     } catch (deployError) {
       // Atomic: auto-rollback on failure
       if (atomic) {
@@ -299,6 +305,9 @@ export class ComposeService {
 
   async updateStack(stackName: string, ws?: WebSocket, atomic?: boolean): Promise<void> {
     const stackDir = path.join(this.baseDir, stackName);
+    const debug = isDebugEnabled();
+    const t0 = Date.now();
+    if (debug) console.debug('[ComposeService:debug] updateStack', { stackName, stackDir, atomic });
     const sendOutput = (data: string) => {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
     };
@@ -358,6 +367,7 @@ export class ComposeService {
       }
 
       sendOutput('=== Stack updated successfully ===\n');
+      if (debug) console.debug(`[ComposeService:debug] updateStack completed in ${Date.now() - t0}ms`, { stackName });
     } catch (updateError) {
       // Atomic: auto-rollback on failure
       if (atomic) {

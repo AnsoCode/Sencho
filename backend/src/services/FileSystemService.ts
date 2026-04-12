@@ -12,6 +12,8 @@ function getBackupBaseDir(): string {
   return path.join(dataDir, 'backups');
 }
 
+import { isDebugEnabled } from '../utils/debug';
+
 /**
  * FileSystemService - local-only file I/O for compose stack management.
  *
@@ -52,6 +54,7 @@ export class FileSystemService {
       const filePath = path.join(stackDir, file);
       try {
         await fsPromises.access(filePath);
+        if (isDebugEnabled()) console.debug('[FileSystemService:debug] Resolved compose file', { stackName, file });
         return filePath;
       } catch {
         // continue
@@ -249,6 +252,8 @@ export class FileSystemService {
    * holds sencho.db and encryption.key.
    */
   async backupStackFiles(stackName: string): Promise<void> {
+    const debug = isDebugEnabled();
+    const t0 = Date.now();
     const stackDir = path.join(this.baseDir, stackName);
     const backupDir = path.join(getBackupBaseDir(), stackName);
     await fsPromises.mkdir(backupDir, { recursive: true });
@@ -282,9 +287,12 @@ export class FileSystemService {
 
     // Write timestamp marker
     await fsPromises.writeFile(path.join(backupDir, '.timestamp'), Date.now().toString(), 'utf-8');
+    if (debug) console.debug(`[FileSystemService:debug] Backup completed in ${Date.now() - t0}ms`, { stackName });
   }
 
   async restoreStackFiles(stackName: string): Promise<void> {
+    const debug = isDebugEnabled();
+    const t0 = Date.now();
     const stackDir = path.join(this.baseDir, stackName);
     const backupDir = path.join(getBackupBaseDir(), stackName);
 
@@ -293,6 +301,7 @@ export class FileSystemService {
       if (item === '.timestamp') continue;
       await fsPromises.copyFile(path.join(backupDir, item), path.join(stackDir, item));
     }
+    if (debug) console.debug(`[FileSystemService:debug] Restore completed in ${Date.now() - t0}ms`, { stackName, files: items.filter(i => i !== '.timestamp') });
   }
 
   async getBackupInfo(stackName: string): Promise<{ exists: boolean; timestamp: number | null }> {

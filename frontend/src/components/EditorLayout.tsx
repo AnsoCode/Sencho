@@ -122,6 +122,7 @@ export default function EditorLayout() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
+  const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [stackActions, setStackActions] = useState<Record<string, StackAction>>({});
   const stackActionsRef = useRef<Record<string, StackAction>>({});
@@ -802,8 +803,16 @@ export default function EditorLayout() {
     };
   }, [containers]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const hasUnsavedChanges = () =>
+    content !== originalContent || envContent !== originalEnvContent;
+
   const loadFile = async (filename: string) => {
     if (!filename) return;
+    // Guard: if there are unsaved changes and we're switching to a different stack, confirm first
+    if (selectedFile && filename !== selectedFile && hasUnsavedChanges()) {
+      setPendingUnsavedLoad(filename);
+      return;
+    }
     setIsFileLoading(true);
     setIsEditing(false); // Reset to view mode when loading a new file
     try {
@@ -985,6 +994,7 @@ export default function EditorLayout() {
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'deploy');
+    const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/deploy`, {
@@ -1010,6 +1020,7 @@ export default function EditorLayout() {
       }
     } catch (error) {
       console.error('Failed to deploy:', error);
+      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       const msg = (error as Error).message || 'Failed to deploy stack';
       toast.error(isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
     } finally {
@@ -1025,6 +1036,7 @@ export default function EditorLayout() {
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'stop');
+    const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'exited');
     try {
       const response = await apiFetch(`/stacks/${stackName}/stop`, {
@@ -1043,6 +1055,7 @@ export default function EditorLayout() {
       }
     } catch (error) {
       console.error('Failed to stop:', error);
+      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       toast.error((error as Error).message || 'Failed to stop stack');
     } finally {
       clearStackAction(stackFile);
@@ -1057,6 +1070,7 @@ export default function EditorLayout() {
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'restart');
+    const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/restart`, {
@@ -1075,6 +1089,7 @@ export default function EditorLayout() {
       }
     } catch (error) {
       console.error('Failed to restart:', error);
+      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
       clearStackAction(stackFile);
@@ -1089,6 +1104,7 @@ export default function EditorLayout() {
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'update');
+    const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
       const response = await apiFetch(`/stacks/${stackName}/update`, {
@@ -1107,6 +1123,7 @@ export default function EditorLayout() {
       }
     } catch (error) {
       console.error('Failed to update:', error);
+      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       toast.error((error as Error).message || 'Failed to update stack');
     } finally {
       clearStackAction(stackFile);
@@ -2282,6 +2299,28 @@ export default function EditorLayout() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteStack}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!pendingUnsavedLoad} onOpenChange={(open) => { if (!open) setPendingUnsavedLoad(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Switching stacks will discard them. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingUnsavedLoad(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const target = pendingUnsavedLoad;
+              // Reset content to original so the guard doesn't re-trigger
+              setContent(originalContent);
+              setEnvContent(originalEnvContent);
+              setPendingUnsavedLoad(null);
+              if (target) loadFile(target);
+            }}>Discard Changes</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
