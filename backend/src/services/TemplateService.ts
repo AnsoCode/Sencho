@@ -4,13 +4,13 @@ import { CacheService } from './CacheService';
 import { isDebugEnabled } from '../utils/debug';
 
 
-export interface TemplateEnv {
+interface TemplateEnv {
     name: string;
     label?: string;
     default?: string;
 }
 
-export interface TemplateVolume {
+interface TemplateVolume {
     container: string;
     bind?: string;
     readonly?: boolean;
@@ -38,7 +38,7 @@ export interface Template {
     };
 }
 
-export interface TemplatesResponse {
+interface TemplatesResponse {
     version: string;
     templates: Template[];
 }

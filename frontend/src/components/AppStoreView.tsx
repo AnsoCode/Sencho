@@ -19,7 +19,7 @@ function isValidPort(value: string): boolean {
     return Number.isInteger(num) && num >= 1 && num <= 65535;
 }
 
-export interface TemplateEnv {
+interface TemplateEnv {
     name: string;
     label?: string;
     default?: string;
@@ -30,7 +30,7 @@ interface TemplateVolume {
     bind?: string;
 }
 
-export interface Template {
+interface Template {
     type?: number;
     title: string;
     description: string;
