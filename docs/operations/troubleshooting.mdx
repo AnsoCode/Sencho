@@ -386,6 +386,35 @@ docker compose pull && docker compose up -d
 
 ---
 
+## Local self-update fails with "env file not found"
+
+**Symptom:** After clicking **Update** on the local (gateway) node, the status changes to **Failed** and hovering over the badge shows an error like:
+
+```
+env file /path/to/env/globals.env not found: stat /path/to/env/globals.env: no such file or directory
+```
+
+**Cause:** When Sencho updates itself, it spawns a temporary helper container that runs `docker compose up -d --force-recreate` to recreate the main container. The helper needs access to every file referenced by your `docker-compose.yml`, including `env_file` entries, `configs`, and `secrets`. If any of those files live outside the compose working directory (e.g. in a shared config folder), the helper cannot reach them unless those paths are also mounted in the main Sencho container.
+
+**Fix:** Mount any directory that your compose file references into the Sencho container, using the **same path** on both the host side and the container side (the 1:1 path rule). Sencho automatically forwards all of its own bind mounts to the helper container during a self-update.
+
+For example, if your compose file references `env_file: /home/user/docker/env/globals.env`, your Sencho container needs:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - /home/user/sencho/data:/app/data
+  - /home/user/docker:/home/user/docker  # shared config directory
+```
+
+After adding the missing volume mount, restart Sencho and retry the update.
+
+<Note>
+  The 1:1 path rule applies here: the host path and container path must match for any directory your compose file references. This ensures the helper container can resolve file paths exactly as they are written in the compose file.
+</Note>
+
+---
+
 ## First remote update always times out on old nodes
 
 **Symptom:** After triggering a remote update on a node running a very old Sencho version (pre-v0.39.3), the node successfully restarts with the new version, but the dashboard shows **Timed out** or **Failed** instead of **Updated**.

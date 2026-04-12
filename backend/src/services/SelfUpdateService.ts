@@ -11,12 +11,18 @@ const execFileAsync = promisify(execFile);
 // the NEW gateway process (which always mounts /app/data) can reach it.
 const UPDATE_ERROR_FILE = '/app/data/.sencho-update-error';
 
+interface HostMount {
+  source: string;
+  destination: string;
+}
+
 interface ComposeContext {
   workingDir: string;
   configFiles: string;
   serviceName: string;
   imageName: string;
   dataDirHost: string | null;
+  hostBindMounts: HostMount[];
 }
 
 class SelfUpdateService {
@@ -73,16 +79,22 @@ class SelfUpdateService {
         return;
       }
 
-      // Find the host path backing /app/data. The helper container will bind-mount
-      // it at the same path so compose recreate errors can be persisted to a file
-      // that survives the gateway's restart and is readable by the NEW process.
-      const mounts = (info.Mounts ?? []) as Array<{ Source?: string; Destination?: string }>;
-      const dataDirHost = mounts.find(m => m.Destination === '/app/data')?.Source ?? null;
+      // Collect all host bind mounts so the helper container can forward them.
+      // This lets docker compose resolve env_file, configs, secrets, and any
+      // other host-path references that live outside the compose working dir.
+      const rawMounts = (info.Mounts ?? []) as Array<{
+        Type: string; Source: string; Destination: string;
+      }>;
+      const hostBindMounts: HostMount[] = rawMounts
+        .filter(m => m.Type === 'bind' && m.Source && m.Destination)
+        .map(m => ({ source: m.Source, destination: m.Destination }));
+
+      const dataDirHost = hostBindMounts.find(m => m.destination === '/app/data')?.source ?? null;
       if (!dataDirHost) {
         console.log('[SelfUpdate] /app/data mount not found - update error recovery will be unavailable');
       }
 
-      this.composeContext = { workingDir, configFiles, serviceName, imageName, dataDirHost };
+      this.composeContext = { workingDir, configFiles, serviceName, imageName, dataDirHost, hostBindMounts };
       this.canSelfUpdate = true;
       console.log(`[SelfUpdate] Ready - service="${serviceName}" image="${imageName}" in ${workingDir}`);
 
@@ -128,7 +140,7 @@ class SelfUpdateService {
 
   async triggerUpdate(): Promise<void> {
     if (!this.composeContext) return;
-    const { workingDir, configFiles, serviceName, imageName, dataDirHost } = this.composeContext;
+    const { workingDir, configFiles, serviceName, imageName, dataDirHost, hostBindMounts } = this.composeContext;
     const env = { ...process.env, PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' };
     this.lastUpdateError = null;
 
@@ -168,13 +180,26 @@ class SelfUpdateService {
       'exit $ec',
     ].join('; ');
 
+    const mountArgs: string[] = [
+      '-v', '/var/run/docker.sock:/var/run/docker.sock',
+      '-v', `${workingDir}:${workingDir}:ro`,
+    ];
+    if (dataDirHost) {
+      mountArgs.push('-v', `${dataDirHost}:/app/data:rw`);
+    }
+    const alreadyMounted = new Set([
+      '/var/run/docker.sock', workingDir, ...(dataDirHost ? [dataDirHost] : []),
+    ]);
+    for (const { source } of hostBindMounts) {
+      if (alreadyMounted.has(source) || source.startsWith(workingDir + '/')) continue;
+      mountArgs.push('-v', `${source}:${source}:ro`);
+    }
+
     const args = [
       'run', '--rm',
       '--user', 'root',
       '--entrypoint', 'sh',
-      '-v', '/var/run/docker.sock:/var/run/docker.sock',
-      '-v', `${workingDir}:${workingDir}:ro`,
-      ...(dataDirHost ? ['-v', `${dataDirHost}:/app/data:rw`] : []),
+      ...mountArgs,
       '-w', workingDir,
       imageName,
       '-c', composeCmd,
