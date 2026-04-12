@@ -48,6 +48,12 @@ Pre-filled with the template name in lowercase. You can change it; the same [nam
 
 For each exposed port, the sheet shows an editable **host port** field (left side) and the fixed **container port** (right side). Edit the host port to avoid conflicts with other services on the same machine. Ports must be in the valid range (1 to 65535); invalid values are highlighted and block deployment.
 
+If a host port is already in use by a running container, a pulsating warning dot appears next to the port. Hover over the dot to see which application is using the port. If the application is managed by Sencho, the stack name is shown; otherwise the indicator reads "used by an external app".
+
+<Frame>
+  <img src="/images/app-store/app-store-port-conflict.png" alt="Port conflict indicator showing port 8080 is used by heimdall" />
+</Frame>
+
 ### Volumes
 
 For each container mount point, enter the **host path** where that data should be stored. Suggested defaults (e.g. `./config`, `./data`) are pre-filled.
