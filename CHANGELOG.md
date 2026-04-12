@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.1](https://github.com/AnsoCode/Sencho/compare/v0.44.0...v0.44.1) (2026-04-12)
+
+
+### Fixed
+
+* **fleet:** forward host bind mounts to self-update helper container ([#509](https://github.com/AnsoCode/Sencho/issues/509)) ([023e962](https://github.com/AnsoCode/Sencho/commit/023e962a26c6b07eff167cf26d48ea97d455464f))
+
 ## [0.44.0](https://github.com/AnsoCode/Sencho/compare/v0.43.4...v0.44.0) (2026-04-12)
 
 
