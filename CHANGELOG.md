@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0](https://github.com/AnsoCode/Sencho/compare/v0.43.4...v0.44.0) (2026-04-12)
+
+
+### Added
+
+* home dashboard and Settings Hub polish ([#506](https://github.com/AnsoCode/Sencho/issues/506)) ([622c1f9](https://github.com/AnsoCode/Sencho/commit/622c1f9262800bf315e244db93265076bb1c2ba8))
+
 ## [0.43.4](https://github.com/AnsoCode/Sencho/compare/v0.43.3...v0.43.4) (2026-04-11)
 
 ### Fixed
