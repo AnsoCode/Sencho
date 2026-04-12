@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.5](https://github.com/AnsoCode/Sencho/compare/v0.45.4...v0.45.5) (2026-04-12)
+
+
+### Fixed
+
+* **resources:** harden Resource Explorer with auth, validation, design, and UX fixes ([#527](https://github.com/AnsoCode/Sencho/issues/527)) ([4909c35](https://github.com/AnsoCode/Sencho/commit/4909c35e50ec0227d153f79b34ba27d159cd55ae))
+
 ## [0.45.4](https://github.com/AnsoCode/Sencho/compare/v0.45.3...v0.45.4) (2026-04-12)
 
 
