@@ -555,3 +555,52 @@ describe('DockerController - inspectNetwork edge cases', () => {
     await expect(dc.inspectNetwork('any-id')).rejects.toThrow('Cannot connect to Docker daemon');
   });
 });
+
+// --- createNetwork validation --------------------------------------------------
+
+describe('createNetwork', () => {
+  it('rejects empty network name', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: '' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('rejects names with invalid characters', async () => {
+    const dc = DockerController.getInstance(1);
+    await expect(dc.createNetwork({ Name: 'net work' })).rejects.toThrow('Invalid network name');
+    await expect(dc.createNetwork({ Name: '../escape' })).rejects.toThrow('Invalid network name');
+    await expect(dc.createNetwork({ Name: 'net;rm' })).rejects.toThrow('Invalid network name');
+  });
+
+  it('accepts valid network names and passes through to Docker', async () => {
+    mockDocker.createNetwork.mockResolvedValue({ id: 'new-net-id' });
+    const dc = DockerController.getInstance(1);
+    const result = await dc.createNetwork({ Name: 'my-network_v2' });
+    expect(result.id).toBe('new-net-id');
+    expect(mockDocker.createNetwork).toHaveBeenCalledWith({ Name: 'my-network_v2' });
+  });
+});
+
+// --- removeContainers mixed results -------------------------------------------
+
+describe('removeContainers', () => {
+  it('returns mixed results when some removals fail', async () => {
+    mockDocker.getContainer.mockImplementation((id: string) => {
+      if (id === 'fail-id') {
+        return { remove: vi.fn().mockRejectedValue(new Error('no such container')) };
+      }
+      return { remove: vi.fn().mockResolvedValue(undefined) };
+    });
+
+    const dc = DockerController.getInstance(1);
+    const results = await dc.removeContainers(['ok-id-000000', 'fail-id']);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toEqual({ id: 'ok-id-000000', success: true });
+    expect(results[1]).toMatchObject({ id: 'fail-id', success: false });
+  });
+
+  it('returns empty array for empty input', async () => {
+    const dc = DockerController.getInstance(1);
+    const results = await dc.removeContainers([]);
+    expect(results).toEqual([]);
+  });
+});

@@ -39,6 +39,39 @@ export function isValidRemoteUrl(
   return { valid: true, url };
 }
 
+/** Returns true when all four captured octet strings are in 0-255 range. */
+function octetsInRange(a: string, b: string, c: string, d: string): boolean {
+  return [a, b, c, d].map(Number).every(o => o >= 0 && o <= 255);
+}
+
+/**
+ * Validates an IPv4 CIDR notation string (e.g. `10.0.0.0/24`).
+ * Checks octet ranges (0-255) and prefix length (0-32).
+ */
+export function isValidCidr(value: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(value);
+  if (!match) return false;
+  return octetsInRange(match[1], match[2], match[3], match[4]) && Number(match[5]) <= 32;
+}
+
+/**
+ * Validates a plain IPv4 address (e.g. `192.168.1.1`).
+ * Rejects CIDR notation; use `isValidCidr` for that.
+ */
+export function isValidIPv4(value: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value);
+  if (!match) return false;
+  return octetsInRange(match[1], match[2], match[3], match[4]);
+}
+
+/**
+ * Validates a Docker resource ID (hex string, 12-64 characters).
+ * Covers both short IDs (12 chars) and full SHA256 IDs (64 chars).
+ */
+export function isValidDockerResourceId(id: string): boolean {
+  return /^[a-f0-9]{12,64}$/i.test(id);
+}
+
 /**
  * Asserts that a resolved file path stays within a given base directory.
  * Returns true if the path is safe, false if it escapes the base.
