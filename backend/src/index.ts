@@ -56,6 +56,9 @@ function invalidateNodeCaches(nodeId: number): void {
   cache.invalidate(`stack-statuses:${nodeId}`);
   cache.invalidate('project-name-map');
 }
+
+import { isDebugEnabled } from './utils/debug';
+import { getErrorMessage } from './utils/errors';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
@@ -3018,10 +3021,19 @@ server.on('upgrade', async (req, socket, head) => {
         // would accumulate listeners and allocate memory for every connection.
         logsWss.close();
         const stackName = decodeURIComponent(logsMatch[1]);
+        if (!isValidStackName(stackName)) {
+          ws.send('Error: Invalid stack name\r\n');
+          ws.close();
+          return;
+        }
         try {
+          if (isDebugEnabled()) console.debug('[Stacks:debug] WS log stream opened', { stackName, nodeId });
+          ws.on('close', () => {
+            if (isDebugEnabled()) console.debug('[Stacks:debug] WS log stream closed', { stackName, nodeId });
+          });
           ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
         } catch (error) {
-          console.error('Failed to stream logs:', error);
+          console.error('[Stacks] Failed to stream logs:', error);
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(`Error streaming logs: ${(error as Error).message}\n`);
           }
@@ -3406,6 +3418,7 @@ app.put('/api/stacks/:stackName', async (req: Request, res: Response) => {
     }
     await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Compose file saved: ${stackName}`);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
     console.error('Failed to save stack:', error);
@@ -3569,9 +3582,12 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
 
     const fsService = FileSystemService.getInstance(req.nodeId);
     await fsService.writeFile(envPath, content, 'utf-8');
+    invalidateNodeCaches(req.nodeId);
+    const envFileName = path.basename(envPath);
+    console.log(`[Stacks] Env file saved: ${stackName}/${envFileName}`);
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
-    console.error('Failed to save env file:', error);
+    console.error('[Stacks] Failed to save env file:', error);
     res.status(500).json({ error: 'Failed to save env file' });
   }
 });
@@ -3583,14 +3599,16 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
     if (!stackName || typeof stackName !== 'string') {
       return res.status(400).json({ error: 'Stack name is required and must be a string' });
     }
-    if (!/^[a-zA-Z0-9-]+$/.test(stackName)) {
-      return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters and hyphens' });
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters, hyphens, and underscores' });
     }
     await FileSystemService.getInstance(req.nodeId).createStack(stackName);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Stack created: ${stackName}`);
     res.json({ message: 'Stack created successfully', name: stackName });
-  } catch (error: any) {
-    if (error.message && error.message.includes('already exists')) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error, '');
+    if (message.includes('already exists')) {
       return res.status(409).json({ error: 'Stack already exists' });
     }
     console.error('Failed to create stack:', error);
@@ -3598,8 +3616,8 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
-  const stackName = req.params.name as string;
+app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:delete', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
@@ -3619,9 +3637,12 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
 
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Stack deleted: ${stackName}`);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Failed to delete stack' });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Failed to delete stack ${stackName}:`, error);
+    const message = getErrorMessage(error, 'Failed to delete stack');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -3713,14 +3734,21 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
+    const debug = isDebugEnabled();
     const atomic = LicenseService.getInstance().getTier() === 'paid';
+    if (debug) console.debug('[Stacks:debug] Deploy starting', { stackName, atomic, nodeId: req.nodeId });
+    const t0 = Date.now();
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Deploy completed: ${stackName}`);
+    if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
     res.json({ message: 'Deployed successfully' });
-  } catch (error: any) {
-    console.error('Failed to deploy stack:', error);
+  } catch (error: unknown) {
+    console.error(`[Stacks] Deploy failed: ${stackName}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
-    res.status(500).json({ error: error.message || 'Failed to deploy stack', rolledBack });
+    if (rolledBack) console.warn(`[Stacks] Deploy failed, rolled back: ${stackName}`);
+    const message = getErrorMessage(error, 'Failed to deploy stack');
+    res.status(500).json({ error: message, rolledBack });
   }
 });
 
@@ -3733,8 +3761,10 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
   try {
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Down completed: ${stackName}`);
     res.json({ status: 'Command started' });
   } catch (error) {
+    console.error(`[Stacks] Down failed: ${stackName}`, error);
     res.status(500).json({ error: 'Failed to start command' });
   }
 });
@@ -3755,10 +3785,12 @@ app.post('/api/stacks/:stackName/restart', async (req: Request, res: Response) =
 
     await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Restart completed: ${stackName} (${containers.length} containers)`);
     res.json({ success: true, message: 'Restart completed via Engine API.' });
-  } catch (error: any) {
-    console.error('Failed to restart containers:', error);
-    res.status(500).json({ error: error.message || 'Failed to restart containers' });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Restart failed: ${stackName}`, error);
+    const message = getErrorMessage(error, 'Failed to restart containers');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -3778,10 +3810,12 @@ app.post('/api/stacks/:stackName/stop', async (req: Request, res: Response) => {
 
     await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Stop completed: ${stackName} (${containers.length} containers)`);
     res.json({ success: true, message: 'Stop completed via Engine API.' });
-  } catch (error: any) {
-    console.error('Failed to stop containers:', error);
-    res.status(500).json({ error: error.message || 'Failed to stop containers' });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Stop failed: ${stackName}`, error);
+    const message = getErrorMessage(error, 'Failed to stop containers');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -3801,10 +3835,12 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
 
     await Promise.all(containers.map(c => dockerController.startContainer(c.Id)));
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Start completed: ${stackName} (${containers.length} containers)`);
     res.json({ success: true, message: 'Start completed via Engine API.' });
-  } catch (error: any) {
-    console.error('Failed to start containers:', error);
-    res.status(500).json({ error: error.message || 'Failed to start containers' });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Start failed: ${stackName}`, error);
+    const message = getErrorMessage(error, 'Failed to start containers');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -3816,13 +3852,20 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
+    const debug = isDebugEnabled();
     const atomic = LicenseService.getInstance().getTier() === 'paid';
+    if (debug) console.debug('[Stacks:debug] Update starting', { stackName, atomic, nodeId: req.nodeId });
+    const t0 = Date.now();
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Update completed: ${stackName}`);
+    if (debug) console.debug(`[Stacks:debug] Update finished in ${Date.now() - t0}ms`);
     res.json({ status: 'Update completed' });
   } catch (error) {
+    console.error(`[Stacks] Update failed: ${stackName}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
+    if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${stackName}`);
     res.status(500).json({ error: 'Failed to update', rolledBack });
   }
 });
@@ -3841,14 +3884,17 @@ app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) 
     if (!backupInfo.exists) {
       return res.status(404).json({ error: 'No backup available for this stack.' });
     }
+    console.log(`[Stacks] Rollback initiated: ${stackName}`);
     await fsSvc.restoreStackFiles(stackName);
     // Re-deploy with restored files (non-atomic to avoid loops)
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, false);
     invalidateNodeCaches(req.nodeId);
+    console.log(`[Stacks] Rollback completed: ${stackName}`);
     res.json({ message: 'Stack rolled back successfully.' });
-  } catch (error: any) {
-    console.error('Rollback failed:', error);
-    res.status(500).json({ error: error.message || 'Rollback failed.' });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Rollback failed: ${stackName}`, error);
+    const message = getErrorMessage(error, 'Rollback failed.');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -3862,9 +3908,10 @@ app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => 
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const info = await fsSvc.getBackupInfo(stackName);
     res.json(info);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to get backup info:', error);
-    res.status(500).json({ error: error.message || 'Failed to get backup info.' });
+    const message = getErrorMessage(error, 'Failed to get backup info.');
+    res.status(500).json({ error: message });
   }
 });
 
@@ -6095,7 +6142,7 @@ app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Respons
     res.json(meta);
   } catch (error: unknown) {
     console.error('Failed to fetch node meta:', error);
-    const message = error instanceof Error ? error.message : 'Failed to fetch node metadata';
+    const message = getErrorMessage(error, 'Failed to fetch node metadata');
     res.status(500).json({ error: message });
   }
 });

@@ -66,7 +66,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
                                 <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
-                                <p className="text-xs text-muted-foreground">Enable Real-Time Metrics & Extended Logs</p>
+                                <p className="text-xs text-muted-foreground">Enable Real-Time Metrics, Debug Diagnostics & Extended Logs</p>
                             </div>
                             <Switch
                                 id="developer_mode"
