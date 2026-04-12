@@ -5687,10 +5687,17 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
 
     try {
       await fsPromises.access(stackPath);
-      return res.status(409).json({
-        error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
-        rolledBack: false
-      });
+
+      if (await fsService.hasComposeFile(stackPath)) {
+        return res.status(409).json({
+          error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
+          rolledBack: false
+        });
+      }
+
+      // Orphaned directory left by external deletion (e.g. Docker Desktop).
+      console.log(`[Templates] Cleaned up orphaned stack directory: ${stackName}`);
+      await fsService.deleteStack(stackName);
     } catch {
       // Directory does not exist; proceed with deploy
     }
