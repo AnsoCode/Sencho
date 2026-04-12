@@ -79,6 +79,10 @@ When you update the local (gateway) node:
 
 If the new container does not come up within 5 minutes, a timeout message appears with a manual reload option. If the gateway can detect that the update did not complete (for example, the image pull failed or the restart helper container could not spawn), the local node card surfaces a "Failed" badge with the underlying error within about 3 minutes instead of waiting for the full timeout.
 
+<Note>
+  The self-update helper container inherits all bind mounts from the main Sencho container. If your `docker-compose.yml` references `env_file`, `configs`, or `secrets` outside the compose working directory, those paths must be mounted into the Sencho container using the same host and container path (1:1 rule). See [Troubleshooting](/operations/troubleshooting#local-self-update-fails-with-env-file-not-found) if you encounter "env file not found" errors during a local update.
+</Note>
+
 ## What happens during an update
 
 When an update is triggered on a node, Sencho:
