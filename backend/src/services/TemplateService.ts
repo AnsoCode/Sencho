@@ -1,15 +1,16 @@
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
 import { CacheService } from './CacheService';
+import { isDebugEnabled } from '../utils/debug';
 
 
-export interface TemplateEnv {
+interface TemplateEnv {
     name: string;
     label?: string;
     default?: string;
 }
 
-export interface TemplateVolume {
+interface TemplateVolume {
     container: string;
     bind?: string;
     readonly?: boolean;
@@ -37,9 +38,28 @@ export interface Template {
     };
 }
 
-export interface TemplatesResponse {
+interface TemplatesResponse {
     version: string;
     templates: Template[];
+}
+
+// Typed shapes for the LinuxServer.io API response
+interface LsioPort { external?: number; internal: number; protocol?: string }
+interface LsioVolume { path: string }
+interface LsioEnvVar { name: string; desc?: string; default?: string }
+interface LsioAppConfig { ports?: LsioPort[]; volumes?: LsioVolume[]; environment?: LsioEnvVar[] }
+interface LsioApp {
+    name: string;
+    description?: string;
+    logo?: string;
+    github?: string;
+    readme?: string;
+    arch?: string[];
+    stars?: number;
+    config?: LsioAppConfig;
+}
+interface LsioApiResponse {
+    data?: { repositories?: { linuxserver?: Record<string, LsioApp> } };
 }
 
 // Static category map for LSIO apps (the LSIO API does not expose category metadata).
@@ -197,6 +217,7 @@ export class TemplateService {
 
     public clearCache(): void {
         CacheService.getInstance().invalidate(TemplateService.CACHE_KEY);
+        console.log('[Templates] Cache invalidated');
     }
 
     public async getTemplates(): Promise<Template[]> {
@@ -209,13 +230,15 @@ export class TemplateService {
                     // Default to a reliable LSIO Portainer v2 template registry if not set
                     const registryUrl = settings.template_registry_url || 'https://api.linuxserver.io/api/v1/images?include_config=true';
 
-                    const response = await axios.get<any>(registryUrl);
+                    console.log(`[Templates] Fetching from registry: ${registryUrl}`);
+                    const debug = isDebugEnabled();
 
                     if (registryUrl.includes('api.linuxserver.io')) {
+                        const response = await axios.get<LsioApiResponse>(registryUrl, { timeout: 20_000 });
                         // Official LSIO API Schema Mapping
-                        const lsioApps = response.data?.data?.repositories?.linuxserver || [];
+                        const lsioApps = response.data?.data?.repositories?.linuxserver ?? {};
 
-                        return Object.values(lsioApps).map((app: any) => ({
+                        const templates: Template[] = Object.values(lsioApps).map((app: LsioApp) => ({
                             type: 1,
                             title: app.name,
                             description: app.description || '',
@@ -228,31 +251,39 @@ export class TemplateService {
                             categories: getCategoriesForApp(app.name),
                             source: 'linuxserver',
                             // Map configs if available, otherwise default to empty arrays
-                            ports: (app.config?.ports || []).map((p: any) => `${p.external || p.internal}:${p.internal}/${p.protocol || 'tcp'}`),
-                            volumes: (app.config?.volumes || []).map((v: any) => {
+                            ports: (app.config?.ports ?? []).map((p: LsioPort) => `${p.external || p.internal}:${p.internal}/${p.protocol || 'tcp'}`),
+                            volumes: (app.config?.volumes ?? []).map((v: LsioVolume) => {
                                 const folderName = v.path.split('/').filter(Boolean).pop() || 'data';
                                 return {
                                     container: v.path,
-                                    bind: `./${folderName}` // Proactively create a clean relative path
+                                    bind: `./${folderName}`
                                 };
                             }),
-                            env: (app.config?.environment || []).map((e: any) => ({
+                            env: (app.config?.environment ?? []).map((e: LsioEnvVar) => ({
                                 name: e.name,
                                 label: e.desc || e.name,
                                 default: e.default || ''
                             }))
                         }));
+
+                        console.log(`[Templates] Fetched ${templates.length} templates from LSIO`);
+                        if (debug) console.debug('[Templates:debug] LSIO sample:', templates.slice(0, 5).map(t => t.title));
+                        return templates;
                     }
 
                     // Legacy Portainer v2 Format (Fallback for custom registries)
-                    // The Portainer v2 spec includes a native `categories` field - pass it through.
-                    return (response.data.templates || [])
+                    // The Portainer v2 spec includes a native `categories` field; pass it through.
+                    const response = await axios.get<TemplatesResponse>(registryUrl, { timeout: 20_000 });
+                    const templates = (response.data.templates || [])
                         .filter((t: Template) => !!t.image && t.type === 1)
                         .map((t: Template) => ({ ...t, source: 'custom' }));
+
+                    console.log(`[Templates] Fetched ${templates.length} templates from custom registry`);
+                    return templates;
                 },
             );
         } catch (error) {
-            console.error('Failed to fetch templates', error);
+            console.error('[Templates] Failed to fetch from registry:', error);
             throw new Error('Could not fetch templates from registry');
         }
     }
@@ -304,7 +335,9 @@ export class TemplateService {
             }
         }
 
-        yaml += `    env_file:\n      - .env\n`;
+        if (template.env && template.env.length > 0) {
+            yaml += `    env_file:\n      - .env\n`;
+        }
 
         return yaml;
     }
