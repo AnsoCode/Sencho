@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0](https://github.com/AnsoCode/Sencho/compare/v0.45.6...v0.46.0) (2026-04-12)
+
+
+### Added
+
+* **app-store:** add port conflict indicator to deploy sheet ([#533](https://github.com/AnsoCode/Sencho/issues/533)) ([cd3d7b2](https://github.com/AnsoCode/Sencho/commit/cd3d7b23be444a8c085255b557ef2594e9b3fea5))
+
 ## [0.45.6](https://github.com/AnsoCode/Sencho/compare/v0.45.5...v0.45.6) (2026-04-12)
 
 
