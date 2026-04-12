@@ -30,6 +30,13 @@ interface AlertState {
     breachStartedAt: number; // timestamp when the rule first breached
 }
 
+const HOST_ALERT_KEYS = {
+    cpu: 'last_host_cpu_alert_ts',
+    ram: 'last_host_ram_alert_ts',
+    disk: 'last_host_disk_alert_ts',
+    janitor: 'last_janitor_alert_timestamp',
+} as const;
+
 export class MonitorService {
     private static instance: MonitorService;
     private intervalId: NodeJS.Timeout | null = null;
@@ -38,6 +45,11 @@ export class MonitorService {
     // Track the duration a specific stack alert rule has been in breach state
     // key: rule_id, value: AlertState
     private activeBreaches = new Map<number, AlertState>();
+
+    // Track containers that have already been alerted as crashed to avoid
+    // duplicate alerts. key: containerId, value: timestamp when alerted.
+    private alertedCrashes = new Map<string, number>();
+    private static readonly CRASH_ALERT_TTL_MS = 60 * 60 * 1000; // 1 hour
 
     private constructor() { }
 
@@ -86,6 +98,7 @@ export class MonitorService {
 
     private async evaluateGlobalSettings(settings: Record<string, string>) {
         const notifier = NotificationService.getInstance();
+        const HOST_ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between repeat alerts
 
         // 1. Host Limits
         try {
@@ -93,14 +106,16 @@ export class MonitorService {
             const cpuUsage = currentLoad.currentLoad;
             const cpuLimit = parseFloat(settings['host_cpu_limit']);
             if (!isNaN(cpuLimit) && cpuLimit > 0 && cpuUsage > cpuLimit) {
-                await notifier.dispatchAlert('warning', `Host CPU utilization is critically high: ${cpuUsage.toFixed(1)}% (Threshold: ${cpuLimit}%)`);
+                await this.dispatchWithCooldown(HOST_ALERT_KEYS.cpu, HOST_ALERT_COOLDOWN_MS, 'warning',
+                    `Host CPU utilization is critically high: ${cpuUsage.toFixed(1)}% (Threshold: ${cpuLimit}%)`);
             }
 
             const mem = await si.mem();
             const ramUsage = (mem.used / mem.total) * 100;
             const ramLimit = parseFloat(settings['host_ram_limit']);
             if (!isNaN(ramLimit) && ramLimit > 0 && ramUsage > ramLimit) {
-                await notifier.dispatchAlert('warning', `Host Memory utilization is critically high: ${ramUsage.toFixed(1)}% (Threshold: ${ramLimit}%)`);
+                await this.dispatchWithCooldown(HOST_ALERT_KEYS.ram, HOST_ALERT_COOLDOWN_MS, 'warning',
+                    `Host Memory utilization is critically high: ${ramUsage.toFixed(1)}% (Threshold: ${ramLimit}%)`);
             }
 
             const fsSize = await si.fsSize();
@@ -108,7 +123,8 @@ export class MonitorService {
             if (mainDisk) {
                 const diskLimit = parseFloat(settings['host_disk_limit']);
                 if (!isNaN(diskLimit) && diskLimit > 0 && mainDisk.use > diskLimit) {
-                    await notifier.dispatchAlert('warning', `Host Disk space utilization is critically high: ${mainDisk.use.toFixed(1)}% (Threshold: ${diskLimit}%)`);
+                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.disk, HOST_ALERT_COOLDOWN_MS, 'warning',
+                        `Host Disk space utilization is critically high: ${mainDisk.use.toFixed(1)}% (Threshold: ${diskLimit}%)`);
                 }
             }
         } catch (e) {
@@ -117,35 +133,54 @@ export class MonitorService {
 
         // 2. Global Crash Detect
         if (settings['global_crash'] === '1') {
+            // Prune expired entries from the crash tracker
+            const now = Date.now();
+            for (const [id, ts] of this.alertedCrashes) {
+                if (now - ts > MonitorService.CRASH_ALERT_TTL_MS) this.alertedCrashes.delete(id);
+            }
+
             try {
                 const nodes = DatabaseService.getInstance().getNodes();
+                const runningIds = new Set<string>();
+
                 for (const node of nodes) {
                     if (!node.id) continue;
-                    // Remote nodes run their own MonitorService locally - skip direct Docker access
+                    // Remote nodes run their own MonitorService locally
                     if (node.type === 'remote') continue;
                     try {
                         const docker = DockerController.getInstance(node.id);
                         const containers = await docker.getAllContainers();
                         for (const c of containers) {
-                            if (c.State === 'exited' || String(c.Status).includes('unhealthy')) {
-                                const containerStack = c.Labels?.['com.docker.compose.project'] || undefined;
-                                if (c.State === 'exited') {
-                                    if (c.Status.includes('seconds ago')) {
-                                        const match = c.Status.match(/Exited \((\d+)\)/i);
-                                        const exitCode = match ? parseInt(match[1], 10) : null;
-                                        const intentionalExitCodes = [0, 137, 143, 255];
-                                        if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
-                                            await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`, containerStack);
-                                        }
-                                    }
-                                } else if (String(c.Status).includes('unhealthy')) {
-                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`, containerStack);
+                            if (c.State === 'running') {
+                                runningIds.add(c.Id);
+                                continue;
+                            }
+                            // Skip containers already alerted
+                            if (this.alertedCrashes.has(c.Id)) continue;
+
+                            const containerStack = c.Labels?.['com.docker.compose.project'] || undefined;
+
+                            if (c.State === 'exited') {
+                                const match = c.Status.match(/Exited \((\d+)\)/i);
+                                const exitCode = match ? parseInt(match[1], 10) : null;
+                                const intentionalExitCodes = [0, 137, 143, 255];
+                                if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
+                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`, containerStack);
+                                    this.alertedCrashes.set(c.Id, now);
                                 }
+                            } else if (String(c.Status).includes('unhealthy')) {
+                                await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`, containerStack);
+                                this.alertedCrashes.set(c.Id, now);
                             }
                         }
                     } catch (err) {
                         console.error(`Error checking crashes on node ${node.name}`, err);
                     }
+                }
+
+                // Clear crash tracking for containers that are running again
+                for (const id of this.alertedCrashes.keys()) {
+                    if (runningIds.has(id)) this.alertedCrashes.delete(id);
                 }
             } catch (e) {
                 console.error('Error checking global crashes', e);
@@ -187,18 +222,11 @@ export class MonitorService {
                 }
 
                 const reclaimGb = totalReclaimableBytes / (1024 * 1024 * 1024);
-                // Only trigger once every while? To avoid spamming, we just check if it's over limit
-                // Let's ensure we only spam once per limit breach. We can use a local static variable.
-                const LAST_JANITOR_ALERT_KEY = 'last_janitor_alert_timestamp';
-                const lastAlertRaw = DatabaseService.getInstance().getSystemState(LAST_JANITOR_ALERT_KEY);
-                const lastAlert = parseInt(lastAlertRaw || '0', 10);
-                const janitorCooldown = 24 * 60 * 60 * 1000; // 24 hours cooldown for janitor
+                const JANITOR_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
                 if (reclaimGb >= janitorLimitGb) {
-                    if (Date.now() - lastAlert > janitorCooldown) {
-                        await notifier.dispatchAlert('info', `Your system has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
-                        DatabaseService.getInstance().setSystemState(LAST_JANITOR_ALERT_KEY, Date.now().toString());
-                    }
+                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.janitor, JANITOR_COOLDOWN_MS, 'info',
+                        `Your system has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
                 }
             }
         } catch (e) {
@@ -224,10 +252,11 @@ export class MonitorService {
                         const rawStats = await docker.getContainerStatsStream(container.Id);
                         const stats = JSON.parse(rawStats);
 
+                        const usedMemory = (stats.memory_stats?.usage || 0) - (stats.memory_stats?.stats?.cache || 0);
                         const metrics = {
                             cpu_percent: this.calculateCpuPercent(stats),
                             memory_percent: this.calculateMemoryPercent(stats),
-                            memory_mb: (stats.memory_stats?.usage || 0) / (1024 * 1024),
+                            memory_mb: Math.max(0, usedMemory) / (1024 * 1024),
                             net_rx: this.calculateNetwork(stats, 'rx'),
                             net_tx: this.calculateNetwork(stats, 'tx'),
                             restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
@@ -331,6 +360,19 @@ export class MonitorService {
             case '<=': return actual <= threshold;
             case '==': return actual === threshold;
             default: return false;
+        }
+    }
+
+    /** Dispatch an alert only if the cooldown period has elapsed since the last alert for this key. */
+    private async dispatchWithCooldown(
+        stateKey: string, cooldownMs: number,
+        severity: 'info' | 'warning' | 'error', message: string, stack?: string,
+    ): Promise<void> {
+        const db = DatabaseService.getInstance();
+        const last = parseInt(db.getSystemState(stateKey) || '0', 10);
+        if (Date.now() - last > cooldownMs) {
+            await NotificationService.getInstance().dispatchAlert(severity, message, stack);
+            db.setSystemState(stateKey, Date.now().toString());
         }
     }
 

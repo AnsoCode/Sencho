@@ -38,13 +38,13 @@ function deriveHealth(stats: Stats, systemStats: SystemStats | null, notificatio
   if (disk >= 90) reasons.push(`Disk at ${disk.toFixed(1)}%`);
   else if (disk >= 80) reasons.push(`Disk at ${disk.toFixed(1)}%`);
 
-  if (stats.exited > 0 && unreadErrors > 0) reasons.push(`${stats.exited} exited container${stats.exited !== 1 ? 's' : ''}`);
-  else if (unreadErrors > 0) reasons.push(`${unreadErrors} unread error${unreadErrors !== 1 ? 's' : ''}`);
+  if (stats.exited > 0) reasons.push(`${stats.exited} exited container${stats.exited !== 1 ? 's' : ''}`);
+  if (unreadErrors > 0) reasons.push(`${unreadErrors} unread error${unreadErrors !== 1 ? 's' : ''}`);
 
   if (cpu >= 90 || ram >= 90 || disk >= 90 || (stats.exited > 0 && unreadErrors > 0)) {
     return { level: 'critical', reasons };
   }
-  if (cpu >= 80 || ram >= 80 || disk >= 80 || unreadErrors > 0) {
+  if (cpu >= 80 || ram >= 80 || disk >= 80 || stats.exited > 0 || unreadErrors > 0) {
     return { level: 'degraded', reasons };
   }
   return { level: 'healthy', reasons: ['All systems nominal'] };
@@ -65,7 +65,7 @@ export function HealthStatusBar({ stats, systemStats, notifications, activeNodeN
   const unreadAlerts = notifications.filter(n => !n.is_read).length;
 
   return (
-    <Card className="bg-card px-4 py-3">
+    <Card className="bg-card shadow-card-bevel px-4 py-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         {/* Health badge */}
         <div className="flex items-center gap-3">

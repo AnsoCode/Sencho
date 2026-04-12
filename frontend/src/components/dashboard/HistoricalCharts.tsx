@@ -45,7 +45,7 @@ export function HistoricalCharts({ metrics, systemStats }: HistoricalChartsProps
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
             <Activity className="w-4 h-4 text-stat-icon" strokeWidth={1.5} />
@@ -59,7 +59,7 @@ export function HistoricalCharts({ metrics, systemStats }: HistoricalChartsProps
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
-                <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, 100]} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
+                <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Area type="monotone" dataKey="cpu" stroke="var(--color-cpu)" fill="var(--color-cpu)" fillOpacity={0.4} />
               </AreaChart>
@@ -73,7 +73,7 @@ export function HistoricalCharts({ metrics, systemStats }: HistoricalChartsProps
         </CardContent>
       </Card>
 
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
             <Activity className="w-4 h-4 text-stat-icon" strokeWidth={1.5} />
