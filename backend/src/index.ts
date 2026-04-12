@@ -5620,11 +5620,12 @@ app.post('/api/system/networks', async (req: Request, res: Response) => {
 
 // --- App Templates Routes ---
 
-app.get('/api/templates', async (req: Request, res: Response) => {
+app.get('/api/templates', authMiddleware, async (req: Request, res: Response) => {
   try {
     const templates = await templateService.getTemplates();
     res.json(templates);
   } catch (error) {
+    console.error('[Templates] Failed to fetch:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
@@ -5632,10 +5633,11 @@ app.get('/api/templates', async (req: Request, res: Response) => {
 app.post('/api/templates/refresh-cache', authMiddleware, (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   templateService.clearCache();
+  console.log('[Templates] Cache cleared by', req.user?.username || 'unknown');
   res.json({ success: true });
 });
 
-app.post('/api/templates/deploy', async (req: Request, res: Response) => {
+app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { stackName, template, envVars } = req.body;
@@ -5644,26 +5646,42 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'stackName and template are required' });
     }
 
-    const stackPath = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
-    if (fs.existsSync(stackPath)) {
+    if (!isValidStackName(stackName)) {
+      return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters, hyphens, and underscores' });
+    }
+
+    const fsService = FileSystemService.getInstance(req.nodeId);
+    const baseDir = fsService.getBaseDir();
+    const stackPath = path.join(baseDir, stackName);
+    if (!isPathWithinBase(stackPath, baseDir)) {
+      return res.status(400).json({ error: 'Invalid stack path' });
+    }
+
+    try {
+      await fsPromises.access(stackPath);
       return res.status(409).json({
         error: `A stack directory named '${stackName}' already exists. Please choose a different Stack Name.`,
         rolledBack: false
       });
+    } catch {
+      // Directory does not exist; proceed with deploy
     }
 
+    const debug = isDebugEnabled();
+    console.log(`[Templates] Deploy started: ${stackName}`);
+    if (debug) console.debug('[Templates:debug] Deploy payload', { stackName, templateTitle: template.title, envVarCount: envVars ? Object.keys(envVars).length : 0 });
+
     // 1. Create stack directory
-    await FileSystemService.getInstance(req.nodeId).createStack(stackName);
+    await fsService.createStack(stackName);
 
     // 2. Generate compose YAML and save
     const composeYaml = templateService.generateComposeFromTemplate(template);
-    await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, composeYaml);
+    await fsService.saveStackContent(stackName, composeYaml);
 
     // 3. Generate env string and save to default .env
-    if (envVars) {
+    if (envVars && Object.keys(envVars).length > 0) {
       const envString = templateService.generateEnvString(envVars);
-      const stackDir = path.join(FileSystemService.getInstance(req.nodeId).getBaseDir(), stackName);
-      const defaultEnvPath = path.join(stackDir, '.env');
+      const defaultEnvPath = path.join(stackPath, '.env');
       await fsPromises.writeFile(defaultEnvPath, envString, 'utf-8');
     }
 
@@ -5672,9 +5690,11 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
       const atomic = LicenseService.getInstance().getTier() === 'paid';
       await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
       invalidateNodeCaches(req.nodeId);
+      console.log(`[Templates] Deploy completed: ${stackName}`);
       res.json({ success: true, message: 'Template deployed successfully' });
-    } catch (deployError: any) {
-      const rawError = deployError.message || String(deployError);
+    } catch (deployError: unknown) {
+      const rawError = getErrorMessage(deployError, String(deployError));
+      console.error(`[Templates] Deploy failed: ${stackName} -`, rawError);
       const parsed = ErrorParser.parse(rawError);
 
       const shouldRollback = parsed.rule ? parsed.rule.canSilentlyRollback : true;
@@ -5684,14 +5704,14 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
           // Stage 1: Tell Docker to clean up ghost networks/containers
           await ComposeService.getInstance(req.nodeId).downStack(stackName);
         } catch (downErr) {
-          console.error("Rollback Stage 1 (Docker down) failed:", downErr);
+          console.error("[Templates] Rollback Stage 1 (Docker down) failed:", downErr);
         }
 
         try {
-          // Stage 2: Obliterate the files
-          await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
+          // Stage 2: Remove the stack files
+          await fsService.deleteStack(stackName);
         } catch (fsErr) {
-          console.error("Rollback Stage 2 (File deletion) failed:", fsErr);
+          console.error("[Templates] Rollback Stage 2 (File deletion) failed:", fsErr);
         }
       }
 
@@ -5704,9 +5724,10 @@ app.post('/api/templates/deploy', async (req: Request, res: Response) => {
         ruleId: parsed.rule?.id || 'UNKNOWN'
       });
     }
-  } catch (error: any) {
-    console.error('Failed to deploy template:', error);
-    res.status(500).json({ error: error.message || 'Failed to deploy template' });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error, 'Failed to deploy template');
+    console.error('[Templates] Deploy error:', message);
+    res.status(500).json({ error: message });
   }
 });
 

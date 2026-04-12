@@ -46,7 +46,7 @@ Pre-filled with the template name in lowercase. You can change it; the same [nam
 
 ### Ports
 
-For each exposed port, the sheet shows an editable **host port** field (left side) and the fixed **container port** (right side). Edit the host port to avoid conflicts with other services on the same machine.
+For each exposed port, the sheet shows an editable **host port** field (left side) and the fixed **container port** (right side). Edit the host port to avoid conflicts with other services on the same machine. Ports must be in the valid range (1 to 65535); invalid values are highlighted and block deployment.
 
 ### Volumes
 
@@ -62,12 +62,12 @@ Each template declares the variables it needs. Sencho pre-fills sensible default
 
 ### Custom variables
 
-Below the template variables, an **Add Custom Variable** section lets you define arbitrary key-value pairs not declared by the template. Type a key and value, then click **+** to add it.
+Below the template variables, an **Add Custom Variable** section lets you define arbitrary key-value pairs not declared by the template. Type a key and value, then click **+** to add it. If you add a key that already exists in the template defaults, a warning will let you know your custom value will override the default.
 
 ### What happens on Deploy
 
 1. Sencho creates a new stack directory in `COMPOSE_DIR`
-2. Writes the generated `compose.yaml` and `.env` file
+2. Writes the generated `compose.yaml` (and `.env` file if environment variables are configured)
 3. Runs `docker compose up -d`
 4. On success: switches you to the Editor view for that stack
 5. On failure: rolls back by running `docker compose down` and deleting the stack directory

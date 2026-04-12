@@ -8,9 +8,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Search, Rocket, Loader2, Info, ExternalLink, Star } from "lucide-react";
 import { toast } from "@/components/ui/toast-store";
+import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
+
+function isValidPort(value: string): boolean {
+    if (!value) return true;
+    const num = Number(value);
+    return Number.isInteger(num) && num >= 1 && num <= 65535;
+}
 
 export interface TemplateEnv {
     name: string;
@@ -83,22 +90,24 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     };
 
     const handleSelectTemplate = (t: Template) => {
-        setSelectedTemplate(t);
-        const localEnvs = [...(t.env || [])];
+        // Work on a copy to avoid mutating the template in state
+        const envsCopy = [...(t.env || [])];
         // Inject LSIO standards if missing from the API
-        if (!localEnvs.find(e => e.name === 'PUID')) localEnvs.push({ name: 'PUID', label: 'User ID (PUID)', default: '1000' });
-        if (!localEnvs.find(e => e.name === 'PGID')) localEnvs.push({ name: 'PGID', label: 'Group ID (PGID)', default: '1000' });
-        if (!localEnvs.find(e => e.name === 'TZ')) {
+        if (!envsCopy.find(e => e.name === 'PUID')) envsCopy.push({ name: 'PUID', label: 'User ID (PUID)', default: '1000' });
+        if (!envsCopy.find(e => e.name === 'PGID')) envsCopy.push({ name: 'PGID', label: 'Group ID (PGID)', default: '1000' });
+        if (!envsCopy.find(e => e.name === 'TZ')) {
             const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-            localEnvs.push({ name: 'TZ', label: 'Timezone', default: browserTz });
+            envsCopy.push({ name: 'TZ', label: 'Timezone', default: browserTz });
         }
 
+        const templateCopy: Template = { ...t, env: envsCopy };
+        setSelectedTemplate(templateCopy);
+
         const initEnvs: Record<string, string> = {};
-        localEnvs.forEach(e => {
+        envsCopy.forEach(e => {
             initEnvs[e.name] = e.default || '';
         });
         setEnvVars(initEnvs);
-        t.env = localEnvs; // Mutate local template copy so they render
 
         // Initialize Volumes
         const initVols: Record<string, string> = {};
@@ -139,6 +148,13 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             return;
         }
 
+        // Validate port numbers
+        const invalidPort = Object.entries(portVars).find(([, val]) => val && !isValidPort(val));
+        if (invalidPort) {
+            toast.error(`Invalid port: ${invalidPort[1]}. Ports must be between 1 and 65535.`);
+            return;
+        }
+
         // Pre-check for duplicate stack name
         try {
             const checkRes = await apiFetch('/stacks');
@@ -149,7 +165,9 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                     return;
                 }
             }
-        } catch { /* proceed to deploy; backend will catch duplicates */ }
+        } catch (checkErr) {
+            console.warn('[AppStore] Pre-deploy duplicate check failed, proceeding:', checkErr);
+        }
 
         setIsDeploying(true);
 
@@ -254,7 +272,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                 </div>
             )}
 
-            <div className="flex-1 overflow-auto">
+            <ScrollArea className="flex-1">
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
                         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -264,13 +282,13 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                         {filtered.map((t, idx) => (
                             <Card
                                 key={idx}
-                                className="cursor-pointer hover:border-primary transition-colors flex flex-col overflow-hidden h-full"
+                                className="cursor-pointer flex flex-col overflow-hidden h-full"
                                 onClick={() => handleSelectTemplate(t)}
                             >
                                 <CardHeader className="flex flex-row items-start gap-4 space-y-0">
-                                    <div className="w-12 h-12 rounded bg-muted/50 p-1 flex-shrink-0 flex items-center justify-center bg-white overflow-hidden">
-                                        {!imgErrors[t.title] && t.logo ? (
-                                            <img src={t.logo} alt={t.title} className="w-full h-full object-contain" onError={() => setImgErrors(prev => ({ ...prev, [t.title]: true }))} />
+                                    <div className="w-12 h-12 rounded bg-muted/50 p-1 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                        {t.logo && !imgErrors[t.logo] ? (
+                                            <img src={t.logo} alt={t.title} className="w-full h-full object-contain" onError={() => setImgErrors(prev => ({ ...prev, [t.logo!]: true }))} />
                                         ) : (
                                             <Rocket className="w-6 h-6 text-muted-foreground" />
                                         )}
@@ -303,12 +321,16 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                         {filtered.length === 0 && (
                             <div className="col-span-full py-12 text-center text-muted-foreground">
                                 <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                <p>No apps found matching "{searchQuery}"</p>
+                                {templates.length === 0 ? (
+                                    <p>Registry returned no templates. Check your registry URL in Settings.</p>
+                                ) : (
+                                    <p>No apps found matching "{searchQuery}"</p>
+                                )}
                             </div>
                         )}
                     </div>
                 )}
-            </div>
+            </ScrollArea>
 
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetContent className="w-full sm:max-w-md flex flex-col h-full" side="right">
@@ -323,9 +345,9 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     </div>
                                 )}
                                 <div className="flex items-center gap-4 mb-4">
-                                    <div className="w-16 h-16 rounded bg-white p-1 flex-shrink-0 flex items-center justify-center overflow-hidden border">
-                                        {!imgErrors[selectedTemplate.title] && selectedTemplate.logo ? (
-                                            <img src={selectedTemplate.logo} alt={selectedTemplate.title} className="w-full h-full object-contain" onError={() => setImgErrors(prev => ({ ...prev, [selectedTemplate.title]: true }))} />
+                                    <div className="w-16 h-16 rounded bg-muted/50 p-1 flex-shrink-0 flex items-center justify-center overflow-hidden border">
+                                        {selectedTemplate.logo && !imgErrors[selectedTemplate.logo] ? (
+                                            <img src={selectedTemplate.logo} alt={selectedTemplate.title} className="w-full h-full object-contain" onError={() => setImgErrors(prev => ({ ...prev, [selectedTemplate.logo!]: true }))} />
                                         ) : (
                                             <Rocket className="w-8 h-8 text-muted-foreground" />
                                         )}
@@ -357,7 +379,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                                     {selectedTemplate.stars !== undefined && (
                                                         <div className="flex items-center gap-1">
                                                             <Star className="w-3 h-3 fill-muted-foreground" />
-                                                            <span>{selectedTemplate.stars}</span>
+                                                            <span className="tabular-nums">{selectedTemplate.stars?.toLocaleString()}</span>
                                                         </div>
                                                     )}
                                                     {selectedTemplate.github_url && (
@@ -383,7 +405,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                 <div className="space-y-6 pb-8">
                                     <div className="space-y-2">
                                         <Label htmlFor="stackName" className="font-semibold">
-                                            Stack Name <span className="text-red-500">*</span>
+                                            Stack Name <span className="text-destructive">*</span>
                                         </Label>
                                         <Input
                                             id="stackName"
@@ -406,8 +428,11 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                                     <div key={idx} className="flex items-center space-x-2">
                                                         <Input
                                                             value={portVars[p] || ''}
-                                                            onChange={(e) => setPortVars(prev => ({ ...prev, [p]: e.target.value }))}
-                                                            className="w-24 text-center"
+                                                            onChange={(e) => {
+                                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                                setPortVars(prev => ({ ...prev, [p]: val }));
+                                                            }}
+                                                            className={cn("w-24 text-center font-mono", portVars[p] && !isValidPort(portVars[p]) && "border-destructive")}
                                                         />
                                                         <span className="text-muted-foreground font-mono">: {parts[1]}</span>
                                                     </div>
@@ -464,7 +489,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                             <div key={idx} className="flex gap-2">
                                                 <Input value={ce.key} readOnly className="w-1/3 bg-muted font-mono text-xs" />
                                                 <Input value={ce.value} readOnly className="flex-1 bg-muted font-mono text-xs" />
-                                                <Button variant="destructive" size="icon" onClick={() => setCustomEnvs(prev => prev.filter((_, i) => i !== idx))}>-</Button>
+                                                <Button variant="ghost" size="icon" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground" onClick={() => setCustomEnvs(prev => prev.filter((_, i) => i !== idx))}>-</Button>
                                             </div>
                                         ))}
                                         <div className="flex gap-2">
@@ -472,6 +497,9 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                             <Input placeholder="VALUE" value={newEnvVal} onChange={e => setNewEnvVal(e.target.value)} className="flex-1 font-mono text-xs" />
                                             <Button variant="secondary" onClick={() => {
                                                 if (newEnvKey.trim()) {
+                                                    if (selectedTemplate?.env?.find(e => e.name === newEnvKey.trim())) {
+                                                        toast.warning(`"${newEnvKey.trim()}" already exists in template defaults. The custom value will override it.`);
+                                                    }
                                                     setCustomEnvs(prev => [...prev, { key: newEnvKey, value: newEnvVal }]);
                                                     setNewEnvKey('');
                                                     setNewEnvVal('');
@@ -493,12 +521,12 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                     >
                                         {isDeploying ? (
                                             <>
-                                                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                                <Loader2 className="w-5 h-5 mr-2 animate-spin" strokeWidth={1.5} />
                                                 Deploying Stack...
                                             </>
                                         ) : (
                                             <>
-                                                <Rocket className="w-5 h-5 mr-2" />
+                                                <Rocket className="w-5 h-5 mr-2" strokeWidth={1.5} />
                                                 Deploy {selectedTemplate.title}
                                             </>
                                         )}
