@@ -74,6 +74,8 @@ Below the template variables, an **Add Custom Variable** section lets you define
 
 A toast notification confirms success or shows the error message. Large images may take a few minutes to pull.
 
+If a previous stack with the same name was removed outside of Sencho (for example, through the Docker CLI or Docker Desktop), the leftover directory is cleaned up automatically and the deploy proceeds as normal.
+
 <Note>
   Deploying a template requires the `stack:create` permission. Users without this permission will see the Deploy button disabled.
 </Note>

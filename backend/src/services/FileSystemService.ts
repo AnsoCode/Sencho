@@ -34,7 +34,7 @@ export class FileSystemService {
     return new FileSystemService(nodeId);
   }
 
-  private async hasComposeFile(dir: string): Promise<boolean> {
+  async hasComposeFile(dir: string): Promise<boolean> {
     const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
     for (const file of composeFiles) {
       try {
