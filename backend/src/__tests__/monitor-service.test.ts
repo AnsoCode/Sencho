@@ -251,7 +251,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '50' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
   });
 
   it('does not dispatch when CPU below threshold', async () => {
@@ -260,7 +260,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '50' });
 
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
   });
 
   it('dispatches RAM warning when over threshold', async () => {
@@ -269,7 +269,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_ram_limit: '80' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Memory'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Memory'), undefined);
   });
 
   it('dispatches disk warning when over threshold', async () => {
@@ -278,7 +278,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_disk_limit: '90' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Disk'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Disk'), undefined);
   });
 
   it('skips host limits when threshold is 0 or NaN', async () => {
@@ -286,10 +286,10 @@ describe('MonitorService - evaluateGlobalSettings', () => {
 
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '0' });
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
 
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: 'abc' });
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
   });
 });
 
@@ -299,6 +299,7 @@ describe('MonitorService - global crash detection', () => {
   it('detects exited containers with non-intentional exit codes', async () => {
     mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
     mockGetAllContainers.mockResolvedValue([{
+      Id: 'crash-1',
       State: 'exited',
       Status: 'Exited (1) 5 seconds ago',
       Names: ['/my-container'],
@@ -317,6 +318,7 @@ describe('MonitorService - global crash detection', () => {
     for (const code of intentionalExits) {
       mockDispatchAlert.mockClear();
       mockGetAllContainers.mockResolvedValue([{
+        Id: `safe-${code}`,
         State: 'exited',
         Status: `Exited (${code}) 5 seconds ago`,
         Names: ['/safe-container'],
@@ -332,7 +334,8 @@ describe('MonitorService - global crash detection', () => {
   it('detects unhealthy containers', async () => {
     mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
     mockGetAllContainers.mockResolvedValue([{
-      State: 'running',
+      Id: 'sick-1',
+      State: 'unhealthy',
       Status: 'Up 2 hours (unhealthy)',
       Names: ['/sick-container'],
     }]);
