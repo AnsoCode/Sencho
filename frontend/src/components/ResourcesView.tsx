@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from "@/components/ui/tabs";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -115,7 +116,6 @@ interface FootprintWidgetProps {
 
 function FootprintWidget({ usage, onFilter }: FootprintWidgetProps) {
     const [animated, setAnimated] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
 
     const managedBytes = usage.managedImageBytes + usage.managedVolumeBytes;
     const unmanagedBytes = usage.unmanagedImageBytes + usage.unmanagedVolumeBytes;
@@ -146,7 +146,7 @@ function FootprintWidget({ usage, onFilter }: FootprintWidgetProps) {
     ];
 
     return (
-        <div ref={ref} className="space-y-4 animate-in fade-in-0 duration-300">
+        <div className="space-y-4 animate-in fade-in-0 duration-300">
             {/* Stacked bar */}
             <div className="relative flex h-4 w-full rounded-full overflow-hidden bg-muted gap-px">
                 {segments.map((seg, i) =>
@@ -287,8 +287,8 @@ interface PruneButtonProps {
 function PruneButton({ target, icon, label, accentClass, onManaged, onAll }: PruneButtonProps) {
     return (
         <div className={cn(
-            'group flex flex-col rounded-lg border bg-card overflow-hidden',
-            'transition-shadow duration-200 hover:shadow-md',
+            'group flex flex-col rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel overflow-hidden',
+            'transition-colors duration-200 hover:border-t-card-border-hover',
         )}>
             <button
                 onClick={onManaged}
@@ -374,7 +374,7 @@ export default function ResourcesView() {
     const [createNetworkForm, setCreateNetworkForm] = useState<{ name: string; driver: NetworkDriver; subnet: string; gateway: string; internal: boolean; attachable: boolean }>({ name: '', driver: 'bridge', subnet: '', gateway: '', internal: false, attachable: false });
     const [isCreatingNetwork, setIsCreatingNetwork] = useState(false);
     const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
-    const [isInspectLoading, setIsInspectLoading] = useState(false);
+    const [inspectLoadingId, setInspectLoadingId] = useState<string | null>(null);
 
     // Unmanaged container state
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
@@ -445,11 +445,15 @@ export default function ResourcesView() {
                 method: 'POST',
                 body: JSON.stringify({ id: confirmDelete.id })
             });
-            if (!res.ok) throw new Error();
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || `Failed to delete ${confirmDelete.type.slice(0, -1)}`);
+            }
             toast.success(`Deleted ${confirmDelete.type.slice(0, -1)}`);
             await fetchAllData();
-        } catch {
-            toast.error(`Failed to delete ${confirmDelete.type.slice(0, -1)}`);
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || `Failed to delete ${confirmDelete.type.slice(0, -1)}`));
         } finally {
             toast.dismiss(loadingId);
             setIsActioning(false);
@@ -474,12 +478,16 @@ export default function ResourcesView() {
                 method: 'POST',
                 body: JSON.stringify({ containerIds: selectedOrphans })
             });
-            if (!res.ok) throw new Error();
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || 'Failed to purge selected containers');
+            }
             toast.success(`Purged ${selectedOrphans.length} unmanaged container(s)`);
             setBulkPurgeConfirm(false);
             await fetchAllData();
-        } catch {
-            toast.error('Failed to purge selected containers.');
+        } catch (error) {
+            const err = error as Record<string, unknown>;
+            toast.error(String(err?.message || 'Failed to purge selected containers.'));
         } finally {
             toast.dismiss(loadingId);
             setIsActioning(false);
@@ -517,7 +525,7 @@ export default function ResourcesView() {
     };
 
     const handleInspectNetwork = async (id: string) => {
-        setIsInspectLoading(true);
+        setInspectLoadingId(id);
         try {
             const res = await apiFetch(`/system/networks/${id}`);
             if (!res.ok) throw new Error('Failed to inspect network');
@@ -527,7 +535,7 @@ export default function ResourcesView() {
             const err = error as Record<string, unknown>;
             toast.error(String(err?.message || err?.error || 'Something went wrong.'));
         } finally {
-            setIsInspectLoading(false);
+            setInspectLoadingId(null);
         }
     };
 
@@ -566,7 +574,7 @@ export default function ResourcesView() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                 {/* Disk Footprint */}
-                <Card className="col-span-1 border-border shadow-card-bevel animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                <Card className="col-span-1 border-card-border border-t-card-border-top shadow-card-bevel transition-colors hover:border-t-card-border-hover animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Docker Disk Footprint
@@ -592,7 +600,7 @@ export default function ResourcesView() {
                 </Card>
 
                 {/* Quick Clean */}
-                {isAdmin && <Card className="col-span-1 md:col-span-2 border-border shadow-card-bevel flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
+                {isAdmin && <Card className="col-span-1 md:col-span-2 border-card-border border-t-card-border-top shadow-card-bevel transition-colors hover:border-t-card-border-hover flex flex-col animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-75">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
                             Quick Clean
@@ -608,7 +616,7 @@ export default function ResourcesView() {
                                 target="images"
                                 icon={<PackageMinus className="w-6 h-6" />}
                                 label="Prune Unused Images"
-                                accentClass="text-blue-500"
+                                accentClass="text-info"
                                 onManaged={() => setConfirmPrune({ target: 'images', scope: 'managed' })}
                                 onAll={() => setConfirmPrune({ target: 'images', scope: 'all' })}
                             />
@@ -616,7 +624,7 @@ export default function ResourcesView() {
                                 target="volumes"
                                 icon={<HardDrive className="w-6 h-6" />}
                                 label="Prune Unused Volumes"
-                                accentClass="text-purple-500"
+                                accentClass="text-brand"
                                 onManaged={() => setConfirmPrune({ target: 'volumes', scope: 'managed' })}
                                 onAll={() => setConfirmPrune({ target: 'volumes', scope: 'all' })}
                             />
@@ -670,7 +678,7 @@ export default function ResourcesView() {
                     </TabsList>
                 </div>
 
-                <div className="flex-1 overflow-auto bg-background relative text-sm">
+                <ScrollArea className="flex-1 bg-background relative text-sm">
 
                     {/* Images */}
                     <TabsContent value="images" className="m-0 border-0 p-0 animate-in fade-in-0 duration-200">
@@ -876,10 +884,10 @@ export default function ResourcesView() {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-7 w-7 hover:text-foreground transition-colors"
-                                                        disabled={isInspectLoading}
+                                                        disabled={inspectLoadingId !== null}
                                                         onClick={() => handleInspectNetwork(net.Id)}
                                                     >
-                                                        {isInspectLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />}
+                                                        {inspectLoadingId === net.Id ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />}
                                                     </Button>
                                                     {isAdmin && <Button
                                                         variant="ghost"
@@ -912,16 +920,16 @@ export default function ResourcesView() {
                                 />
                                 <span className="text-xs font-medium text-muted-foreground">Select all</span>
                             </div>
-                            <Button
-                                variant="destructive"
+                            {isAdmin && <Button
+                                variant="ghost"
                                 size="sm"
-                                className="h-7 text-xs gap-1.5"
+                                className="h-7 text-xs gap-1.5 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
                                 onClick={() => setBulkPurgeConfirm(true)}
                                 disabled={selectedOrphans.length === 0 || isActioning}
                             >
                                 <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                 {isActioning ? 'Purging...' : `Purge Selected (${selectedOrphans.length})`}
-                            </Button>
+                            </Button>}
                         </div>
 
                         {totalOrphansCount === 0 ? (
@@ -983,7 +991,7 @@ export default function ResourcesView() {
                             </div>
                         )}
                     </TabsContent>
-                </div>
+                </ScrollArea>
             </Tabs>
 
             {/* ── Dialogs ── */}
@@ -1068,7 +1076,7 @@ export default function ResourcesView() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Create Network</DialogTitle>
-                        <DialogDescription>Create a new Docker network for inter-container communication.</DialogDescription>
+                        <DialogDescription className="sr-only">Create a new Docker network for inter-container communication.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         <div className="space-y-2">
@@ -1144,7 +1152,8 @@ export default function ResourcesView() {
 
             {/* Network Inspect Sheet */}
             <Sheet open={!!inspectNetwork} onOpenChange={open => !open && setInspectNetwork(null)}>
-                <SheetContent className="sm:max-w-lg overflow-y-auto">
+                <SheetContent className="sm:max-w-lg">
+                  <ScrollArea className="h-full">
                     <SheetHeader>
                         <SheetTitle className="flex items-center gap-2">
                             <Network className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
@@ -1152,7 +1161,7 @@ export default function ResourcesView() {
                         </SheetTitle>
                     </SheetHeader>
                     {inspectNetwork && (
-                        <div className="space-y-6 mt-6">
+                        <div className="space-y-6 mt-6 pb-6">
                             {/* Overview */}
                             <div className="space-y-3">
                                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Overview</h4>
@@ -1163,7 +1172,7 @@ export default function ResourcesView() {
                                             {inspectNetwork.Id.substring(0, 12)}
                                             <button
                                                 className="text-muted-foreground hover:text-foreground transition-colors"
-                                                onClick={() => { navigator.clipboard.writeText(inspectNetwork.Id); toast.success('ID copied'); }}
+                                                onClick={async () => { try { await navigator.clipboard.writeText(inspectNetwork.Id); toast.success('ID copied'); } catch { toast.error('Copy failed (HTTPS required)'); } }}
                                             >
                                                 <Copy className="w-3 h-3" strokeWidth={1.5} />
                                             </button>
@@ -1223,6 +1232,25 @@ export default function ResourcesView() {
                                 </div>
                             )}
 
+                            {/* Options */}
+                            {inspectNetwork.Options && Object.keys(inspectNetwork.Options).length > 0 && (
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Options</h4>
+                                    <div className="rounded-lg border border-card-border bg-card shadow-card-bevel overflow-hidden">
+                                        <Table>
+                                            <TableBody>
+                                                {Object.entries(inspectNetwork.Options).map(([key, val]) => (
+                                                    <TableRow key={key} className="hover:bg-muted/30">
+                                                        <TableCell className="font-mono text-xs py-1.5 text-muted-foreground">{key}</TableCell>
+                                                        <TableCell className="font-mono text-xs py-1.5 text-right">{val}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Connected Containers */}
                             <div className="space-y-3">
                                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -1241,11 +1269,11 @@ export default function ResourcesView() {
                                                 <div className="grid grid-cols-2 gap-2 pl-5.5">
                                                     <div>
                                                         <span className="text-[10px] text-muted-foreground">IPv4</span>
-                                                        <p className="font-mono text-xs tabular-nums">{container.IPv4Address || '—'}</p>
+                                                        <p className="font-mono text-xs tabular-nums">{container.IPv4Address || 'N/A'}</p>
                                                     </div>
                                                     <div>
                                                         <span className="text-[10px] text-muted-foreground">MAC</span>
-                                                        <p className="font-mono text-xs tabular-nums">{container.MacAddress || '—'}</p>
+                                                        <p className="font-mono text-xs tabular-nums">{container.MacAddress || 'N/A'}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1274,6 +1302,7 @@ export default function ResourcesView() {
                             )}
                         </div>
                     )}
+                  </ScrollArea>
                 </SheetContent>
             </Sheet>
         </div>

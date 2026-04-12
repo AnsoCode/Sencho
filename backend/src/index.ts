@@ -62,7 +62,7 @@ import { getErrorMessage } from './utils/errors';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
-import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
+import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
 import YAML from 'yaml';
 import { promises as fsPromises } from 'fs';
 
@@ -5414,8 +5414,15 @@ app.post('/api/system/prune/orphans', async (req: Request, res: Response) => {
     if (!Array.isArray(containerIds)) {
       return res.status(400).json({ error: 'containerIds must be an array' });
     }
+    const invalidIds = containerIds.filter((id: unknown) => typeof id !== 'string' || !isValidDockerResourceId(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({ error: 'One or more container IDs have an invalid format' });
+    }
+    console.log(`[Resources] Prune orphans: ${containerIds.length} container(s) requested`);
     const dockerController = DockerController.getInstance(req.nodeId);
     const results = await dockerController.removeContainers(containerIds);
+    const succeeded = results.filter((r: { success: boolean }) => r.success).length;
+    console.log(`[Resources] Prune orphans completed: ${succeeded}/${containerIds.length} removed`);
     invalidateNodeCaches(req.nodeId);
     res.json({ results });
   } catch (error) {
@@ -5432,8 +5439,9 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid prune target' });
     }
 
-    const dockerController = DockerController.getInstance(req.nodeId);
     const pruneScope = scope === 'managed' ? 'managed' : 'all';
+    console.log(`[Resources] System prune: ${target} (scope: ${pruneScope})`);
+    const dockerController = DockerController.getInstance(req.nodeId);
 
     let result: { success: boolean; reclaimedBytes: number };
     if (pruneScope === 'managed' && target !== 'containers') {
@@ -5446,13 +5454,14 @@ app.post('/api/system/prune/system', async (req: Request, res: Response) => {
       result = await dockerController.pruneSystem(target as 'containers' | 'images' | 'networks' | 'volumes');
     }
 
+    console.log(`[Resources] System prune completed: ${target}, reclaimed ${result.reclaimedBytes} bytes`);
     if (target === 'containers') {
       invalidateNodeCaches(req.nodeId);
     }
     res.json({ message: 'Prune completed', ...result });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('System prune error:', error);
-    res.status(500).json({ error: 'System prune failed', details: error.message });
+    res.status(500).json({ error: 'System prune failed' });
   }
 });
 
@@ -5518,12 +5527,17 @@ app.post('/api/system/images/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
+    if (typeof id !== 'string' || !isValidDockerResourceId(id)) {
+      return res.status(400).json({ error: 'Invalid image ID format' });
+    }
+    console.log(`[Resources] Delete image: ${id.substring(0, 12)}`);
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeImage(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Image deleted' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to delete image:', error);
-    res.status(500).json({ error: error.message || 'Failed to delete image' });
+    res.status(500).json({ error: 'Failed to delete image' });
   }
 });
 
@@ -5531,13 +5545,15 @@ app.post('/api/system/volumes/delete', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { id } = req.body;
-    if (!id) return res.status(400).json({ error: 'ID is required' });
+    if (!id || typeof id !== 'string') return res.status(400).json({ error: 'Volume name is required' });
+    console.log(`[Resources] Delete volume: ${id}`);
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeVolume(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Volume deleted' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to delete volume:', error);
-    res.status(500).json({ error: error.message || 'Failed to delete volume' });
+    res.status(500).json({ error: 'Failed to delete volume' });
   }
 });
 
@@ -5546,26 +5562,32 @@ app.post('/api/system/networks/delete', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'ID is required' });
+    if (typeof id !== 'string' || !isValidDockerResourceId(id)) {
+      return res.status(400).json({ error: 'Invalid network ID format' });
+    }
+    console.log(`[Resources] Delete network: ${id.substring(0, 12)}`);
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeNetwork(id);
+    invalidateNodeCaches(req.nodeId);
     res.json({ success: true, message: 'Network deleted' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to delete network:', error);
-    res.status(500).json({ error: error.message || 'Failed to delete network' });
+    res.status(500).json({ error: 'Failed to delete network' });
   }
 });
 
 app.get('/api/system/networks/topology', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
   try {
     const includeSystem = req.query.includeSystem === 'true';
     const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     const dockerController = DockerController.getInstance(req.nodeId);
     const topology = await dockerController.getTopologyData(knownStacks, includeSystem);
+    if (isDebugEnabled()) console.debug('[Resources:debug] Topology fetched', { networkCount: topology.length, includeSystem });
     res.json(topology);
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Failed to fetch network topology';
     console.error('Failed to fetch network topology:', error);
-    res.status(500).json({ error: msg });
+    res.status(500).json({ error: 'Failed to fetch network topology' });
   }
 });
 
@@ -5579,10 +5601,9 @@ app.get('/api/system/networks/:id', async (req: Request, res: Response) => {
   } catch (error: unknown) {
     console.error('Failed to inspect network:', error);
     const err = error as Record<string, unknown>;
-    const status = (typeof err.statusCode === 'number' ? err.statusCode : null)
-      || (error instanceof Error && error.message.includes('404') ? 404 : 500);
-    const msg = error instanceof Error ? error.message : 'Failed to inspect network';
-    res.status(status).json({ error: msg });
+    const is404 = (typeof err.statusCode === 'number' && err.statusCode === 404)
+      || (error instanceof Error && error.message.includes('404'));
+    res.status(is404 ? 404 : 500).json({ error: is404 ? 'Network not found' : 'Failed to inspect network' });
   }
 });
 
@@ -5600,6 +5621,8 @@ app.post('/api/system/networks', async (req: Request, res: Response) => {
       options.Driver = driver;
     }
     if (subnet || gateway) {
+      if (subnet && !isValidCidr(subnet)) return res.status(400).json({ error: 'Invalid subnet CIDR notation (e.g. 172.20.0.0/16)' });
+      if (gateway && !isValidIPv4(gateway)) return res.status(400).json({ error: 'Invalid gateway IP address (e.g. 172.20.0.1)' });
       options.IPAM = { Config: [{}] };
       if (subnet) options.IPAM.Config[0].Subnet = subnet;
       if (gateway) options.IPAM.Config[0].Gateway = gateway;
@@ -5610,11 +5633,16 @@ app.post('/api/system/networks', async (req: Request, res: Response) => {
 
     const dockerController = DockerController.getInstance(req.nodeId);
     const network = await dockerController.createNetwork(options);
+    console.log(`[Resources] Network created: ${name}`);
+    invalidateNodeCaches(req.nodeId);
     res.status(201).json({ success: true, message: 'Network created', id: network.id });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Failed to create network';
     console.error('Failed to create network:', error);
-    res.status(500).json({ error: msg });
+    const msg = getErrorMessage(error, '');
+    const safePatterns = ['already exists', 'name is invalid', 'invalid network name'];
+    const lowerMsg = msg.toLowerCase();
+    const isSafe = safePatterns.some(p => lowerMsg.includes(p));
+    res.status(isSafe ? 409 : 500).json({ error: isSafe ? msg : 'Failed to create network' });
   }
 });
 

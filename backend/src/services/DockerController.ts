@@ -9,6 +9,7 @@ import * as yaml from 'yaml';
 import { NodeRegistry } from './NodeRegistry';
 import { CacheService } from './CacheService';
 import { isPathWithinBase } from '../utils/validation';
+import { isDebugEnabled } from '../utils/debug';
 
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
@@ -205,6 +206,8 @@ class DockerController {
     volumes: ClassifiedVolume[];
     networks: ClassifiedNetwork[];
   }> {
+    const debug = isDebugEnabled();
+    const t0 = debug ? Date.now() : 0;
     const knownSet = new Set(knownStackNames);
 
     const [rawImages, rawVolumeData, rawNetworks, allContainers, projectToStack] = await Promise.all([
@@ -272,6 +275,10 @@ class DockerController {
         managedBy: stack,
         managedStatus,
       };
+    });
+
+    if (debug) console.debug('[Resources:debug] Classification completed', {
+      ms: Date.now() - t0, images: images.length, volumes: volumes.length, networks: networks.length,
     });
 
     return { images, volumes, networks };
@@ -926,6 +933,7 @@ class DockerController {
   }
 
   public async removeContainers(containerIds: string[]) {
+    if (isDebugEnabled()) console.debug('[Resources:debug] removeContainers', { count: containerIds.length });
     const results = [];
     for (const id of containerIds) {
       try {
