@@ -57,7 +57,7 @@ export function RecentAlerts({ notifications, nodes, onCleared }: RecentAlertsPr
   };
 
   return (
-    <Card className="bg-card">
+    <Card className="bg-card shadow-card-bevel">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium text-stat-title">Recent Alerts</CardTitle>

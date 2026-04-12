@@ -52,7 +52,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {/* CPU */}
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
           <CardTitle className="text-xs font-medium text-stat-title">CPU</CardTitle>
           <Cpu className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
@@ -69,7 +69,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
       </Card>
 
       {/* RAM */}
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
           <CardTitle className="text-xs font-medium text-stat-title">Memory</CardTitle>
           <MemoryStick className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
@@ -86,7 +86,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
       </Card>
 
       {/* Disk */}
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
           <CardTitle className="text-xs font-medium text-stat-title">Disk</CardTitle>
           <HardDrive className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
@@ -103,7 +103,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
       </Card>
 
       {/* Containers */}
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
           <CardTitle className="text-xs font-medium text-stat-title">Containers</CardTitle>
           <Container className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
@@ -113,7 +113,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
             <CursorProvider>
               <CursorContainer className="inline-flex items-baseline">
                 <span className="text-2xl font-medium font-mono tabular-nums tracking-tight text-stat-value">{stats.active}</span>
-                <span className="text-sm text-stat-subtitle ml-1.5">{stats.active === 1 ? 'active' : 'actives'}</span>
+                <span className="text-sm text-stat-subtitle ml-1.5">active</span>
               </CursorContainer>
               <Cursor>
                 <div className="h-2 w-2 rounded-full bg-brand" />
@@ -141,7 +141,7 @@ export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
       </Card>
 
       {/* Network */}
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
           <CardTitle className="text-xs font-medium text-stat-title">Network</CardTitle>
           <Network className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />

@@ -78,7 +78,7 @@ export function StackHealthTable({ stackStatuses, metrics, onNavigateToStack }: 
 
   if (Object.keys(stackStatuses).length === 0) {
     return (
-      <Card className="bg-card">
+      <Card className="bg-card shadow-card-bevel">
         <CardContent className="py-8">
           <div className="flex flex-col items-center justify-center gap-2 text-stat-subtitle">
             <Layers className="h-8 w-8 text-stat-icon" strokeWidth={1.5} />
@@ -90,7 +90,7 @@ export function StackHealthTable({ stackStatuses, metrics, onNavigateToStack }: 
   }
 
   return (
-    <Card className="bg-card">
+    <Card className="bg-card shadow-card-bevel">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium text-stat-title">Stack Health</CardTitle>
