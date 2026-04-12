@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
     DialogTitle,
     DialogDescription,
 } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -38,6 +39,11 @@ import {
 } from './settings';
 import type { PatchableSettings, SectionId } from './settings';
 
+const GLOBAL_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
+    'account', 'license', 'users', 'sso', 'api-tokens', 'registries',
+    'labels', 'notifications', 'notification-routing', 'webhooks', 'nodes', 'appstore',
+]);
+
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -51,14 +57,30 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
     const isRemote = activeNode?.type === 'remote';
     const [activeSection, setActiveSection] = useState<SectionId>(initialSection || 'account');
 
+    const contentViewportRef = useRef<HTMLDivElement | null>(null);
+    const scrollPositionsRef = useRef<Partial<Record<SectionId, number>>>({});
+
+    const switchSection = (next: SectionId) => {
+        if (contentViewportRef.current) {
+            scrollPositionsRef.current[activeSection] = contentViewportRef.current.scrollTop;
+        }
+        setActiveSection(next);
+    };
+
+    useLayoutEffect(() => {
+        if (contentViewportRef.current) {
+            contentViewportRef.current.scrollTop = scrollPositionsRef.current[activeSection] ?? 0;
+        }
+    }, [activeSection]);
+
     useEffect(() => {
         if (isOpen && initialSection) setActiveSection(initialSection);
     }, [isOpen, initialSection]);
 
-    // When switching to a remote node, reset to a node-scoped section if on a global-only one
+    // Remote nodes don't expose global-only sections, so bounce to a node-scoped one.
     useEffect(() => {
-        if (isRemote && (activeSection === 'account' || activeSection === 'license' || activeSection === 'users' || activeSection === 'sso' || activeSection === 'api-tokens' || activeSection === 'registries' || activeSection === 'labels' || activeSection === 'notifications' || activeSection === 'notification-routing' || activeSection === 'webhooks' || activeSection === 'nodes' || activeSection === 'appstore')) {
-            setActiveSection('system');
+        if (isRemote && GLOBAL_ONLY_SECTIONS.has(activeSection)) {
+            switchSection('system');
         }
     }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -221,7 +243,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         <Button
             variant={activeSection === section ? 'secondary' : 'ghost'}
             className="w-full justify-start font-medium relative"
-            onClick={() => setActiveSection(section)}
+            onClick={() => switchSection(section)}
         >
             {icon}
             {label}
@@ -319,7 +341,8 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                     ) : (
                         <div className="mb-5" />
                     )}
-                    <nav className="space-y-1.5 flex flex-col flex-1 overflow-y-auto">
+                    <ScrollArea className="flex-1 -mr-2 pr-2">
+                        <nav className="space-y-1.5 flex flex-col">
                         {/* Account / License */}
                         {!isRemote && (
                             <NavButton section="account" icon={<Shield className="w-4 h-4 mr-2" />} label="Account" />
@@ -385,13 +408,16 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         {/* Support / About */}
                         <NavButton section="support" icon={<LifeBuoy className="w-4 h-4 mr-2" />} label="Support" />
                         <NavButton section="about" icon={<Info className="w-4 h-4 mr-2" />} label="About" />
-                    </nav>
+                        </nav>
+                    </ScrollArea>
                 </div>
 
                 {/* Main Content Area */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-                    {renderSection()}
-                </div>
+                <ScrollArea viewportRef={contentViewportRef} className="flex-1">
+                    <div className="p-6 flex flex-col gap-6">
+                        {renderSection()}
+                    </div>
+                </ScrollArea>
             </DialogContent>
         </Dialog>
     );

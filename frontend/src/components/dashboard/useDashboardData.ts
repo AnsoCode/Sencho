@@ -50,7 +50,6 @@ export function useDashboardData(): DashboardData {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [metrics, setMetrics] = useState<MetricPoint[]>([]);
   const [stackStatuses, setStackStatuses] = useState<Record<string, StackStatusEntry>>({});
-  const [lastUpdated, setLastUpdated] = useState<number>(0);
 
   // Keep a ref to the latest nodeId so async callbacks don't write stale data
   // after a node switch has already triggered a new effect cycle.
@@ -76,7 +75,6 @@ export function useDashboardData(): DashboardData {
       const data = await fetchJson<Stats>('/stats');
       if (data && nodeIdRef.current === currentNodeId) {
         setStats(data);
-        setLastUpdated(Date.now());
       }
     };
     fetchStats();
@@ -93,7 +91,6 @@ export function useDashboardData(): DashboardData {
       const data = await fetchJson<SystemStats>('/system/stats');
       if (nodeIdRef.current === currentNodeId) {
         setSystemStats(data);
-        if (data) setLastUpdated(Date.now());
       }
     };
     fetchSys();
@@ -129,5 +126,5 @@ export function useDashboardData(): DashboardData {
     return cleanup;
   }, [nodeId, fetchJson]);
 
-  return { stats, systemStats, metrics, stackStatuses, lastUpdated };
+  return { stats, systemStats, metrics, stackStatuses };
 }

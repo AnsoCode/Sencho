@@ -65,5 +65,4 @@ export interface DashboardData {
   systemStats: SystemStats | null;
   metrics: MetricPoint[];
   stackStatuses: Record<string, StackStatusEntry>;
-  lastUpdated: number;
 }

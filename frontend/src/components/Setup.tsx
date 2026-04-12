@@ -16,7 +16,6 @@ export function Setup({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -53,7 +52,6 @@ export function Setup({
           username,
           password,
           confirmPassword,
-          admin_email: adminEmail || undefined,
         }),
       });
 
@@ -151,21 +149,6 @@ export function Setup({
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="adminEmail">
-                  Email <span className="text-muted-foreground font-normal">(optional)</span>
-                </Label>
-                <Input
-                  id="adminEmail"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used for license recovery. Never shared with third parties.
-                </p>
               </div>
               {error && (
                 <div className="text-sm text-red-500 text-center">

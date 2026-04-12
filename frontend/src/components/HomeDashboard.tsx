@@ -26,7 +26,6 @@ export default function HomeDashboard({ onNavigateToStack, notifications, onClea
         systemStats={data.systemStats}
         notifications={notifications}
         activeNodeName={activeNode?.name || 'Local'}
-        lastUpdated={data.lastUpdated}
       />
 
       <ResourceGauges
@@ -37,7 +36,6 @@ export default function HomeDashboard({ onNavigateToStack, notifications, onClea
       <StackHealthTable
         stackStatuses={data.stackStatuses}
         metrics={data.metrics}
-        systemStats={data.systemStats}
         onNavigateToStack={onNavigateToStack || (() => {})}
       />
 
