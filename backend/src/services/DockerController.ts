@@ -40,6 +40,11 @@ export interface ClassifiedImage {
   managedStatus: 'managed' | 'unmanaged' | 'unused';
 }
 
+export interface PortInUseInfo {
+  stack: string | null;
+  container: string;
+}
+
 export interface ClassifiedVolume {
   Name: string;
   Driver: string;
@@ -656,6 +661,42 @@ class DockerController {
         }
       } else if (result[stackDir].status !== 'running') {
         result[stackDir].status = 'exited';
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns a map of host ports currently bound by running containers,
+   * with ownership info (Sencho-managed stack name or external).
+   */
+  public async getPortsInUse(knownStackNames: string[]): Promise<Record<number, PortInUseInfo>> {
+    const [allContainers, projectToStack] = await Promise.all([
+      this.docker.listContainers({ all: false }),
+      DockerController.resolveProjectNameMap(knownStackNames),
+    ]);
+
+    const absDirToStack = DockerController.buildAbsDirMap(knownStackNames);
+    const knownStackSet = new Set(knownStackNames);
+    const resolvedBase = path.resolve(COMPOSE_DIR);
+
+    const result: Record<number, PortInUseInfo> = {};
+
+    for (const container of allContainers as Array<{ Names?: string[]; Labels?: Record<string, string>; Ports?: Array<{ PublicPort?: number }> }>) {
+      const stackDir = DockerController.resolveContainerStack(
+        container.Labels, projectToStack, knownStackSet, absDirToStack, resolvedBase,
+      );
+
+      const containerName = (container.Names?.[0] || '').replace(/^\//, '');
+
+      if (!Array.isArray(container.Ports)) continue;
+
+      for (const port of container.Ports) {
+        if (!port.PublicPort || port.PublicPort <= 0) continue;
+        // First container to claim a port wins (avoids overwrites)
+        if (result[port.PublicPort]) continue;
+        result[port.PublicPort] = { stack: stackDir, container: containerName };
       }
     }
 

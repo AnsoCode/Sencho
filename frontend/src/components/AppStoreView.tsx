@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
+import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 
 function isValidPort(value: string): boolean {
     if (!value) return true;
@@ -47,6 +48,11 @@ interface Template {
     source?: string;
 }
 
+interface PortInUseInfo {
+    stack: string | null;
+    container: string;
+}
+
 interface AppStoreViewProps {
     onDeploySuccess: (stackName: string) => void;
 }
@@ -70,6 +76,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [volVars, setVolVars] = useState<Record<string, string>>({});
     const [customEnvs, setCustomEnvs] = useState<Array<{ key: string, value: string }>>([]);
     const [newEnvKey, setNewEnvKey] = useState('');
+    const [portsInUse, setPortsInUse] = useState<Record<string, PortInUseInfo>>({});
     const [newEnvVal, setNewEnvVal] = useState('');
 
     useEffect(() => {
@@ -138,6 +145,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             .replace(/-+/g, '-')
             .replace(/^-|-$/g, '');
         setStackName(defaultName);
+
+        // Fetch currently bound host ports for conflict detection
+        setPortsInUse({});
+        apiFetch('/ports/in-use').then(r => r.ok ? r.json() : {}).then(setPortsInUse).catch(err => console.error('[AppStore] Failed to fetch ports in use:', err));
 
         setIsSheetOpen(true);
     };
@@ -424,17 +435,41 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                             {selectedTemplate.ports.map((p, idx) => {
                                                 const parts = p.split(':');
                                                 if (parts.length < 2) return null;
+                                                const hostPort = portVars[p] || '';
+                                                const conflict = hostPort ? portsInUse[hostPort] : undefined;
                                                 return (
                                                     <div key={idx} className="flex items-center space-x-2">
                                                         <Input
-                                                            value={portVars[p] || ''}
+                                                            value={hostPort}
                                                             onChange={(e) => {
                                                                 const val = e.target.value.replace(/[^0-9]/g, '');
                                                                 setPortVars(prev => ({ ...prev, [p]: val }));
                                                             }}
-                                                            className={cn("w-24 text-center font-mono", portVars[p] && !isValidPort(portVars[p]) && "border-destructive")}
+                                                            className={cn("w-24 text-center font-mono", hostPort && !isValidPort(hostPort) && "border-destructive")}
                                                         />
-                                                        <span className="text-muted-foreground font-mono">: {parts[1]}</span>
+                                                        {conflict ? (
+                                                            <CursorProvider>
+                                                                <CursorContainer className="inline-flex items-center gap-2">
+                                                                    <span className="text-muted-foreground font-mono">: {parts[1]}</span>
+                                                                    <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+                                                                </CursorContainer>
+                                                                <Cursor>
+                                                                    <div className="h-2 w-2 rounded-full bg-brand" />
+                                                                </Cursor>
+                                                                <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
+                                                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+                                                                        <span className="font-mono tabular-nums text-xs text-stat-value">
+                                                                            {conflict.stack !== null
+                                                                                ? <>Port {hostPort} used by <span className="text-brand">{conflict.stack}</span></>
+                                                                                : <>Port {hostPort} used by an external app</>
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                </CursorFollow>
+                                                            </CursorProvider>
+                                                        ) : (
+                                                            <span className="text-muted-foreground font-mono">: {parts[1]}</span>
+                                                        )}
                                                     </div>
                                                 );
                                             })}

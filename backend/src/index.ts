@@ -3167,6 +3167,19 @@ app.get('/api/containers', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/ports/in-use', async (req: Request, res: Response) => {
+  try {
+    const fsService = FileSystemService.getInstance(req.nodeId);
+    const stacks = await fsService.getStacks();
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const portsInUse = await dockerController.getPortsInUse(stacks);
+    res.json(portsInUse);
+  } catch (error) {
+    console.error('[Ports] Failed to fetch ports in use:', error);
+    res.status(500).json({ error: 'Failed to fetch ports in use' });
+  }
+});
+
 // --- Label Routes (Skipper+) ---
 
 app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
