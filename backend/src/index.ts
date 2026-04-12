@@ -64,7 +64,7 @@ import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
 import YAML from 'yaml';
-import fs, { promises as fsPromises } from 'fs';
+import { promises as fsPromises } from 'fs';
 
 // Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
 // util._extend internally. The warning fires at runtime when createProxyServer() is
