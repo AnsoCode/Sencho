@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from '../utils/validation';
+import {
+  isValidStackName, isValidRemoteUrl, isPathWithinBase,
+  isValidCidr, isValidIPv4, isValidDockerResourceId,
+} from '../utils/validation';
 
 // ─── isValidStackName ────────────────────────────────────────────────────────
 
@@ -120,5 +123,105 @@ describe('isPathWithinBase', () => {
 
   it('rejects sibling directories', () => {
     expect(isPathWithinBase('/app/compose/other-stack/.env', '/app/compose/mystack')).toBe(false);
+  });
+});
+
+// --- isValidCidr ---------------------------------------------------------------
+
+describe('isValidCidr', () => {
+  it('accepts valid CIDR notation', () => {
+    expect(isValidCidr('10.0.0.0/24')).toBe(true);
+    expect(isValidCidr('172.16.0.0/16')).toBe(true);
+    expect(isValidCidr('192.168.1.0/28')).toBe(true);
+    expect(isValidCidr('0.0.0.0/0')).toBe(true);
+    expect(isValidCidr('255.255.255.255/32')).toBe(true);
+  });
+
+  it('rejects missing prefix', () => {
+    expect(isValidCidr('10.0.0.0')).toBe(false);
+  });
+
+  it('rejects prefix out of range', () => {
+    expect(isValidCidr('10.0.0.0/33')).toBe(false);
+    expect(isValidCidr('10.0.0.0/99')).toBe(false);
+  });
+
+  it('rejects octet out of range', () => {
+    expect(isValidCidr('256.0.0.0/24')).toBe(false);
+    expect(isValidCidr('10.999.0.0/16')).toBe(false);
+  });
+
+  it('rejects empty and garbage input', () => {
+    expect(isValidCidr('')).toBe(false);
+    expect(isValidCidr('not-a-cidr')).toBe(false);
+    expect(isValidCidr('10.0.0/24')).toBe(false);
+  });
+});
+
+// --- isValidIPv4 ---------------------------------------------------------------
+
+describe('isValidIPv4', () => {
+  it('accepts valid IPv4 addresses', () => {
+    expect(isValidIPv4('10.0.0.1')).toBe(true);
+    expect(isValidIPv4('192.168.1.1')).toBe(true);
+    expect(isValidIPv4('0.0.0.0')).toBe(true);
+    expect(isValidIPv4('255.255.255.255')).toBe(true);
+  });
+
+  it('rejects incomplete addresses', () => {
+    expect(isValidIPv4('10.0.0')).toBe(false);
+    expect(isValidIPv4('10')).toBe(false);
+  });
+
+  it('rejects octet out of range', () => {
+    expect(isValidIPv4('256.1.2.3')).toBe(false);
+    expect(isValidIPv4('10.0.0.999')).toBe(false);
+  });
+
+  it('rejects CIDR notation (use isValidCidr instead)', () => {
+    expect(isValidIPv4('10.0.0.1/24')).toBe(false);
+  });
+
+  it('rejects empty and garbage input', () => {
+    expect(isValidIPv4('')).toBe(false);
+    expect(isValidIPv4('not-an-ip')).toBe(false);
+  });
+});
+
+// --- isValidDockerResourceId ---------------------------------------------------
+
+describe('isValidDockerResourceId', () => {
+  it('accepts 12-character hex IDs (short form)', () => {
+    expect(isValidDockerResourceId('a1b2c3d4e5f6')).toBe(true);
+    expect(isValidDockerResourceId('AABB00112233')).toBe(true);
+  });
+
+  it('accepts 64-character hex IDs (full SHA256)', () => {
+    expect(isValidDockerResourceId('a'.repeat(64))).toBe(true);
+    expect(isValidDockerResourceId('abcdef0123456789'.repeat(4))).toBe(true);
+  });
+
+  it('accepts mixed-case hex of valid lengths', () => {
+    expect(isValidDockerResourceId('aAbBcCdDeEfF')).toBe(true);
+  });
+
+  it('rejects IDs shorter than 12 characters', () => {
+    expect(isValidDockerResourceId('a1b2c3d4e5f')).toBe(false);
+    expect(isValidDockerResourceId('')).toBe(false);
+  });
+
+  it('rejects IDs longer than 64 characters', () => {
+    expect(isValidDockerResourceId('a'.repeat(65))).toBe(false);
+  });
+
+  it('rejects non-hex characters', () => {
+    expect(isValidDockerResourceId('g1b2c3d4e5f6')).toBe(false);
+    expect(isValidDockerResourceId('hello-world!')).toBe(false);
+  });
+
+  it('rejects IDs with slashes, dots, or spaces', () => {
+    expect(isValidDockerResourceId('a1b2c3/d4e5f6')).toBe(false);
+    expect(isValidDockerResourceId('a1b2c3.d4e5f6')).toBe(false);
+    expect(isValidDockerResourceId('a1b2c3 d4e5f6')).toBe(false);
   });
 });
