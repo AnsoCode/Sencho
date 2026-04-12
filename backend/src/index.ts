@@ -3615,6 +3615,9 @@ app.delete('/api/stacks/:name', async (req: Request, res: Response) => {
     // Stage 2: Obliterate the files
     await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
 
+    // Prevent stale update badges for deleted stacks
+    DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
+
     invalidateNodeCaches(req.nodeId);
     res.json({ success: true });
   } catch (error: any) {

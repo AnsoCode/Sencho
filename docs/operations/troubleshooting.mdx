@@ -509,6 +509,18 @@ docker compose pull && docker compose up -d
 
 ---
 
+## Image update checks skip some stacks
+
+**Symptom:** Some stacks in the sidebar never show the "Update available" badge, even though newer images exist on the registry.
+
+**Possible causes:**
+
+- **Build-only services:** Services in your compose file that use `build:` without an `image:` key are skipped. Only services with a remote image reference are checked.
+- **Unresolvable variables:** If a service's image uses `${VAR}` interpolation and the variable has no default value and is not defined in the stack's `.env` file, the image reference cannot be resolved and is skipped. Add a default value (e.g., `${TAG:-latest}`) or define the variable in the stack's `.env` file.
+- **Image not pulled locally:** Stacks that have never been deployed (no local image on disk) will not show update badges because there is no local digest to compare against the registry. Deploy the stack at least once to enable update detection.
+
+---
+
 ## "Check for updates" shows rate-limit error
 
 **Symptom:** Clicking "Check for updates" shows a toast error about waiting before checking again.

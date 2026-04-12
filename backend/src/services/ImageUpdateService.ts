@@ -1,8 +1,10 @@
 import https from 'https';
 import http from 'http';
 import path from 'path';
+import YAML from 'yaml';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
+import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { NodeRegistry } from './NodeRegistry';
 
@@ -72,6 +74,62 @@ function httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 
         req.on('error', reject);
         req.setTimeout(timeoutMs, () => req.destroy(new Error('Request timed out')));
     });
+}
+
+// ─── Compose file helpers ────────────────────────────────────────────────────
+
+function loadDotEnv(content: string): Record<string, string> {
+    const vars: Record<string, string> = {};
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx < 1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+        }
+        vars[key] = val;
+    }
+    return vars;
+}
+
+function extractImagesFromCompose(
+    yamlContent: string,
+    envVars: Record<string, string>
+): string[] {
+    let parsed: Record<string, unknown>;
+    try {
+        parsed = YAML.parse(yamlContent) as Record<string, unknown>;
+    } catch {
+        return [];
+    }
+    if (!parsed?.services || typeof parsed.services !== 'object') return [];
+
+    const images: string[] = [];
+    for (const svc of Object.values(parsed.services as Record<string, unknown>)) {
+        if (!svc || typeof svc !== 'object') continue;
+        const raw = (svc as Record<string, unknown>).image;
+        if (!raw || typeof raw !== 'string') continue;
+
+        let ref = raw.replace(
+            /\$\{([^}]+)\}/g,
+            (_: string, expr: string) => {
+                const defaultMatch = expr.match(/^([^:-]+)(?::?-)(.+)$/);
+                if (defaultMatch) {
+                    return envVars[defaultMatch[1]] ?? defaultMatch[2];
+                }
+                return envVars[expr] ?? '';
+            }
+        );
+
+        ref = ref.trim();
+        if (!ref || ref.includes('${') || ref.startsWith('sha256:')) continue;
+        images.push(ref);
+    }
+    return images;
 }
 
 // ─── Registry auth ────────────────────────────────────────────────────────────
@@ -235,33 +293,65 @@ export class ImageUpdateService {
 
     private async checkNode(nodeId: number, db: DatabaseService) {
         const docker = DockerController.getInstance(nodeId);
-        const containers = await docker.getAllContainers();
+        const fs = FileSystemService.getInstance(nodeId);
         const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(nodeId));
 
-        // stackName → set of image refs used by that stack
-        // Key by directory name (matching FileSystemService.getStacks()) rather than
-        // com.docker.compose.project label, which diverges when compose files set `name:`.
+        // Phase 1: Filesystem discovery (all stacks with compose files)
+        const stacks = await fs.getStacks();
         const stackImages = new Map<string, Set<string>>();
+        for (const name of stacks) stackImages.set(name, new Set());
 
-        for (const c of containers) {
-            const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
-            if (!workingDir) continue;
+        // Phase 2: Parse compose files for image refs
+        for (const stackName of stacks) {
+            try {
+                const content = await fs.getStackContent(stackName);
 
-            // Only consider containers managed under COMPOSE_DIR
-            const resolved = path.resolve(workingDir);
-            if (resolved !== composeDir && !resolved.startsWith(composeDir + path.sep)) continue;
+                // Load .env for variable resolution (best-effort)
+                let envVars: Record<string, string> = {};
+                try {
+                    const envContent = await fs.getEnvContent(stackName);
+                    envVars = loadDotEnv(envContent);
+                } catch {
+                    // No .env file or unreadable; continue with process.env only
+                }
+                // Docker Compose precedence: host env overrides .env
+                const merged: Record<string, string> = { ...envVars };
+                for (const [k, v] of Object.entries(process.env)) {
+                    if (v !== undefined) merged[k] = v;
+                }
 
-            const stackName = path.basename(resolved);
-            const imageRef: string = c.Image ?? '';
-            if (!imageRef || imageRef.startsWith('sha256:')) continue;
-
-            if (!stackImages.has(stackName)) stackImages.set(stackName, new Set());
-            stackImages.get(stackName)!.add(imageRef);
+                for (const img of extractImagesFromCompose(content, merged)) {
+                    stackImages.get(stackName)?.add(img);
+                }
+            } catch (e) {
+                console.warn(`[ImageUpdateService] Could not parse compose for "${stackName}":`, e);
+            }
         }
 
-        if (stackImages.size === 0) return;
+        // Phase 3: Container augmentation (captures actual deployed image tags)
+        try {
+            const containers = await docker.getAllContainers();
+            for (const c of containers) {
+                const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
+                if (!workingDir) continue;
 
-        // Deduplicate: each unique image is checked once regardless of how many stacks use it
+                const resolved = path.resolve(workingDir);
+                if (resolved !== composeDir && !resolved.startsWith(composeDir + path.sep)) continue;
+
+                const stackName = path.basename(resolved);
+                const imageRef: string = c.Image ?? '';
+                if (!imageRef || imageRef.startsWith('sha256:')) continue;
+
+                // Only augment stacks found on the filesystem
+                if (stackImages.has(stackName)) {
+                    stackImages.get(stackName)?.add(imageRef);
+                }
+            }
+        } catch (e) {
+            console.warn('[ImageUpdateService] Container augmentation failed:', e);
+        }
+
+        // Phase 4: Deduplicate and check all unique images
         const allImages = new Set<string>();
         for (const imgs of stackImages.values()) for (const img of imgs) allImages.add(img);
 
@@ -277,10 +367,19 @@ export class ImageUpdateService {
             await sleep(ImageUpdateService.INTER_IMAGE_DELAY_MS);
         }
 
+        // Write status for ALL stacks (including those with no pullable images)
         const now = Date.now();
         for (const [stackName, images] of stackImages) {
             const hasUpdate = Array.from(images).some(img => imageUpdateMap.get(img) === true);
             db.upsertStackUpdateStatus(nodeId, stackName, hasUpdate, now);
+        }
+
+        // Prune stale entries for stacks no longer on disk
+        const existing = db.getStackUpdateStatus(nodeId);
+        for (const staleStack of Object.keys(existing)) {
+            if (!stackImages.has(staleStack)) {
+                db.clearStackUpdateStatus(nodeId, staleStack);
+            }
         }
     }
 

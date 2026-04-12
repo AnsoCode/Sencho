@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
+import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown } from 'lucide-react';
@@ -1521,10 +1522,24 @@ export default function EditorLayout() {
                               )}
 
                               {stackUpdates[file] && (
-                                <span
-                                  className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0"
-                                  title="Update available"
-                                />
+                                <CursorProvider>
+                                  <CursorContainer className="inline-flex items-center shrink-0">
+                                    <span className="w-2 h-2 rounded-full bg-info animate-pulse" />
+                                  </CursorContainer>
+                                  <Cursor>
+                                    <div className="h-2 w-2 rounded-full bg-brand" />
+                                  </Cursor>
+                                  <CursorFollow
+                                    side="bottom"
+                                    sideOffset={4}
+                                    align="center"
+                                    transition={{ stiffness: 400, damping: 40, bounce: 0 }}
+                                  >
+                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+                                      <span className="font-mono text-xs tabular-nums text-stat-value">Update available</span>
+                                    </div>
+                                  </CursorFollow>
+                                </CursorProvider>
                               )}
 
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
