@@ -6,3 +6,9 @@ export interface SenchoOpenLogsDetail {
   containerId: string;
   containerName: string;
 }
+
+export const SENCHO_SETTINGS_CHANGED = 'sencho-settings-changed';
+
+export interface SenchoSettingsChangedDetail {
+  changedKeys: string[];
+}
