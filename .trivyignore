@@ -20,24 +20,38 @@
 # the release-time re-scan (.github/workflows/docker-publish.yml) honor it.
 
 # ---------------------------------------------------------------------------
-# Bundled inside /usr/local/lib/docker/cli-plugins/docker-compose (v5.1.1)
+# Bundled inside /usr/local/bin/docker and docker-compose
 # ---------------------------------------------------------------------------
-# Compose v5.1.1 is the latest upstream release and is already pinned in
-# Dockerfile:113 to get us off the v2.40.3 grpc 1.74.2 / x/crypto 0.38.0 CVE
-# set. It statically links older copies of github.com/docker/docker,
-# buildkit, otel, and grpc. We cannot bump these transitively without
-# waiting for a new upstream Compose release. Revisit this block on every
-# Compose release; remove entries as upstream rebuilds ship the fixes.
-# See the rationale block at Dockerfile:96-111.
+# Docker CLI 29.4.0 ships Go 1.26.1 and Compose v5.1.2 ships Go 1.25.8.
+# Both are vulnerable to CVE-2026-32282 (fix requires Go 1.25.9 or 1.26.2).
+# No upstream static binary ships a patched Go runtime yet. Revisit on the
+# next Docker CLI and Compose release.
+
+# Justification: Go stdlib symlink-following in Root.Chmod. Sencho does not
+# use Root.Chmod; the Docker CLI and compose plugin are invoked as
+# subprocesses to manage containers. The vulnerable code path requires a
+# chroot context with attacker-controlled filesystem, which does not apply
+# to our usage. Blocked on upstream Go rebuild; revisit on next CLI/Compose
+# release.
+CVE-2026-32282
+
+# ---------------------------------------------------------------------------
+# Bundled inside /usr/local/lib/docker/cli-plugins/docker-compose (v5.1.2)
+# ---------------------------------------------------------------------------
+# Compose v5.1.2 is the latest upstream release. It statically links older
+# copies of github.com/docker/docker, buildkit, and otel. We cannot bump
+# these transitively without waiting for a new upstream Compose release.
+# Revisit this block on every Compose release; remove entries as upstream
+# rebuilds ship the fixes.
 
 # Justification: github.com/docker/docker v28.5.2 statically bundled in
-# compose v5.1.1. Moby authz bypass applies to a Docker daemon, not to the
+# compose v5.1.2. Moby authz bypass applies to a Docker daemon, not to the
 # compose CLI plugin; compose never runs as a daemon. Revisit on next
 # Compose upstream release.
 CVE-2026-34040
 
 # Justification: github.com/moby/buildkit v0.27.1 statically bundled in
-# compose v5.1.1. BuildKit arbitrary file write via untrusted frontend is
+# compose v5.1.2. BuildKit arbitrary file write via untrusted frontend is
 # exploited at buildkit build time with attacker-controlled frontends; our
 # compose invocations only call up/down/ps against local user-authored
 # compose files, never as a build frontend. Revisit on next Compose upstream
@@ -45,32 +59,31 @@ CVE-2026-34040
 CVE-2026-33747
 
 # Justification: github.com/moby/buildkit v0.27.1 statically bundled in
-# compose v5.1.1. Same exposure profile as CVE-2026-33747 (Git URL fragment
+# compose v5.1.2. Same exposure profile as CVE-2026-33747 (Git URL fragment
 # subdir exploitation requires invoking buildkit on untrusted repo URLs,
 # which compose does not do in our flow). Revisit on next Compose upstream
 # release.
 CVE-2026-33748
 
 # Justification: go.opentelemetry.io/otel/sdk v1.38.0 statically bundled in
-# compose v5.1.1. PATH hijacking requires the attacker to control the
+# compose v5.1.2. PATH hijacking requires the attacker to control the
 # process PATH before compose starts; our container starts compose from a
 # fixed PATH with only /usr/local/bin and /usr/bin on it, both owned by
 # root. Revisit on next Compose upstream release.
 CVE-2026-24051
 
 # Justification: go.opentelemetry.io/otel/sdk v1.38.0 statically bundled in
-# compose v5.1.1. BSD kenv PATH hijacking only applies on BSD systems; we
+# compose v5.1.2. BSD kenv PATH hijacking only applies on BSD systems; we
 # ship linux/amd64 and linux/arm64. Not applicable in our runtime. Revisit
 # on next Compose upstream release.
 CVE-2026-39883
 
 # Justification: google.golang.org/grpc v1.78.0 statically bundled in
-# compose v5.1.1 AND in Docker CLI v29.3.1. Already explicitly acknowledged
-# in the Dockerfile rationale block at Dockerfile:108-111 as unpatched,
-# waiting on a new Docker CLI or Compose release that ships grpc >= 1.79.3.
-# Exploit requires an attacker-controlled HTTP/2 peer talking to a gRPC
-# server; compose and the docker CLI only act as gRPC clients against the
-# local unix socket, not as servers.
+# Docker CLI v29.4.0. Compose v5.1.2 bumped grpc to 1.80.0, resolving this
+# for the compose binary. The CLI still ships 1.78.0. Exploit requires an
+# attacker-controlled HTTP/2 peer talking to a gRPC server; the docker CLI
+# only acts as a gRPC client against the local unix socket, not as a server.
+# Revisit on next Docker CLI release.
 CVE-2026-33186
 
 # ---------------------------------------------------------------------------
