@@ -9,9 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import {
-    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -157,9 +156,9 @@ function StatCard({ icon: Icon, label, value, sub, alert }: {
     alert?: boolean;
 }) {
     return (
-        <div className={`rounded-lg border bg-card p-4 ${alert ? 'border-red-500/30 bg-red-500/5' : ''}`}>
+        <div className={`rounded-lg border bg-card text-card-foreground shadow-card-bevel p-4 transition-colors ${alert ? 'border-destructive/30 bg-destructive/5' : 'border-card-border border-t-card-border-top hover:border-t-card-border-hover'}`}>
             <div className="flex items-center gap-2 mb-2">
-                <Icon className={`w-4 h-4 ${alert ? 'text-red-500' : 'text-stat-icon'}`} />
+                <Icon className={`w-4 h-4 ${alert ? 'text-destructive' : 'text-stat-icon'}`} />
                 <span className="text-xs text-stat-title">{label}</span>
             </div>
             <div className={`text-2xl font-medium tabular-nums tracking-tight ${alert ? 'text-destructive/70' : 'text-stat-value'}`}>{value}</div>
@@ -179,7 +178,7 @@ function ContainerRow({ container, nodeId, onNavigate }: {
     const status = container.Status ?? '';
 
     const stateColor = state === 'running' ? 'bg-success' :
-        state === 'restarting' ? 'bg-warning' : 'bg-red-500';
+        state === 'restarting' ? 'bg-warning' : 'bg-destructive';
 
     return (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/50 transition-colors group">
@@ -203,7 +202,7 @@ function ContainerRow({ container, nodeId, onNavigate }: {
                 onClick={() => onNavigate(nodeId)}
                 title="Open in editor"
             >
-                <ExternalLink className="w-3 h-3" />
+                <ExternalLink className="w-3 h-3" strokeWidth={1.5} />
             </Button>
         </div>
     );
@@ -220,10 +219,11 @@ function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
     const [loading, setLoading] = useState(false);
 
     const handleExpand = async () => {
+        if (loading) return;
         const next = !expanded;
         setExpanded(next);
 
-        if (next && containers === null) {
+        if (next) {
             setLoading(true);
             try {
                 const res = await apiFetch(`/fleet/node/${nodeId}/stacks/${encodeURIComponent(stackName)}/containers`, { localOnly: true });
@@ -232,7 +232,8 @@ function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
                 } else {
                     toast.error('Failed to load containers for ' + stackName);
                 }
-            } catch {
+            } catch (error) {
+                console.error('Failed to load containers for', stackName, error);
                 toast.error('Failed to load containers for ' + stackName);
             } finally {
                 setLoading(false);
@@ -462,7 +463,8 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                 } else {
                     toast.error('Failed to load stacks for ' + node.name);
                 }
-            } catch {
+            } catch (error) {
+                console.error('Failed to load stacks for', node.name, error);
                 toast.error('Failed to load stacks for ' + node.name);
             } finally {
                 setLoadingStacks(false);
@@ -471,7 +473,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
     };
 
     return (
-        <div className={`rounded-xl border bg-card text-card-foreground transition-all ${isOnline ? '' : 'opacity-60'}`}>
+        <div className={`rounded-xl border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors hover:border-t-card-border-hover ${isOnline ? '' : 'opacity-60'}`}>
             {/* Card Header */}
             <div className="p-4 pb-3">
                 <div className="flex items-center justify-between mb-3">
@@ -548,7 +550,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                 </span>
                                 <span className="font-medium">{node.systemStats.cpu.usage}%</span>
                             </div>
-                            <UsageBar percent={cpuPercent} color={cpuPercent > 80 ? 'bg-red-500' : cpuPercent > 60 ? 'bg-warning' : 'bg-success'} />
+                            <UsageBar percent={cpuPercent} color={cpuPercent > 80 ? 'bg-destructive/80' : cpuPercent > 60 ? 'bg-warning' : 'bg-success'} />
                         </div>
                         <div>
                             <div className="flex items-center justify-between text-xs mb-1">
@@ -557,7 +559,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                 </span>
                                 <span className="font-medium">{formatBytes(node.systemStats.memory.used)} / {formatBytes(node.systemStats.memory.total)}</span>
                             </div>
-                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-red-500' : memPercent > 60 ? 'bg-warning' : 'bg-info'} />
+                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-destructive/80' : memPercent > 60 ? 'bg-warning' : 'bg-info'} />
                         </div>
                         {node.systemStats.disk && (
                             <div>
@@ -567,7 +569,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                     </span>
                                     <span className="font-medium">{formatBytes(node.systemStats.disk.used)} / {formatBytes(node.systemStats.disk.total)}</span>
                                 </div>
-                                <UsageBar percent={diskPercent} color={diskPercent > 90 ? 'bg-red-500' : diskPercent > 75 ? 'bg-warning' : 'bg-violet-500'} />
+                                <UsageBar percent={diskPercent} color={diskPercent > 90 ? 'bg-destructive/80' : diskPercent > 75 ? 'bg-warning' : 'bg-brand'} />
                             </div>
                         )}
                     </div>
@@ -1069,19 +1071,18 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </div>
 
                                     {/* Sort */}
-                                    <Select value={prefs.sortBy} onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}>
-                                        <SelectTrigger className="w-[150px] h-9">
-                                            <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="name">Name</SelectItem>
-                                            <SelectItem value="cpu">CPU Usage</SelectItem>
-                                            <SelectItem value="memory">Memory Usage</SelectItem>
-                                            <SelectItem value="containers">Containers</SelectItem>
-                                            <SelectItem value="status">Status</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <Combobox
+                                        options={[
+                                            { value: 'name', label: 'Name' },
+                                            { value: 'cpu', label: 'CPU Usage' },
+                                            { value: 'memory', label: 'Memory Usage' },
+                                            { value: 'containers', label: 'Containers' },
+                                            { value: 'status', label: 'Status' },
+                                        ]}
+                                        value={prefs.sortBy}
+                                        onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}
+                                        placeholder="Sort by..."
+                                    />
 
                                     <Button
                                         variant="ghost"
@@ -1127,7 +1128,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </div>
 
                                     <Button
-                                        variant={prefs.filterCritical ? 'destructive' : 'outline'}
+                                        variant={prefs.filterCritical ? 'default' : 'outline'}
                                         size="sm"
                                         className="h-7 text-xs px-2.5"
                                         onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
@@ -1207,14 +1208,14 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     <PaidGate featureName="Fleet Management">
                                         {/* Preview of what paid tier unlocks */}
                                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                                            <div className="rounded-xl border bg-card p-4 h-24" />
-                                            <div className="rounded-xl border bg-card p-4 h-24" />
-                                            <div className="rounded-xl border bg-card p-4 h-24" />
-                                            <div className="rounded-xl border bg-card p-4 h-24" />
+                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
+                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
+                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
+                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
                                         </div>
                                         <div className="flex gap-3 mb-4">
-                                            <div className="h-9 rounded-md border bg-card flex-1 max-w-sm" />
-                                            <div className="h-9 rounded-md border bg-card w-[150px]" />
+                                            <div className="h-9 rounded-md border border-card-border bg-card flex-1 max-w-sm" />
+                                            <div className="h-9 rounded-md border border-card-border bg-card w-[150px]" />
                                         </div>
                                     </PaidGate>
                                 </div>
@@ -1263,25 +1264,25 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                             <>
                                 {/* Summary stats */}
                                 <div className="grid grid-cols-4 gap-2">
-                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
                                         <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{upToDate}</div>
                                         <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
                                             <CircleCheck className="w-3 h-3 text-success" strokeWidth={1.5} /> Up to date
                                         </div>
                                     </div>
-                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
                                         <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{available}</div>
                                         <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
                                             <CircleAlert className="w-3 h-3 text-warning" strokeWidth={1.5} /> Available
                                         </div>
                                     </div>
-                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
                                         <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{updating}</div>
                                         <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
                                             <Loader2 className="w-3 h-3 text-info" strokeWidth={1.5} /> Updating
                                         </div>
                                     </div>
-                                    <div className="rounded-lg border border-card-border bg-card px-3 py-2 text-center">
+                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
                                         <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{failed}</div>
                                         <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
                                             <AlertTriangle className="w-3 h-3 text-destructive/70" strokeWidth={1.5} /> Failed
@@ -1317,9 +1318,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </div>
 
                                 {/* Node list */}
-                                <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-[40vh] -mx-1 px-1">
+                                <ScrollArea className="flex-1 min-h-0 max-h-[40vh] -mx-1 px-1">
+                                  <div className="space-y-1">
                                     {filtered.map(s => (
-                                        <div key={s.nodeId} className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 items-center rounded-lg border border-card-border bg-card px-3 py-2">
+                                        <div key={s.nodeId} className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 items-center rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2">
                                             {/* Node name */}
                                             <div className="flex items-center gap-2.5 min-w-0">
                                                 <div className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${s.updateAvailable && !s.updateStatus ? 'bg-warning/10' : 'bg-muted'}`}>
@@ -1384,7 +1386,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                             No nodes match &ldquo;{modalSearch}&rdquo;
                                         </div>
                                     )}
-                                </div>
+                                  </div>
+                                </ScrollArea>
 
                                 {/* Footer */}
                                 <div className="flex items-center justify-between pt-2 border-t border-border/50">

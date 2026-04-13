@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork, type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
+import type Dockerode from 'dockerode';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import bcrypt from 'bcrypt';
@@ -1388,10 +1389,12 @@ interface FleetNodeOverview {
   stacks: string[] | null;
 }
 
-app.get('/api/fleet/overview', async (_req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/overview', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
   try {
+    const debug = isDebugEnabled();
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
+    if (debug) console.debug('[Fleet:debug] Overview requested, fetching', nodes.length, 'nodes');
 
     const results = await Promise.allSettled(
       nodes.map(async (node): Promise<FleetNodeOverview> => {
@@ -1416,6 +1419,10 @@ app.get('/api/fleet/overview', async (_req: Request, res: Response): Promise<voi
       };
     });
 
+    if (debug) {
+      const online = overview.filter(n => n.status === 'online').length;
+      console.debug('[Fleet:debug] Overview complete:', online, 'online,', overview.length - online, 'offline');
+    }
     res.json(overview);
   } catch (error) {
     console.error('[Fleet] Overview error:', error);
@@ -1424,11 +1431,12 @@ app.get('/api/fleet/overview', async (_req: Request, res: Response): Promise<voi
 });
 
 // Paid-gated: detailed stack info per node
-app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/node/:nodeId/stacks', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
 
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
+    if (isNaN(nodeId)) { res.status(400).json({ error: 'Invalid node ID' }); return; }
     const node = DatabaseService.getInstance().getNode(nodeId);
     if (!node) {
       res.status(404).json({ error: 'Node not found' });
@@ -1449,11 +1457,13 @@ app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): P
         return;
       }
       const stacks = await response.json();
+      if (isDebugEnabled()) console.debug('[Fleet:debug] Node stacks:', nodeId, node.type, Array.isArray(stacks) ? stacks.length : 0, 'stacks');
       res.json(stacks);
       return;
     }
 
     const stacks = await FileSystemService.getInstance(nodeId).getStacks();
+    if (isDebugEnabled()) console.debug('[Fleet:debug] Node stacks:', nodeId, node.type, stacks.length, 'stacks');
     res.json(stacks);
   } catch (error) {
     console.error('[Fleet] Node stacks error:', error);
@@ -1462,11 +1472,12 @@ app.get('/api/fleet/node/:nodeId/stacks', async (req: Request, res: Response): P
 });
 
 // Paid-gated: container details for a specific stack on a specific node
-app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
 
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
+    if (isNaN(nodeId)) { res.status(400).json({ error: 'Invalid node ID' }); return; }
     const stackName = req.params.stackName as string;
     if (!isValidStackName(stackName)) {
       res.status(400).json({ error: 'Invalid stack name' });
@@ -1498,6 +1509,7 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Requ
 
     const dockerController = DockerController.getInstance(nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
+    if (isDebugEnabled()) console.debug('[Fleet:debug] Stack containers:', nodeId, stackName, containers.length, 'containers');
     res.json(containers);
   } catch (error) {
     console.error('[Fleet] Node stack containers error:', error);
@@ -1506,7 +1518,7 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', async (req: Requ
 });
 
 // Fleet Update Status — returns version comparison and active update status for all nodes
-app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
   if (!requirePaid(_req, res)) return;
   try {
     const db = DatabaseService.getInstance();
@@ -1642,6 +1654,10 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
       };
     });
 
+    if (isDebugEnabled()) {
+      const trackerStates = Array.from(updateTracker.entries()).map(([nid, t]) => `${nid}:${t.status}`);
+      console.debug('[Fleet:debug] Update status:', nodeStatuses.length, 'nodes, trackers:', trackerStates.join(', ') || 'none');
+    }
     res.json({ nodes: nodeStatuses });
   } catch (error) {
     console.error('[Fleet] Update status error:', error);
@@ -1650,10 +1666,11 @@ app.get('/api/fleet/update-status', async (_req: Request, res: Response): Promis
 });
 
 // Trigger update on a specific node
-app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
+    if (isNaN(nodeId)) { res.status(400).json({ error: 'Invalid node ID' }); return; }
     const db = DatabaseService.getInstance();
     const node = db.getNode(nodeId);
     if (!node) {
@@ -1674,6 +1691,8 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
     if (existing && (existing.status === 'timeout' || existing.status === 'failed' || existing.status === 'completed')) {
       updateTracker.delete(nodeId);
     }
+
+    console.log('[Fleet] Update triggered for node', node.name, node.type);
 
     if (node.type === 'local') {
       if (!SelfUpdateService.getInstance().isAvailable()) {
@@ -1734,13 +1753,15 @@ app.post('/api/fleet/nodes/:nodeId/update', async (req: Request, res: Response):
 });
 
 // Trigger update on all outdated nodes
-app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/fleet/update-all', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const gatewayVersion = getSenchoVersion();
     const { compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
+
+    console.log('[Fleet] Update-all triggered,', nodes.length, 'nodes registered');
 
     // Filter to eligible candidates, then trigger all in parallel
     const candidates = nodes.filter(node => {
@@ -1793,10 +1814,11 @@ app.post('/api/fleet/update-all', async (req: Request, res: Response): Promise<v
 });
 
 // Clear update tracker entry for a specific node (dismiss or before retry)
-app.delete('/api/fleet/nodes/:nodeId/update-status', async (req: Request, res: Response): Promise<void> => {
+app.delete('/api/fleet/nodes/:nodeId/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
+    if (isNaN(nodeId)) { res.status(400).json({ error: 'Invalid node ID' }); return; }
     const node = DatabaseService.getInstance().getNode(nodeId);
     if (!node) {
       res.status(404).json({ error: 'Node not found' });
@@ -1811,7 +1833,7 @@ app.delete('/api/fleet/nodes/:nodeId/update-status', async (req: Request, res: R
 });
 
 // Clear all terminal (timed-out, failed, completed) tracker entries at once
-app.delete('/api/fleet/update-status', async (req: Request, res: Response): Promise<void> => {
+app.delete('/api/fleet/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   // Pre-fetch fresh latest version so the next GET has up-to-date data
   if (req.query.recheck === 'true') {
@@ -1836,18 +1858,19 @@ async function fetchLocalNodeOverview(node: Node): Promise<FleetNodeOverview> {
       si.fsSize(),
     ]);
 
-    const isManagedByComposeDir = (c: any): boolean => {
+    const isManagedByComposeDir = (c: Dockerode.ContainerInfo): boolean => {
       const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
       if (!workingDir) return false;
       const resolved = path.resolve(workingDir);
       return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
     };
 
-    const active = allContainers.filter((c: any) => c.State === 'running').length;
-    const exited = allContainers.filter((c: any) => c.State === 'exited').length;
-    const total = allContainers.length;
-    const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
-    const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
+    const containers = allContainers as Dockerode.ContainerInfo[];
+    const active = containers.filter(c => c.State === 'running').length;
+    const exited = containers.filter(c => c.State === 'exited').length;
+    const total = containers.length;
+    const managed = containers.filter(c => c.State === 'running' && isManagedByComposeDir(c)).length;
+    const unmanaged = containers.filter(c => c.State === 'running' && !isManagedByComposeDir(c)).length;
 
     const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
 
@@ -2033,12 +2056,16 @@ async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
 }
 
 // Create fleet snapshot
-app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/fleet/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
 
   try {
     const { description = '' } = req.body;
+    if (typeof description === 'string' && description.length > 500) {
+      res.status(400).json({ error: 'Description must be 500 characters or less' });
+      return;
+    }
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const username = req.user?.username || 'admin';
@@ -2098,6 +2125,7 @@ app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<vo
       db.insertSnapshotFiles(snapshotId, allFiles);
     }
 
+    console.log('[Fleet] Snapshot created:', capturedNodes.length, 'nodes,', totalStacks, 'stacks');
     const snapshot = db.getSnapshot(snapshotId);
     res.status(201).json(snapshot);
   } catch (error) {
@@ -2107,7 +2135,7 @@ app.post('/api/fleet/snapshots', async (req: Request, res: Response): Promise<vo
 });
 
 // List fleet snapshots
-app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
 
   try {
@@ -2116,6 +2144,7 @@ app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<voi
     const db = DatabaseService.getInstance();
     const snapshots = db.getSnapshots(limit, offset);
     const total = db.getSnapshotCount();
+    if (isDebugEnabled()) console.debug('[Fleet:debug] Snapshots list: limit=', limit, 'offset=', offset, 'total=', total);
     res.json({ snapshots, total });
   } catch (error) {
     console.error('[Fleet Snapshot] List error:', error);
@@ -2124,11 +2153,12 @@ app.get('/api/fleet/snapshots', async (req: Request, res: Response): Promise<voi
 });
 
 // Get snapshot detail
-app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/fleet/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
 
   try {
     const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid snapshot ID' }); return; }
     const db = DatabaseService.getInstance();
     const snapshot = db.getSnapshot(id);
     if (!snapshot) {
@@ -2160,6 +2190,7 @@ app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise
       })),
     }));
 
+    if (isDebugEnabled()) console.debug('[Fleet:debug] Snapshot detail:', id, files.length, 'files');
     res.json({ ...snapshot, nodes });
   } catch (error) {
     console.error('[Fleet Snapshot] Detail error:', error);
@@ -2168,16 +2199,21 @@ app.get('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise
 });
 
 // Restore a stack from snapshot
-app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/fleet/snapshots/:id/restore', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
 
   try {
     const snapshotId = parseInt(req.params.id as string, 10);
+    if (isNaN(snapshotId)) { res.status(400).json({ error: 'Invalid snapshot ID' }); return; }
     const { nodeId, stackName, redeploy = false } = req.body;
 
     if (!nodeId || !stackName) {
       res.status(400).json({ error: 'nodeId and stackName are required' });
+      return;
+    }
+    if (!isValidStackName(stackName)) {
+      res.status(400).json({ error: 'Invalid stack name' });
       return;
     }
 
@@ -2265,6 +2301,7 @@ app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response)
       }
     }
 
+    console.log('[Fleet] Snapshot restore:', snapshotId, 'node=', nodeId, 'stack=', stackName);
     res.json({ message: 'Stack restored successfully', redeployed: redeploy });
   } catch (error) {
     console.error('[Fleet Snapshot] Restore error:', error);
@@ -2273,12 +2310,13 @@ app.post('/api/fleet/snapshots/:id/restore', async (req: Request, res: Response)
 });
 
 // Delete snapshot
-app.delete('/api/fleet/snapshots/:id', async (req: Request, res: Response): Promise<void> => {
+app.delete('/api/fleet/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
 
   try {
     const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid snapshot ID' }); return; }
     const db = DatabaseService.getInstance();
     const snapshot = db.getSnapshot(id);
     if (!snapshot) {
@@ -2286,6 +2324,7 @@ app.delete('/api/fleet/snapshots/:id', async (req: Request, res: Response): Prom
       return;
     }
     db.deleteSnapshot(id);
+    console.log('[Fleet] Snapshot deleted:', id);
     res.json({ message: 'Snapshot deleted' });
   } catch (error) {
     console.error('[Fleet Snapshot] Delete error:', error);
@@ -6145,10 +6184,11 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
     CacheService.getInstance().invalidate(`${REMOTE_META_NAMESPACE}:${id}`);
+    updateTracker.delete(id);
     res.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to delete node:', error);
-    res.status(500).json({ error: error.message || 'Failed to delete node' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to delete node' });
   }
 });
 
