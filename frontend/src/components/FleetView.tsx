@@ -1398,9 +1398,14 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         disabled={recheckingUpdates}
                                         onClick={async () => {
                                             setRecheckingUpdates(true);
-                                            await apiFetch('/fleet/update-status?recheck=true', { method: 'DELETE', localOnly: true });
-                                            await fetchUpdateStatus();
-                                            setRecheckingUpdates(false);
+                                            try {
+                                                await apiFetch('/fleet/update-status?recheck=true', { method: 'DELETE', localOnly: true });
+                                                await fetchUpdateStatus();
+                                            } catch (err) {
+                                                console.warn('[Fleet] Recheck failed:', err);
+                                            } finally {
+                                                setRecheckingUpdates(false);
+                                            }
                                         }}
                                     >
                                         <RefreshCw className={`w-3 h-3 mr-1.5 ${recheckingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />

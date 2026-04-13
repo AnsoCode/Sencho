@@ -147,9 +147,13 @@ The modal shows:
 - **Recheck** button to refresh the latest version from GitHub and re-scan for available updates
 - **Update All** button to trigger updates on all remote nodes that have a pending update
 
-When you click **Update** on a remote node, Sencho sends the update command to the remote instance. The remote pulls the latest Docker image, then spawns a short-lived helper container that performs the compose recreate. The node restarts with the new version, and the status badge transitions from "Updating" to "Updated" once the gateway detects the version change.
+When you click **Update** on a remote node, Sencho sends the update command to the remote instance. The remote pulls the latest Docker image, then spawns a short-lived helper container that performs the compose recreate. The node restarts with the new version, and the status badge transitions from "Updating" to "Updated" once the gateway detects the version change. The "Updated" badge remains visible for 60 seconds before the node returns to "Up to date".
 
 If you update the local node, a confirmation dialog appears first, then a reconnection overlay shows while your primary instance restarts.
+
+<Note>
+  Triggering updates (both individual and bulk) requires admin privileges. Users with viewer or operator roles can see update status but cannot initiate updates.
+</Note>
 
 **How self-update works:** Each Sencho instance reads its own Docker Compose labels to determine the image name, compose file path, and service name. It pulls the latest image directly, then spawns a helper container that mounts the compose directory from the host and runs `docker compose up --force-recreate`. This approach works regardless of the container's own volume mounts.
 
@@ -205,3 +209,7 @@ This means the gateway could not connect to the remote node's `/api/meta` endpoi
 - The API URL configured for this node is correct and reachable from the gateway
 - The network allows traffic between the gateway and remote node on the configured port
 - The remote node's Sencho container is healthy (`docker ps` should show it as running)
+
+### Update button returns "Admin access required"
+
+Fleet update operations (individual updates, Update All) require an admin account. If you see a 403 error when clicking **Update**, ask your Sencho administrator to either grant you admin privileges or perform the update on your behalf.
