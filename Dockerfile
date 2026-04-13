@@ -105,12 +105,11 @@ FROM node:22-alpine
 # resolve CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679,
 # CVE-2025-47913.
 #
-# NOTE: CVE-2026-33186 (google.golang.org/grpc ≥1.79.3) remains unpatched —
-# both Docker CLI 29.3.1 and Compose v5.1.1 ship grpc 1.78.0. No upstream
-# release includes the fix yet. This will be resolved when a new Docker CLI
-# or Compose release upgrades grpc.
-ARG DOCKER_VERSION=29.3.1
-ARG COMPOSE_VERSION=v5.1.1
+# NOTE: Compose v5.1.2 bumps grpc to 1.80.0 (fixes CVE-2026-33186) and
+# Go to 1.25.9 (fixes CVE-2026-32282). Docker CLI 29.4.0 also ships
+# with Go 1.25.9+.
+ARG DOCKER_VERSION=29.4.0
+ARG COMPOSE_VERSION=v5.1.2
 
 # Daily cache-bust for the apk upgrade layer. CI passes the current date
 # (YYYY-MM-DD) as a build-arg, so this RUN layer's hash changes at most
