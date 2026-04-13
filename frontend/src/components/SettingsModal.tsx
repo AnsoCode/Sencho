@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
+import type { SenchoSettingsChangedDetail } from '@/lib/events';
 import {
     Shield, Activity, Bell, Code, Server, Package,
     Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, GitBranch,
@@ -185,14 +187,20 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
     };
 
     const saveDeveloperSettings = async () => {
-        const ok = await patchSettings({
+        const payload = {
             developer_mode: settings.developer_mode,
             global_logs_refresh: settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
             log_retention_days: settings.log_retention_days,
             audit_retention_days: settings.audit_retention_days,
-        }, setIsSavingDeveloper, true);
-        if (ok) toast.success('Developer settings saved.');
+        };
+        const ok = await patchSettings(payload, setIsSavingDeveloper, true);
+        if (ok) {
+            toast.success('Developer settings saved.');
+            window.dispatchEvent(new CustomEvent<SenchoSettingsChangedDetail>(SENCHO_SETTINGS_CHANGED, {
+                detail: { changedKeys: Object.keys(payload) },
+            }));
+        }
     };
 
     const handlePasswordChange = async () => {

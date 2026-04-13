@@ -60,6 +60,7 @@ function invalidateNodeCaches(nodeId: number): void {
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
+import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
@@ -4031,21 +4032,16 @@ app.get('/api/metrics/historical', async (req: Request, res: Response) => {
 
 app.get('/api/logs/global', async (req: Request, res: Response) => {
   try {
+    const debug = isDebugEnabled();
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getRunningContainers();
-    const allLogs: any[] = [];
+    const allLogs: GlobalLogEntry[] = [];
+    if (debug) console.debug('[GlobalLogs:debug] Polling snapshot starting', { containerCount: containers.length, nodeId: req.nodeId });
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
       const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
-
-      // Standardize naming: Strip stack name prefix if it exists
-      let containerName = rawName;
-      if (rawName.startsWith(`${stackName}-`)) {
-        containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
-      } else if (rawName.startsWith(`${stackName}_`)) {
-        containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
-      }
+      const containerName = normalizeContainerName(rawName, stackName);
 
       try {
         const container = dockerController.getDocker().getContainer(c.Id);
@@ -4053,72 +4049,24 @@ app.get('/api/logs/global', async (req: Request, res: Response) => {
         const isTty = inspect.Config.Tty;
         const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 100, timestamps: true }) as Buffer;
 
-        const parseAndPushLog = (line: string, source: string) => {
+        demuxDockerLog(logsBuffer, isTty, (line, source) => {
           if (!line.trim()) return;
-          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
-          let cleanMessage = line;
-          let timestampMs = Date.now();
-
-          if (timeMatch) {
-            timestampMs = new Date(timeMatch[1]).getTime();
-            cleanMessage = timeMatch[2];
-          }
-
-          // Default to INFO, or ERROR if coming from STDERR.
-          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
-
-          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
-          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
-            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
-            level = 'INFO';
-          }
-          // 2. Check for WARN indicators
-          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
-            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
-            level = 'WARN';
-          }
-          // 3. Check for ERROR indicators
-          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
-            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
-            /Exception:/i.test(cleanMessage)) {
-            level = 'ERROR';
-          }
-
+          const { timestampMs, cleanMessage } = parseLogTimestamp(line);
+          const level = detectLogLevel(cleanMessage, source);
           allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
-        };
-
-        if (isTty) {
-          // No multiplex headers. Just split by newline.
-          const payload = logsBuffer.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
-          payload.split('\n').forEach(line => parseAndPushLog(line, 'STDOUT'));
-        } else {
-          // Parse 8-byte Docker multiplex header
-          let offset = 0;
-          while (offset < logsBuffer.length) {
-            const streamType = logsBuffer[offset];
-            const length = logsBuffer.readUInt32BE(offset + 4);
-            offset += 8;
-            if (offset + length > logsBuffer.length) break;
-
-            const payload = logsBuffer.slice(offset, offset + length).toString('utf-8');
-            offset += length;
-            payload.split('\n').forEach(line => parseAndPushLog(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
-          }
-        }
+        });
       } catch (err) {
         console.warn(`[GlobalLogs] Failed to fetch/parse logs for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
       }
     }));
 
     // Sort globally by timestamp ascending (newest bottom).
-    // Limit to 500 lines - the client renders at most 300 rows at once, so
-    // sending 2000 lines was wasting bandwidth and inflating JSON parse time.
+    // Limit to 500 lines; the client renders at most 300 rows at once.
     allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
+    if (debug) console.debug('[GlobalLogs:debug] Polling snapshot complete', { totalLines: allLogs.length });
     res.json(allLogs.slice(-500));
   } catch (error) {
+    console.error('[GlobalLogs] Snapshot fetch failed:', (error as Error).message);
     res.status(500).json({ error: 'Failed to fetch global logs' });
   }
 });
@@ -4127,97 +4075,64 @@ app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // Prevent nginx from buffering SSE events (would cause burst delivery).
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
+  const debug = isDebugEnabled();
   const dockerController = DockerController.getInstance(req.nodeId);
   const streams: NodeJS.ReadableStream[] = [];
 
+  // Send a heartbeat comment every 30s to keep reverse proxies from closing
+  // idle connections. SSE comments (lines starting with ':') are silently
+  // discarded by the browser's EventSource API.
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(':heartbeat\n\n');
+  }, 30_000);
+
   try {
     const containers = await dockerController.getRunningContainers();
+    if (debug) console.debug('[GlobalLogs:debug] SSE stream opened', { containerCount: containers.length, nodeId: req.nodeId });
 
     await Promise.all(containers.map(async (c) => {
       const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
       const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
-      let containerName = rawName;
-      if (rawName.startsWith(`${stackName}-`)) containerName = rawName.replace(`${stackName}-`, '').replace(/-1$/, '');
-      else if (rawName.startsWith(`${stackName}_`)) containerName = rawName.replace(`${stackName}_`, '').replace(/_1$/, '');
+      const containerName = normalizeContainerName(rawName, stackName);
 
       try {
         const container = dockerController.getDocker().getContainer(c.Id);
         const inspect = await container.inspect();
         const isTty = inspect.Config.Tty;
 
-        // Dev mode gets a larger tail
         const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 500, timestamps: true });
         streams.push(stream);
 
-        const processLine = (line: string, source: string) => {
-          if (!line.trim()) return;
-          const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)/);
-          let cleanMessage = line;
-          let timestampMs = Date.now();
-
-          if (timeMatch) {
-            timestampMs = new Date(timeMatch[1]).getTime();
-            cleanMessage = timeMatch[2];
-          }
-
-          // Default to INFO, or ERROR if coming from STDERR.
-          let level = source === 'STDERR' ? 'ERROR' : 'INFO';
-
-          // 1. Explicitly check for INFO/DEBUG indicators (Overrides STDERR defaults)
-          if (/level=["']?(info|debug|trace)["']?/i.test(cleanMessage) ||
-            /\[\s*(info|inf|debug|dbg|trace)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(info|inf|debug|trace)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
-            level = 'INFO';
-          }
-          // 2. Check for WARN indicators
-          else if (/level=["']?(warn|warning)["']?/i.test(cleanMessage) ||
-            /\[\s*(warn|warning)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(warn|warning)(?:\s|:|\(|\[|$)/i.test(cleanMessage)) {
-            level = 'WARN';
-          }
-          // 3. Check for ERROR indicators
-          else if (/level=["']?(error|err|fatal|crit|critical|panic)["']?/i.test(cleanMessage) ||
-            /\[\s*(error|err|fatal|crit|critical|panic)\s*\]/i.test(cleanMessage) ||
-            /(?:\s|^)(error|err|fatal|crit|critical|panic)(?:\s|:|\(|\[|$)/i.test(cleanMessage) ||
-            /Exception:/i.test(cleanMessage)) {
-            level = 'ERROR';
-          }
-
-          res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
-        };
-
         stream.on('data', (chunk: Buffer) => {
-          if (isTty) {
-            const payload = chunk.toString('utf-8').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
-            payload.split('\n').forEach(line => processLine(line, 'STDOUT'));
-          } else {
-            let offset = 0;
-            while (offset < chunk.length) {
-              if (offset + 8 > chunk.length) break;
-              const streamType = chunk[offset];
-              const length = chunk.readUInt32BE(offset + 4);
-              offset += 8;
-              if (offset + length > chunk.length) break;
-
-              const payload = chunk.slice(offset, offset + length).toString('utf-8');
-              offset += length;
-              payload.split('\n').forEach(line => processLine(line, streamType === 2 ? 'STDERR' : 'STDOUT'));
+          demuxDockerLog(chunk, isTty, (line, source) => {
+            if (!line.trim()) return;
+            const { timestampMs, cleanMessage } = parseLogTimestamp(line);
+            const level = detectLogLevel(cleanMessage, source);
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
             }
-          }
+          });
         });
-      } catch (err) { /* ignore */ }
+      } catch (err) {
+        console.warn(`[GlobalLogs] Failed to attach stream for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
+      }
     }));
 
-    // Cleanup when client closes the tab or switches views
     req.on('close', () => {
+      clearInterval(heartbeat);
+      if (debug) console.debug('[GlobalLogs:debug] SSE stream closed, cleaning up', { streamCount: streams.length });
       streams.forEach(s => {
-        try { (s as any).destroy(); } catch (e) { }
+        try { (s as NodeJS.ReadableStream & { destroy(): void }).destroy(); } catch { /* stream already ended */ }
       });
     });
 
   } catch (error) {
+    clearInterval(heartbeat);
+    console.error('[GlobalLogs] SSE stream attachment failed:', (error as Error).message);
     res.write(`data: ${JSON.stringify({ level: 'ERROR', message: '[Sencho] Failed to attach global log stream.', timestampMs: Date.now(), stackName: 'system', containerName: 'backend', source: 'STDERR' })}\n\n`);
     res.end();
   }
