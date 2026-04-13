@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import DockerController from './DockerController';
 import { disableCapability } from './CapabilityRegistry';
+import { isDebugEnabled } from '../utils/debug';
 
 const execFileAsync = promisify(execFile);
 
@@ -148,12 +149,16 @@ class SelfUpdateService {
 
     // Async pull: a sync execFileSync blocks the event loop, which lets the frontend
     // overlay see a false "online" response between the pull finishing and the restart.
+    const debug = isDebugEnabled();
+    const pullStart = Date.now();
     console.log(`[SelfUpdate] Pulling latest image: ${imageName}...`);
+    if (debug) console.debug('[SelfUpdate:debug] Pull context:', { workingDir, configFiles, serviceName, dataDirHost, mountCount: hostBindMounts.length });
     try {
       await execFileAsync('docker', ['pull', imageName], {
         env,
         timeout: 300_000, // 5 min max for pull
       });
+      if (debug) console.debug('[SelfUpdate:debug] Pull completed in', Math.round((Date.now() - pullStart) / 1000) + 's');
     } catch (error) {
       const stderr = (error as { stderr?: Buffer | string })?.stderr?.toString().trim();
       this.lastUpdateError = stderr || (error as Error).message;

@@ -1277,6 +1277,8 @@ interface UpdateTracker {
   previousProcessStart: number | null;
   /** True when the node became unreachable at least once during the update window. */
   wasOffline: boolean;
+  /** Timestamp when the tracker transitioned to a terminal state (completed/failed/timeout). */
+  resolvedAt?: number;
 }
 const updateTracker = new Map<number, UpdateTracker>();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -1353,12 +1355,16 @@ async function getLatestVersion(forceRefresh = false): Promise<string | null> {
 async function getCompareTarget(gatewayVersion: string | null) {
   const latestVersion = await getLatestVersion();
   const latestValid = latestVersion !== null && isValidVersion(latestVersion);
-  return {
+  const result = {
     latestVersion,
     latestValid,
     compareVersion: latestValid ? latestVersion : gatewayVersion,
     compareValid: latestValid || isValidVersion(gatewayVersion),
   };
+  if (isDebugEnabled()) {
+    console.debug('[Fleet:debug] Compare target resolved:', { gatewayVersion, latestVersion, using: result.compareVersion, valid: result.compareValid });
+  }
+  return result;
 }
 
 function createTracker(
@@ -1367,7 +1373,16 @@ function createTracker(
   previousProcessStart: number | null,
   error?: string,
 ): UpdateTracker {
-  return { status, startedAt: Date.now(), previousVersion, previousProcessStart, wasOffline: false, error };
+  const now = Date.now();
+  return {
+    status, startedAt: now, previousVersion, previousProcessStart, wasOffline: false, error,
+    resolvedAt: status !== 'updating' ? now : undefined,
+  };
+}
+
+/** Transition a tracker to a terminal state, setting resolvedAt automatically. */
+function resolveTracker(tracker: UpdateTracker, status: 'completed' | 'failed' | 'timeout', error?: string): UpdateTracker {
+  return { ...tracker, status, resolvedAt: Date.now(), error };
 }
 
 interface FleetNodeOverview {
@@ -1528,6 +1543,7 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
     const gatewayValid = isValidVersion(gatewayVersion);
 
     const { latestVersion, latestValid, compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
+    const debug = isDebugEnabled();
 
     const results = await Promise.allSettled(
       nodes.map(async (node) => {
@@ -1551,31 +1567,41 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
         if (tracker?.status === 'updating') {
           const elapsed = Date.now() - tracker.startedAt;
 
+          if (debug) {
+            console.debug('[Fleet:debug] Polling update status for node', node.id, node.name, '- elapsed:', Math.round(elapsed / 1000) + 's', 'version:', version, 'wasOffline:', tracker.wasOffline, 'remoteOnline:', remoteOnline);
+          }
+
           if (elapsed > UPDATE_TIMEOUT_MS) {
             // Final timeout (5 min)
-            updateTracker.set(node.id, { ...tracker, status: 'timeout', error: UPDATE_TIMEOUT_MSG });
+            if (debug) console.debug('[Fleet:debug] Node', node.id, 'timed out after', Math.round(elapsed / 1000) + 's');
+            updateTracker.set(node.id, resolveTracker(tracker, 'timeout', UPDATE_TIMEOUT_MSG));
           } else if (node.type === 'remote') {
             if (remoteUpdateError) {
               // Remote reported a pull failure via /api/meta
-              updateTracker.set(node.id, { ...tracker, status: 'failed', error: remoteUpdateError });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'reported pull failure:', remoteUpdateError);
+              updateTracker.set(node.id, resolveTracker(tracker, 'failed', remoteUpdateError));
             } else if (!remoteOnline) {
               // Node is unreachable (restarting); record that it went offline
               if (!tracker.wasOffline) {
+                if (debug) console.debug('[Fleet:debug] Node', node.id, 'went offline (restarting)');
                 updateTracker.set(node.id, { ...tracker, wasOffline: true });
               }
             } else if (version !== tracker.previousVersion) {
               // Signal 1: Version changed (or version now resolvable after being unknown)
-              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 1 (version changed):', tracker.previousVersion, '->', version);
+              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
             } else if (
               remoteStartedAt !== null &&
               tracker.previousProcessStart !== null &&
               remoteStartedAt !== tracker.previousProcessStart
             ) {
               // Signal 2: Process restarted (startedAt changed)
-              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 2 (process restarted):', tracker.previousProcessStart, '->', remoteStartedAt);
+              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
             } else if (tracker.wasOffline && remoteOnline) {
               // Signal 3: Node went offline and is back online (container was recreated)
-              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 3 (offline then online)');
+              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
             } else if (
               elapsed > 15_000 &&
               isValidVersion(version) &&
@@ -1585,14 +1611,12 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
               // Signal 4: Remote is now at or above gateway version (after minimum processing time).
               // Catches fast restarts where the 5s polling interval misses the offline window
               // and startedAt hasn't been observed to change yet.
-              updateTracker.set(node.id, { ...tracker, status: 'completed' });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 4 (version >= compare target):', version, '>=', compareVersion);
+              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
             } else if (elapsed > EARLY_FAIL_MS) {
               // Heuristic: node never went offline and nothing changed after 3 min
-              updateTracker.set(node.id, {
-                ...tracker,
-                status: 'failed',
-                error: 'Update may have failed. The node is still running and its version has not changed.',
-              });
+              if (debug) console.debug('[Fleet:debug] Node', node.id, 'early fail after', Math.round(elapsed / 1000) + 's - no signals detected');
+              updateTracker.set(node.id, resolveTracker(tracker, 'failed', 'Update may have failed. The node is still running and its version has not changed.'));
             }
           } else if (node.type === 'local') {
             // Local node has only two failure signals: an explicit pull/spawn error,
@@ -1602,21 +1626,19 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
             const selfUpdate = SelfUpdateService.getInstance();
             const localError = selfUpdate.getLastError();
             if (localError) {
-              updateTracker.set(node.id, { ...tracker, status: 'failed', error: localError });
+              if (debug) console.debug('[Fleet:debug] Local node', node.id, 'update failed:', localError);
+              updateTracker.set(node.id, resolveTracker(tracker, 'failed', localError));
               selfUpdate.clearLastError();
             } else if (elapsed > EARLY_FAIL_MS) {
               // Helper container likely failed silently. Surface failure before the 5 min timeout.
-              updateTracker.set(node.id, {
-                ...tracker,
-                status: 'failed',
-                error: 'Local update did not complete. The container may not have restarted; check Docker logs on the host.',
-              });
+              if (debug) console.debug('[Fleet:debug] Local node', node.id, 'early fail after', Math.round(elapsed / 1000) + 's');
+              updateTracker.set(node.id, resolveTracker(tracker, 'failed', 'Local update did not complete. The container may not have restarted; check Docker logs on the host.'));
             }
           }
         }
 
-        // Auto-expire completed entries after 60 seconds so nodes return to "Up to date"
-        if (tracker?.status === 'completed' && Date.now() - tracker.startedAt > 60_000) {
+        // Auto-expire completed entries 60s after they resolved so the badge is visible
+        if (tracker?.status === 'completed' && tracker.resolvedAt && Date.now() - tracker.resolvedAt > 60_000) {
           updateTracker.delete(node.id);
         }
 
@@ -1652,6 +1674,7 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
         latestVersion: latestValid ? latestVersion : gatewayVersion,
         updateAvailable: false,
         updateStatus: null,
+        error: null,
       };
     });
 
@@ -1669,6 +1692,7 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
 // Trigger update on a specific node
 app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   try {
     const nodeId = parseInt(req.params.nodeId as string, 10);
     if (isNaN(nodeId)) { res.status(400).json({ error: 'Invalid node ID' }); return; }
@@ -1682,7 +1706,7 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
     const existing = updateTracker.get(nodeId);
     if (existing?.status === 'updating') {
       if (Date.now() - existing.startedAt > UPDATE_TIMEOUT_MS) {
-        updateTracker.set(nodeId, { ...existing, status: 'timeout', error: UPDATE_TIMEOUT_MSG });
+        updateTracker.set(nodeId, resolveTracker(existing, 'timeout', UPDATE_TIMEOUT_MSG));
       } else {
         res.status(409).json({ error: 'Update already in progress for this node.' });
         return;
@@ -1694,6 +1718,9 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
     }
 
     console.log('[Fleet] Update triggered for node', node.name, node.type);
+    if (isDebugEnabled()) {
+      console.debug('[Fleet:debug] Update trigger details:', { nodeId, name: node.name, type: node.type, hasUrl: !!node.api_url, hasToken: !!node.api_token });
+    }
 
     if (node.type === 'local') {
       if (!SelfUpdateService.getInstance().isAvailable()) {
@@ -1713,6 +1740,9 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
 
     // Check remote availability and capabilities
     const meta = await fetchRemoteMeta(node.api_url, node.api_token);
+    if (isDebugEnabled()) {
+      console.debug('[Fleet:debug] Remote meta for update:', { nodeId, online: meta.online, version: meta.version, capabilities: meta.capabilities, startedAt: meta.startedAt });
+    }
     if (!meta.online) {
       res.status(503).json({ error: 'Remote node is unreachable. Verify the node is running and the API URL is correct.' });
       return;
@@ -1756,13 +1786,16 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
 // Trigger update on all outdated nodes
 app.post('/api/fleet/update-all', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const gatewayVersion = getSenchoVersion();
     const { compareVersion, compareValid } = await getCompareTarget(gatewayVersion);
 
+    const debug = isDebugEnabled();
     console.log('[Fleet] Update-all triggered,', nodes.length, 'nodes registered');
+    if (debug) console.debug('[Fleet:debug] Update-all compare target:', { gatewayVersion, compareVersion, compareValid });
 
     // Filter to eligible candidates, then trigger all in parallel
     const candidates = nodes.filter(node => {
@@ -1802,11 +1835,13 @@ app.post('/api/fleet/update-all', authMiddleware, async (req: Request, res: Resp
 
     const updating: string[] = [];
     const skipped = nodes.filter(n => !candidates.includes(n)).map(n => n.name);
-    for (const r of results) {
-      const val = r.status === 'fulfilled' ? r.value : { name: 'unknown', triggered: false };
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const val = r.status === 'fulfilled' ? r.value : { name: candidates[i].name, triggered: false };
       (val.triggered ? updating : skipped).push(val.name);
     }
 
+    if (debug) console.debug('[Fleet:debug] Update-all results:', { updating, skippedCount: skipped.length, candidateCount: candidates.length });
     res.status(202).json({ updating, skipped });
   } catch (error) {
     console.error('[Fleet] Update all error:', error);

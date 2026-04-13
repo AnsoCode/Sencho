@@ -60,6 +60,21 @@ describe('Fleet endpoints require authentication', () => {
     const res = await request(app).post('/api/fleet/nodes/1/update');
     expect(res.status).toBe(401);
   });
+
+  it('POST /api/fleet/update-all returns 401 without auth', async () => {
+    const res = await request(app).post('/api/fleet/update-all');
+    expect(res.status).toBe(401);
+  });
+
+  it('DELETE /api/fleet/nodes/1/update-status returns 401 without auth', async () => {
+    const res = await request(app).delete('/api/fleet/nodes/1/update-status');
+    expect(res.status).toBe(401);
+  });
+
+  it('DELETE /api/fleet/update-status returns 401 without auth', async () => {
+    const res = await request(app).delete('/api/fleet/update-status');
+    expect(res.status).toBe(401);
+  });
 });
 
 // ─── Input Validation ───
@@ -158,6 +173,125 @@ describe('Fleet tier gating', () => {
       .set('Authorization', authHeader);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+
+  it('POST /api/fleet/nodes/1/update returns 403 on free tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .post('/api/fleet/nodes/1/update')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+
+  it('POST /api/fleet/update-all returns 403 on free tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .post('/api/fleet/update-all')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+
+  it('DELETE /api/fleet/nodes/1/update-status returns 403 on free tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .delete('/api/fleet/nodes/1/update-status')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+
+  it('DELETE /api/fleet/update-status returns 403 on free tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .delete('/api/fleet/update-status')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+});
+
+// ─── Update Endpoint Input Validation ───
+
+describe('Fleet update input validation', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('POST /api/fleet/nodes/abc/update returns 400 for NaN nodeId', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/nodes/abc/update')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid node id/i);
+  });
+
+  it('POST /api/fleet/nodes/99999/update returns 404 for missing node', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/nodes/99999/update')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('DELETE /api/fleet/nodes/abc/update-status returns 400 for NaN nodeId', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .delete('/api/fleet/nodes/abc/update-status')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid node id/i);
+  });
+
+  it('DELETE /api/fleet/nodes/99999/update-status returns 404 for missing node', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .delete('/api/fleet/nodes/99999/update-status')
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+// ─── Admin Role Enforcement ───
+
+describe('Fleet update admin enforcement', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  let viewerHeader: string;
+
+  beforeAll(async () => {
+    // Create a viewer user and generate a token for them
+    const { DatabaseService } = await import('../services/DatabaseService');
+    const db = DatabaseService.getInstance();
+    const bcrypt = await import('bcrypt');
+    const viewerHash = await bcrypt.hash('viewerpass', 1);
+    try {
+      db.addUser({ username: 'testviewer', password_hash: viewerHash, role: 'viewer' });
+    } catch {
+      // User may already exist from a prior run
+    }
+    const viewerToken = jwt.sign({ username: 'testviewer', role: 'viewer' }, TEST_JWT_SECRET, { expiresIn: '1m' });
+    viewerHeader = `Bearer ${viewerToken}`;
+  });
+
+  it('POST /api/fleet/nodes/1/update returns 403 for viewer', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/nodes/1/update')
+      .set('Authorization', viewerHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('POST /api/fleet/update-all returns 403 for viewer', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/update-all')
+      .set('Authorization', viewerHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
   });
 });
 
