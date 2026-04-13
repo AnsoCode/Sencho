@@ -113,7 +113,11 @@ By default, all SSO users are assigned the **Viewer** role. To grant Admin to sp
       - SSO_OIDC_ADMIN_CLAIM_VALUE=sencho-admins
 ```
 
-This tells Sencho to check the `groups` claim in the OIDC ID token. If it contains `sencho-admins`, the user gets Admin.
+This tells Sencho to check the `groups` claim in the OIDC ID token. If it contains `sencho-admins`, the user gets Admin. Roles are synced on every login, so removing a user from the admin group will demote them on their next sign-in.
+
+<Note>
+  Some providers (e.g., Azure AD, Okta) require custom scopes to include group claims in the ID token. You can configure additional scopes in the **Scopes** field in Settings > SSO, or via environment variable. The default is `openid email profile`.
+</Note>
 
 ## Full docker-compose.yml example with SSO
 

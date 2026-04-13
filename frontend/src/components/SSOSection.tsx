@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
@@ -11,6 +11,11 @@ import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import { TierBadge } from './TierBadge';
 import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
+
+const ROLE_OPTIONS = [
+    { value: 'viewer', label: 'Viewer' },
+    { value: 'admin', label: 'Admin' },
+];
 
 interface SSOProviderConfig {
     provider: string;
@@ -120,7 +125,7 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
     };
 
     return (
-        <div className="border border-border rounded-lg">
+        <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors hover:border-t-card-border-hover">
             <div
                 className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                 onClick={() => setExpanded(!expanded)}
@@ -204,16 +209,12 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                 </div>
                                 <div className="grid gap-2">
                                     <Label className="text-xs text-muted-foreground">Default Role</Label>
-                                    <Select
+                                    <Combobox
+                                        options={ROLE_OPTIONS}
                                         value={config.ldapDefaultRole || 'viewer'}
                                         onValueChange={v => update('ldapDefaultRole', v)}
-                                    >
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="viewer">Viewer</SelectItem>
-                                            <SelectItem value="admin">Admin</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                        placeholder="Select role"
+                                    />
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -273,18 +274,27 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                     />
                                 </div>
                             </div>
-                            <div className="grid gap-2">
-                                <Label className="text-xs text-muted-foreground">Default Role</Label>
-                                <Select
-                                    value={config.oidcDefaultRole || 'viewer'}
-                                    onValueChange={v => update('oidcDefaultRole', v)}
-                                >
-                                    <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="viewer">Viewer</SelectItem>
-                                        <SelectItem value="admin">Admin</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="grid gap-2">
+                                    <Label className="text-xs text-muted-foreground">Scopes</Label>
+                                    <Input
+                                        placeholder="openid email profile"
+                                        value={config.oidcScopes || ''}
+                                        onChange={e => update('oidcScopes', e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Space-separated list of OAuth scopes. Leave blank for default.
+                                    </p>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label className="text-xs text-muted-foreground">Default Role</Label>
+                                    <Combobox
+                                        options={ROLE_OPTIONS}
+                                        value={config.oidcDefaultRole || 'viewer'}
+                                        onValueChange={v => update('oidcDefaultRole', v)}
+                                        placeholder="Select role"
+                                    />
+                                </div>
                             </div>
                         </>
                     )}
@@ -300,11 +310,11 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                             {testResult && (
                                 testResult.success
                                     ? <CheckCircle className="w-4 h-4 text-success" />
-                                    : <XCircle className="w-4 h-4 text-red-500" />
+                                    : <XCircle className="w-4 h-4 text-destructive" />
                             )}
                         </div>
                         {initialConfig && (
-                            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-400" onClick={handleDelete}>
+                            <Button size="sm" variant="ghost" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground" onClick={handleDelete}>
                                 Remove
                             </Button>
                         )}
