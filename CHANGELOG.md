@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.5](https://github.com/AnsoCode/Sencho/compare/v0.46.4...v0.46.5) (2026-04-13)
+
+
+### Fixed
+
+* **scheduler:** harden scheduled operations with stale cleanup, cron validation, and design fixes ([#549](https://github.com/AnsoCode/Sencho/issues/549)) ([44e8fdf](https://github.com/AnsoCode/Sencho/commit/44e8fdfba9455231f1ac3469bbd58745eb33bb10))
+
 ## [0.46.4](https://github.com/AnsoCode/Sencho/compare/v0.46.3...v0.46.4) (2026-04-13)
 
 
