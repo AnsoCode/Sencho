@@ -9,6 +9,7 @@ import { ImageUpdateService } from './ImageUpdateService';
 import type { ImageCheckResult } from './ImageUpdateService';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { captureLocalNodeFiles, captureRemoteNodeFiles } from '../utils/snapshot-capture';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 
@@ -253,9 +254,9 @@ export class SchedulerService {
         const results = await Promise.allSettled(
             nodes.map(async (node) => {
                 if (node.type === 'remote') {
-                    return this.captureRemoteNodeFiles(node);
+                    return captureRemoteNodeFiles(node);
                 }
-                return this.captureLocalNodeFiles(node);
+                return captureLocalNodeFiles(node);
             })
         );
 
@@ -305,83 +306,11 @@ export class SchedulerService {
             db.insertSnapshotFiles(snapshotId, allFiles);
         }
 
+        if (isDebugEnabled()) {
+            console.debug(`[SchedulerService:debug] Snapshot task ${task.id}: captured ${capturedNodes.length} node(s), ${totalStacks} stack(s), ${allFiles.length} file(s), skipped ${skippedNodes.length}`);
+        }
+
         return `Fleet snapshot created (id=${snapshotId}, ${capturedNodes.length} node(s), ${totalStacks} stack(s)${skippedNodes.length > 0 ? `, ${skippedNodes.length} skipped` : ''})`;
-    }
-
-    private async captureLocalNodeFiles(node: { id: number; name: string }) {
-        const fsService = FileSystemService.getInstance(node.id);
-        const stackNames = await fsService.getStacks();
-        const stacks: Array<{ stackName: string; files: Array<{ filename: string; content: string }> }> = [];
-
-        for (const stackName of stackNames) {
-            const files: Array<{ filename: string; content: string }> = [];
-            try {
-                const composeContent = await fsService.getStackContent(stackName);
-                files.push({ filename: 'compose.yaml', content: composeContent });
-            } catch {
-                continue;
-            }
-            try {
-                const envContent = await fsService.getEnvContent(stackName);
-                files.push({ filename: '.env', content: envContent });
-            } catch {
-                // No .env file
-            }
-            stacks.push({ stackName, files });
-        }
-
-        return { nodeId: node.id, nodeName: node.name, stacks };
-    }
-
-    private async captureRemoteNodeFiles(node: { id: number; name: string; api_url?: string; api_token?: string }) {
-        if (!node.api_url || !node.api_token) {
-            throw new Error('Remote node not configured');
-        }
-
-        const baseUrl = node.api_url.replace(/\/$/, '');
-        const headers = { Authorization: `Bearer ${node.api_token}` };
-
-        const stacksRes = await fetch(`${baseUrl}/api/stacks`, {
-            headers,
-            signal: AbortSignal.timeout(15000),
-        });
-        if (!stacksRes.ok) throw new Error('Failed to fetch stacks from remote node');
-        const stackNames = await stacksRes.json() as string[];
-
-        const stacks: Array<{ stackName: string; files: Array<{ filename: string; content: string }> }> = [];
-
-        for (const stackName of stackNames) {
-            const files: Array<{ filename: string; content: string }> = [];
-            try {
-                const composeRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}`, {
-                    headers,
-                    signal: AbortSignal.timeout(15000),
-                });
-                if (composeRes.ok) {
-                    const content = await composeRes.text();
-                    files.push({ filename: 'compose.yaml', content });
-                }
-            } catch {
-                continue;
-            }
-            try {
-                const envRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}/env`, {
-                    headers,
-                    signal: AbortSignal.timeout(15000),
-                });
-                if (envRes.ok) {
-                    const content = await envRes.text();
-                    files.push({ filename: '.env', content });
-                }
-            } catch {
-                // No .env
-            }
-            if (files.length > 0) {
-                stacks.push({ stackName, files });
-            }
-        }
-
-        return { nodeId: node.id, nodeName: node.name, stacks };
     }
 
     private async executePrune(task: ScheduledTask): Promise<string> {

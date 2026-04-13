@@ -60,6 +60,7 @@ function invalidateNodeCaches(nodeId: number): void {
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
+import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
 import semver from 'semver';
@@ -905,9 +906,9 @@ const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'PUT /webhooks': 'Updated webhook',
   'DELETE /webhooks': 'Deleted webhook',
   'PUT /settings': 'Updated settings',
-  'POST /fleet/snapshot': 'Created fleet backup',
-  'DELETE /fleet/snapshot': 'Deleted fleet backup',
-  'POST /fleet/snapshot/restore': 'Restored fleet backup',
+  'POST /fleet/snapshots': 'Created fleet backup',
+  'DELETE /fleet/snapshots': 'Deleted fleet backup',
+  'POST /fleet/snapshots/*/restore': 'Restored fleet backup',
   'PUT /sso/config': 'Updated SSO configuration',
   'DELETE /sso/config': 'Deleted SSO configuration',
   'POST /api-tokens': 'Created API token',
@@ -2017,93 +2018,6 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
 
 // ─── Fleet Snapshots (Skipper+) ───
 
-interface SnapshotNodeData {
-  nodeId: number;
-  nodeName: string;
-  stacks: Array<{
-    stackName: string;
-    files: Array<{ filename: string; content: string }>;
-  }>;
-}
-
-async function captureLocalNodeFiles(node: Node): Promise<SnapshotNodeData> {
-  const fsService = FileSystemService.getInstance(node.id);
-  const stackNames = await fsService.getStacks();
-  const stacks: SnapshotNodeData['stacks'] = [];
-
-  for (const stackName of stackNames) {
-    const files: Array<{ filename: string; content: string }> = [];
-    try {
-      const composeContent = await fsService.getStackContent(stackName);
-      files.push({ filename: 'compose.yaml', content: composeContent });
-    } catch (e) {
-      console.warn(`[Fleet Snapshot] Could not read compose file for stack "${stackName}", skipping:`, (e as Error).message);
-      continue;
-    }
-    try {
-      const envContent = await fsService.getEnvContent(stackName);
-      files.push({ filename: '.env', content: envContent });
-    } catch {
-      // No .env file - that's fine
-    }
-    stacks.push({ stackName, files });
-  }
-
-  return { nodeId: node.id, nodeName: node.name, stacks };
-}
-
-async function captureRemoteNodeFiles(node: Node): Promise<SnapshotNodeData> {
-  if (!node.api_url || !node.api_token) {
-    throw new Error('Remote node not configured');
-  }
-
-  const baseUrl = node.api_url.replace(/\/$/, '');
-  const headers = { Authorization: `Bearer ${node.api_token}` };
-
-  const stacksRes = await fetch(`${baseUrl}/api/stacks`, {
-    headers,
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!stacksRes.ok) throw new Error('Failed to fetch stacks from remote node');
-  const stackNames = await stacksRes.json() as string[];
-
-  const stacks: SnapshotNodeData['stacks'] = [];
-
-  for (const stackName of stackNames) {
-    const files: Array<{ filename: string; content: string }> = [];
-    try {
-      const composeRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}`, {
-        headers,
-        signal: AbortSignal.timeout(15000),
-      });
-      if (composeRes.ok) {
-        const content = await composeRes.text();
-        files.push({ filename: 'compose.yaml', content });
-      }
-    } catch (e) {
-      console.warn(`[Fleet Snapshot] Failed to fetch remote compose for stack "${stackName}":`, (e as Error).message);
-      continue;
-    }
-    try {
-      const envRes = await fetch(`${baseUrl}/api/stacks/${encodeURIComponent(stackName)}/env`, {
-        headers,
-        signal: AbortSignal.timeout(15000),
-      });
-      if (envRes.ok) {
-        const content = await envRes.text();
-        files.push({ filename: '.env', content });
-      }
-    } catch {
-      // No .env - skip
-    }
-    if (files.length > 0) {
-      stacks.push({ stackName, files });
-    }
-  }
-
-  return { nodeId: node.id, nodeName: node.name, stacks };
-}
-
 // Create fleet snapshot
 app.post('/api/fleet/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
@@ -2119,6 +2033,7 @@ app.post('/api/fleet/snapshots', authMiddleware, async (req: Request, res: Respo
     const nodes = db.getNodes();
     const username = req.user?.username || 'admin';
 
+    const captureStart = Date.now();
     const results = await Promise.allSettled(
       nodes.map(async (node) => {
         if (node.type === 'remote') {
@@ -2175,6 +2090,12 @@ app.post('/api/fleet/snapshots', authMiddleware, async (req: Request, res: Respo
     }
 
     console.log('[Fleet] Snapshot created:', capturedNodes.length, 'nodes,', totalStacks, 'stacks');
+    if (isDebugEnabled()) {
+      console.debug(`[Fleet:debug] Snapshot ${snapshotId} capture completed in ${Date.now() - captureStart}ms, ${allFiles.length} file(s) stored`);
+      for (const skip of skippedNodes) {
+        console.debug(`[Fleet:debug] Skipped node "${skip.nodeName}" (id=${skip.nodeId}): ${skip.reason}`);
+      }
+    }
     const snapshot = db.getSnapshot(snapshotId);
     res.status(201).json(snapshot);
   } catch (error) {
@@ -2279,6 +2200,11 @@ app.post('/api/fleet/snapshots/:id/restore', authMiddleware, async (req: Request
       return;
     }
 
+    if (isDebugEnabled()) {
+      const fileNames = files.map(f => f.filename).join(', ');
+      console.debug(`[Fleet:debug] Restore: snapshot=${snapshotId}, node=${nodeId}, stack="${stackName}", files=[${fileNames}], redeploy=${redeploy}`);
+    }
+
     const node = db.getNode(nodeId);
     if (!node) {
       res.status(404).json({ error: 'Target node no longer exists' });
@@ -2371,6 +2297,9 @@ app.delete('/api/fleet/snapshots/:id', authMiddleware, async (req: Request, res:
     if (!snapshot) {
       res.status(404).json({ error: 'Snapshot not found' });
       return;
+    }
+    if (isDebugEnabled()) {
+      console.debug(`[Fleet:debug] Deleting snapshot ${id} (${snapshot.node_count} node(s), ${snapshot.stack_count} stack(s))`);
     }
     db.deleteSnapshot(id);
     console.log('[Fleet] Snapshot deleted:', id);
