@@ -82,6 +82,7 @@ const _origEmitWarning = process.emitWarning.bind(process);
 
 const MIN_PASSWORD_LENGTH = 8;
 const VALID_LABEL_COLORS = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'] as const;
+const MAX_LABELS_PER_NODE = 50;
 const app = express();
 const PORT = 3000;
 
@@ -1039,6 +1040,18 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   }
   return true;
 };
+
+const requireBody = (req: Request, res: Response): boolean => {
+  if (!req.body || typeof req.body !== 'object') {
+    res.status(400).json({ error: 'Request body is required' });
+    return false;
+  }
+  return true;
+};
+
+function isSqliteUniqueViolation(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE';
+}
 
 // Tier gate for scheduled tasks: 'update' action requires Skipper+, everything else requires Admiral.
 const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
@@ -3262,6 +3275,7 @@ app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Prom
   try {
     const nodeId = req.nodeId ?? 0;
     const labels = DatabaseService.getInstance().getLabels(nodeId);
+    if (isDebugEnabled()) console.debug('[Labels:debug] List labels: nodeId=', nodeId, 'count=', labels.length);
     res.json(labels);
   } catch (error) {
     console.error('[Labels] List error:', error);
@@ -3271,6 +3285,7 @@ app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Prom
 
 app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  if (!requireBody(req, res)) return;
   try {
     const nodeId = req.nodeId ?? 0;
     const { name, color } = req.body;
@@ -3288,10 +3303,18 @@ app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Pro
       return;
     }
 
-    const label = DatabaseService.getInstance().createLabel(nodeId, name.trim(), color);
+    const db = DatabaseService.getInstance();
+    if (db.getLabelCount(nodeId) >= MAX_LABELS_PER_NODE) {
+      res.status(409).json({ error: `Maximum of ${MAX_LABELS_PER_NODE} labels per node reached` });
+      return;
+    }
+
+    if (isDebugEnabled()) console.debug('[Labels:debug] Create label:', { nodeId, name: name.trim(), color });
+    const label = db.createLabel(nodeId, name.trim(), color);
+    if (isDebugEnabled()) console.debug('[Labels:debug] Created label:', label.id);
     res.status(201).json(label);
   } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isSqliteUniqueViolation(error)) {
       res.status(409).json({ error: 'A label with that name already exists' });
       return;
     }
@@ -3304,7 +3327,25 @@ app.get('/api/labels/assignments', authMiddleware, async (req: Request, res: Res
   if (!requirePaid(req, res)) return;
   try {
     const nodeId = req.nodeId ?? 0;
-    const assignments = DatabaseService.getInstance().getLabelsForStacks(nodeId);
+    const db = DatabaseService.getInstance();
+    const assignments = db.getLabelsForStacks(nodeId);
+
+    // Opportunistic cleanup: only scan the filesystem when there are assignments to validate
+    const assignedStacks = Object.keys(assignments);
+    if (assignedStacks.length > 0) {
+      const fsStacks = await FileSystemService.getInstance(nodeId).getStacks();
+      const fsSet = new Set(fsStacks);
+      const staleNames = assignedStacks.filter(name => !fsSet.has(name));
+      if (staleNames.length > 0) {
+        db.cleanupStaleAssignments(nodeId, fsStacks);
+        for (const name of staleNames) {
+          delete assignments[name];
+        }
+        if (isDebugEnabled()) console.debug('[Labels:debug] Cleaned up stale assignments:', staleNames);
+      }
+    }
+
+    if (isDebugEnabled()) console.debug('[Labels:debug] Assignments: nodeId=', nodeId, 'stacks=', Object.keys(assignments).length);
     res.json(assignments);
   } catch (error) {
     console.error('[Labels] Assignments error:', error);
@@ -3314,6 +3355,7 @@ app.get('/api/labels/assignments', authMiddleware, async (req: Request, res: Res
 
 app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  if (!requireBody(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
@@ -3335,6 +3377,7 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
       return;
     }
 
+    if (isDebugEnabled()) console.debug('[Labels:debug] Update label:', { id, nodeId, name: name?.trim(), color });
     const updated = DatabaseService.getInstance().updateLabel(id, nodeId, {
       name: name?.trim(),
       color,
@@ -3345,7 +3388,7 @@ app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): 
     }
     res.json(updated);
   } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (isSqliteUniqueViolation(error)) {
       res.status(409).json({ error: 'A label with that name already exists' });
       return;
     }
@@ -3360,6 +3403,7 @@ app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
     const nodeId = req.nodeId ?? 0;
+    if (isDebugEnabled()) console.debug('[Labels:debug] Delete label:', { id, nodeId });
     DatabaseService.getInstance().deleteLabel(id, nodeId);
     res.json({ success: true });
   } catch (error) {
@@ -3370,6 +3414,7 @@ app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response
 
 app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
+  if (!requireBody(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
     if (!isValidStackName(stackName)) {
@@ -3384,6 +3429,7 @@ app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, re
       return;
     }
 
+    if (isDebugEnabled()) console.debug('[Labels:debug] Set stack labels:', { stackName, nodeId, labelIds });
     DatabaseService.getInstance().setStackLabels(stackName, nodeId, labelIds);
     res.json({ success: true });
   } catch (error) {
@@ -3392,9 +3438,12 @@ app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, re
   }
 });
 
+const activeBulkActions = new Set<string>();
+
 app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
+  if (!requireBody(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
@@ -3406,36 +3455,61 @@ app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Res
     }
 
     const nodeId = req.nodeId ?? 0;
-    const stackNames = DatabaseService.getInstance().getStacksForLabel(id);
-    const fsStacks = await FileSystemService.getInstance(nodeId).getStacks();
-    const fsStackNames = new Set(fsStacks);
-    const validStacks = stackNames.filter(name => fsStackNames.has(name));
 
-    const results: { stackName: string; success: boolean; error?: string }[] = [];
+    const label = DatabaseService.getInstance().getLabel(id, nodeId);
+    if (!label) {
+      res.status(404).json({ error: 'Label not found' });
+      return;
+    }
 
-    for (const stackName of validStacks) {
-      try {
-        if (action === 'deploy') {
-          await ComposeService.getInstance(req.nodeId).deployStack(stackName, undefined, false);
-        } else {
-          const dockerController = DockerController.getInstance(req.nodeId);
-          const containers = await dockerController.getContainersByStack(stackName);
-          if (action === 'stop') {
-            await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
+    const lockKey = `bulk:${nodeId}`;
+    if (activeBulkActions.has(lockKey)) {
+      res.status(429).json({ error: 'A bulk action is already running for this node. Please wait.' });
+      return;
+    }
+    activeBulkActions.add(lockKey);
+
+    try {
+      const stackNames = DatabaseService.getInstance().getStacksForLabel(id, nodeId);
+      const fsStacks = await FileSystemService.getInstance(nodeId).getStacks();
+      const fsStackNames = new Set(fsStacks);
+      const validStacks = stackNames.filter(name => fsStackNames.has(name));
+
+      if (isDebugEnabled()) console.debug('[Labels:debug] Bulk action start:', { id, action, nodeId, totalLabeled: stackNames.length, validStacks: validStacks.length });
+
+      const results: { stackName: string; success: boolean; error?: string }[] = [];
+
+      for (const stackName of validStacks) {
+        try {
+          if (action === 'deploy') {
+            await ComposeService.getInstance(req.nodeId).deployStack(stackName, undefined, false);
           } else {
-            await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
+            const dockerController = DockerController.getInstance(req.nodeId);
+            const containers = await dockerController.getContainersByStack(stackName);
+            if (action === 'stop') {
+              await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
+            } else {
+              await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
+            }
           }
+          results.push({ stackName, success: true });
+        } catch (err: unknown) {
+          results.push({ stackName, success: false, error: (err as Error)?.message || 'Unknown error' });
         }
-        results.push({ stackName, success: true });
-      } catch (err: unknown) {
-        results.push({ stackName, success: false, error: (err as Error)?.message || 'Unknown error' });
       }
-    }
 
-    if (results.some(r => r.success)) {
-      invalidateNodeCaches(req.nodeId);
+      const succeeded = results.filter(r => r.success).length;
+      const failed = results.length - succeeded;
+      console.log(`[Labels] Bulk ${action} on label ${id}: ${validStacks.length} stacks (${succeeded} succeeded, ${failed} failed)`);
+      if (isDebugEnabled()) console.debug('[Labels:debug] Bulk action complete:', { id, action, total: results.length, succeeded, failed });
+
+      if (succeeded > 0) {
+        invalidateNodeCaches(req.nodeId);
+      }
+      res.json({ results });
+    } finally {
+      activeBulkActions.delete(lockKey);
     }
-    res.json({ results });
   } catch (error) {
     console.error('[Labels] Bulk action error:', error);
     res.status(500).json({ error: 'Failed to execute bulk action' });

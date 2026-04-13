@@ -994,6 +994,8 @@ export class DatabaseService {
             this.db.prepare('DELETE FROM scheduled_task_runs WHERE task_id IN (SELECT id FROM scheduled_tasks WHERE node_id = ?)').run(id);
             this.db.prepare('DELETE FROM scheduled_tasks WHERE node_id = ?').run(id);
             this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ?').run(id);
+            this.db.prepare('DELETE FROM stack_label_assignments WHERE node_id = ?').run(id);
+            this.db.prepare('DELETE FROM stack_labels WHERE node_id = ?').run(id);
             this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
         })();
     }
@@ -1550,6 +1552,17 @@ export class DatabaseService {
         return this.db.prepare('SELECT * FROM stack_labels WHERE node_id = ? ORDER BY name').all(nodeId) as Label[];
     }
 
+    public getLabel(id: number, nodeId: number): Label | null {
+        return (this.db.prepare('SELECT * FROM stack_labels WHERE id = ? AND node_id = ?')
+            .get(id, nodeId) as Label) ?? null;
+    }
+
+    public getLabelCount(nodeId: number): number {
+        const row = this.db.prepare('SELECT COUNT(*) as cnt FROM stack_labels WHERE node_id = ?')
+            .get(nodeId) as { cnt: number };
+        return row.cnt;
+    }
+
     public createLabel(nodeId: number, name: string, color: string): Label {
         const result = this.db.prepare(
             'INSERT INTO stack_labels (node_id, name, color) VALUES (?, ?, ?)'
@@ -1606,8 +1619,21 @@ export class DatabaseService {
         return result;
     }
 
-    public getStacksForLabel(labelId: number): string[] {
-        const rows = this.db.prepare('SELECT stack_name FROM stack_label_assignments WHERE label_id = ?').all(labelId) as { stack_name: string }[];
+    public getStacksForLabel(labelId: number, nodeId: number): string[] {
+        const rows = this.db.prepare('SELECT stack_name FROM stack_label_assignments WHERE label_id = ? AND node_id = ?')
+            .all(labelId, nodeId) as { stack_name: string }[];
         return rows.map(r => r.stack_name);
+    }
+
+    public cleanupStaleAssignments(nodeId: number, validStackNames: string[]): number {
+        if (validStackNames.length === 0) {
+            const result = this.db.prepare('DELETE FROM stack_label_assignments WHERE node_id = ?').run(nodeId);
+            return result.changes;
+        }
+        const placeholders = validStackNames.map(() => '?').join(',');
+        const result = this.db.prepare(
+            `DELETE FROM stack_label_assignments WHERE node_id = ? AND stack_name NOT IN (${placeholders})`
+        ).run(nodeId, ...validStackNames);
+        return result.changes;
     }
 }
