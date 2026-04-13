@@ -990,9 +990,10 @@ export class DatabaseService {
             throw new Error('Cannot delete the default node');
         }
         this.db.transaction(() => {
-            this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
+            this.db.prepare('DELETE FROM scheduled_task_runs WHERE task_id IN (SELECT id FROM scheduled_tasks WHERE node_id = ?)').run(id);
             this.db.prepare('DELETE FROM scheduled_tasks WHERE node_id = ?').run(id);
             this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ?').run(id);
+            this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
         })();
     }
 
@@ -1481,7 +1482,10 @@ export class DatabaseService {
     }
 
     public deleteScheduledTask(id: number): void {
-        this.db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+        this.db.transaction(() => {
+            this.db.prepare('DELETE FROM scheduled_task_runs WHERE task_id = ?').run(id);
+            this.db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id);
+        })();
     }
 
     public getDueScheduledTasks(now: number): ScheduledTask[] {

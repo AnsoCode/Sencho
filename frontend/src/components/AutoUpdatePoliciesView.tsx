@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Combobox } from '@/components/ui/combobox';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { RefreshCw, Plus, Pencil, Trash2, History, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
@@ -96,7 +96,7 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
   const [formCronPreset, setFormCronPreset] = useState('0 3 * * *');
   const [formEnabled, setFormEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [runningPolicyId, setRunningPolicyId] = useState<number | null>(null);
+  const [runningPolicies, setRunningPolicies] = useState<Set<number>>(new Set());
   const [runsPage, setRunsPage] = useState(1);
   const [runsTotal, setRunsTotal] = useState(0);
   const runsLimit = 20;
@@ -126,14 +126,16 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
     }
   }, []);
 
-  const fetchStacks = useCallback(async (nodeId?: string) => {
+  const fetchStacks = useCallback(async (nodeId?: string, signal?: AbortSignal) => {
     try {
       const res = nodeId
-        ? await fetchForNode('/stacks', parseInt(nodeId, 10))
-        : await apiFetch('/stacks');
+        ? await fetchForNode('/stacks', parseInt(nodeId, 10), { signal })
+        : await apiFetch('/stacks', { signal });
       if (res.ok) setStacks(await res.json());
       else setStacks([]);
-    } catch { setStacks([]); }
+    } catch {
+      if (!signal?.aborted) setStacks([]);
+    }
   }, []);
 
   const fetchNodes = useCallback(async () => {
@@ -154,10 +156,11 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
 
   // Re-fetch stacks when selected node changes in the dialog
   useEffect(() => {
-    if (dialogOpen && formNodeId) {
-      fetchStacks(formNodeId);
-      setFormTargetId('');
-    }
+    if (!dialogOpen || !formNodeId) return;
+    const controller = new AbortController();
+    fetchStacks(formNodeId, controller.signal);
+    setFormTargetId('');
+    return () => controller.abort();
   }, [formNodeId, dialogOpen, fetchStacks]);
 
   const openCreate = () => {
@@ -188,7 +191,7 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
 
   const handleSave = async () => {
     const body: Record<string, unknown> = {
-      name: formName,
+      name: formName.trim(),
       target_type: 'stack',
       action: 'update',
       target_id: formTargetId,
@@ -267,7 +270,7 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
   };
 
   const handleRunNow = async (policy: ScheduledTask) => {
-    setRunningPolicyId(policy.id);
+    setRunningPolicies(prev => new Set(prev).add(policy.id));
     try {
       const res = await apiFetch(`/scheduled-tasks/${policy.id}/run`, { method: 'POST', localOnly: true });
       if (res.ok) {
@@ -280,7 +283,11 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
     } catch {
       toast.error('Something went wrong.');
     } finally {
-      setRunningPolicyId(null);
+      setRunningPolicies(prev => {
+        const next = new Set(prev);
+        next.delete(policy.id);
+        return next;
+      });
     }
   };
 
@@ -375,17 +382,17 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => handleRunNow(policy)} title="Run now" disabled={runningPolicyId === policy.id}>
-                          <Play className={`w-4 h-4 ${runningPolicyId === policy.id ? 'animate-pulse' : ''}`} />
+                        <Button variant="ghost" size="sm" onClick={() => handleRunNow(policy)} title="Run now" disabled={runningPolicies.has(policy.id)}>
+                          <Play className={`w-4 h-4 ${runningPolicies.has(policy.id) ? 'animate-pulse' : ''}`} strokeWidth={1.5} />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => openRuns(policy)} title="Execution history">
-                          <History className="w-4 h-4" />
+                          <History className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(policy)} title="Edit">
-                          <Pencil className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(policy)} title="Delete" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground">
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
                       </div>
                     </TableCell>
@@ -402,6 +409,7 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>{editingPolicy ? 'Edit Auto-Update Policy' : 'New Auto-Update Policy'}</DialogTitle>
+            <DialogDescription className="sr-only">Configure an auto-update policy for a stack.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -439,19 +447,17 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
 
             <div className="space-y-2">
               <Label>Check Frequency</Label>
-              <Select value={formCronPreset} onValueChange={(val) => {
-                setFormCronPreset(val);
-                if (val !== 'custom') setFormCron(val);
-              }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CRON_PRESETS.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={CRON_PRESETS.map(p => ({ value: p.value, label: p.label }))}
+                value={formCronPreset}
+                onValueChange={(val) => {
+                  setFormCronPreset(val);
+                  if (val !== 'custom') setFormCron(val);
+                }}
+                placeholder="Select frequency..."
+                searchPlaceholder="Search frequencies..."
+                emptyText="No matching frequency."
+              />
               {formCronPreset === 'custom' && (
                 <Input
                   placeholder="0 3 * * *"
@@ -470,7 +476,7 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !formName || !formCron || !formTargetId || !formNodeId}>
+            <Button onClick={handleSave} disabled={saving || !formName.trim() || !formCron || !formTargetId || !formNodeId}>
               {saving ? 'Saving...' : editingPolicy ? 'Update' : 'Create'}
             </Button>
           </DialogFooter>
@@ -513,7 +519,8 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
               )}
             </div>
           </SheetHeader>
-          <div className="mt-4">
+          <ScrollArea className="mt-4 flex-1" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
+            <div>
             {runsLoading ? (
               <div className="text-center text-muted-foreground py-8">Loading...</div>
             ) : runs.length === 0 ? (
@@ -570,17 +577,18 @@ function AutoUpdatePoliciesContent({ filterNodeId, onClearFilter }: AutoUpdatePo
                   </p>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage - 1)} disabled={runsPage <= 1}>
-                      <ChevronLeft className="w-4 h-4" />
+                      <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage + 1)} disabled={runsPage >= Math.ceil(runsTotal / runsLimit)}>
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
                     </Button>
                   </div>
                 </div>
               )}
               </>
             )}
-          </div>
+            </div>
+          </ScrollArea>
         </SheetContent>
       </Sheet>
     </div>

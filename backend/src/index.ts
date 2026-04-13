@@ -4933,7 +4933,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
   try {
     const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
 
-    if (!name || typeof name !== 'string') {
+    if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Name is required' }); return;
     }
     if (!['stack', 'fleet', 'system'].includes(target_type)) {
@@ -4996,7 +4996,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     const nextRun = (enabled !== false) ? scheduler.calculateNextRun(cron_expression) : null;
 
     const id = DatabaseService.getInstance().createScheduledTask({
-      name,
+      name: name.trim(),
       target_type,
       target_id: target_id || null,
       node_id: node_id != null ? Number(node_id) : null,
@@ -5015,6 +5015,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
       prune_label_filter: prune_label_filter ? prune_label_filter.trim() : null,
     });
 
+    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Created task id=${id} action=${action} target=${target_id || 'none'}`);
     const task = DatabaseService.getInstance().getScheduledTask(id);
     res.status(201).json(task);
   } catch (error) {
@@ -5109,7 +5110,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
 
     const updates: Record<string, unknown> = { updated_at: Date.now() };
-    if (name !== undefined) updates.name = name;
+    if (name !== undefined) updates.name = typeof name === 'string' ? name.trim() : name;
     if (target_type !== undefined) updates.target_type = target_type;
     if (target_id !== undefined) updates.target_id = target_id || null;
     if (node_id !== undefined) updates.node_id = node_id != null ? Number(node_id) : null;
@@ -5130,6 +5131,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
 
     db.updateScheduledTask(id, updates as Partial<Omit<ScheduledTask, 'id'>>);
+    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Updated task id=${id}`);
     const task = db.getScheduledTask(id);
     res.json(task);
   } catch (error) {
@@ -5151,6 +5153,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     db.deleteScheduledTask(id);
+    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Deleted task id=${id}`);
     res.json({ success: true });
   } catch (error) {
     console.error('[ScheduledTasks] Delete error:', error);
@@ -5187,7 +5190,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
   }
 });
 
-app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/scheduled-tasks/:id/run', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
@@ -5199,10 +5202,17 @@ app.post('/api/scheduled-tasks/:id/run', async (req: Request, res: Response): Pr
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
     if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
-    await SchedulerService.getInstance().triggerTask(id);
+    const scheduler = SchedulerService.getInstance();
+    if (scheduler.isTaskRunning(id)) {
+      res.status(409).json({ error: 'Task is already running' }); return;
+    }
 
-    const task = db.getScheduledTask(id);
-    res.json(task);
+    scheduler.triggerTask(id).catch((err: unknown) => {
+      const msg = getErrorMessage(err, String(err));
+      console.error(`[ScheduledTasks] Background run error for task ${id}:`, msg);
+    });
+
+    res.status(202).json({ message: 'Task triggered', task_id: id });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to run task';
     console.error('[ScheduledTasks] Run error:', msg);
@@ -5920,19 +5930,31 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
 
         let hasUpdate = false;
         const updatedImages: string[] = [];
+        const checkErrors: string[] = [];
         for (const imageRef of imageRefs) {
           try {
-            if (await imageUpdateService.checkImage(docker, imageRef)) {
+            const result = await imageUpdateService.checkImage(docker, imageRef);
+            if (result.error) {
+              checkErrors.push(result.error);
+            } else if (result.hasUpdate) {
               hasUpdate = true;
               updatedImages.push(imageRef);
             }
           } catch (e) {
+            const errMsg = getErrorMessage(e, String(e));
+            checkErrors.push(errMsg);
             console.warn(`[AutoUpdate] Failed to check image ${imageRef}:`, e);
           }
         }
 
         if (!hasUpdate) {
-          results.push(`Stack "${stackName}": all images up to date.`);
+          if (checkErrors.length > 0 && checkErrors.length === imageRefs.length) {
+            results.push(`Stack "${stackName}": WARNING - all image checks failed (${checkErrors.join('; ')}). Unable to determine update status.`);
+          } else if (checkErrors.length > 0) {
+            results.push(`Stack "${stackName}": all reachable images up to date (${checkErrors.length} check(s) failed).`);
+          } else {
+            results.push(`Stack "${stackName}": all images up to date.`);
+          }
           continue;
         }
 
