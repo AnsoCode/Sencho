@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.2](https://github.com/AnsoCode/Sencho/compare/v0.46.1...v0.46.2) (2026-04-13)
+
+
+### Fixed
+
+* **logs:** harden global logs with shared parsing, SSE fixes, and level filter ([#539](https://github.com/AnsoCode/Sencho/issues/539)) ([a74a516](https://github.com/AnsoCode/Sencho/commit/a74a516850314ec5d17144987d3b9f87831047e2))
+
 ## [0.46.1](https://github.com/AnsoCode/Sencho/compare/v0.46.0...v0.46.1) (2026-04-13)
 
 
