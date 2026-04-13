@@ -3,11 +3,10 @@ import { Check, Plus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { LabelDot, type Label, type LabelColor } from './LabelPill';
-
-const LABEL_COLORS: LabelColor[] = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'];
+import { LabelDot, LABEL_COLORS, MAX_LABELS_PER_NODE, type Label } from './LabelPill';
 
 interface LabelAssignPopoverProps {
     stackName: string;
@@ -89,25 +88,27 @@ export function LabelAssignPopover({ stackName, allLabels, assignedLabelIds, onL
                 align="start"
             >
                 <div className="text-xs font-medium text-muted-foreground px-2 py-1">Labels</div>
-                <div className="max-h-[200px] overflow-y-auto">
-                    {allLabels.map(label => (
-                        <button
-                            key={label.id}
-                            type="button"
-                            className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                            onClick={() => toggleLabel(label.id)}
-                        >
-                            <LabelDot color={label.color} />
-                            <span className="flex-1 text-left font-mono text-[12px] truncate">{label.name}</span>
-                            {assignedLabelIds.includes(label.id) && (
-                                <Check className="w-3.5 h-3.5 text-success shrink-0" strokeWidth={1.5} />
-                            )}
-                        </button>
-                    ))}
-                    {allLabels.length === 0 && !creating && (
-                        <div className="text-xs text-muted-foreground px-2 py-2">No labels yet.</div>
-                    )}
-                </div>
+                <ScrollArea className="max-h-[200px]">
+                    <div>
+                        {allLabels.map(label => (
+                            <button
+                                key={label.id}
+                                type="button"
+                                className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                                onClick={() => toggleLabel(label.id)}
+                            >
+                                <LabelDot color={label.color} />
+                                <span className="flex-1 text-left font-mono text-[12px] truncate">{label.name}</span>
+                                {assignedLabelIds.includes(label.id) && (
+                                    <Check className="w-3.5 h-3.5 text-success shrink-0" strokeWidth={1.5} />
+                                )}
+                            </button>
+                        ))}
+                        {allLabels.length === 0 && !creating && (
+                            <div className="text-xs text-muted-foreground px-2 py-2">No labels yet.</div>
+                        )}
+                    </div>
+                </ScrollArea>
                 {creating ? (
                     <div className="border-t border-border mt-1 pt-2 px-1 space-y-2">
                         <Input
@@ -139,7 +140,7 @@ export function LabelAssignPopover({ stackName, allLabels, assignedLabelIds, onL
                             </Button>
                         </div>
                     </div>
-                ) : (
+                ) : allLabels.length < MAX_LABELS_PER_NODE ? (
                     <button
                         type="button"
                         className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-accent/50 transition-colors mt-1 border-t border-border pt-2 cursor-pointer"
@@ -148,7 +149,7 @@ export function LabelAssignPopover({ stackName, allLabels, assignedLabelIds, onL
                         <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
                         Create new label
                     </button>
-                )}
+                ) : null}
             </PopoverContent>
         </Popover>
     );

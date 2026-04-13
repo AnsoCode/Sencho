@@ -23,9 +23,7 @@ import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { PaidGate } from '../PaidGate';
 import { CapabilityGate } from '../CapabilityGate';
-import { LabelDot, type Label, type LabelColor } from '../LabelPill';
-
-const LABEL_COLORS: LabelColor[] = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'];
+import { LabelDot, LABEL_COLORS, MAX_LABELS_PER_NODE, type Label } from '../LabelPill';
 
 export function LabelsSection() {
     const [labels, setLabels] = useState<Label[]>([]);
@@ -131,9 +129,9 @@ export function LabelsSection() {
                         <h2 className="text-lg font-semibold tracking-tight">Stack Labels</h2>
                         <p className="text-sm text-muted-foreground">Organize stacks with colored labels for filtering and bulk actions.</p>
                     </div>
-                    <Button size="sm" onClick={openCreate}>
+                    <Button size="sm" onClick={openCreate} disabled={labels.length >= MAX_LABELS_PER_NODE}>
                         <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-                        New Label
+                        {labels.length >= MAX_LABELS_PER_NODE ? 'Limit reached' : 'New Label'}
                     </Button>
                 </div>
 

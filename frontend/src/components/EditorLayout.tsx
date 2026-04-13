@@ -78,6 +78,12 @@ interface StackStatusInfo {
 
 type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
 
+interface BulkActionResult {
+  stackName: string;
+  success: boolean;
+  error?: string;
+}
+
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -1478,15 +1484,15 @@ export default function EditorLayout() {
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
-                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('deploy'); setBulkActionOpen(true); }}>
+                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('deploy'); setBulkActionOpen(true); }}>
                       <Play className="h-4 w-4 mr-2" strokeWidth={1.5} />
                       Deploy all
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('stop'); setBulkActionOpen(true); }}>
+                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('stop'); setBulkActionOpen(true); }}>
                       <Square className="h-4 w-4 mr-2" strokeWidth={1.5} />
                       Stop all
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => { setBulkActionLabel(label); setBulkAction('restart'); setBulkActionOpen(true); }}>
+                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('restart'); setBulkActionOpen(true); }}>
                       <RotateCw className="h-4 w-4 mr-2" strokeWidth={1.5} />
                       Restart all
                     </ContextMenuItem>
@@ -1669,11 +1675,12 @@ export default function EditorLayout() {
                                     onClick={async () => {
                                       const currentIds = (stackLabelMap[file] || []).map(l => l.id);
                                       const newIds = assigned ? currentIds.filter(id => id !== label.id) : [...currentIds, label.id];
+                                      const loadingId = toast.loading('Updating labels...');
                                       try {
                                         const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, { method: 'PUT', body: JSON.stringify({ labelIds: newIds }) });
                                         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error || 'Failed to update labels.'); }
                                         refreshLabels();
-                                      } catch (err: unknown) { toast.error((err as Error)?.message || 'Failed to update labels.'); }
+                                      } catch (err: unknown) { toast.error((err as Error)?.message || 'Failed to update labels.'); } finally { toast.dismiss(loadingId); }
                                     }}
                                   >
                                     <LabelDot color={label.color} />
@@ -2361,9 +2368,10 @@ export default function EditorLayout() {
                     throw new Error(data?.error || `Bulk ${bulkAction} failed.`);
                   }
                   const data = await res.json();
-                  const failed = data.results?.filter((r: { success: boolean }) => !r.success) || [];
+                  const failed = (data.results ?? []).filter((r: BulkActionResult) => !r.success);
                   if (failed.length > 0) {
-                    toast.error(`${failed.length} stack(s) failed to ${bulkAction}.`);
+                    const failedNames = failed.map(r => r.stackName).join(', ');
+                    toast.error(`Failed to ${bulkAction}: ${failedNames}`);
                   } else {
                     toast.success(`All stacks ${bulkAction === 'deploy' ? 'deployed' : bulkAction === 'stop' ? 'stopped' : 'restarted'} successfully.`);
                   }
