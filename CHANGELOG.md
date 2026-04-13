@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.7](https://github.com/AnsoCode/Sencho/compare/v0.46.6...v0.46.7) (2026-04-13)
+
+
+### Fixed
+
+* **fleet:** harden fleet snapshots with DRY capture, audit fixes, and design compliance ([#555](https://github.com/AnsoCode/Sencho/issues/555)) ([809bf76](https://github.com/AnsoCode/Sencho/commit/809bf76c205e9a4e0f20db735c55b010b98851eb))
+
 ## [0.46.6](https://github.com/AnsoCode/Sencho/compare/v0.46.5...v0.46.6) (2026-04-13)
 
 
