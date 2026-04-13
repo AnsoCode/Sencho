@@ -358,3 +358,183 @@ describe('Fleet snapshot lifecycle', () => {
     expect(check.status).toBe(404);
   });
 });
+
+// ─── Snapshot Restore Endpoint ───
+
+describe('Fleet snapshot restore', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  let snapshotId: number;
+
+  beforeAll(async () => {
+    const { LicenseService: LS } = await import('../services/LicenseService');
+    vi.spyOn(LS.getInstance(), 'getTier').mockReturnValue('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots')
+      .set('Authorization', authHeader)
+      .send({ description: 'Restore test snapshot' });
+    snapshotId = res.body.id;
+    vi.restoreAllMocks();
+  });
+
+  it('POST /api/fleet/snapshots/:id/restore returns 401 without auth', async () => {
+    const res = await request(app)
+      .post(`/api/fleet/snapshots/${snapshotId}/restore`)
+      .send({ nodeId: 1, stackName: 'test' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/fleet/snapshots/:id/restore returns 403 on free tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .post(`/api/fleet/snapshots/${snapshotId}/restore`)
+      .set('Authorization', authHeader)
+      .send({ nodeId: 1, stackName: 'test' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PAID_REQUIRED');
+  });
+
+  it('returns 400 with missing nodeId/stackName', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post(`/api/fleet/snapshots/${snapshotId}/restore`)
+      .set('Authorization', authHeader)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/nodeId and stackName are required/i);
+  });
+
+  it('returns 400 with invalid stackName (path traversal)', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post(`/api/fleet/snapshots/${snapshotId}/restore`)
+      .set('Authorization', authHeader)
+      .send({ nodeId: 1, stackName: '../etc/passwd' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid stack name/i);
+  });
+
+  it('returns 400 for NaN snapshot ID', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots/abc/restore')
+      .set('Authorization', authHeader)
+      .send({ nodeId: 1, stackName: 'mystack' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid snapshot id/i);
+  });
+
+  it('returns 404 for non-existent snapshot', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots/99999/restore')
+      .set('Authorization', authHeader)
+      .send({ nodeId: 1, stackName: 'mystack' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/snapshot not found/i);
+  });
+
+  it('returns 404 when no files match the nodeId/stackName combo', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post(`/api/fleet/snapshots/${snapshotId}/restore`)
+      .set('Authorization', authHeader)
+      .send({ nodeId: 999, stackName: 'nonexistent-stack' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/no files found/i);
+  });
+});
+
+// ─── Snapshot Admin Role Enforcement ───
+
+describe('Fleet snapshot admin enforcement', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  let viewerHeader: string;
+
+  beforeAll(async () => {
+    const { DatabaseService: DS } = await import('../services/DatabaseService');
+    const db = DS.getInstance();
+    const bcrypt = await import('bcrypt');
+    const viewerHash = await bcrypt.hash('snapshotviewer', 1);
+    try {
+      db.addUser({ username: 'snapshotviewer', password_hash: viewerHash, role: 'viewer' });
+    } catch {
+      // User may already exist
+    }
+    const viewerToken = jwt.sign({ username: 'snapshotviewer', role: 'viewer' }, TEST_JWT_SECRET, { expiresIn: '1m' });
+    viewerHeader = `Bearer ${viewerToken}`;
+  });
+
+  it('POST /api/fleet/snapshots returns 403 for viewer', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots')
+      .set('Authorization', viewerHeader)
+      .send({ description: 'test' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('DELETE /api/fleet/snapshots/1 returns 403 for viewer', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .delete('/api/fleet/snapshots/1')
+      .set('Authorization', viewerHeader);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('POST /api/fleet/snapshots/1/restore returns 403 for viewer', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots/1/restore')
+      .set('Authorization', viewerHeader)
+      .send({ nodeId: 1, stackName: 'test' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('GET /api/fleet/snapshots succeeds for viewer (read-only)', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .get('/api/fleet/snapshots')
+      .set('Authorization', viewerHeader);
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─── Snapshot Edge Cases ───
+
+describe('Fleet snapshot edge cases', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('snapshot with 0 stacks captured (empty COMPOSE_DIR)', async () => {
+    mockTier('paid');
+    const res = await request(app)
+      .post('/api/fleet/snapshots')
+      .set('Authorization', authHeader)
+      .send({ description: 'Empty snapshot' });
+    expect(res.status).toBe(201);
+    expect(res.body.stack_count).toBe(0);
+  });
+
+  it('DELETE on already-deleted snapshot returns 404', async () => {
+    mockTier('paid');
+    const createRes = await request(app)
+      .post('/api/fleet/snapshots')
+      .set('Authorization', authHeader)
+      .send({ description: 'To delete twice' });
+    const id = createRes.body.id;
+
+    await request(app)
+      .delete(`/api/fleet/snapshots/${id}`)
+      .set('Authorization', authHeader);
+
+    mockTier('paid');
+    const res = await request(app)
+      .delete(`/api/fleet/snapshots/${id}`)
+      .set('Authorization', authHeader);
+    expect(res.status).toBe(404);
+  });
+});

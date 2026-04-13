@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
     Camera, ArrowLeft, Server, Layers, FileText, AlertTriangle, Trash2,
-    Eye, ChevronDown, ChevronRight, Plus, Loader2, RotateCcw,
+    Eye, ChevronDown, ChevronLeft, ChevronRight, Plus, Loader2, RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import {
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from '@/components/ui/toast-store';
@@ -59,6 +60,8 @@ interface SkippedNode {
     reason: string;
 }
 
+const PAGE_SIZE = 10;
+
 // --- Main Component ---
 
 export default function FleetSnapshots() {
@@ -77,6 +80,12 @@ export default function FleetSnapshots() {
     const [previewFiles, setPreviewFiles] = useState<Set<string>>(new Set());
     const [restoringStack, setRestoringStack] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [page, setPage] = useState(0);
+
+    const totalPages = Math.max(1, Math.ceil(snapshots.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages - 1);
+    const pagedSnapshots = snapshots.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+    const needsPagination = snapshots.length > PAGE_SIZE;
 
     // --- Data Fetching ---
 
@@ -104,6 +113,7 @@ export default function FleetSnapshots() {
 
     const handleCreate = async () => {
         setCreating(true);
+        const loadingId = toast.loading('Creating fleet snapshot...');
         try {
             const res = await apiFetch('/fleet/snapshots', {
                 method: 'POST',
@@ -123,6 +133,7 @@ export default function FleetSnapshots() {
             const err = error as Record<string, unknown> | null;
             toast.error(err?.message as string || err?.error as string || 'Something went wrong.');
         } finally {
+            toast.dismiss(loadingId);
             setCreating(false);
         }
     };
@@ -250,12 +261,12 @@ export default function FleetSnapshots() {
                     className="gap-1.5 -ml-2"
                     onClick={() => { setViewMode('list'); setSelectedSnapshot(null); }}
                 >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
                     Back to Snapshots
                 </Button>
 
                 {loadingDetail ? (
-                    <div className="rounded-xl border bg-card p-6 space-y-4">
+                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel p-6 space-y-4">
                         <Skeleton className="h-6 w-64" />
                         <Skeleton className="h-4 w-48" />
                         <div className="flex gap-2">
@@ -267,7 +278,7 @@ export default function FleetSnapshots() {
                 ) : selectedSnapshot ? (
                     <>
                         {/* Header card */}
-                        <div className="rounded-xl border bg-card p-4 space-y-3">
+                        <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel p-4 space-y-3">
                             <h2 className="text-lg font-semibold">
                                 {selectedSnapshot.description || 'Untitled Snapshot'}
                             </h2>
@@ -276,10 +287,10 @@ export default function FleetSnapshots() {
                                 {new Date(selectedSnapshot.created_at).toLocaleString()}
                             </p>
                             <div className="flex items-center gap-2">
-                                <Badge variant="secondary">
+                                <Badge variant="secondary" className="font-mono tabular-nums">
                                     {selectedSnapshot.node_count} node{selectedSnapshot.node_count !== 1 ? 's' : ''}
                                 </Badge>
-                                <Badge variant="secondary">
+                                <Badge variant="secondary" className="font-mono tabular-nums">
                                     {selectedSnapshot.stack_count} stack{selectedSnapshot.stack_count !== 1 ? 's' : ''}
                                 </Badge>
                             </div>
@@ -315,7 +326,7 @@ export default function FleetSnapshots() {
                             {selectedSnapshot.nodes.map(node => {
                                 const nodeExpanded = expandedNodes.has(node.nodeId);
                                 return (
-                                    <div key={node.nodeId} className="rounded-xl border bg-card overflow-hidden">
+                                    <div key={node.nodeId} className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel overflow-hidden transition-colors hover:border-t-card-border-hover">
                                         {/* Node header */}
                                         <button
                                             onClick={() => toggleNode(node.nodeId)}
@@ -327,7 +338,7 @@ export default function FleetSnapshots() {
                                             }
                                             <Server className="w-4 h-4 text-muted-foreground shrink-0" />
                                             <span className="text-sm font-medium flex-1 truncate">{node.nodeName}</span>
-                                            <Badge variant="outline" className="text-xs shrink-0">
+                                            <Badge variant="outline" className="text-xs font-mono tabular-nums shrink-0">
                                                 {node.stacks.length} stack{node.stacks.length !== 1 ? 's' : ''}
                                             </Badge>
                                         </button>
@@ -349,10 +360,10 @@ export default function FleetSnapshots() {
                                                                     : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                                                                 }
                                                                 <Layers className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                                                <span className="text-xs font-medium flex-1 truncate">
+                                                                <span className="text-xs font-mono font-medium flex-1 truncate">
                                                                     {stack.stackName}
                                                                 </span>
-                                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                                                                <Badge variant="outline" className="text-[10px] font-mono tabular-nums px-1.5 py-0 h-4 shrink-0">
                                                                     {stack.files.length} file{stack.files.length !== 1 ? 's' : ''}
                                                                 </Badge>
                                                             </button>
@@ -367,21 +378,23 @@ export default function FleetSnapshots() {
                                                                             <div key={fileKey}>
                                                                                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-muted/50 transition-colors">
                                                                                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                                                                    <span className="text-xs flex-1 truncate">{file.filename}</span>
+                                                                                    <span className="text-xs font-mono flex-1 truncate">{file.filename}</span>
                                                                                     <Button
                                                                                         variant="ghost"
                                                                                         size="sm"
                                                                                         className="h-6 px-2 text-xs"
                                                                                         onClick={() => togglePreview(fileKey)}
                                                                                     >
-                                                                                        <Eye className="w-3 h-3 mr-1" />
+                                                                                        <Eye className="w-3 h-3 mr-1" strokeWidth={1.5} />
                                                                                         {showPreview ? 'Hide' : 'Preview'}
                                                                                     </Button>
                                                                                 </div>
                                                                                 {showPreview && (
-                                                                                    <pre className="mx-3 mt-1 mb-2 p-3 bg-zinc-950 text-zinc-200 text-xs font-mono rounded-lg overflow-auto max-h-64 whitespace-pre-wrap break-words">
-                                                                                        {file.content}
-                                                                                    </pre>
+                                                                                    <ScrollArea className="mx-3 mt-1 mb-2 max-h-64 rounded-lg bg-background shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
+                                                                                        <pre className="p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-words">
+                                                                                            {file.content}
+                                                                                        </pre>
+                                                                                    </ScrollArea>
                                                                                 )}
                                                                             </div>
                                                                         );
@@ -421,20 +434,35 @@ export default function FleetSnapshots() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                    <Camera className="w-5 h-5 text-muted-foreground" />
+                    <Camera className="w-5 h-5 text-muted-foreground" strokeWidth={1.5} />
                     <h2 className="text-lg font-semibold">Fleet Snapshots</h2>
                 </div>
-                {isAdmin && !showCreateForm && (
-                    <Button size="sm" className="gap-1.5" onClick={() => setShowCreateForm(true)}>
-                        <Plus className="w-4 h-4" />
-                        Create Snapshot
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    {needsPagination && (
+                        <div className="flex items-center gap-1.5">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+                                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                            <span className="text-xs font-mono tabular-nums text-stat-subtitle min-w-[3rem] text-center">
+                                {safePage + 1} / {totalPages}
+                            </span>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>
+                                <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                        </div>
+                    )}
+                    {isAdmin && !showCreateForm && (
+                        <Button size="sm" className="gap-1.5" onClick={() => setShowCreateForm(true)}>
+                            <Plus className="w-4 h-4" strokeWidth={1.5} />
+                            Create Snapshot
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Create form */}
             {showCreateForm && (
-                <div className="rounded-xl border bg-card p-4 space-y-3">
+                <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel p-4 space-y-3">
                     <Input
                         placeholder="Snapshot description (optional)"
                         value={description}
@@ -461,7 +489,7 @@ export default function FleetSnapshots() {
 
             {/* Loading state */}
             {loading ? (
-                <div className="rounded-xl border bg-card">
+                <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel">
                     <div className="p-4 space-y-3">
                         {Array.from({ length: 3 }).map((_, i) => (
                             <div key={i} className="flex items-center gap-4">
@@ -484,7 +512,7 @@ export default function FleetSnapshots() {
                 </div>
             ) : (
                 /* Snapshots table */
-                <div className="rounded-xl border bg-card overflow-hidden">
+                <div className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel overflow-hidden">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -496,12 +524,12 @@ export default function FleetSnapshots() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {snapshots.map(snapshot => {
+                            {pagedSnapshots.map(snapshot => {
                                 const skipped = parseSkippedNodes(snapshot.skipped_nodes);
                                 const skippedNames = skipped.map(s => s.nodeName).join(', ');
                                 return (
                                     <TableRow key={snapshot.id}>
-                                        <TableCell className="text-xs whitespace-nowrap">
+                                        <TableCell className="text-xs font-mono tabular-nums whitespace-nowrap">
                                             {new Date(snapshot.created_at).toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-sm max-w-[300px] truncate">
@@ -511,7 +539,7 @@ export default function FleetSnapshots() {
                                                 <span className="italic text-muted-foreground">No description</span>
                                             )}
                                         </TableCell>
-                                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                        <TableCell className="text-xs font-mono tabular-nums text-muted-foreground whitespace-nowrap">
                                             {snapshot.node_count} node{snapshot.node_count !== 1 ? 's' : ''}
                                             {' · '}
                                             {snapshot.stack_count} stack{snapshot.stack_count !== 1 ? 's' : ''}
@@ -523,7 +551,7 @@ export default function FleetSnapshots() {
                                                     title={`Skipped: ${skippedNames}`}
                                                 >
                                                     <AlertTriangle className="w-3.5 h-3.5" />
-                                                    <span className="text-xs">{skipped.length}</span>
+                                                    <span className="text-xs font-mono tabular-nums">{skipped.length}</span>
                                                 </span>
                                             ) : (
                                                 <span className="text-xs text-muted-foreground">None</span>
@@ -537,7 +565,7 @@ export default function FleetSnapshots() {
                                                     className="h-7 px-2 text-xs"
                                                     onClick={() => handleViewDetail(snapshot)}
                                                 >
-                                                    <Eye className="w-3.5 h-3.5 mr-1" />
+                                                    <Eye className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                                                     View
                                                 </Button>
                                                 {isAdmin && (
@@ -546,13 +574,13 @@ export default function FleetSnapshots() {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                className="h-7 px-2 text-xs text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                                                                className="h-7 px-2 text-xs text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
                                                                 disabled={deletingId === snapshot.id}
                                                             >
                                                                 {deletingId === snapshot.id ? (
                                                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                                 ) : (
-                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                                 )}
                                                             </Button>
                                                         </AlertDialogTrigger>
@@ -598,9 +626,10 @@ function RestoreButton({ nodeId, nodeName, stackName, restoring, onRestore }: {
     onRestore: (nodeId: number, stackName: string, redeploy: boolean) => Promise<void>;
 }) {
     const [redeploy, setRedeploy] = useState(false);
+    const [open, setOpen] = useState(false);
 
     return (
-        <AlertDialog>
+        <AlertDialog open={open} onOpenChange={setOpen}>
             <AlertDialogTrigger asChild>
                 <Button
                     variant="outline"
@@ -611,7 +640,7 @@ function RestoreButton({ nodeId, nodeName, stackName, restoring, onRestore }: {
                     {restoring ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                        <RotateCcw className="w-3 h-3" />
+                        <RotateCcw className="w-3 h-3" strokeWidth={1.5} />
                     )}
                     Restore
                 </Button>
@@ -640,13 +669,19 @@ function RestoreButton({ nodeId, nodeName, stackName, restoring, onRestore }: {
                 </div>
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
+                    <Button
                         disabled={restoring}
-                        onClick={() => onRestore(nodeId, stackName, redeploy)}
+                        onClick={async () => {
+                            try {
+                                await onRestore(nodeId, stackName, redeploy);
+                            } finally {
+                                setOpen(false);
+                            }
+                        }}
                     >
                         {restoring && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
                         Restore
-                    </AlertDialogAction>
+                    </Button>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
