@@ -1303,7 +1303,7 @@ paths:
         **Note:** API tokens cannot create other API tokens.
       responses:
         "201":
-          description: Token created. The `token` field contains the full JWT — save it now, it won't be shown again.
+          description: Token created. The `token` field contains the full JWT. Save it now; it will not be shown again.
           content:
             application/json:
               schema:
@@ -1316,13 +1316,19 @@ paths:
                     type: string
                     description: Full JWT token. Store securely — this is the only time it's returned.
         "400":
-          description: Validation error.
+          description: Validation error (missing/invalid fields, or maximum of 25 active tokens reached).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: An active token with this name already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
       requestBody:
@@ -1335,7 +1341,7 @@ paths:
               properties:
                 name:
                   type: string
-                  description: Human-readable token name.
+                  description: Human-readable token name. Must be unique among the user's active tokens.
                   maxLength: 100
                   example: CI/CD Deploy Token
                 scope:

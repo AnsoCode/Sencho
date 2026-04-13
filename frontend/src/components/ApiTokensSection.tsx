@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
@@ -101,7 +101,8 @@ export function ApiTokensSection() {
                 toast.error(err?.error || err?.message || 'Failed to create token.');
             }
         } catch (e: unknown) {
-            toast.error((e as Error)?.message || 'Network error.');
+            const message = e instanceof Error ? e.message : 'Network error.';
+            toast.error(message);
         } finally { setCreating(false); }
     };
 
@@ -118,9 +119,13 @@ export function ApiTokensSection() {
         } catch { toast.error('Network error.'); }
     };
 
-    const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        toast.success(`${label} copied to clipboard.`);
+    const copyToClipboard = async (text: string, label: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success(`${label} copied to clipboard.`);
+        } catch {
+            toast.error('Failed to copy to clipboard.');
+        }
     };
 
     return (
@@ -137,7 +142,7 @@ export function ApiTokensSection() {
                         </p>
                     </div>
                     <Button size="sm" onClick={() => setShowForm(!showForm)}>
-                        <Plus className="w-4 h-4 mr-1.5" /> Create Token
+                        <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Create Token
                     </Button>
                 </div>
 
@@ -150,31 +155,36 @@ export function ApiTokensSection() {
                                 placeholder="CI deploy pipeline"
                                 value={formName}
                                 onChange={e => setFormName(e.target.value)}
+                                maxLength={100}
                             />
                         </div>
                         <div className="space-y-2">
                             <Label>Permission Scope</Label>
-                            <Select value={formScope} onValueChange={setFormScope}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="read-only">Read Only - GET requests only</SelectItem>
-                                    <SelectItem value="deploy-only">Deploy Only - read + deploy actions</SelectItem>
-                                    <SelectItem value="full-admin">Full Admin - unrestricted access</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <Combobox
+                                options={[
+                                    { value: 'read-only', label: 'Read Only - GET requests only' },
+                                    { value: 'deploy-only', label: 'Deploy Only - read + deploy actions' },
+                                    { value: 'full-admin', label: 'Full Admin - unrestricted access' },
+                                ]}
+                                value={formScope}
+                                onValueChange={setFormScope}
+                                placeholder="Select scope..."
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>Expiration</Label>
-                            <Select value={formExpiry === null ? 'never' : String(formExpiry)} onValueChange={v => setFormExpiry(v === 'never' ? null : Number(v))}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="30">30 days</SelectItem>
-                                    <SelectItem value="60">60 days</SelectItem>
-                                    <SelectItem value="90">90 days</SelectItem>
-                                    <SelectItem value="365">1 year</SelectItem>
-                                    <SelectItem value="never">No expiration</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <Combobox
+                                options={[
+                                    { value: '30', label: '30 days' },
+                                    { value: '60', label: '60 days' },
+                                    { value: '90', label: '90 days' },
+                                    { value: '365', label: '1 year' },
+                                    { value: 'never', label: 'No expiration' },
+                                ]}
+                                value={formExpiry === null ? 'never' : String(formExpiry)}
+                                onValueChange={v => setFormExpiry(v === 'never' ? null : Number(v))}
+                                placeholder="Select expiration..."
+                            />
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
                             <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
@@ -195,7 +205,7 @@ export function ApiTokensSection() {
                         <div className="flex items-center gap-2">
                             <code className="flex-1 text-xs font-mono bg-muted px-3 py-2 rounded-lg break-all select-all">{newToken.token}</code>
                             <Button variant="outline" size="sm" onClick={() => copyToClipboard(newToken.token, 'Token')}>
-                                <Copy className="w-4 h-4" />
+                                <Copy className="w-4 h-4" strokeWidth={1.5} />
                             </Button>
                         </div>
                         <Button variant="outline" size="sm" onClick={() => setNewToken(null)}>Dismiss</Button>
@@ -221,7 +231,7 @@ export function ApiTokensSection() {
 
                 {/* Token list */}
                 {!loading && tokens.map(token => (
-                    <div key={token.id} className="border border-border rounded-xl p-4 space-y-3">
+                    <div key={token.id} className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors hover:border-t-card-border-hover p-4 space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                                 <Zap className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -232,8 +242,8 @@ export function ApiTokensSection() {
                             </div>
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0">
-                                        <Trash2 className="w-4 h-4" />
+                                    <Button variant="ghost" size="sm" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground shrink-0">
+                                        <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                                     </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
@@ -252,7 +262,7 @@ export function ApiTokensSection() {
                                 </AlertDialogContent>
                             </AlertDialog>
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
                             <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
                                 Created {formatDate(token.created_at)}

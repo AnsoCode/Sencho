@@ -441,10 +441,12 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const apiToken = DatabaseService.getInstance().getApiTokenByHash(tokenHash);
       if (!apiToken || apiToken.revoked_at) {
+        if (isDebugEnabled()) console.log('[Auth:diag] API token rejected: not found or revoked');
         res.status(401).json({ error: 'API token not found or revoked' });
         return;
       }
       if (apiToken.expires_at && apiToken.expires_at < Date.now()) {
+        if (isDebugEnabled()) console.log('[Auth:diag] API token rejected: expired');
         res.status(401).json({ error: 'API token has expired' });
         return;
       }
@@ -457,6 +459,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       };
       req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer', userId: apiToken.user_id };
       req.apiTokenScope = apiToken.scope as 'read-only' | 'deploy-only' | 'full-admin';
+      if (isDebugEnabled()) console.log('[Auth:diag] API token authenticated:', { scope: apiToken.scope, user: creator?.username, tokenName: apiToken.name });
       next();
       return;
     }
@@ -1123,10 +1126,12 @@ const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
 const enforceApiTokenScope = (req: Request, res: Response, next: NextFunction): void => {
   const scope = req.apiTokenScope;
   if (!scope) { next(); return; } // Not an API token request
+  if (isDebugEnabled()) console.log('[ApiTokenScope:diag]', req.method, req.path, 'scope:', scope);
   if (scope === 'full-admin') { next(); return; }
 
   if (scope === 'read-only') {
     if (req.method !== 'GET') {
+      if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', req.method, req.path, 'scope:', scope);
       res.status(403).json({ error: 'API token scope "read-only" only allows GET requests.', code: 'SCOPE_DENIED' });
       return;
     }
@@ -1141,10 +1146,12 @@ const enforceApiTokenScope = (req: Request, res: Response, next: NextFunction): 
       next();
       return;
     }
+    if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', req.method, req.path, 'scope:', scope);
     res.status(403).json({ error: 'API token scope "deploy-only" does not allow this action.', code: 'SCOPE_DENIED' });
     return;
   }
 
+  if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied: unknown scope', req.method, req.path, 'scope:', scope);
   res.status(403).json({ error: 'Unknown API token scope.', code: 'SCOPE_DENIED' });
 };
 
@@ -4848,16 +4855,30 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
       return;
     }
 
-    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername(req.user!.username);
     if (!user) {
       res.status(500).json({ error: 'User not found.' });
       return;
     }
 
-    const rawToken = jwt.sign({ scope: 'api_token', sub: user.username, jti: crypto.randomUUID() }, jwtSecret);
+    const activeCount = db.getActiveApiTokenCountByUser(user.id);
+    if (activeCount >= 25) {
+      res.status(400).json({ error: 'Maximum of 25 active API tokens per user.' });
+      return;
+    }
+
+    if (db.getActiveApiTokenByNameAndUser(name.trim(), user.id)) {
+      res.status(409).json({ error: 'An active token with this name already exists.' });
+      return;
+    }
+
+    // JWT ceiling exceeds the longest user-selectable expiry (365d) so the DB check is always tighter
+    const API_TOKEN_JWT_CEILING = '400d';
+    const rawToken = jwt.sign({ scope: 'api_token', sub: user.username, jti: crypto.randomUUID() }, jwtSecret, { expiresIn: API_TOKEN_JWT_CEILING });
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    const id = DatabaseService.getInstance().addApiToken({
+    const id = db.addApiToken({
       token_hash: tokenHash,
       name: name.trim(),
       scope: scope as 'read-only' | 'deploy-only' | 'full-admin',
@@ -4866,6 +4887,7 @@ app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response):
       expires_at: expiresAt,
     });
 
+    if (isDebugEnabled()) console.log('[ApiTokens:diag] Token created:', { name: name.trim(), scope, expires_in, user: req.user!.username });
     res.status(201).json({ id, token: rawToken });
   } catch (error) {
     console.error('[ApiTokens] Create error:', error);
@@ -4914,6 +4936,7 @@ app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Resp
     }
 
     DatabaseService.getInstance().revokeApiToken(id);
+    if (isDebugEnabled()) console.log('[ApiTokens:diag] Token revoked:', { id, name: apiToken.name, user: req.user!.username });
     res.json({ success: true });
   } catch (error) {
     console.error('[ApiTokens] Revoke error:', error);
