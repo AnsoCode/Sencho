@@ -107,6 +107,15 @@ SSO users cannot log in with a password; they must always authenticate through t
 
 To set up identity provider authentication, see [SSO Authentication](/features/sso).
 
+## Session security
+
+Sencho enforces user changes immediately:
+
+- **Account deletion**: A deleted user's active sessions are rejected on the next request. There is no delay or grace period.
+- **Role changes**: When an admin changes a user's role, the new permissions take effect immediately for all of that user's active sessions.
+- **Password changes**: Changing a password (either your own or as an admin reset) invalidates all other active sessions for that user. The session that performed the change remains valid.
+- **SSO users**: Password fields are hidden for SSO-provisioned users. SSO accounts always authenticate through their identity provider.
+
 ## Migration from single-admin setup
 
 When you upgrade to a Skipper or Admiral license, your existing single-admin credentials are automatically migrated. No manual action is required; your login continues to work as before, and your account is assigned the Admin role.

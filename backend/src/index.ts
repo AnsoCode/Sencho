@@ -432,7 +432,9 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string; tv?: number };
+
+    if (isDebugEnabled()) console.log('[Auth:diag] Token type:', bearerToken ? 'bearer' : 'cookie', 'scope:', decoded.scope || 'user-session');
 
     // API token path: scope-based programmatic access
     if (decoded.scope === 'api_token') {
@@ -450,7 +452,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       const creator = DatabaseService.getInstance().getUserById(apiToken.user_id);
       const roleMap: Record<string, UserRole> = {
         'read-only': 'viewer',
-        'deploy-only': 'admin',
+        'deploy-only': 'deployer',
         'full-admin': 'admin',
       };
       req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer', userId: apiToken.user_id };
@@ -459,14 +461,14 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       return;
     }
 
-    // Accept both user sessions and node proxy tokens. Default role to 'admin' for backward compat with pre-RBAC tokens.
-    const dbUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
-    req.user = { username: decoded.username || 'node-proxy', role: (decoded.role as UserRole) || 'admin', userId: dbUser?.id ?? 0 };
-
-    // Distributed License Enforcement: trust tier headers only from authenticated node proxy requests.
-    // Browser sessions and API tokens cannot set these — only a valid node_proxy JWT (signed with
-    // this instance's JWT secret) unlocks the trusted path.
+    // Node proxy tokens: Sencho-to-Sencho communication, not user sessions.
+    // Handle before user resolution since proxy tokens have no username.
     if (decoded.scope === 'node_proxy') {
+      req.user = { username: 'node-proxy', role: 'admin', userId: 0 };
+
+      // Distributed License Enforcement: trust tier headers only from authenticated node proxy requests.
+      // Browser sessions and API tokens cannot set these; only a valid node_proxy JWT (signed with
+      // this instance's JWT secret) unlocks the trusted path.
       const tierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
       const variantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
       if (isLicenseTier(tierHeader)) {
@@ -477,7 +479,32 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       } else if (variantHeader === '') {
         req.proxyVariant = null;
       }
+      next();
+      return;
     }
+
+    // User session tokens: resolve against the database for up-to-date role and existence checks.
+    const dbUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
+
+    // User must exist in the database (rejects deleted users immediately)
+    if (!dbUser) {
+      res.status(401).json({ error: 'User account no longer exists' });
+      return;
+    }
+
+    // Token version check: rejects sessions after password change, role change, or admin reset.
+    // Pre-migration tokens (no tv claim) are accepted for backward compat and expire within 24h.
+    if (decoded.tv !== undefined && dbUser.token_version !== decoded.tv) {
+      if (isDebugEnabled()) console.log('[Auth:diag] Token version mismatch for:', decoded.username, 'jwt:', decoded.tv, 'db:', dbUser.token_version);
+      console.log('[Auth] Session rejected: token version mismatch for:', decoded.username);
+      res.status(401).json({ error: 'Session invalidated. Please log in again.' });
+      return;
+    }
+
+    if (isDebugEnabled()) console.log('[Auth:diag] User resolved:', dbUser.username, 'role:', dbUser.role, 'tv:', dbUser.token_version);
+
+    // Use the DB role (not the JWT role) so role changes take effect immediately
+    req.user = { username: dbUser.username, role: dbUser.role as UserRole, userId: dbUser.id };
 
     next();
   } catch (err) {
@@ -486,6 +513,21 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     return;
   }
 };
+
+/** Sign a session JWT and set it as an httpOnly cookie. */
+function issueSessionCookie(
+  res: Response,
+  req: Request,
+  user: { username: string; role: string; token_version: number },
+  jwtSecret: string,
+): void {
+  const token = jwt.sign(
+    { username: user.username, role: user.role, tv: user.token_version },
+    jwtSecret,
+    { expiresIn: '24h' },
+  );
+  res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+}
 
 // Rate limiter for auth endpoints - prevents brute-force attacks.
 // Production: 5 attempts per 15-minute window per IP.
@@ -578,8 +620,7 @@ app.post('/api/auth/setup', authRateLimiter, async (req: Request, res: Response)
     dbSvc.addUser({ username, password_hash: passwordHash, role: 'admin' });
 
     // Issue JWT and log user in
-    const token = jwt.sign({ username, role: 'admin' }, jwtSecret, { expiresIn: '24h' });
-    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+    issueSessionCookie(res, req, { username, role: 'admin', token_version: 1 }, jwtSecret);
     res.json({ success: true, message: 'Setup completed successfully' });
   } catch (error) {
     console.error('Setup error:', error);
@@ -606,13 +647,14 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
         const settings = db.getGlobalSettings();
         const jwtSecret = settings.auth_jwt_secret;
         if (!jwtSecret) throw new Error('JWT secret missing from DB');
-        const token = jwt.sign({ username: user.username, role: user.role }, jwtSecret, { expiresIn: '24h' });
-        res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+        issueSessionCookie(res, req, user, jwtSecret);
+        console.log('[Auth] Login successful:', user.username);
         res.json({ success: true, message: 'Login successful' });
         return;
       }
     }
 
+    console.warn('[Auth] Login failed for username:', username);
     res.status(401).json({ error: 'Invalid credentials' });
   } catch (error) {
     console.error('Login error:', error);
@@ -655,9 +697,18 @@ app.put('/api/auth/password', authMiddleware, async (req: Request, res: Response
     dbSvc.updateUser(user.id, { password_hash: newHash });
     // Keep global_settings in sync for backward compat
     dbSvc.updateGlobalSetting('auth_password_hash', newHash);
+    // Invalidate all other sessions for this user
+    dbSvc.bumpTokenVersion(user.id);
+    // Re-issue cookie with new token version so the current session survives
+    const settings = dbSvc.getGlobalSettings();
+    const updatedUser = dbSvc.getUserById(user.id);
+    if (settings.auth_jwt_secret && updatedUser) {
+      issueSessionCookie(res, req, updatedUser, settings.auth_jwt_secret);
+    }
+    console.log('[Auth] Password changed by:', req.user!.username);
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
-    console.error('Password update error:', error);
+    console.error('[Auth] Password update error:', error);
     res.status(500).json({ error: 'Failed to update password' });
   }
 });
@@ -748,8 +799,7 @@ app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Respon
 
     // Issue JWT (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
-    const token = jwt.sign({ username: user.username, role: user.role }, settings.auth_jwt_secret, { expiresIn: '24h' });
-    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+    issueSessionCookie(res, req, user, settings.auth_jwt_secret);
     res.json({ success: true, message: 'Login successful' });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'LDAP login failed';
@@ -861,8 +911,7 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
 
     // Issue JWT + cookie (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
-    const token = jwt.sign({ username: user.username, role: user.role }, settings.auth_jwt_secret, { expiresIn: '24h' });
-    res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+    issueSessionCookie(res, req, user, settings.auth_jwt_secret);
 
     res.redirect('/');
   } catch (error: unknown) {
@@ -1106,6 +1155,8 @@ function checkPermission(
 
   const globalRole = req.user.role;
 
+  if (isDebugEnabled()) console.log('[RBAC:diag] checkPermission:', action, 'user:', req.user.username, 'globalRole:', globalRole, 'resource:', resourceType, resourceId);
+
   // Admins always have full access
   if (globalRole === 'admin') return true;
 
@@ -1114,9 +1165,11 @@ function checkPermission(
 
   // Scoped assignments only apply when a resource is specified and license is Admiral
   if (!resourceType || !resourceId) return false;
-  if (LicenseService.getInstance().getVariant() !== 'admiral') return false;
+  const variant = req.proxyVariant !== undefined ? req.proxyVariant : LicenseService.getInstance().getVariant();
+  if (variant !== 'admiral') return false;
 
   const assignments = DatabaseService.getInstance().getRoleAssignments(req.user.userId, resourceType, resourceId);
+  if (isDebugEnabled()) console.log('[RBAC:diag] Scoped assignments found:', assignments.length, 'for user:', req.user.userId);
   for (const assignment of assignments) {
     if (ROLE_PERMISSIONS[assignment.role]?.includes(action)) return true;
   }
@@ -2518,6 +2571,7 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
 
     const passwordHash = await bcrypt.hash(password, 10);
     const id = db.addUser({ username, password_hash: passwordHash, role });
+    console.log('[Users] Created:', username, 'role:', role, 'by:', req.user!.username);
     res.status(201).json({ id, username, role });
   } catch (error) {
     console.error('[Users] Create error:', error);
@@ -2525,6 +2579,8 @@ app.post('/api/users', authMiddleware, async (req: Request, res: Response): Prom
   }
 });
 
+// Note: requirePaid is intentionally not enforced on PUT/DELETE user endpoints.
+// Admins must be able to manage existing users even if their license lapses (security consideration).
 app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (req.apiTokenScope) {
     res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
@@ -2577,6 +2633,11 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
     }
 
     if (password !== undefined) {
+      // Prevent setting passwords on SSO-provisioned users (would enable local login bypass)
+      if (user.auth_provider !== 'local') {
+        res.status(400).json({ error: 'Cannot set a password on an SSO-provisioned user.' });
+        return;
+      }
       if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
         res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
         return;
@@ -2585,6 +2646,11 @@ app.put('/api/users/:id', authMiddleware, async (req: Request, res: Response): P
     }
 
     db.updateUser(id, updates);
+    // Invalidate the user's active sessions when their role or password changes
+    if (updates.role || updates.password_hash) {
+      db.bumpTokenVersion(id);
+    }
+    console.log('[Users] Updated user', id, 'fields:', Object.keys(updates).join(', '), 'by:', req.user!.username);
     res.json({ success: true });
   } catch (error) {
     console.error('[Users] Update error:', error);
@@ -2620,6 +2686,7 @@ app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response)
     }
 
     db.deleteUser(id);
+    console.log('[Users] Deleted:', user.username, '(id:', id, ') by:', req.user!.username);
     res.json({ success: true });
   } catch (error) {
     console.error('[Users] Delete error:', error);
@@ -2685,6 +2752,7 @@ app.post('/api/users/:id/roles', authMiddleware, (req: Request, res: Response): 
 
     try {
       const id = db.addRoleAssignment({ user_id: userId, role, resource_type, resource_id });
+      console.log('[Roles] Assigned', role, 'on', resource_type, resource_id, 'to user', userId, 'by:', req.user!.username);
       res.status(201).json({ id, user_id: userId, role, resource_type, resource_id });
     } catch (err: unknown) {
       if ((err as Error).message?.includes('UNIQUE constraint')) {
@@ -2718,6 +2786,7 @@ app.delete('/api/users/:id/roles/:assignId', authMiddleware, (req: Request, res:
     }
 
     db.deleteRoleAssignment(assignId);
+    console.log('[Roles] Removed assignment', assignId, 'from user', userId, 'by:', req.user!.username);
     res.json({ success: true });
   } catch (error) {
     console.error('[Roles] Delete error:', error);
@@ -3726,6 +3795,8 @@ app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
 
     // Prevent stale update badges for deleted stacks
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
+    // Clean up any scoped role assignments referencing this stack
+    DatabaseService.getInstance().deleteRoleAssignmentsByResource('stack', stackName);
 
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Stack deleted: ${stackName}`);
