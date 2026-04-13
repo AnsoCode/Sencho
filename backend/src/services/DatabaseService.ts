@@ -1407,6 +1407,19 @@ export class DatabaseService {
         this.db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(Date.now(), id);
     }
 
+    public getActiveApiTokenCountByUser(userId: number): number {
+        const row = this.db.prepare(
+            'SELECT COUNT(*) AS cnt FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL'
+        ).get(userId) as { cnt: number };
+        return row.cnt;
+    }
+
+    public getActiveApiTokenByNameAndUser(name: string, userId: number): ApiToken | undefined {
+        return this.db.prepare(
+            'SELECT * FROM api_tokens WHERE name = ? AND user_id = ? AND revoked_at IS NULL LIMIT 1'
+        ).get(name, userId) as ApiToken | undefined;
+    }
+
     // --- Registries ---
 
     public getRegistries(): Registry[] {

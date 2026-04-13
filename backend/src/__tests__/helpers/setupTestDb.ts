@@ -40,6 +40,19 @@ export async function setupTestDb(): Promise<string> {
   return tmpDir;
 }
 
+/**
+ * Log in as the seeded test admin and return the session cookie string.
+ * Requires `app` to be the Express instance from `index.ts`.
+ */
+export async function loginAsTestAdmin(app: import('express').Express): Promise<string> {
+  const supertest = (await import('supertest')).default;
+  const res = await supertest(app)
+    .post('/api/auth/login')
+    .send({ username: TEST_USERNAME, password: TEST_PASSWORD });
+  const cookies = res.headers['set-cookie'] as string | string[];
+  return Array.isArray(cookies) ? cookies[0] : cookies;
+}
+
 export function cleanupTestDb(tmpDir: string): void {
   try {
     fs.rmSync(tmpDir, { recursive: true, force: true });
