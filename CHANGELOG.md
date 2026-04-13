@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.11](https://github.com/AnsoCode/Sencho/compare/v0.46.10...v0.46.11) (2026-04-13)
+
+
+### Fixed
+
+* **api-tokens:** harden with security fixes, design compliance, and test coverage ([#567](https://github.com/AnsoCode/Sencho/issues/567)) ([e0d1ca9](https://github.com/AnsoCode/Sencho/commit/e0d1ca9dc00fb2b30ce5e8e7f6181c38cd9b1289))
+
 ## [0.46.10](https://github.com/AnsoCode/Sencho/compare/v0.46.9...v0.46.10) (2026-04-13)
 
 
