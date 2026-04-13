@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.6](https://github.com/AnsoCode/Sencho/compare/v0.46.5...v0.46.6) (2026-04-13)
+
+
+### Fixed
+
+* **labels:** harden stack labels with nodeId filtering, concurrency guard, and test coverage ([#552](https://github.com/AnsoCode/Sencho/issues/552)) ([a695251](https://github.com/AnsoCode/Sencho/commit/a695251f38a21dd12ba535471a9e934928d5672e))
+
 ## [0.46.5](https://github.com/AnsoCode/Sencho/compare/v0.46.4...v0.46.5) (2026-04-13)
 
 
