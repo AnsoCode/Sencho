@@ -88,7 +88,7 @@ Right-click a label pill in the sidebar to access bulk actions:
   <img src="/images/stack-labels/bulk-actions-menu.png" alt="Right-click context menu on a label pill showing Deploy all, Stop all, and Restart all options" />
 </Frame>
 
-A confirmation dialog shows which stacks will be affected before executing.
+A confirmation dialog shows which stacks will be affected before executing. If any stacks fail during a bulk action, the error toast lists the specific stack names that failed. Only one bulk action can run at a time per node.
 
 ## Managing labels
 
@@ -97,4 +97,4 @@ Open **Settings > Labels** to view, edit, and delete your labels.
 - **Edit**: Click the pencil icon on a label row to change its name or color
 - **Delete**: Click the trash icon to remove the label. A confirmation dialog explains that the label will be removed from all stacks. This cannot be undone.
 
-Label names must be unique per node. There are 10 color options: teal, blue, purple, rose, amber, green, orange, pink, cyan, and slate.
+Label names must be unique per node. You can create up to 50 labels per node. There are 10 color options: teal, blue, purple, rose, amber, green, orange, pink, cyan, and slate.
