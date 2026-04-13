@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -22,6 +23,14 @@ interface AuditEntry {
     summary: string;
 }
 
+const methodOptions = [
+    { value: 'all', label: 'All Methods' },
+    { value: 'POST', label: 'POST' },
+    { value: 'PUT', label: 'PUT' },
+    { value: 'DELETE', label: 'DELETE' },
+    { value: 'PATCH', label: 'PATCH' },
+];
+
 export function AuditLogView() {
     const [entries, setEntries] = useState<AuditEntry[]>([]);
     const [total, setTotal] = useState(0);
@@ -29,8 +38,8 @@ export function AuditLogView() {
     const [loading, setLoading] = useState(true);
     const [searchFilter, setSearchFilter] = useState('');
     const [methodFilter, setMethodFilter] = useState('all');
-    const [fromDate, setFromDate] = useState('');
-    const [toDate, setToDate] = useState('');
+    const [fromDate, setFromDate] = useState<Date | undefined>();
+    const [toDate, setToDate] = useState<Date | undefined>();
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const limit = 50;
 
@@ -38,7 +47,11 @@ export function AuditLogView() {
         const params = new URLSearchParams();
         if (searchFilter) params.set('search', searchFilter);
         if (methodFilter !== 'all') params.set('method', methodFilter);
-        if (fromDate) params.set('from', String(new Date(fromDate).getTime()));
+        if (fromDate) {
+            const start = new Date(fromDate);
+            start.setHours(0, 0, 0, 0);
+            params.set('from', String(start.getTime()));
+        }
         if (toDate) {
             const end = new Date(toDate);
             end.setHours(23, 59, 59, 999);
@@ -60,8 +73,8 @@ export function AuditLogView() {
                 setEntries(data.entries);
                 setTotal(data.total);
             }
-        } catch {
-            // Silently fail - non-critical view
+        } catch (err) {
+            console.error('[AuditLog] Failed to fetch:', err);
         } finally {
             setLoading(false);
         }
@@ -84,8 +97,8 @@ export function AuditLogView() {
 
     const statusColor = (code: number): string => {
         if (code >= 200 && code < 300) return 'text-success';
-        if (code >= 400 && code < 500) return 'text-yellow-500';
-        if (code >= 500) return 'text-red-500';
+        if (code >= 400 && code < 500) return 'text-warning';
+        if (code >= 500) return 'text-destructive';
         return 'text-muted-foreground';
     };
 
@@ -108,27 +121,28 @@ export function AuditLogView() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        } catch {
+        } catch (err) {
+            console.error('[AuditLog] Export failed:', err);
             toast.error('Export failed.');
         }
     };
 
     return (
         <div className="flex-1 flex flex-col gap-4 p-6 overflow-auto">
-            <Card>
+            <Card className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel">
                 <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <ScrollText className="w-5 h-5" />
+                            <ScrollText className="w-5 h-5" strokeWidth={1.5} />
                             <CardTitle>Audit Log</CardTitle>
                         </div>
                         <div className="flex items-center gap-2">
                             <DropdownMenu modal={false}>
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="outline" size="sm" className="border-border">
-                                        <Download className="w-4 h-4 mr-2" />
+                                        <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                         Export
-                                        <ChevronDown className="w-3 h-3 ml-1" />
+                                        <ChevronDown className="w-3 h-3 ml-1" strokeWidth={1.5} />
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
@@ -137,7 +151,7 @@ export function AuditLogView() {
                                 </DropdownMenuContent>
                             </DropdownMenu>
                             <Button variant="outline" size="sm" className="border-border" onClick={fetchLogs} disabled={loading}>
-                                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                                 Refresh
                             </Button>
                         </div>
@@ -150,7 +164,7 @@ export function AuditLogView() {
                     {/* Filters */}
                     <div className="flex items-center gap-3 mb-4 flex-wrap">
                         <div className="relative flex-1 min-w-[200px] max-w-xs">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                             <Input
                                 placeholder="Search actions, paths, users..."
                                 value={searchFilter}
@@ -158,31 +172,24 @@ export function AuditLogView() {
                                 className="pl-8"
                             />
                         </div>
-                        <Select value={methodFilter} onValueChange={(v) => { setMethodFilter(v); setPage(1); }}>
-                            <SelectTrigger className="w-[140px]">
-                                <SelectValue placeholder="Method" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Methods</SelectItem>
-                                <SelectItem value="POST">POST</SelectItem>
-                                <SelectItem value="PUT">PUT</SelectItem>
-                                <SelectItem value="DELETE">DELETE</SelectItem>
-                                <SelectItem value="PATCH">PATCH</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Input
-                            type="date"
-                            value={fromDate}
-                            onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                            className="w-[150px]"
-                            placeholder="From"
+                        <Combobox
+                            options={methodOptions}
+                            value={methodFilter}
+                            onValueChange={(v) => { setMethodFilter(v || 'all'); setPage(1); }}
+                            placeholder="Method"
+                            className="w-[140px]"
                         />
-                        <Input
-                            type="date"
+                        <DatePicker
+                            value={fromDate}
+                            onChange={(d) => { setFromDate(d); setPage(1); }}
+                            placeholder="From"
+                            className="w-[160px]"
+                        />
+                        <DatePicker
                             value={toDate}
-                            onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                            className="w-[150px]"
+                            onChange={(d) => { setToDate(d); setPage(1); }}
                             placeholder="To"
+                            className="w-[160px]"
                         />
                     </div>
 
@@ -219,7 +226,7 @@ export function AuditLogView() {
                                                 className="cursor-pointer hover:bg-muted/50"
                                                 onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                                             >
-                                                <TableCell className="text-xs text-muted-foreground font-mono">
+                                                <TableCell className="text-xs text-muted-foreground font-mono tabular-nums">
                                                     {new Date(entry.timestamp).toLocaleString()}
                                                 </TableCell>
                                                 <TableCell className="font-medium text-sm">
@@ -233,10 +240,10 @@ export function AuditLogView() {
                                                 <TableCell className="text-sm">
                                                     {entry.summary}
                                                 </TableCell>
-                                                <TableCell className={`text-sm font-mono ${statusColor(entry.status_code)}`}>
+                                                <TableCell className={`text-sm font-mono tabular-nums ${statusColor(entry.status_code)}`}>
                                                     {entry.status_code}
                                                 </TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
+                                                <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
                                                     {entry.node_id ?? '-'}
                                                 </TableCell>
                                             </TableRow>
@@ -250,15 +257,15 @@ export function AuditLogView() {
                                                             </div>
                                                             <div>
                                                                 <span className="text-muted-foreground text-xs block">IP Address</span>
-                                                                <span className="font-mono text-xs">{entry.ip_address || '-'}</span>
+                                                                <span className="font-mono text-xs tabular-nums">{entry.ip_address || '-'}</span>
                                                             </div>
                                                             <div>
                                                                 <span className="text-muted-foreground text-xs block">Node ID</span>
-                                                                <span className="font-mono text-xs">{entry.node_id ?? 'Local'}</span>
+                                                                <span className="font-mono text-xs tabular-nums">{entry.node_id ?? 'Local'}</span>
                                                             </div>
                                                             <div>
                                                                 <span className="text-muted-foreground text-xs block">Entry ID</span>
-                                                                <span className="font-mono text-xs">#{entry.id}</span>
+                                                                <span className="font-mono text-xs tabular-nums">#{entry.id}</span>
                                                             </div>
                                                         </div>
                                                     </TableCell>
@@ -274,15 +281,15 @@ export function AuditLogView() {
                     {/* Pagination */}
                     {totalPages > 1 && (
                         <div className="flex items-center justify-between mt-4">
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground font-mono tabular-nums">
                                 Page {page} of {totalPages}
                             </p>
                             <div className="flex items-center gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
-                                    <ChevronLeft className="w-4 h-4" />
+                                    <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
                                 </Button>
                                 <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-                                    <ChevronRight className="w-4 h-4" />
+                                    <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
                                 </Button>
                             </div>
                         </div>
