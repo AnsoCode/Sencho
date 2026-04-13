@@ -23,7 +23,7 @@
 # Bundled inside /usr/local/bin/docker and docker-compose
 # ---------------------------------------------------------------------------
 # Docker CLI 29.4.0 ships Go 1.26.1 and Compose v5.1.2 ships Go 1.25.8.
-# Both are vulnerable to CVE-2026-32282 (fix requires Go 1.25.9 or 1.26.2).
+# Both Go versions are vulnerable (fix requires Go 1.25.9 or 1.26.2).
 # No upstream static binary ships a patched Go runtime yet. Revisit on the
 # next Docker CLI and Compose release.
 
@@ -34,6 +34,14 @@
 # to our usage. Blocked on upstream Go rebuild; revisit on next CLI/Compose
 # release.
 CVE-2026-32282
+
+# Justification: Go stdlib crypto/x509 certificate chain building DoS.
+# Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose) runtimes as above.
+# The Docker CLI and compose plugin do not perform x509 chain validation
+# against untrusted certificates in our usage (they connect to the local
+# Docker socket or to registries with well-known CAs). Blocked on upstream
+# Go rebuild; revisit on next CLI/Compose release.
+CVE-2026-32280
 
 # ---------------------------------------------------------------------------
 # Bundled inside /usr/local/lib/docker/cli-plugins/docker-compose (v5.1.2)
