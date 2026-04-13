@@ -2370,7 +2370,7 @@ export default function EditorLayout() {
                   const data = await res.json();
                   const failed = (data.results ?? []).filter((r: BulkActionResult) => !r.success);
                   if (failed.length > 0) {
-                    const failedNames = failed.map(r => r.stackName).join(', ');
+                    const failedNames = failed.map((r: BulkActionResult) => r.stackName).join(', ');
                     toast.error(`Failed to ${bulkAction}: ${failedNames}`);
                   } else {
                     toast.success(`All stacks ${bulkAction === 'deploy' ? 'deployed' : bulkAction === 'stop' ? 'stopped' : 'restarted'} successfully.`);

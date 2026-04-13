@@ -23,7 +23,7 @@ import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { PaidGate } from '../PaidGate';
 import { CapabilityGate } from '../CapabilityGate';
-import { LabelDot, LABEL_COLORS, MAX_LABELS_PER_NODE, type Label } from '../LabelPill';
+import { LabelDot, LABEL_COLORS, MAX_LABELS_PER_NODE, type Label, type LabelColor } from '../LabelPill';
 
 export function LabelsSection() {
     const [labels, setLabels] = useState<Label[]>([]);
