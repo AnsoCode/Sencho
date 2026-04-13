@@ -29,6 +29,7 @@ export class SchedulerService {
 
     public start(): void {
         if (this.intervalId) return;
+        this.cleanupStaleRuns();
         this.intervalId = setInterval(() => this.tick(), 60_000);
         setTimeout(() => this.tick(), 10_000);
         console.log('[SchedulerService] Started');
@@ -40,6 +41,17 @@ export class SchedulerService {
             this.intervalId = null;
         }
         console.log('[SchedulerService] Stopped');
+    }
+
+    private cleanupStaleRuns(): void {
+        try {
+            const count = DatabaseService.getInstance().markStaleRunsAsFailed();
+            if (count > 0) {
+                console.log(`[SchedulerService] Cleaned up ${count} stale run record(s)`);
+            }
+        } catch (error) {
+            console.error('[SchedulerService] Failed to clean up stale runs:', error);
+        }
     }
 
     public calculateNextRun(cronExpression: string): number {
@@ -101,6 +113,7 @@ export class SchedulerService {
         const task = db.getScheduledTask(taskId);
         if (!task) throw new Error('Task not found');
         if (this.runningTasks.has(task.id)) throw new Error('Task is already running');
+        console.log(`[SchedulerService] Manual trigger: task "${task.name}" (id=${task.id})`);
         this.runningTasks.add(task.id);
         try {
             await this.executeTask(task, 'manual');
@@ -129,6 +142,8 @@ export class SchedulerService {
                 if (node.status === 'offline') throw new Error(`Target node "${node.name}" is offline`);
             }
 
+            if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} pre-checks passed, executing ${task.action}`);
+            const actionStart = Date.now();
             let output = '';
             switch (task.action) {
                 case 'restart':
@@ -144,6 +159,8 @@ export class SchedulerService {
                     output = await this.executeUpdate(task);
                     break;
             }
+
+            if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} action completed in ${Date.now() - actionStart}ms`);
 
             const nextRun = this.calculateNextRun(task.cron_expression);
             db.updateScheduledTask(task.id, {
@@ -169,18 +186,26 @@ export class SchedulerService {
         } catch (error: unknown) {
             const errMsg = error instanceof Error ? error.message : String(error);
             let nextRun: number | null = null;
+            let cronInvalid = false;
             try {
                 nextRun = this.calculateNextRun(task.cron_expression);
             } catch {
-                // If cron expression is somehow invalid, disable the task
+                cronInvalid = true;
             }
-            db.updateScheduledTask(task.id, {
+            const updates: Partial<Omit<ScheduledTask, 'id'>> = {
                 last_run_at: Date.now(),
                 next_run_at: nextRun,
                 last_status: 'failure',
-                last_error: errMsg,
+                last_error: cronInvalid
+                    ? `${errMsg}. Cron expression "${task.cron_expression}" is no longer valid; task has been disabled.`
+                    : errMsg,
                 updated_at: Date.now(),
-            });
+            };
+            if (cronInvalid) {
+                updates.enabled = 0;
+                console.warn(`[SchedulerService] Task "${task.name}" (id=${task.id}) auto-disabled: cron expression invalid`);
+            }
+            db.updateScheduledTask(task.id, updates);
             db.updateScheduledTaskRun(runId, {
                 completed_at: Date.now(),
                 status: 'failure',
@@ -361,6 +386,9 @@ export class SchedulerService {
 
     private async executePrune(task: ScheduledTask): Promise<string> {
         const nodeId = task.node_id ?? NodeRegistry.getInstance().getDefaultNodeId();
+        if (task.node_id == null && isDebugEnabled()) {
+            console.log(`[SchedulerService:debug] Prune task ${task.id}: no node_id specified, using default node ${nodeId}`);
+        }
         const docker = DockerController.getInstance(nodeId);
         const allTargets = ['containers', 'images', 'networks', 'volumes'] as const;
         type PruneTarget = typeof allTargets[number];

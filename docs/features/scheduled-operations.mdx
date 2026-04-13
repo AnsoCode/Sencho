@@ -166,3 +166,19 @@ The Scheduler Service runs in the background and checks for due tasks every 60 s
 5. The next run time is recalculated from the cron expression.
 
 If a task is still running from a previous execution, the scheduler skips it to prevent overlap.
+
+If the server restarts while a task is mid-execution, the orphaned run record is automatically marked as failed with a "Server restarted during execution" message on the next startup. No manual cleanup is needed.
+
+## Troubleshooting
+
+### Task was automatically disabled
+
+If a task's cron expression becomes invalid after creation (for example, due to a corrupt database edit or an expression that was valid in a previous version), the scheduler disables the task and records the reason in the last error column. To fix this:
+
+1. Open the task in edit mode.
+2. Re-enter a valid cron expression.
+3. Re-enable the task using the toggle switch.
+
+### Run shows "Server restarted during execution"
+
+This means Sencho was restarted (or crashed) while this task was mid-execution. The run was marked as failed automatically on startup. The task itself is still enabled and will run at its next scheduled time. If you want to re-run it immediately, use the **Run Now** button.

@@ -180,3 +180,15 @@ Check that the target stack exists and has at least one running container. For w
 ### "Run Now" finishes instantly
 
 This is expected behavior. The Run Now button triggers the update check in the background and returns immediately. The actual check runs asynchronously; check the run history panel to see the result once it completes.
+
+### Policy was automatically disabled
+
+If a policy's cron expression becomes invalid after creation, the scheduler disables the policy and records the reason in the status column. To fix this:
+
+1. Open the policy in edit mode.
+2. Re-enter a valid cron expression (or choose a preset).
+3. Re-enable the policy using the toggle switch.
+
+### Run shows "Server restarted during execution"
+
+This means Sencho was restarted while this policy's update check was mid-execution. The run was marked as failed automatically on startup. The policy itself is still enabled and will run at its next scheduled time. Use **Run Now** if you want to trigger it immediately.

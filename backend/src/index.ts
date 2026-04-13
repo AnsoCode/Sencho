@@ -5015,7 +5015,7 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
       prune_label_filter: prune_label_filter ? prune_label_filter.trim() : null,
     });
 
-    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Created task id=${id} action=${action} target=${target_id || 'none'}`);
+    console.log(`[ScheduledTasks] Created task id=${id} action=${action} target=${target_id || 'none'}`);
     const task = DatabaseService.getInstance().getScheduledTask(id);
     res.status(201).json(task);
   } catch (error) {
@@ -5131,7 +5131,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
 
     db.updateScheduledTask(id, updates as Partial<Omit<ScheduledTask, 'id'>>);
-    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Updated task id=${id}`);
+    console.log(`[ScheduledTasks] Updated task id=${id}`);
     const task = db.getScheduledTask(id);
     res.json(task);
   } catch (error) {
@@ -5153,7 +5153,7 @@ app.delete('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
     db.deleteScheduledTask(id);
-    if (isDebugEnabled()) console.debug(`[ScheduledTasks:debug] Deleted task id=${id}`);
+    console.log(`[ScheduledTasks] Deleted task id=${id}`);
     res.json({ success: true });
   } catch (error) {
     console.error('[ScheduledTasks] Delete error:', error);
@@ -5182,6 +5182,7 @@ app.patch('/api/scheduled-tasks/:id/toggle', (req: Request, res: Response): void
       updated_at: Date.now(),
     });
 
+    console.log(`[ScheduledTasks] Toggled task id=${id} enabled=${newEnabled}`);
     const task = db.getScheduledTask(id);
     res.json(task);
   } catch (error) {
@@ -5207,6 +5208,7 @@ app.post('/api/scheduled-tasks/:id/run', (req: Request, res: Response): void => 
       res.status(409).json({ error: 'Task is already running' }); return;
     }
 
+    console.log(`[ScheduledTasks] Manual run requested for task id=${id}`);
     scheduler.triggerTask(id).catch((err: unknown) => {
       const msg = getErrorMessage(err, String(err));
       console.error(`[ScheduledTasks] Background run error for task ${id}:`, msg);
@@ -5885,6 +5887,7 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
   if (!requireAdmin(req, res)) return;
   try {
     const { target } = req.body as { target?: string };
+    console.log(`[AutoUpdate] Execute requested: target="${target || ''}"`);
     if (!target || typeof target !== 'string') {
       return res.status(400).json({ error: 'Missing "target" (stack name or "*" for all)' });
     }

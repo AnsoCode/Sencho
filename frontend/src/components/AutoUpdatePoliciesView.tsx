@@ -15,41 +15,8 @@ import { RefreshCw, Plus, Pencil, Trash2, History, Play, ChevronLeft, ChevronRig
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
-import cronstrue from 'cronstrue';
-
-interface ScheduledTask {
-  id: number;
-  name: string;
-  target_type: 'stack' | 'fleet' | 'system';
-  target_id: string | null;
-  node_id: number | null;
-  action: 'restart' | 'snapshot' | 'prune' | 'update';
-  cron_expression: string;
-  enabled: number;
-  created_by: string;
-  created_at: number;
-  updated_at: number;
-  last_run_at: number | null;
-  next_run_at: number | null;
-  last_status: string | null;
-  last_error: string | null;
-}
-
-interface TaskRun {
-  id: number;
-  task_id: number;
-  started_at: number;
-  completed_at: number | null;
-  status: 'running' | 'success' | 'failure';
-  output: string | null;
-  error: string | null;
-  triggered_by: 'scheduler' | 'manual';
-}
-
-interface NodeOption {
-  id: number;
-  name: string;
-}
+import type { ScheduledTask, TaskRun, NodeOption } from '@/types/scheduling';
+import { getCronDescription, formatTimestamp } from '@/lib/scheduling';
 
 const CRON_PRESETS = [
   { label: 'Every 6 hours', value: '0 */6 * * *' },
@@ -59,19 +26,6 @@ const CRON_PRESETS = [
   { label: 'Weekly (Sunday 3 AM)', value: '0 3 * * 0' },
   { label: 'Custom', value: 'custom' },
 ];
-
-function getCronDescription(expression: string): string {
-  try {
-    return cronstrue.toString(expression);
-  } catch {
-    return 'Invalid expression';
-  }
-}
-
-function formatTimestamp(ts: number | null): string {
-  if (!ts) return '-';
-  return new Date(ts).toLocaleString();
-}
 
 interface AutoUpdatePoliciesProps {
   filterNodeId?: number | null;

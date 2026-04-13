@@ -437,6 +437,7 @@ export class DatabaseService {
       );
 
       CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task ON scheduled_task_runs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status ON scheduled_task_runs(status);
       CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
 
       CREATE TABLE IF NOT EXISTS stack_labels (
@@ -1529,6 +1530,13 @@ export class DatabaseService {
         return this.db.prepare(
             'SELECT * FROM scheduled_task_runs WHERE task_id = ? ORDER BY started_at DESC'
         ).all(taskId) as ScheduledTaskRun[];
+    }
+
+    public markStaleRunsAsFailed(): number {
+        const result = this.db.prepare(
+            'UPDATE scheduled_task_runs SET status = ?, completed_at = ?, error = ? WHERE status = ?'
+        ).run('failure', Date.now(), 'Server restarted during execution', 'running');
+        return result.changes;
     }
 
     public cleanupOldTaskRuns(retentionDays = 30): void {
