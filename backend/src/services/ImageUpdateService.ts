@@ -7,6 +7,7 @@ import { DatabaseService } from './DatabaseService';
 import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { NodeRegistry } from './NodeRegistry';
+import { isDebugEnabled } from '../utils/debug';
 
 // ─── Image ref parsing ────────────────────────────────────────────────────────
 
@@ -49,6 +50,11 @@ function parseImageRef(imageRef: string): ParsedRef | null {
     }
 
     return { registry, repo: rest, tag };
+}
+
+export interface ImageCheckResult {
+    hasUpdate: boolean;
+    error?: string;
 }
 
 // ─── Minimal HTTP helper ──────────────────────────────────────────────────────
@@ -355,24 +361,28 @@ export class ImageUpdateService {
         const allImages = new Set<string>();
         for (const imgs of stackImages.values()) for (const img of imgs) allImages.add(img);
 
-        const imageUpdateMap = new Map<string, boolean>();
+        const imageUpdateMap = new Map<string, ImageCheckResult>();
 
         for (const imageRef of allImages) {
             try {
                 imageUpdateMap.set(imageRef, await this.checkImage(docker, imageRef));
             } catch (e) {
                 console.error(`[ImageUpdateService] Error checking ${imageRef}:`, e);
-                imageUpdateMap.set(imageRef, false);
+                imageUpdateMap.set(imageRef, { hasUpdate: false, error: String(e) });
             }
             await sleep(ImageUpdateService.INTER_IMAGE_DELAY_MS);
         }
 
         // Write status for ALL stacks (including those with no pullable images)
         const now = Date.now();
+        let updatesFound = 0;
         for (const [stackName, images] of stackImages) {
-            const hasUpdate = Array.from(images).some(img => imageUpdateMap.get(img) === true);
+            const hasUpdate = Array.from(images).some(img => imageUpdateMap.get(img)?.hasUpdate === true);
+            if (hasUpdate) updatesFound++;
             db.upsertStackUpdateStatus(nodeId, stackName, hasUpdate, now);
         }
+
+        console.log(`[ImageUpdateService] Node ${nodeId}: checked ${allImages.size} image(s), ${updatesFound} stack(s) with updates`);
 
         // Prune stale entries for stacks no longer on disk
         const existing = db.getStackUpdateStatus(nodeId);
@@ -383,12 +393,19 @@ export class ImageUpdateService {
         }
     }
 
-    public async checkImage(docker: DockerController, imageRef: string): Promise<boolean> {
+    public async checkImage(docker: DockerController, imageRef: string): Promise<ImageCheckResult> {
         const parsed = parseImageRef(imageRef);
-        if (!parsed) return false;
+        if (!parsed) return { hasUpdate: false };
+
+        if (isDebugEnabled()) {
+            console.log(`[ImageUpdateService] Checking ${imageRef}: registry=${parsed.registry} repo=${parsed.repo} tag=${parsed.tag}`);
+        }
 
         // Look up stored credentials for this registry
         const credentials = await RegistryService.getInstance().getAuthForRegistry(parsed.registry);
+        if (isDebugEnabled()) {
+            console.log(`[ImageUpdateService] ${imageRef}: credentials ${credentials ? 'found' : 'none'}`);
+        }
 
         // Get local digest from RepoDigests
         let localDigest: string | null = null;
@@ -400,27 +417,28 @@ export class ImageUpdateService {
                 if (!rd.includes('@sha256:')) continue;
                 const [, digest] = rd.split('@');
 
-                // Match: rd contains the repo path or this is the only digest entry
                 if (rd.includes(parsed.repo) || rd.includes(parsed.registry) || repoDigests.length === 1) {
                     localDigest = digest;
                     break;
                 }
             }
         } catch {
-            return false; // Image inspect failed (removed since container was started)
+            return { hasUpdate: false, error: `Failed to inspect local image "${imageRef}"` };
         }
 
-        if (!localDigest) return false; // Locally built or never pulled with a digest
+        if (!localDigest) return { hasUpdate: false };
 
         const remoteDigest = await getRemoteDigest(parsed.registry, parsed.repo, parsed.tag, credentials);
-        if (!remoteDigest) return false; // Registry unreachable - no false positives
+        if (!remoteDigest) {
+            return { hasUpdate: false, error: `Registry unreachable for ${parsed.registry}/${parsed.repo}:${parsed.tag}` };
+        }
 
         const hasUpdate = localDigest !== remoteDigest;
         console.log(
             `[ImageUpdateService] ${imageRef}: ` +
             `local=${localDigest.slice(0, 27)}... remote=${remoteDigest.slice(0, 27)}... update=${hasUpdate}`
         );
-        return hasUpdate;
+        return { hasUpdate };
     }
 }
 

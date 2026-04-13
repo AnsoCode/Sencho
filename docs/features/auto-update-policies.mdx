@@ -87,7 +87,13 @@ Each policy row has four action buttons:
 
 ## Run history
 
-Click the clock icon on any policy to open the run history panel. The history is displayed as a table with the following columns:
+Click the clock icon on any policy to open the run history panel.
+
+<Frame>
+  <img src="/images/auto-update-policies/run-history.png" alt="Run history panel showing execution results" />
+</Frame>
+
+The history is displayed as a table with the following columns:
 
 | Column | Description |
 |--------|-------------|
@@ -141,3 +147,36 @@ Image Update Detection runs in the background every 6 hours and highlights stack
 - **Monitor run history** - Check run history periodically to ensure updates are applying cleanly. Failed runs may indicate registry authentication issues or compose file problems.
 - **Use "All Stacks" carefully** - Wildcard policies update every stack on the node. This is convenient for dev environments but may be too aggressive for production.
 - **Combine with notifications** - Sencho sends alert notifications when auto-updates are applied, so you stay informed even when updates happen automatically.
+
+## Troubleshooting
+
+### Policy reports "all images up to date" but I see an update elsewhere
+
+This usually means the registry check couldn't determine the remote digest. Common causes:
+
+- **Private registry without credentials** - If your images are in a private registry, make sure you've added authentication credentials in **Settings > Registries**. Without valid credentials, Sencho can't query the remote manifest.
+- **Network connectivity** - The Sencho instance needs outbound HTTPS access to the registry (e.g., `registry-1.docker.io`, `ghcr.io`). Firewall rules or proxy configurations may block these requests.
+- **Digest-pinned images** - Images referenced by digest (`image: nginx@sha256:abc...`) are immutable by design. Sencho strips the pin for tag-based checking, but if your compose file only uses digest refs, consider switching to tag-based refs for auto-update support.
+
+Starting with this version, run history now distinguishes between "all images up to date" (clean check) and "image checks failed" (registry unreachable), so you can tell whether the check actually succeeded.
+
+### Policy keeps failing with "Target node offline"
+
+This means the remote Sencho instance was unreachable when the policy triggered. Verify:
+
+- The remote node's Sencho instance is running
+- The API URL and token in **Settings > Nodes** are correct
+- The remote node has not changed IP address or port
+
+### Policy shows "no containers found"
+
+This warning appears when a policy targets a specific stack that has no running containers. The stack may have been:
+
+- Stopped or removed since the policy was created
+- Renamed (stack names are directory-based)
+
+Check that the target stack exists and has at least one running container. For wildcard ("All Stacks") policies, empty stacks are silently skipped without a warning.
+
+### "Run Now" finishes instantly
+
+This is expected behavior. The Run Now button triggers the update check in the background and returns immediately. The actual check runs asynchronously; check the run history panel to see the result once it completes.

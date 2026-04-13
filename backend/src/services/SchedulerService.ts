@@ -6,6 +6,9 @@ import DockerController from './DockerController';
 import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
 import { ImageUpdateService } from './ImageUpdateService';
+import type { ImageCheckResult } from './ImageUpdateService';
+import { isDebugEnabled } from '../utils/debug';
+import { getErrorMessage } from '../utils/errors';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 
@@ -45,26 +48,39 @@ export class SchedulerService {
     }
 
     private async tick(): Promise<void> {
-        if (this.isProcessing) return;
+        if (this.isProcessing) {
+            console.warn('[SchedulerService] Tick skipped: previous tick still processing');
+            return;
+        }
         this.isProcessing = true;
         try {
             const ls = LicenseService.getInstance();
             const isPaid = ls.getTier() === 'paid';
             const isAdmiral = isPaid && ls.getVariant() === 'admiral';
-            if (!isPaid) return; // No scheduled tasks for unpaid tiers
+            if (!isPaid) return;
 
             const db = DatabaseService.getInstance();
             const now = Date.now();
             const dueTasks = db.getDueScheduledTasks(now);
 
+            if (dueTasks.length > 0) {
+                console.log(`[SchedulerService] Found ${dueTasks.length} due task(s)`);
+            }
+
             // Clean up old runs periodically (piggyback on tick)
             db.cleanupOldTaskRuns(30);
 
             for (const task of dueTasks) {
-                // Skipper users can only run 'update' tasks; other actions require Admiral
-                if (!isAdmiral && task.action !== 'update') continue;
-                if (this.runningTasks.has(task.id)) continue;
+                if (!isAdmiral && task.action !== 'update') {
+                    if (isDebugEnabled()) console.log(`[SchedulerService] Task ${task.id} skipped: action "${task.action}" requires Admiral tier`);
+                    continue;
+                }
+                if (this.runningTasks.has(task.id)) {
+                    if (isDebugEnabled()) console.log(`[SchedulerService] Task ${task.id} skipped: already running`);
+                    continue;
+                }
                 this.runningTasks.add(task.id);
+                if (isDebugEnabled()) console.log(`[SchedulerService] Executing task ${task.id} ("${task.name}")`);
                 this.executeTask(task).finally(() => this.runningTasks.delete(task.id));
             }
         } catch (error) {
@@ -74,7 +90,11 @@ export class SchedulerService {
         }
     }
 
-    // Intentionally allows triggering disabled tasks — useful for testing before enabling a schedule.
+    public isTaskRunning(taskId: number): boolean {
+        return this.runningTasks.has(taskId);
+    }
+
+    // Intentionally allows triggering disabled tasks, useful for testing before enabling a schedule.
     // Manual triggers are attributed as 'manual' in the run record (see triggered_by column).
     public async triggerTask(taskId: number): Promise<void> {
         const db = DatabaseService.getInstance();
@@ -376,14 +396,19 @@ export class SchedulerService {
         }
 
         // Local node: execute directly
+        const isWildcard = task.target_id === '*';
         let stackNames: string[];
-        if (task.target_id === '*') {
+        if (isWildcard) {
             stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
             if (stackNames.length === 0) {
                 return 'No stacks found on node; skipped.';
             }
         } else {
             stackNames = [task.target_id];
+        }
+
+        if (isDebugEnabled()) {
+            console.log(`[SchedulerService] executeUpdate: ${stackNames.length} stack(s) to check, wildcard=${isWildcard}`);
         }
 
         const docker = DockerController.getInstance(task.node_id);
@@ -394,10 +419,10 @@ export class SchedulerService {
 
         for (const stackName of stackNames) {
             try {
-                const output = await this.executeUpdateForStack(stackName, task.node_id ?? 0, docker, imageUpdateService, compose, db);
+                const output = await this.executeUpdateForStack(stackName, task.node_id ?? 0, docker, imageUpdateService, compose, db, isWildcard);
                 results.push(output);
             } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
+                const msg = getErrorMessage(e, String(e));
                 results.push(`Stack "${stackName}" failed: ${msg}`);
                 console.error(`[SchedulerService] Auto-update failed for stack "${stackName}":`, e);
             }
@@ -417,6 +442,10 @@ export class SchedulerService {
         }
 
         const baseUrl = proxyTarget.apiUrl.replace(/\/$/, '');
+        if (isDebugEnabled()) {
+            console.log(`[SchedulerService] executeUpdateRemote: node=${nodeId} target=${target}`);
+        }
+        const startTime = Date.now();
         const response = await fetch(`${baseUrl}/api/auto-update/execute`, {
             method: 'POST',
             headers: {
@@ -433,6 +462,9 @@ export class SchedulerService {
         }
 
         const body = await response.json() as { result?: string };
+        if (isDebugEnabled()) {
+            console.log(`[SchedulerService] executeUpdateRemote: completed in ${Date.now() - startTime}ms`);
+        }
         return body.result || 'Remote auto-update completed (no details returned).';
     }
 
@@ -442,10 +474,15 @@ export class SchedulerService {
         docker: DockerController,
         imageUpdateService: ImageUpdateService,
         compose: ComposeService,
-        db: DatabaseService
+        db: DatabaseService,
+        isWildcard = false
     ): Promise<string> {
         const containers = await docker.getContainersByStack(stackName);
         if (!containers || containers.length === 0) {
+            if (!isWildcard) {
+                console.warn(`[SchedulerService] Stack "${stackName}": no containers found. The stack may have been removed or renamed.`);
+                return `Stack "${stackName}": WARNING - no containers found. The stack may have been removed or renamed.`;
+            }
             return `Stack "${stackName}": no containers found; skipped.`;
         }
 
@@ -459,21 +496,37 @@ export class SchedulerService {
             return `Stack "${stackName}": no pullable images; skipped.`;
         }
 
+        if (isDebugEnabled()) {
+            console.log(`[SchedulerService] Stack "${stackName}": checking ${imageRefs.length} image(s): ${imageRefs.join(', ')}`);
+        }
+
         let hasUpdate = false;
         const updatedImages: string[] = [];
+        const checkErrors: string[] = [];
 
         for (const imageRef of imageRefs) {
             try {
-                if (await imageUpdateService.checkImage(docker, imageRef)) {
+                const result: ImageCheckResult = await imageUpdateService.checkImage(docker, imageRef);
+                if (result.error) {
+                    checkErrors.push(result.error);
+                } else if (result.hasUpdate) {
                     hasUpdate = true;
                     updatedImages.push(imageRef);
                 }
             } catch (e) {
+                const msg = getErrorMessage(e, String(e));
+                checkErrors.push(msg);
                 console.warn(`[SchedulerService] Failed to check image ${imageRef}:`, e);
             }
         }
 
         if (!hasUpdate) {
+            if (checkErrors.length > 0 && checkErrors.length === imageRefs.length) {
+                return `Stack "${stackName}": WARNING - all image checks failed (${checkErrors.join('; ')}). Unable to determine update status.`;
+            }
+            if (checkErrors.length > 0) {
+                return `Stack "${stackName}": all reachable images up to date (${checkErrors.length} check(s) failed).`;
+            }
             return `Stack "${stackName}": all images up to date.`;
         }
 

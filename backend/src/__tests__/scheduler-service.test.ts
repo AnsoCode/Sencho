@@ -37,7 +37,7 @@ const {
   mockGetStacks: vi.fn().mockResolvedValue([]),
   mockGetStackContent: vi.fn().mockResolvedValue(''),
   mockGetEnvContent: vi.fn().mockResolvedValue(''),
-  mockCheckImage: vi.fn().mockResolvedValue(false),
+  mockCheckImage: vi.fn().mockResolvedValue({ hasUpdate: false }),
   mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -176,7 +176,7 @@ describe('SchedulerService - license gating', () => {
     mockGetVariant.mockReturnValue('individual');
     mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'update' })]);
     mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Image: 'nginx:latest' }]);
-    mockCheckImage.mockResolvedValue(false);
+    mockCheckImage.mockResolvedValue({ hasUpdate: false });
 
     const svc = SchedulerService.getInstance();
     await (svc as any).tick();
@@ -486,7 +486,7 @@ describe('SchedulerService - executeUpdate', () => {
     mockGetContainersByStack.mockResolvedValue([
       { Id: 'c1', Image: 'nginx:latest' },
     ]);
-    mockCheckImage.mockResolvedValue(true); // Update available
+    mockCheckImage.mockResolvedValue({ hasUpdate: true }); // Update available
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(80);
@@ -510,7 +510,7 @@ describe('SchedulerService - executeUpdate', () => {
     mockGetContainersByStack.mockResolvedValue([
       { Id: 'c1', Image: 'nginx:latest' },
     ]);
-    mockCheckImage.mockResolvedValue(false); // No update
+    mockCheckImage.mockResolvedValue({ hasUpdate: false }); // No update
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(81);
@@ -534,12 +534,140 @@ describe('SchedulerService - executeUpdate', () => {
     mockGetContainersByStack.mockResolvedValue([
       { Id: 'c1', Image: 'nginx:latest' },
     ]);
-    mockCheckImage.mockResolvedValue(true);
+    mockCheckImage.mockResolvedValue({ hasUpdate: true });
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(82);
 
     expect(mockUpdateStack).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports warning when all image checks fail (B3 fix)', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 83,
+      name: 'update-check-fail',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: 'web-app',
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetContainersByStack.mockResolvedValue([
+      { Id: 'c1', Image: 'nginx:latest' },
+    ]);
+    mockCheckImage.mockResolvedValue({ hasUpdate: false, error: 'Registry unreachable for registry-1.docker.io/library/nginx:latest' });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(83);
+
+    // Should succeed (not throw) but output should contain warning
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.stringContaining('WARNING'),
+      })
+    );
+    expect(mockUpdateStack).not.toHaveBeenCalled();
+  });
+
+  it('reports partial check failures with success count (B3 fix)', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 84,
+      name: 'update-partial-fail',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: 'web-app',
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetContainersByStack.mockResolvedValue([
+      { Id: 'c1', Image: 'nginx:latest' },
+      { Id: 'c2', Image: 'redis:7' },
+    ]);
+    // First image check succeeds (no update), second fails
+    mockCheckImage
+      .mockResolvedValueOnce({ hasUpdate: false })
+      .mockResolvedValueOnce({ hasUpdate: false, error: 'Registry unreachable' });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(84);
+
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.stringContaining('check(s) failed'),
+      })
+    );
+  });
+
+  it('warns when targeted stack has 0 containers (E1 fix)', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 85,
+      name: 'update-missing-stack',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: 'deleted-stack',
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetContainersByStack.mockResolvedValue([]);
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(85);
+
+    // Targeted (non-wildcard) stack with 0 containers should produce a WARNING
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.stringContaining('WARNING'),
+      })
+    );
+  });
+
+  it('silently skips empty stacks in wildcard mode', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 86,
+      name: 'update-wildcard-empty',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: '*',
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetStacks.mockResolvedValue(['active-stack', 'empty-stack']);
+    // First stack has containers, second has none
+    mockGetContainersByStack
+      .mockResolvedValueOnce([{ Id: 'c1', Image: 'nginx:latest' }])
+      .mockResolvedValueOnce([]);
+    mockCheckImage.mockResolvedValue({ hasUpdate: false });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(86);
+
+    // Empty stack in wildcard mode should say "skipped", not "WARNING"
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.not.stringContaining('WARNING'),
+      })
+    );
+  });
+
+  it('exposes isTaskRunning status', async () => {
+    const svc = SchedulerService.getInstance();
+    expect(svc.isTaskRunning(999)).toBe(false);
   });
 });
 
