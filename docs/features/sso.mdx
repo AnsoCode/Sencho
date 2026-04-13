@@ -47,7 +47,7 @@ When a user logs in via SSO for the first time, Sencho automatically creates a l
 - **Password** is set to an unusable placeholder - SSO users cannot log in with a password
 - **Seat limits** from your license apply. If admin seats are full, the user is downgraded to Viewer. If all seats are full, login is denied with a clear error message.
 
-On subsequent logins, the existing account is reused. The user's email is updated if it changed at the provider.
+On subsequent logins, the existing account is reused. The user's **email** and **role** are synced from the identity provider on every login. If a user is added to your admin group, they will be promoted to Admin on their next login. If removed, they will be demoted to their default role. Seat limits are respected: if admin seats are full, the promotion is deferred until a seat opens up.
 
 ## Role mapping
 
@@ -119,6 +119,7 @@ OIDC providers (Google, GitHub, Okta) share a common configuration form:
 | **Client Secret** | OAuth client secret |
 | **Admin Claim** | JWT claim name inspected for role mapping (e.g., `groups`) |
 | **Admin Claim Value** | Value within the claim that grants Admin (e.g., `sencho-admins`) |
+| **Scopes** | Space-separated OAuth scopes (default: `openid email profile`). Customize if your provider requires additional scopes for group claims. |
 | **Default Role** | Role assigned when no claim mapping matches (Viewer or Admin) |
 
 <Frame>

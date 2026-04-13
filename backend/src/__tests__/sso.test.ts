@@ -268,3 +268,191 @@ describe('Database migration - SSO columns', () => {
     expect(byProvider!.username).toBe('sso_migration_test');
   });
 });
+
+describe('SSO Role Sync on Re-Login', () => {
+  beforeAll(async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    vi.spyOn(LicenseService.getInstance(), 'getSeatLimits').mockReturnValue({ maxAdmins: null, maxViewers: null });
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('provisionUser promotes user when IdP role changes to admin', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const sso = SSOService.getInstance();
+
+    // Create a viewer
+    const user1 = sso.provisionUser({
+      authProvider: 'oidc_okta',
+      providerId: 'okta-role-sync-test',
+      preferredUsername: 'rolesync_user',
+      email: 'rolesync@example.com',
+      role: 'viewer',
+    });
+    expect(user1.role).toBe('viewer');
+
+    // Re-login with admin role from IdP
+    const user2 = sso.provisionUser({
+      authProvider: 'oidc_okta',
+      providerId: 'okta-role-sync-test',
+      preferredUsername: 'rolesync_user',
+      email: 'rolesync@example.com',
+      role: 'admin',
+    });
+    expect(user2.id).toBe(user1.id);
+    expect(user2.role).toBe('admin');
+  });
+
+  it('provisionUser demotes user when IdP role changes to viewer', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const { DatabaseService } = await import('../services/DatabaseService');
+    const sso = SSOService.getInstance();
+    const db = DatabaseService.getInstance();
+
+    // Look up user from previous test (should be admin now)
+    const existing = db.getUserByProviderIdentity('oidc_okta', 'okta-role-sync-test');
+    expect(existing).toBeDefined();
+    expect(existing!.role).toBe('admin');
+
+    // Re-login with viewer role (e.g., removed from admin group)
+    const user = sso.provisionUser({
+      authProvider: 'oidc_okta',
+      providerId: 'okta-role-sync-test',
+      preferredUsername: 'rolesync_user',
+      email: 'rolesync@example.com',
+      role: 'viewer',
+    });
+    expect(user.role).toBe('viewer');
+  });
+});
+
+describe('SSO Seat Limit Enforcement', () => {
+  it('downgrades new admin to viewer when admin seats are full', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const { LicenseService } = await import('../services/LicenseService');
+
+    // Mock: 1 admin seat max (already used by testadmin)
+    vi.spyOn(LicenseService.getInstance(), 'getSeatLimits').mockReturnValue({ maxAdmins: 1, maxViewers: null });
+
+    const sso = SSOService.getInstance();
+    const user = sso.provisionUser({
+      authProvider: 'oidc_google',
+      providerId: 'seat-limit-admin-test',
+      preferredUsername: 'seatlimit_admin',
+      role: 'admin',
+    });
+
+    // Should be downgraded to viewer since admin seat is taken
+    expect(user.role).toBe('viewer');
+
+    vi.restoreAllMocks();
+  });
+
+  it('throws when all viewer seats are full', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const { LicenseService } = await import('../services/LicenseService');
+    const { DatabaseService } = await import('../services/DatabaseService');
+    const db = DatabaseService.getInstance();
+
+    // Count existing viewers to set a tight limit
+    const currentViewers = db.getViewerCount();
+    vi.spyOn(LicenseService.getInstance(), 'getSeatLimits').mockReturnValue({ maxAdmins: 1, maxViewers: currentViewers });
+
+    const sso = SSOService.getInstance();
+    expect(() => sso.provisionUser({
+      authProvider: 'oidc_google',
+      providerId: 'seat-limit-viewer-test',
+      preferredUsername: 'seatlimit_viewer',
+      role: 'viewer',
+    })).toThrow('User seat limit reached');
+
+    vi.restoreAllMocks();
+  });
+});
+
+describe('LDAP Filter Escaping', () => {
+  it('escapes special characters in LDAP filters', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const sso = SSOService.getInstance();
+    // Access private method via bracket notation for testing
+    const escape = (sso as unknown as { escapeLdapFilter: (v: string) => string }).escapeLdapFilter.bind(sso);
+
+    expect(escape('user*(admin)')).toBe('user\\2a\\28admin\\29');
+    expect(escape('test\\value')).toBe('test\\5cvalue');
+    expect(escape('normal')).toBe('normal');
+    expect(escape('null\0byte')).toBe('null\\00byte');
+  });
+});
+
+describe('SSO Config Validation on PUT', () => {
+  // We need an Admiral-licensed admin token for these tests.
+  // Mock getTier/getVariant so requireAdmiral passes.
+  let admiralToken: string;
+
+  beforeAll(async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
+    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('admiral');
+    admiralToken = jwt.sign({ username: 'testadmin', role: 'admin' }, TEST_JWT_SECRET, { expiresIn: '1h' });
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects enabled LDAP config without Server URL', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/ldap')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: true, ldapSearchBase: 'ou=users,dc=example' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Server URL');
+  });
+
+  it('rejects enabled LDAP config without Search Base', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/ldap')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: true, ldapUrl: 'ldap://localhost:389' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Search Base');
+  });
+
+  it('rejects enabled OIDC config without Client ID', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/oidc_google')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: true });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Client ID');
+  });
+
+  it('rejects enabled Okta config without Issuer URL', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/oidc_okta')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: true, oidcClientId: 'test-client-id' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Issuer URL');
+  });
+
+  it('allows saving disabled config without required fields', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/ldap')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: false });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('rejects invalid provider name', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/invalid_provider')
+      .set('Authorization', `Bearer ${admiralToken}`)
+      .send({ enabled: true });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid SSO provider');
+  });
+});

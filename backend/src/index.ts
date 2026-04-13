@@ -800,6 +800,7 @@ app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Respon
     // Issue JWT (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
     issueSessionCookie(res, req, user, settings.auth_jwt_secret);
+    console.log(`[SSO] LDAP login successful: ${user.username}`);
     res.json({ success: true, message: 'Login successful' });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'LDAP login failed';
@@ -842,7 +843,7 @@ app.get('/api/auth/sso/oidc/:provider/authorize', ssoRateLimiter, async (req: Re
 });
 
 // OIDC: Callback from identity provider
-app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/auth/sso/oidc/:provider/callback', ssoRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const provider = String(req.params.provider);
     const code = String(req.query.code || '');
@@ -862,6 +863,8 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
 
     // Read and validate state cookie
     const stateCookie = req.cookies?.sencho_sso_state;
+    // Always clear the one-time state cookie, regardless of outcome
+    res.clearCookie('sencho_sso_state', { httpOnly: true, secure: isSecureRequest(req), sameSite: 'lax' });
     if (!stateCookie) {
       res.redirect('/?sso_error=SSO+session+expired.+Please+try+again.');
       return;
@@ -878,7 +881,7 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
     }
 
     if (statePayload.provider !== provider) {
-      res.redirect('/?sso_error=Provider+mismatch');
+      res.redirect(`/?sso_error=${encodeURIComponent(`Provider mismatch: expected ${statePayload.provider}, got ${provider}`)}`);
       return;
     }
 
@@ -891,9 +894,6 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
       statePayload.state,
       statePayload.codeVerifier
     );
-
-    // Clear state cookie
-    res.clearCookie('sencho_sso_state', { httpOnly: true, secure: isSecureRequest(req), sameSite: 'lax' });
 
     if (!result.success || !result.user) {
       res.redirect(`/?sso_error=${encodeURIComponent(result.error || 'Authentication failed')}`);
@@ -912,6 +912,7 @@ app.get('/api/auth/sso/oidc/:provider/callback', async (req: Request, res: Respo
     // Issue JWT + cookie (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
     issueSessionCookie(res, req, user, settings.auth_jwt_secret);
+    console.log(`[SSO] OIDC login successful: ${user.username} via ${provider}`);
 
     res.redirect('/');
   } catch (error: unknown) {
@@ -4670,7 +4671,25 @@ app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
       return;
     }
     const config = { ...req.body, provider } as import('./services/SSOService').SSOProviderConfig;
+
+    // Validate required fields when enabling a provider
+    if (config.enabled) {
+      const missing: string[] = [];
+      if (provider === 'ldap') {
+        if (!config.ldapUrl?.trim()) missing.push('Server URL');
+        if (!config.ldapSearchBase?.trim()) missing.push('Search Base');
+      } else {
+        if (!config.oidcClientId?.trim()) missing.push('Client ID');
+        if (provider === 'oidc_okta' && !config.oidcIssuerUrl?.trim()) missing.push('Issuer URL');
+      }
+      if (missing.length > 0) {
+        res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+        return;
+      }
+    }
+
     SSOService.getInstance().saveProviderConfig(config);
+    console.log(`[SSO] Config updated: ${provider} ${config.enabled ? 'enabled' : 'disabled'}`);
     res.json({ success: true, message: 'SSO configuration saved' });
   } catch (error) {
     console.error('[SSO] Failed to save SSO config:', error);
@@ -4686,7 +4705,9 @@ app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    SSOService.getInstance().deleteProviderConfig(String(req.params.provider));
+    const deletedProvider = String(req.params.provider);
+    SSOService.getInstance().deleteProviderConfig(deletedProvider);
+    console.log(`[SSO] Config deleted: ${deletedProvider}`);
     res.json({ success: true, message: 'SSO configuration deleted' });
   } catch (error) {
     console.error('[SSO] Failed to delete SSO config:', error);

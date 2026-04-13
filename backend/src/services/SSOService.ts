@@ -14,6 +14,7 @@ import { DatabaseService, User, AuthProvider } from './DatabaseService';
 import { CryptoService } from './CryptoService';
 import { LicenseService } from './LicenseService';
 import { CacheService } from './CacheService';
+import { isDebugEnabled } from '../utils/debug';
 
 // OIDC discovery metadata changes rarely; caching it eliminates the redundant
 // HTTPS round-trip between getOIDCAuthorizationUrl and handleOIDCCallback in
@@ -221,8 +222,12 @@ export class SSOService {
             return { success: false, error: 'LDAP configuration is incomplete' };
         }
 
+        const debug = isDebugEnabled();
+        if (debug) console.debug('[SSO:debug] LDAP auth attempt', { username, hasBindDn: !!config.ldapBindDn, url: config.ldapUrl });
+
         const client = new LdapClient({
             url: config.ldapUrl,
+            connectTimeout: 10000,
             tlsOptions: {
                 rejectUnauthorized: config.ldapTlsRejectUnauthorized !== false,
             },
@@ -232,6 +237,8 @@ export class SSOService {
             // Step 1: Bind with service account to search for the user
             if (config.ldapBindDn && config.ldapBindPassword) {
                 await client.bind(config.ldapBindDn, config.ldapBindPassword);
+            } else if (config.ldapBindDn && !config.ldapBindPassword) {
+                console.warn('[SSO] LDAP bind DN configured but bind password is empty; anonymous bind will be used');
             }
 
             // Step 2: Search for the user
@@ -246,13 +253,19 @@ export class SSOService {
                 return { success: false, error: 'Invalid credentials' };
             }
 
+            if (searchEntries.length > 1) {
+                console.warn(`[SSO] LDAP search returned ${searchEntries.length} entries for username "${username}"; using first match. Consider narrowing your search filter.`);
+            }
+
             const userEntry = searchEntries[0];
             const userDn = userEntry.dn;
+            if (debug) console.debug('[SSO:debug] LDAP user found', { dn: userDn, hasEmail: !!(userEntry['mail'] || userEntry['email']) });
 
             // Step 3: Bind as the user to verify their password
             await client.unbind();
             const userClient = new LdapClient({
                 url: config.ldapUrl,
+                connectTimeout: 10000,
                 tlsOptions: {
                     rejectUnauthorized: config.ldapTlsRejectUnauthorized !== false,
                 },
@@ -263,11 +276,12 @@ export class SSOService {
             } catch {
                 return { success: false, error: 'Invalid credentials' };
             } finally {
-                try { await userClient.unbind(); } catch { /* ignore */ }
+                try { await userClient.unbind(); } catch (e) { if (debug) console.debug('[SSO:debug] LDAP user unbind error (non-critical):', (e as Error).message); }
             }
 
             // Step 4: Determine role from group membership
             const role = this.resolveRoleFromLdap(userEntry, config);
+            if (debug) console.debug('[SSO:debug] LDAP role resolved', { username, role });
 
             // Extract user info
             const preferredUsername = String(
@@ -289,7 +303,7 @@ export class SSOService {
             console.error('[SSO] LDAP authentication error:', message);
             return { success: false, error: 'LDAP authentication failed. Check server connectivity.' };
         } finally {
-            try { await client.unbind(); } catch { /* ignore */ }
+            try { await client.unbind(); } catch (e) { if (debug) console.debug('[SSO:debug] LDAP service unbind error (non-critical):', (e as Error).message); }
         }
     }
 
@@ -343,6 +357,7 @@ export class SSOService {
         const codeChallenge = await calculatePKCECodeChallenge(codeVerifier);
 
         const scopes = config.oidcScopes || 'openid email profile';
+        if (isDebugEnabled()) console.debug('[SSO:debug] OIDC auth URL', { provider, scopes });
 
         const url = buildAuthorizationUrl(oidcConfig, {
             redirect_uri: callbackUrl,
@@ -407,8 +422,9 @@ export class SSOService {
             }
 
             const email = String(userInfo.email || '');
-            const name = String(userInfo.name || userInfo.preferred_username || userInfo.login || email.split('@')[0] || 'sso_user');
+            const name = String(userInfo.name || userInfo.preferred_username || userInfo.login || email.split('@')[0] || `sso_${sub.substring(0, 8)}`);
             const role = this.resolveRoleFromOidc(userInfo, config);
+            if (isDebugEnabled()) console.debug('[SSO:debug] OIDC userInfo resolved', { provider, sub, email: email || '(none)', name, role });
 
             return {
                 success: true,
@@ -436,6 +452,9 @@ export class SSOService {
             }),
         ]);
 
+        if (!userRes.ok) {
+            throw new Error(`GitHub user API returned ${userRes.status}`);
+        }
         const user = await userRes.json() as Record<string, unknown>;
         let primaryEmail = '';
         try {
@@ -514,13 +533,36 @@ export class SSOService {
         role: 'admin' | 'viewer';
     }): User {
         const db = DatabaseService.getInstance();
+        const debug = isDebugEnabled();
+        if (debug) console.debug('[SSO:debug] provisionUser', { authProvider: params.authProvider, providerId: params.providerId, preferredUsername: params.preferredUsername, role: params.role });
 
         // Check if user already exists by provider identity
         const existing = db.getUserByProviderIdentity(params.authProvider, params.providerId);
         if (existing) {
+            const updates: Partial<{ email: string; role: string }> = {};
+
             // Update email if changed
             if (params.email && params.email !== existing.email) {
-                db.updateUser(existing.id, { email: params.email });
+                updates.email = params.email;
+            }
+
+            // Sync role from identity provider on every login
+            if (params.role !== existing.role) {
+                if (params.role === 'admin') {
+                    const seatLimits = LicenseService.getInstance().getSeatLimits();
+                    if (seatLimits.maxAdmins === null || db.getAdminCount() < seatLimits.maxAdmins) {
+                        updates.role = params.role;
+                    }
+                    // If admin seats full, keep current role rather than upgrading
+                } else {
+                    // Always allow demotion (e.g., removed from admin group)
+                    updates.role = params.role;
+                }
+            }
+
+            if (Object.keys(updates).length > 0) {
+                if (debug) console.debug('[SSO:debug] Updating existing user', { userId: existing.id, username: existing.username, updates });
+                db.updateUser(existing.id, updates);
             }
             return db.getUser(existing.id) || existing;
         }
@@ -529,7 +571,8 @@ export class SSOService {
         let { role } = params;
         const seatLimits = LicenseService.getInstance().getSeatLimits();
         if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
-            role = 'viewer'; // Downgrade to viewer if admin seats full
+            console.warn(`[SSO] Admin seat limit reached; provisioning ${params.preferredUsername} as viewer instead of admin`);
+            role = 'viewer';
         }
         if (role === 'viewer' && seatLimits.maxViewers !== null && db.getViewerCount() >= seatLimits.maxViewers) {
             throw new Error('User seat limit reached. Contact your administrator to increase your license.');
@@ -561,6 +604,7 @@ export class SSOService {
 
         const user = db.getUser(id);
         if (!user) throw new Error('Failed to create SSO user');
+        if (debug) console.debug('[SSO:debug] New user provisioned', { userId: user.id, username, role });
         return user;
     }
 
@@ -572,6 +616,7 @@ export class SSOService {
             return { success: false, error: 'LDAP not configured' };
         }
 
+        const debug = isDebugEnabled();
         const client = new LdapClient({
             url: config.ldapUrl,
             tlsOptions: { rejectUnauthorized: config.ldapTlsRejectUnauthorized !== false },
@@ -587,7 +632,7 @@ export class SSOService {
             const message = err instanceof Error ? err.message : 'Connection failed';
             return { success: false, error: message };
         } finally {
-            try { await client.unbind(); } catch { /* ignore */ }
+            try { await client.unbind(); } catch (e) { if (debug) console.debug('[SSO:debug] LDAP test unbind error (non-critical):', (e as Error).message); }
         }
     }
 
