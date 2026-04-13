@@ -80,6 +80,7 @@ export interface User {
     auth_provider: AuthProvider;
     provider_id: string | null;
     email: string | null;
+    token_version: number;
     created_at: number;
     updated_at: number;
 }
@@ -587,6 +588,7 @@ export class DatabaseService {
         maybeAddCol('users', 'auth_provider', "TEXT NOT NULL DEFAULT 'local'");
         maybeAddCol('users', 'provider_id', 'TEXT DEFAULT NULL');
         maybeAddCol('users', 'email', 'TEXT DEFAULT NULL');
+        maybeAddCol('users', 'token_version', 'INTEGER NOT NULL DEFAULT 1');
 
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sso_config (
@@ -996,6 +998,7 @@ export class DatabaseService {
             this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ?').run(id);
             this.db.prepare('DELETE FROM stack_label_assignments WHERE node_id = ?').run(id);
             this.db.prepare('DELETE FROM stack_labels WHERE node_id = ?').run(id);
+            this.deleteRoleAssignmentsByResource('node', String(id));
             this.db.prepare('DELETE FROM nodes WHERE id = ?').run(id);
         })();
     }
@@ -1185,6 +1188,10 @@ export class DatabaseService {
         return (this.db.prepare("SELECT COUNT(*) as count FROM users WHERE role != 'admin'").get() as { count: number })?.count || 0;
     }
 
+    public bumpTokenVersion(userId: number): void {
+        this.db.prepare('UPDATE users SET token_version = token_version + 1, updated_at = ? WHERE id = ?').run(Date.now(), userId);
+    }
+
     // --- Role Assignments ---
 
     public getRoleAssignments(userId: number, resourceType: ResourceType, resourceId: string): RoleAssignment[] {
@@ -1217,6 +1224,10 @@ export class DatabaseService {
 
     public deleteRoleAssignmentsByUser(userId: number): void {
         this.db.prepare('DELETE FROM role_assignments WHERE user_id = ?').run(userId);
+    }
+
+    public deleteRoleAssignmentsByResource(resourceType: ResourceType, resourceId: string): void {
+        this.db.prepare('DELETE FROM role_assignments WHERE resource_type = ? AND resource_id = ?').run(resourceType, resourceId);
     }
 
     // --- SSO Config ---

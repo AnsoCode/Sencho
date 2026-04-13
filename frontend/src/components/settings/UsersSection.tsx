@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -21,6 +21,7 @@ interface UserItem {
     id: number;
     username: string;
     role: UserRole;
+    auth_provider: string;
     created_at: number;
 }
 
@@ -240,7 +241,7 @@ export function UsersSection() {
                     </div>
                     {!showForm && (
                         <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
-                            <Plus className="w-4 h-4 mr-1" />Add User
+                            <Plus className="w-4 h-4 mr-1" strokeWidth={1.5} />Add User
                         </Button>
                     )}
                 </div>
@@ -260,48 +261,53 @@ export function UsersSection() {
                             </div>
                             <div className="space-y-2">
                                 <Label>Role</Label>
-                                <Select value={formRole} onValueChange={(v) => setFormRole(v as UserRole)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="admin">Admin</SelectItem>
-                                        <SelectItem value="viewer">Viewer</SelectItem>
-                                        {isPaid && license?.variant === 'admiral' && (
-                                            <>
-                                                <SelectItem value="deployer">Deployer</SelectItem>
-                                                <SelectItem value="node-admin">Node Admin</SelectItem>
-                                                <SelectItem value="auditor">Auditor</SelectItem>
-                                            </>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>{editingUser ? 'New Password (optional)' : 'Password'}</Label>
-                                <Input
-                                    type="password"
-                                    value={formPassword}
-                                    onChange={(e) => setFormPassword(e.target.value)}
-                                    placeholder={editingUser ? 'Leave blank to keep' : 'min. 8 characters'}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Confirm Password</Label>
-                                <Input
-                                    type="password"
-                                    value={formConfirmPassword}
-                                    onChange={(e) => setFormConfirmPassword(e.target.value)}
-                                    placeholder="Confirm password"
+                                <Combobox
+                                    options={[
+                                        { value: 'admin', label: 'Admin' },
+                                        { value: 'viewer', label: 'Viewer' },
+                                        ...(isPaid && license?.variant === 'admiral' ? [
+                                            { value: 'deployer', label: 'Deployer' },
+                                            { value: 'node-admin', label: 'Node Admin' },
+                                            { value: 'auditor', label: 'Auditor' },
+                                        ] : []),
+                                    ]}
+                                    value={formRole}
+                                    onValueChange={(v) => setFormRole(v as UserRole)}
+                                    placeholder="Select role..."
                                 />
                             </div>
                         </div>
+                        {/* Hide password fields for SSO-provisioned users */}
+                        {(!editingUser || editingUser.auth_provider === 'local') ? (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>{editingUser ? 'New Password (optional)' : 'Password'}</Label>
+                                    <Input
+                                        type="password"
+                                        value={formPassword}
+                                        onChange={(e) => setFormPassword(e.target.value)}
+                                        placeholder={editingUser ? 'Leave blank to keep' : 'min. 8 characters'}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Confirm Password</Label>
+                                    <Input
+                                        type="password"
+                                        value={formConfirmPassword}
+                                        onChange={(e) => setFormConfirmPassword(e.target.value)}
+                                        placeholder="Confirm password"
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">
+                                Password is managed by the identity provider ({editingUser.auth_provider}).
+                            </p>
+                        )}
                         <div className="flex gap-2 justify-end">
                             <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
                             <Button size="sm" onClick={handleSave} disabled={saving}>
-                                {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" />Saving...</> : (editingUser ? 'Update User' : 'Create User')}
+                                {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" strokeWidth={1.5} />Saving...</> : (editingUser ? 'Update User' : 'Create User')}
                             </Button>
                         </div>
 
@@ -322,7 +328,7 @@ export function UsersSection() {
                                                     on <span className="font-medium capitalize">{a.resource_type}</span>: <span className="font-mono text-xs">{a.resource_id}</span>
                                                 </span>
                                                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => removeRoleAssignment(a.id)}>
-                                                    <Trash2 className="w-3 h-3 text-destructive" />
+                                                    <Trash2 className="w-3 h-3 text-destructive" strokeWidth={1.5} />
                                                 </Button>
                                             </div>
                                         ))}
@@ -332,50 +338,46 @@ export function UsersSection() {
                                 <div className="flex items-end gap-2">
                                     <div className="space-y-1">
                                         <Label className="text-xs">Role</Label>
-                                        <Select value={scopeRole} onValueChange={(v) => setScopeRole(v as UserRole)}>
-                                            <SelectTrigger className="h-8 text-xs w-[120px]">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="deployer">Deployer</SelectItem>
-                                                <SelectItem value="node-admin">Node Admin</SelectItem>
-                                                <SelectItem value="admin">Admin</SelectItem>
-                                            </SelectContent>
-                                        </Select>
+                                        <Combobox
+                                            options={[
+                                                { value: 'deployer', label: 'Deployer' },
+                                                { value: 'node-admin', label: 'Node Admin' },
+                                                { value: 'admin', label: 'Admin' },
+                                            ]}
+                                            value={scopeRole}
+                                            onValueChange={(v) => setScopeRole(v as UserRole)}
+                                            placeholder="Role..."
+                                            className="h-8 text-xs w-[120px]"
+                                        />
                                     </div>
                                     <div className="space-y-1">
                                         <Label className="text-xs">Resource Type</Label>
-                                        <Select value={scopeResourceType} onValueChange={(v) => { setScopeResourceType(v as 'stack' | 'node'); setScopeResourceId(''); fetchScopeResources(); }}>
-                                            <SelectTrigger className="h-8 text-xs w-[100px]">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="stack">Stack</SelectItem>
-                                                <SelectItem value="node">Node</SelectItem>
-                                            </SelectContent>
-                                        </Select>
+                                        <Combobox
+                                            options={[
+                                                { value: 'stack', label: 'Stack' },
+                                                { value: 'node', label: 'Node' },
+                                            ]}
+                                            value={scopeResourceType}
+                                            onValueChange={(v) => { setScopeResourceType(v as 'stack' | 'node'); setScopeResourceId(''); fetchScopeResources(); }}
+                                            placeholder="Type..."
+                                            className="h-8 text-xs w-[100px]"
+                                        />
                                     </div>
                                     <div className="space-y-1 flex-1">
                                         <Label className="text-xs">Resource</Label>
-                                        <Select value={scopeResourceId} onValueChange={setScopeResourceId}>
-                                            <SelectTrigger className="h-8 text-xs">
-                                                <SelectValue placeholder="Select..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {scopeResourceType === 'stack' ? (
-                                                    availableStacks.map((s) => (
-                                                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                                                    ))
-                                                ) : (
-                                                    availableNodes.map((n) => (
-                                                        <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
-                                                    ))
-                                                )}
-                                            </SelectContent>
-                                        </Select>
+                                        <Combobox
+                                            options={scopeResourceType === 'stack'
+                                                ? availableStacks.map((s) => ({ value: s, label: s }))
+                                                : availableNodes.map((n) => ({ value: String(n.id), label: n.name }))
+                                            }
+                                            value={scopeResourceId}
+                                            onValueChange={setScopeResourceId}
+                                            placeholder="Select..."
+                                            className="h-8 text-xs"
+                                        />
                                     </div>
                                     <Button size="sm" className="h-8" onClick={addRoleAssignment} disabled={addingScope || !scopeResourceId}>
-                                        <Plus className="w-3 h-3 mr-1" />
+                                        <Plus className="w-3 h-3 mr-1" strokeWidth={1.5} />
                                         Add
                                     </Button>
                                 </div>
@@ -423,12 +425,12 @@ export function UsersSection() {
                                             <td className="px-4 py-2.5 text-right">
                                                 <div className="flex gap-1 justify-end">
                                                     <Button variant="ghost" size="sm" onClick={() => startEdit(u)}>
-                                                        <Pencil className="w-3.5 h-3.5" />
+                                                        <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                     </Button>
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
                                                             <Button variant="ghost" size="sm" disabled={isSelf}>
-                                                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                                                <Trash2 className="w-3.5 h-3.5 text-destructive" strokeWidth={1.5} />
                                                             </Button>
                                                         </AlertDialogTrigger>
                                                         <AlertDialogContent>
