@@ -2,7 +2,7 @@
  * Unit tests for SchedulerService — task execution, concurrent prevention,
  * license gating, cron parsing, and error handling.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
 
@@ -10,12 +10,14 @@ const {
   mockGetDueScheduledTasks, mockCreateScheduledTaskRun, mockUpdateScheduledTaskRun,
   mockUpdateScheduledTask, mockCleanupOldTaskRuns, mockGetScheduledTask, mockGetNodes, mockGetNode,
   mockCreateSnapshot, mockInsertSnapshotFiles, mockClearStackUpdateStatus,
+  mockMarkStaleRunsAsFailed,
   mockGetTier, mockGetVariant,
   mockGetContainersByStack, mockRestartContainer, mockPruneSystem,
   mockUpdateStack,
   mockGetStacks, mockGetStackContent, mockGetEnvContent,
   mockCheckImage,
   mockDispatchAlert,
+  mockGetProxyTarget,
 } = vi.hoisted(() => ({
   mockGetDueScheduledTasks: vi.fn().mockReturnValue([]),
   mockCreateScheduledTaskRun: vi.fn().mockReturnValue(1),
@@ -28,6 +30,7 @@ const {
   mockCreateSnapshot: vi.fn().mockReturnValue(1),
   mockInsertSnapshotFiles: vi.fn(),
   mockClearStackUpdateStatus: vi.fn(),
+  mockMarkStaleRunsAsFailed: vi.fn().mockReturnValue(0),
   mockGetTier: vi.fn().mockReturnValue('paid'),
   mockGetVariant: vi.fn().mockReturnValue('admiral'),
   mockGetContainersByStack: vi.fn().mockResolvedValue([]),
@@ -39,6 +42,7 @@ const {
   mockGetEnvContent: vi.fn().mockResolvedValue(''),
   mockCheckImage: vi.fn().mockResolvedValue({ hasUpdate: false }),
   mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
+  mockGetProxyTarget: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -55,6 +59,7 @@ vi.mock('../services/DatabaseService', () => ({
       createSnapshot: mockCreateSnapshot,
       insertSnapshotFiles: mockInsertSnapshotFiles,
       clearStackUpdateStatus: mockClearStackUpdateStatus,
+      markStaleRunsAsFailed: mockMarkStaleRunsAsFailed,
     }),
   },
 }));
@@ -117,6 +122,7 @@ vi.mock('../services/NodeRegistry', () => ({
     getInstance: () => ({
       getDefaultNodeId: () => 1,
       getNode: mockGetNode,
+      getProxyTarget: mockGetProxyTarget,
     }),
   },
 }));
@@ -772,5 +778,220 @@ describe('SchedulerService - isProcessing guard', () => {
     await (svc as any).tick();
 
     expect((svc as any).isProcessing).toBe(false);
+  });
+});
+
+// ── Stale run cleanup (T1) ───────────────────────────────────────────
+
+describe('SchedulerService - stale run cleanup', () => {
+  it('calls markStaleRunsAsFailed on start and logs when records exist', () => {
+    mockMarkStaleRunsAsFailed.mockReturnValue(2);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const svc = SchedulerService.getInstance();
+    svc.start();
+
+    expect(mockMarkStaleRunsAsFailed).toHaveBeenCalledTimes(1);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Cleaned up 2 stale run record(s)'));
+
+    logSpy.mockRestore();
+    svc.stop();
+  });
+
+  it('does not log when no stale runs exist', () => {
+    mockMarkStaleRunsAsFailed.mockReturnValue(0);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const svc = SchedulerService.getInstance();
+    svc.start();
+
+    expect(mockMarkStaleRunsAsFailed).toHaveBeenCalledTimes(1);
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('stale'));
+
+    logSpy.mockRestore();
+    svc.stop();
+  });
+});
+
+// ── Invalid cron at execution time (T2) ──────────────────────────────
+
+describe('SchedulerService - invalid cron at execution time', () => {
+  it('disables task and records error when cron becomes invalid', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 95,
+      name: 'bad-cron-task',
+      action: 'restart',
+      cron_expression: 'INVALID CRON',
+      enabled: true,
+      target_id: null,
+      node_id: null,
+      created_by: 'admin',
+      last_status: null,
+    });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(95);
+
+    expect(mockUpdateScheduledTask).toHaveBeenCalledWith(
+      95,
+      expect.objectContaining({
+        enabled: 0,
+        last_status: 'failure',
+        last_error: expect.stringContaining('no longer valid'),
+      })
+    );
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('failed'),
+      undefined
+    );
+  });
+});
+
+// ── executeSnapshot (T3) ─────────────────────────────────────────────
+
+describe('SchedulerService - executeSnapshot', () => {
+  it('creates a fleet snapshot capturing all local nodes', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 75,
+      name: 'nightly-snapshot',
+      action: 'snapshot',
+      target_type: 'fleet',
+      cron_expression: '0 3 * * *',
+      enabled: true,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetNodes.mockReturnValue([
+      { id: 1, name: 'local', type: 'local' },
+    ]);
+    mockGetStacks.mockResolvedValue(['app1']);
+    mockGetStackContent.mockResolvedValue('version: "3"\nservices:\n  web:\n    image: nginx');
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(75);
+
+    expect(mockCreateSnapshot).toHaveBeenCalledWith(
+      expect.stringContaining('nightly-snapshot'),
+      'admin',
+      1,
+      1,
+      expect.any(String),
+    );
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: 'success' })
+    );
+  });
+
+  it('handles nodes with no stacks gracefully', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 76,
+      name: 'empty-snapshot',
+      action: 'snapshot',
+      target_type: 'fleet',
+      cron_expression: '0 3 * * *',
+      enabled: true,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetNodes.mockReturnValue([
+      { id: 1, name: 'local', type: 'local' },
+    ]);
+    mockGetStacks.mockResolvedValue([]);
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(76);
+
+    expect(mockCreateSnapshot).toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: 'success' })
+    );
+  });
+});
+
+// ── executeUpdateRemote (T4) ─────────────────────────────────────────
+
+describe('SchedulerService - executeUpdateRemote', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('proxies update execution to remote node', async () => {
+    mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
+    mockGetProxyTarget.mockReturnValue({
+      apiUrl: 'http://remote:3000',
+      apiToken: 'test-token',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ result: 'Stack "web": updated (nginx:latest).' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    mockGetScheduledTask.mockReturnValue({
+      id: 88,
+      name: 'remote-update',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: 'web-app',
+      node_id: 2,
+      created_by: 'admin',
+      last_status: null,
+    });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(88);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://remote:3000/api/auto-update/execute',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ target: 'web-app' }),
+      })
+    );
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: 'success' })
+    );
+  });
+
+  it('records failure when remote node returns error', async () => {
+    mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
+    mockGetProxyTarget.mockReturnValue({
+      apiUrl: 'http://remote:3000',
+      apiToken: 'test-token',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'Internal error' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    mockGetScheduledTask.mockReturnValue({
+      id: 89,
+      name: 'remote-update-fail',
+      action: 'update',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: 'web-app',
+      node_id: 2,
+      created_by: 'admin',
+      last_status: null,
+    });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(89);
+
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: 'failure', error: expect.stringContaining('Internal error') })
+    );
   });
 });
