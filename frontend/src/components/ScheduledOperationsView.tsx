@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -14,63 +15,14 @@ import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, Che
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { Combobox } from '@/components/ui/combobox';
-import cronstrue from 'cronstrue';
-
-interface ScheduledTask {
-  id: number;
-  name: string;
-  target_type: 'stack' | 'fleet' | 'system';
-  target_id: string | null;
-  node_id: number | null;
-  action: 'restart' | 'snapshot' | 'prune';
-  cron_expression: string;
-  enabled: number;
-  created_by: string;
-  created_at: number;
-  updated_at: number;
-  last_run_at: number | null;
-  next_run_at: number | null;
-  last_status: string | null;
-  last_error: string | null;
-  prune_targets: string | null;
-  target_services: string | null;
-  prune_label_filter: string | null;
-}
-
-interface TaskRun {
-  id: number;
-  task_id: number;
-  started_at: number;
-  completed_at: number | null;
-  status: 'running' | 'success' | 'failure';
-  output: string | null;
-  error: string | null;
-  triggered_by: 'scheduler' | 'manual';
-}
-
-interface NodeOption {
-  id: number;
-  name: string;
-}
+import type { ScheduledTask, TaskRun, NodeOption } from '@/types/scheduling';
+import { getCronDescription, formatTimestamp } from '@/lib/scheduling';
 
 const ACTION_OPTIONS = [
   { value: 'restart', label: 'Restart Stack', targetType: 'stack' as const },
   { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' as const },
   { value: 'prune', label: 'System Prune', targetType: 'system' as const },
 ];
-
-function getCronDescription(expression: string): string {
-  try {
-    return cronstrue.toString(expression);
-  } catch {
-    return 'Invalid expression';
-  }
-}
-
-function formatTimestamp(ts: number | null): string {
-  if (!ts) return '-';
-  return new Date(ts).toLocaleString();
-}
 
 interface ScheduledOperationsViewProps {
   filterNodeId?: number | null;
@@ -329,7 +281,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
     try {
       const res = await apiFetch(`/scheduled-tasks/${task.id}/run`, { method: 'POST', localOnly: true });
       if (res.ok) {
-        toast.success(`Task "${task.name}" executed successfully`);
+        toast.success(`Task "${task.name}" triggered`);
         fetchTasks();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -351,16 +303,16 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
+              <Clock className="w-5 h-5" strokeWidth={1.5} />
               <CardTitle>Scheduled Operations</CardTitle>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={fetchTasks} disabled={loading}>
-                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                 Refresh
               </Button>
               <Button size="sm" onClick={openCreate}>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 New Schedule
               </Button>
             </div>
@@ -440,16 +392,16 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => handleRunNow(task)} title="Run now" disabled={runningTaskId === task.id}>
-                          <Play className={`w-4 h-4 ${runningTaskId === task.id ? 'animate-pulse' : ''}`} />
+                          <Play className={`w-4 h-4 ${runningTaskId === task.id ? 'animate-pulse' : ''}`} strokeWidth={1.5} />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => openRuns(task)} title="Execution history">
-                          <History className="w-4 h-4" />
+                          <History className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(task)} title="Edit">
-                          <Pencil className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(task)} title="Delete" className="text-destructive hover:text-destructive">
-                          <Trash2 className="w-4 h-4" />
+                        <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(task)} title="Delete" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground">
+                          <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                         </Button>
                       </div>
                     </TableCell>
@@ -466,6 +418,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>{editingTask ? 'Edit Scheduled Task' : 'New Scheduled Task'}</DialogTitle>
+            <DialogDescription className="sr-only">Configure a scheduled operation task.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -621,7 +574,8 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
               )}
             </div>
           </SheetHeader>
-          <div className="mt-4">
+          <ScrollArea className="mt-4 flex-1" style={{ maxHeight: 'calc(100vh - 10rem)' }}>
+            <div>
             {runsLoading ? (
               <div className="text-center text-muted-foreground py-8">Loading...</div>
             ) : runs.length === 0 ? (
@@ -678,17 +632,18 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
                   </p>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage - 1)} disabled={runsPage <= 1}>
-                      <ChevronLeft className="w-4 h-4" />
+                      <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => openRuns(runsTask, runsPage + 1)} disabled={runsPage >= Math.ceil(runsTotal / runsLimit)}>
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
                     </Button>
                   </div>
                 </div>
               )}
               </>
             )}
-          </div>
+            </div>
+          </ScrollArea>
         </SheetContent>
       </Sheet>
     </div>
