@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.8](https://github.com/AnsoCode/Sencho/compare/v0.46.7...v0.46.8) (2026-04-13)
+
+
+### Fixed
+
+* **rbac:** harden user management with token versioning, session invalidation, and test coverage ([#558](https://github.com/AnsoCode/Sencho/issues/558)) ([c261fbc](https://github.com/AnsoCode/Sencho/commit/c261fbc327ca92169bdd439c297cd96e5e6751de))
+
 ## [0.46.7](https://github.com/AnsoCode/Sencho/compare/v0.46.6...v0.46.7) (2026-04-13)
 
 
