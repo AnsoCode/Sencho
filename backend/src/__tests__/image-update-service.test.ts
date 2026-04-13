@@ -6,14 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
 
-const {
-  mockGetAuthForRegistry,
-  mockGetImage,
-  mockGetDocker,
-} = vi.hoisted(() => ({
+const { mockGetAuthForRegistry } = vi.hoisted(() => ({
   mockGetAuthForRegistry: vi.fn().mockResolvedValue(null),
-  mockGetImage: vi.fn(),
-  mockGetDocker: vi.fn(),
 }));
 
 vi.mock('../services/RegistryService', () => ({
@@ -68,7 +62,7 @@ vi.mock('../services/NodeRegistry', () => ({
 // public checkImage method (which calls parseImageRef internally).
 
 import { ImageUpdateService } from '../services/ImageUpdateService';
-import type { ImageCheckResult } from '../services/ImageUpdateService';
+import YAML from 'yaml';
 
 // ── parseImageRef (tested indirectly via checkImage) ──────────────────
 
@@ -201,7 +195,6 @@ describe('ImageUpdateService - loadDotEnv (internal)', () => {
 
 describe('ImageUpdateService - extractImagesFromCompose (internal)', () => {
   // Replicate the extraction logic for testing
-  const YAML = require('yaml');
 
   function extractImagesFromCompose(
     yamlContent: string,
