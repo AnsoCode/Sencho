@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { LabelDot, LABEL_COLORS, MAX_LABELS_PER_NODE, type Label, type LabelColor } from './LabelPill';
+import { LabelDot } from './LabelPill';
+import { LABEL_COLORS, MAX_LABELS_PER_NODE, type Label, type LabelColor } from './label-types';
 
 interface LabelAssignPopoverProps {
     stackName: string;

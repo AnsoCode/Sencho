@@ -1,17 +1,5 @@
 import { type MouseEvent, type ReactNode } from 'react';
-
-export type LabelColor = 'teal' | 'blue' | 'purple' | 'rose' | 'amber' | 'green' | 'orange' | 'pink' | 'cyan' | 'slate';
-
-export const LABEL_COLORS: LabelColor[] = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'];
-
-export const MAX_LABELS_PER_NODE = 50;
-
-export interface Label {
-    id: number;
-    node_id: number;
-    name: string;
-    color: LabelColor;
-}
+import { type LabelColor, type Label } from './label-types';
 
 const COLOR_STYLES: Record<LabelColor, { bg: string; text: string; border: string; activeBg: string }> = {
     teal:   { bg: 'bg-[var(--label-teal-bg)]',   text: 'text-[var(--label-teal)]',   border: 'border-[var(--label-teal)]/30',   activeBg: 'bg-[var(--label-teal)]' },
