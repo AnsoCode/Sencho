@@ -932,93 +932,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 
 // Audit logging middleware - records all mutating API actions for Admiral accountability.
 // Runs for POST/PUT/DELETE/PATCH on /api/* routes. Uses res.on('finish') to capture status code.
-const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
-  'POST /stacks': 'Created stack',
-  'DELETE /stacks': 'Deleted stack',
-  'POST /compose/up': 'Deployed stack',
-  'POST /compose/down': 'Stopped stack',
-  'POST /compose/start': 'Started stack',
-  'POST /compose/stop': 'Stopped stack',
-  'POST /compose/restart': 'Restarted stack',
-  'POST /compose/pull': 'Pulled stack images',
-  'POST /system/prune': 'Pruned system resources',
-  'POST /nodes': 'Added node',
-  'PUT /nodes': 'Updated node',
-  'DELETE /nodes': 'Deleted node',
-  'POST /users': 'Created user',
-  'DELETE /users': 'Deleted user',
-  'PUT /users': 'Updated user',
-  'POST /license/activate': 'Activated license',
-  'POST /license/deactivate': 'Deactivated license',
-  'POST /agents': 'Updated notification agent',
-  'POST /webhooks': 'Created webhook',
-  'PUT /webhooks': 'Updated webhook',
-  'DELETE /webhooks': 'Deleted webhook',
-  'PUT /settings': 'Updated settings',
-  'POST /fleet/snapshots': 'Created fleet backup',
-  'DELETE /fleet/snapshots': 'Deleted fleet backup',
-  'POST /fleet/snapshots/*/restore': 'Restored fleet backup',
-  'PUT /sso/config': 'Updated SSO configuration',
-  'DELETE /sso/config': 'Deleted SSO configuration',
-  'POST /api-tokens': 'Created API token',
-  'DELETE /api-tokens': 'Revoked API token',
-  'POST /scheduled-tasks/*/run': 'Triggered scheduled task',
-  'POST /scheduled-tasks': 'Created scheduled task',
-  'PUT /scheduled-tasks': 'Updated scheduled task',
-  'DELETE /scheduled-tasks': 'Deleted scheduled task',
-  'PATCH /scheduled-tasks': 'Toggled scheduled task',
-  'POST /registries': 'Created registry credential',
-  'PUT /registries': 'Updated registry credential',
-  'DELETE /registries': 'Deleted registry credential',
-  'POST /notification-routes': 'Created notification route',
-  'PUT /notification-routes': 'Updated notification route',
-  'DELETE /notification-routes': 'Deleted notification route',
-};
-
-function getAuditSummary(method: string, apiPath: string): string {
-  const normalized = apiPath.replace(/^\//, '');
-  const normalizedSegments = normalized.split('/');
-
-  // Sort patterns by segment count descending (most specific first)
-  const sortedEntries = Object.entries(AUDIT_ROUTE_SUMMARIES)
-    .sort((a, b) => b[0].split('/').length - a[0].split('/').length);
-
-  for (const [pattern, summary] of sortedEntries) {
-    const spaceIdx = pattern.indexOf(' ');
-    const pMethod = pattern.slice(0, spaceIdx);
-    const pPath = pattern.slice(spaceIdx + 1).replace(/^\//, '');
-    if (method !== pMethod) continue;
-
-    const patternSegments = pPath.split('/');
-    const hasWildcard = patternSegments.includes('*');
-
-    if (hasWildcard) {
-      // Wildcard matching: exact segment count, '*' matches any single segment
-      if (patternSegments.length > normalizedSegments.length) continue;
-      let match = true;
-      let resourceName = '';
-      for (let i = 0; i < patternSegments.length; i++) {
-        if (patternSegments[i] === '*') {
-          resourceName = resourceName || normalizedSegments[i];
-        } else if (patternSegments[i] !== normalizedSegments[i]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
-      }
-    } else {
-      // Prefix matching (original behavior)
-      if (normalized.startsWith(pPath)) {
-        const rest = normalized.slice(pPath.length).replace(/^\//, '');
-        const resourceName = rest.split('/')[0];
-        return resourceName ? `${summary}: ${decodeURIComponent(resourceName)}` : summary;
-      }
-    }
-  }
-  return `${method} /api/${normalized}`;
-}
+import { getAuditSummary } from './utils/audit-summaries';
 
 app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
@@ -1028,11 +942,16 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 
   const username = req.user?.username || 'unknown';
   const nodeId = req.nodeId ?? null;
-  const ip = req.ip || req.headers['x-forwarded-for'] as string || '';
+  const forwarded = req.headers['x-forwarded-for'];
+  const xff = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '';
+  const ip = req.ip || xff || '';
   const apiPath = req.path;
 
   res.on('finish', () => {
     try {
+      if (isDebugEnabled()) {
+        console.log(`[Audit:diag] ${req.method} /api${apiPath} by=${username} status=${res.statusCode} node=${nodeId ?? 'local'} ip=${ip}`);
+      }
       DatabaseService.getInstance().insertAuditLog({
         timestamp: Date.now(),
         username,
@@ -4812,6 +4731,9 @@ app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => 
     const from = req.query.from ? parseInt(req.query.from as string) : undefined;
     const to = req.query.to ? parseInt(req.query.to as string) : undefined;
 
+    if (isDebugEnabled()) {
+      console.log(`[Audit:diag] Query: page=${page} limit=${limit} username=${username || '-'} method=${method || '-'} search=${search || '-'}`);
+    }
     const result = DatabaseService.getInstance().getAuditLogs({ page, limit, username, method, from, to, search });
     res.json(result);
   } catch (error) {
@@ -4832,6 +4754,9 @@ app.get('/api/audit-log/export', async (req: Request, res: Response): Promise<vo
     const from = req.query.from ? parseInt(req.query.from as string) : undefined;
     const to = req.query.to ? parseInt(req.query.to as string) : undefined;
 
+    if (isDebugEnabled()) {
+      console.log(`[Audit:diag] Export: format=${format} filters=${JSON.stringify({ username, method, search, from, to })}`);
+    }
     const result = DatabaseService.getInstance().getAuditLogs({ page: 1, limit: 10000, username, method, from, to, search });
     const timestamp = new Date().toISOString().slice(0, 10);
 

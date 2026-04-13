@@ -33,17 +33,29 @@ Expanding a row reveals additional detail:
 
 ### Example actions tracked
 
-- Stack lifecycle: deploy, stop, start, restart, pull, delete
-- Stack creation and file edits
+- Stack lifecycle: deploy, stop, start, restart, update, rollback, delete
+- Stack creation, file edits, and env file changes
+- Container operations: start, stop, restart
 - Node management: add, update, delete
-- User management: create, delete, role changes
+- User management: create, delete, role assignment and removal
+- Password changes and node token generation
 - Settings changes
-- System prune operations
+- System prune operations (general, orphans, system)
+- Image, volume, and network deletion
+- Network creation
 - License activation/deactivation
 - Webhook and notification agent configuration
+- Notification route management and testing
 - Fleet backup creation, restoration, and deletion
+- Fleet node updates (individual and fleet-wide)
 - Scheduled task management
 - Registry credential management
+- SSO configuration changes and connection tests
+- API token creation and revocation
+- Label management and bulk actions
+- Template deployments
+- Auto-update execution
+- Console token generation
 
 ## Viewing the audit log
 
