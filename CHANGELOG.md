@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.13](https://github.com/AnsoCode/Sencho/compare/v0.46.12...v0.46.13) (2026-04-14)
+
+
+### Fixed
+
+* **notification-routing:** harden with security fixes, validation, and test coverage ([#573](https://github.com/AnsoCode/Sencho/issues/573)) ([e59df35](https://github.com/AnsoCode/Sencho/commit/e59df354e227572aec75f428a40c386e96268711))
+
 ## [0.46.12](https://github.com/AnsoCode/Sencho/compare/v0.46.11...v0.46.12) (2026-04-14)
 
 
