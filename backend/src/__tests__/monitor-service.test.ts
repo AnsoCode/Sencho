@@ -10,9 +10,11 @@ const { mockGetGlobalSettings, mockGetNodes, mockGetStackAlerts, mockAddContaine
   mockCleanupOldMetrics, mockCleanupOldNotifications, mockCleanupOldAuditLogs,
   mockUpdateStackAlertLastFired, mockGetSystemState, mockSetSystemState,
   mockGetRunningContainers, mockGetAllContainers, mockGetContainerStatsStream,
+  mockGetContainerRestartCount,
   mockDispatchAlert,
   mockCurrentLoad, mockMem, mockFsSize,
   mockExecAsync,
+  mockFetchLatestSenchoVersion,
 } = vi.hoisted(() => ({
   mockGetGlobalSettings: vi.fn().mockReturnValue({}),
   mockGetNodes: vi.fn().mockReturnValue([]),
@@ -27,11 +29,13 @@ const { mockGetGlobalSettings, mockGetNodes, mockGetStackAlerts, mockAddContaine
   mockGetRunningContainers: vi.fn().mockResolvedValue([]),
   mockGetAllContainers: vi.fn().mockResolvedValue([]),
   mockGetContainerStatsStream: vi.fn().mockResolvedValue('{}'),
+  mockGetContainerRestartCount: vi.fn().mockResolvedValue(0),
   mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
   mockCurrentLoad: vi.fn().mockResolvedValue({ currentLoad: 10 }),
   mockMem: vi.fn().mockResolvedValue({ used: 4e9, total: 16e9 }),
   mockFsSize: vi.fn().mockResolvedValue([{ mount: '/', use: 30 }]),
   mockExecAsync: vi.fn().mockResolvedValue({ stdout: '' }),
+  mockFetchLatestSenchoVersion: vi.fn().mockRejectedValue(new Error('not configured')),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -57,8 +61,13 @@ vi.mock('../services/DockerController', () => ({
       getRunningContainers: mockGetRunningContainers,
       getAllContainers: mockGetAllContainers,
       getContainerStatsStream: mockGetContainerStatsStream,
+      getContainerRestartCount: mockGetContainerRestartCount,
     }),
   },
+}));
+
+vi.mock('../utils/version-check', () => ({
+  fetchLatestSenchoVersion: (...args: unknown[]) => mockFetchLatestSenchoVersion(...args),
 }));
 
 vi.mock('../services/NotificationService', () => ({
@@ -520,5 +529,137 @@ describe('MonitorService - isProcessing guard', () => {
 
     // isProcessing should be reset in finally block
     expect((svc as any).isProcessing).toBe(false);
+  });
+});
+
+// ── restart_count metric ──────────────────────────────────────────────
+
+describe('MonitorService - restart_count metric', () => {
+  function setupRestartScenario(restartCount: number, hasRestartRule: boolean) {
+    mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
+    mockGetRunningContainers.mockResolvedValue([{
+      Id: 'c1',
+      Labels: { 'com.docker.compose.project': 'my-stack' },
+    }]);
+    mockGetContainerStatsStream.mockResolvedValue(JSON.stringify({
+      cpu_stats: { cpu_usage: { total_usage: 1000 }, system_cpu_usage: 5000, online_cpus: 1 },
+      precpu_stats: { cpu_usage: { total_usage: 1000 }, system_cpu_usage: 5000 },
+      memory_stats: { usage: 100e6, limit: 1e9 },
+    }));
+    mockGetContainerRestartCount.mockResolvedValue(restartCount);
+    const alerts = [];
+    if (hasRestartRule) {
+      alerts.push({
+        id: 100,
+        stack_name: 'my-stack',
+        metric: 'restart_count',
+        operator: '>',
+        threshold: 3,
+        duration_mins: 0,
+        cooldown_mins: 60,
+        last_fired_at: 0,
+      });
+    }
+    mockGetStackAlerts.mockReturnValue(alerts);
+    mockGetGlobalSettings.mockReturnValue({});
+  }
+
+  it('fetches restart count from Docker when a restart_count rule exists', async () => {
+    setupRestartScenario(5, true);
+
+    const svc = MonitorService.getInstance();
+    await (svc as any).evaluate();
+
+    expect(mockGetContainerRestartCount).toHaveBeenCalledWith('c1');
+    // restart_count=5 > threshold=3, should fire
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Restart count'), 'my-stack');
+  });
+
+  it('skips Docker inspect when no restart_count rules exist', async () => {
+    setupRestartScenario(5, false);
+
+    const svc = MonitorService.getInstance();
+    await (svc as any).evaluate();
+
+    expect(mockGetContainerRestartCount).not.toHaveBeenCalled();
+  });
+
+  it('does not fire when restart count is below threshold', async () => {
+    setupRestartScenario(2, true);
+
+    const svc = MonitorService.getInstance();
+    await (svc as any).evaluate();
+
+    expect(mockGetContainerRestartCount).toHaveBeenCalledWith('c1');
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('Restart count'), expect.anything());
+  });
+});
+
+// ── Sencho version update check ───────────────────────────────────────
+
+describe('MonitorService - Sencho version check', () => {
+  it('dispatches notification when newer version available', async () => {
+    // Set current version
+    process.env.npm_package_version = '0.45.0';
+    mockFetchLatestSenchoVersion.mockResolvedValue('0.46.0');
+    mockGetSystemState.mockReturnValue(null); // No previous notification
+    mockGetGlobalSettings.mockReturnValue({});
+    mockGetNodes.mockReturnValue([]);
+    mockGetStackAlerts.mockReturnValue([]);
+
+    const svc = MonitorService.getInstance();
+    // Reset the version check timer so it runs immediately
+    (svc as any).lastVersionCheckAt = 0;
+    await (svc as any).evaluate();
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('0.46.0'));
+    expect(mockSetSystemState).toHaveBeenCalledWith('last_sencho_update_notified_version', '0.46.0');
+  });
+
+  it('does not re-notify for the same version', async () => {
+    process.env.npm_package_version = '0.45.0';
+    mockFetchLatestSenchoVersion.mockResolvedValue('0.46.0');
+    mockGetSystemState.mockReturnValue('0.46.0'); // Already notified for this version
+    mockGetGlobalSettings.mockReturnValue({});
+    mockGetNodes.mockReturnValue([]);
+    mockGetStackAlerts.mockReturnValue([]);
+
+    const svc = MonitorService.getInstance();
+    (svc as any).lastVersionCheckAt = 0;
+    await (svc as any).evaluate();
+
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', expect.stringContaining('0.46.0'));
+  });
+
+  it('handles version check failure gracefully', async () => {
+    process.env.npm_package_version = '0.45.0';
+    mockFetchLatestSenchoVersion.mockRejectedValue(new Error('Network down'));
+    mockGetGlobalSettings.mockReturnValue({});
+    mockGetNodes.mockReturnValue([]);
+    mockGetStackAlerts.mockReturnValue([]);
+
+    const svc = MonitorService.getInstance();
+    (svc as any).lastVersionCheckAt = 0;
+
+    // Should not throw
+    await expect((svc as any).evaluate()).resolves.toBeUndefined();
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', expect.stringContaining('available'));
+  });
+
+  it('respects the 6-hour cooldown interval', async () => {
+    process.env.npm_package_version = '0.45.0';
+    mockFetchLatestSenchoVersion.mockResolvedValue('0.46.0');
+    mockGetSystemState.mockReturnValue(null);
+    mockGetGlobalSettings.mockReturnValue({});
+    mockGetNodes.mockReturnValue([]);
+    mockGetStackAlerts.mockReturnValue([]);
+
+    const svc = MonitorService.getInstance();
+    // Simulate the check ran 1 hour ago (within 6-hour window)
+    (svc as any).lastVersionCheckAt = Date.now() - 1 * 60 * 60 * 1000;
+    await (svc as any).evaluate();
+
+    // fetchLatestSenchoVersion should not have been called since we're within cooldown
+    expect(mockFetchLatestSenchoVersion).not.toHaveBeenCalled();
   });
 });

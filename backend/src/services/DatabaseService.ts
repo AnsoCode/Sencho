@@ -655,6 +655,8 @@ export class DatabaseService {
             );
             CREATE INDEX IF NOT EXISTS idx_notification_routes_priority ON notification_routes(priority);
         `);
+        // Track external dispatch errors on notification records
+        try { this.db.prepare('ALTER TABLE notification_history ADD COLUMN dispatch_error TEXT').run(); } catch { /* already exists */ }
     }
 
     // --- Agents ---
@@ -796,11 +798,11 @@ export class DatabaseService {
         }
     }
 
-    public addStackAlert(alert: StackAlert): void {
+    public addStackAlert(alert: StackAlert): StackAlert {
         const stmt = this.db.prepare(
             'INSERT INTO stack_alerts (stack_name, metric, operator, threshold, duration_mins, cooldown_mins, last_fired_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
-        stmt.run(
+        const result = stmt.run(
             alert.stack_name,
             alert.metric,
             alert.operator,
@@ -809,6 +811,7 @@ export class DatabaseService {
             alert.cooldown_mins,
             alert.last_fired_at || 0
         );
+        return this.db.prepare('SELECT * FROM stack_alerts WHERE id = ?').get(result.lastInsertRowid) as StackAlert;
     }
 
     public deleteStackAlert(id: number): void {
@@ -864,6 +867,10 @@ export class DatabaseService {
     public deleteAllNotifications(): void {
         const stmt = this.db.prepare('DELETE FROM notification_history');
         stmt.run();
+    }
+
+    public updateNotificationDispatchError(id: number, error: string): void {
+        this.db.prepare('UPDATE notification_history SET dispatch_error = ? WHERE id = ?').run(error, id);
     }
 
     // --- Container Metrics ---

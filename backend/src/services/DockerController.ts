@@ -1028,6 +1028,13 @@ class DockerController {
     return typeof stats === 'string' ? stats : JSON.stringify(stats);
   }
 
+  /** Return the cumulative restart count for a container via inspect(). */
+  public async getContainerRestartCount(containerId: string): Promise<number> {
+    const container = this.docker.getContainer(containerId);
+    const info = await container.inspect();
+    return info.RestartCount ?? 0;
+  }
+
   /**
    * Exec into a container with full session isolation.
    * All state (exec instance, stream) lives in this closure - no singleton traps.

@@ -7,6 +7,7 @@ import { DatabaseService } from './DatabaseService';
 import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { NodeRegistry } from './NodeRegistry';
+import { NotificationService } from './NotificationService';
 import { isDebugEnabled } from '../utils/debug';
 
 // ─── Image ref parsing ────────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ export class ImageUpdateService {
             for (const node of db.getNodes()) {
                 if (node.type !== 'local' || !node.id) continue;
                 try {
-                    await this.checkNode(node.id, db);
+                    await this.checkNode(node.id, node.name, db);
                 } catch (e) {
                     console.error(`[ImageUpdateService] Error on node ${node.name}:`, e);
                 }
@@ -297,7 +298,7 @@ export class ImageUpdateService {
         }
     }
 
-    private async checkNode(nodeId: number, db: DatabaseService) {
+    private async checkNode(nodeId: number, nodeName: string, db: DatabaseService) {
         const docker = DockerController.getInstance(nodeId);
         const fs = FileSystemService.getInstance(nodeId);
         const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(nodeId));
@@ -373,20 +374,45 @@ export class ImageUpdateService {
             await sleep(ImageUpdateService.INTER_IMAGE_DELAY_MS);
         }
 
+        // Read previous state to detect new updates for notifications
+        const previousState = db.getStackUpdateStatus(nodeId);
+
         // Write status for ALL stacks (including those with no pullable images)
         const now = Date.now();
         let updatesFound = 0;
+        const newlyUpdated: string[] = [];
         for (const [stackName, images] of stackImages) {
             const hasUpdate = Array.from(images).some(img => imageUpdateMap.get(img)?.hasUpdate === true);
-            if (hasUpdate) updatesFound++;
+            if (hasUpdate) {
+                updatesFound++;
+                // Notify only on state transition: was false/absent, now true
+                if (!previousState[stackName]) {
+                    newlyUpdated.push(stackName);
+                }
+            }
             db.upsertStackUpdateStatus(nodeId, stackName, hasUpdate, now);
+        }
+
+        // Dispatch notifications for stacks that newly have updates
+        if (newlyUpdated.length > 0) {
+            const notifier = NotificationService.getInstance();
+            for (const stackName of newlyUpdated) {
+                try {
+                    await notifier.dispatchAlert(
+                        'info',
+                        `[Node: ${nodeName}] Stack "${stackName}" has image updates available.`,
+                        stackName,
+                    );
+                } catch (e) {
+                    console.error(`[ImageUpdateService] Failed to dispatch update notification for "${stackName}":`, e);
+                }
+            }
         }
 
         console.log(`[ImageUpdateService] Node ${nodeId}: checked ${allImages.size} image(s), ${updatesFound} stack(s) with updates`);
 
-        // Prune stale entries for stacks no longer on disk
-        const existing = db.getStackUpdateStatus(nodeId);
-        for (const staleStack of Object.keys(existing)) {
+        // Prune stale entries for stacks no longer on disk (reuse previousState to avoid extra DB read)
+        for (const staleStack of Object.keys(previousState)) {
             if (!stackImages.has(staleStack)) {
                 db.clearStackUpdateStatus(nodeId, staleStack);
             }
