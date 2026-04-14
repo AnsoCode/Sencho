@@ -2862,7 +2862,7 @@ server.on('upgrade', async (req, socket, head) => {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string; role?: string; tv?: number };
 
     // Node proxy tokens are machine-to-machine credentials and must never be granted
     // interactive terminal access (host console or container exec).
@@ -3075,6 +3075,33 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
+      // Admin enforcement: container exec requires admin role.
+      // console_session tokens are already admin-gated at creation time.
+      // API tokens reaching this point have full-admin scope (read-only/deploy-only blocked above).
+      if (!decoded.scope) {
+        // User session token: verify admin role against the database (not the JWT)
+        // so role changes take effect immediately, matching authMiddleware behavior.
+        const execUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
+        if (!execUser) {
+          console.warn('[Exec] User account not found:', decoded.username);
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        if (decoded.tv !== undefined && execUser.token_version !== decoded.tv) {
+          console.warn('[Exec] Session invalidated (token version mismatch):', decoded.username);
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        if (execUser.role !== 'admin') {
+          console.warn('[Exec] Non-admin user rejected:', decoded.username);
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
+      if (isDebugEnabled()) console.debug('[Exec:diag] WS upgrade for exec path', { nodeId, username: decoded.username, scope: decoded.scope || 'user-session' });
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });

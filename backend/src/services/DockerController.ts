@@ -1042,29 +1042,47 @@ class DockerController {
    */
   public async execContainer(containerId: string, ws: WebSocket) {
     try {
-      const container = this.docker.getContainer(containerId);
-
-      // Try bash first, fall back to sh
-      let exec: Docker.Exec;
-      try {
-        exec = await container.exec({
-          AttachStdin: true,
-          AttachStdout: true,
-          AttachStderr: true,
-          Tty: true,
-          Cmd: ['/bin/bash'],
-        });
-      } catch {
-        exec = await container.exec({
-          AttachStdin: true,
-          AttachStdout: true,
-          AttachStderr: true,
-          Tty: true,
-          Cmd: ['/bin/sh'],
-        });
+      // Input validation
+      if (!containerId || typeof containerId !== 'string') {
+        console.warn('[Exec] Empty or invalid containerId');
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send('\r\n\x1b[31mError: No container ID provided\x1b[0m\r\n');
+          ws.close();
+        }
+        return;
       }
 
-      const stream = await exec.start({ hijack: true, stdin: true });
+      const container = this.docker.getContainer(containerId);
+
+      // Verify the container is running before attempting exec
+      const info = await container.inspect();
+      if (!info.State?.Running) {
+        console.warn('[Exec] Container not running:', containerId);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send('\r\n\x1b[31mError: Container is not running\x1b[0m\r\n');
+          ws.close();
+        }
+        return;
+      }
+
+      // Try bash first, fall back to sh.
+      // Both exec creation AND start must be inside the try/catch because
+      // some runtimes reject unknown binaries at start(), not at creation.
+      const execOpts = { AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true } as const;
+      let dockerExec: Docker.Exec;
+      let stream: import('stream').Duplex;
+      let shellType = '/bin/bash';
+      try {
+        dockerExec = await container.exec({ ...execOpts, Cmd: ['/bin/bash'] });
+        stream = await dockerExec.start({ hijack: true, stdin: true });
+      } catch {
+        shellType = '/bin/sh';
+        dockerExec = await container.exec({ ...execOpts, Cmd: ['/bin/sh'] });
+        stream = await dockerExec.start({ hijack: true, stdin: true });
+      }
+
+      if (isDebugEnabled()) console.debug('[Exec:diag] Creating exec', { containerId, shell: shellType });
+      console.log('[Exec] Shell session started', { containerId, shell: shellType });
 
       // --- Downstream: container output → client ---
       stream.on('data', (chunk: Buffer) => {
@@ -1074,10 +1092,11 @@ class DockerController {
       });
 
       stream.on('error', (err: Error) => {
-        console.error('Exec stream error:', err.message);
+        console.error('[Exec] Stream error:', err.message, { containerId });
       });
 
       stream.on('end', () => {
+        console.log('[Exec] Shell session ended', { containerId, reason: 'stream-end' });
         if (ws.readyState === WebSocket.OPEN) {
           ws.close();
         }
@@ -1097,9 +1116,10 @@ class DockerController {
 
             case 'resize':
               if (msg.rows && msg.cols) {
-                exec.resize({ h: msg.rows, w: msg.cols }).catch((e: Error) => {
+                if (isDebugEnabled()) console.debug('[Exec:diag] Terminal resize', { containerId, rows: msg.rows, cols: msg.cols });
+                dockerExec.resize({ h: msg.rows, w: msg.cols }).catch((e: Error) => {
                   // Exec may have ended before resize completes
-                  console.warn('[DockerController] Exec resize failed (exec may have ended):', e.message);
+                  console.warn('[Exec] Resize failed (exec may have ended):', e.message);
                 });
               }
               break;
@@ -1110,23 +1130,24 @@ class DockerController {
           }
         } catch (e) {
           // Non-JSON or malformed WebSocket message
-          console.warn('[DockerController] Ignoring malformed exec WS message:', (e as Error).message);
+          console.warn('[Exec] Ignoring malformed WS message:', (e as Error).message);
         }
       });
 
       // --- Cleanup: prevent zombie processes ---
       ws.on('close', () => {
+        console.log('[Exec] Shell session ended', { containerId, reason: 'ws-close' });
         try {
           stream.destroy();
         } catch (e) {
           // Stream already destroyed before WS close
-          console.warn('[DockerController] Exec stream already destroyed on WS close:', (e as Error).message);
+          console.warn('[Exec] Stream already destroyed on WS close:', (e as Error).message);
         }
       });
 
     } catch (error) {
       const err = error as Error;
-      console.error('Failed to exec container:', err.message);
+      console.error('[Exec] Failed to start shell:', err.message, { containerId });
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(`\r\n\x1b[31mFailed to start shell: ${err.message}\x1b[0m\r\n`);
       }

@@ -51,9 +51,7 @@
     "react-use-measure": "^2.1.7",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
-    "tailwindcss-animate": "^1.0.7",
-    "xterm-addon-search": "^0.13.0",
-    "xterm-addon-serialize": "^0.11.0"
+    "tailwindcss-animate": "^1.0.7"
   },
   "overrides": {
     "dompurify": "^3.3.3"

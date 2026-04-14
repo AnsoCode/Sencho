@@ -85,9 +85,12 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
     initTimeoutRef.current = setTimeout(checkAndInit, 50);
 
     function initTerminal(containerEl: HTMLDivElement) {
+      // xterm.js requires literal color strings in its theme config; CSS variables
+      // and oklch() are not supported by the canvas renderer. These values are
+      // intentionally hardcoded to match the terminal well aesthetic.
       const term = new Terminal({
         theme: {
-          background: '#1e1e1e',
+          background: '#0a0a0a',
           foreground: '#d4d4d4',
           cursor: '#ffffff',
           cursorAccent: '#000000',
@@ -224,12 +227,12 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
               </span>
             )}
           </DialogTitle>
-          <DialogDescription className="hidden">
+          <DialogDescription className="sr-only">
             Interactive bash terminal session for {containerName}
           </DialogDescription>
         </DialogHeader>
         {/* Styling wrapper - padding and rounded corners go here */}
-        <div className="flex-1 rounded-lg bg-[#1e1e1e] p-1 min-h-0" style={{ overflow: 'hidden' }}>
+        <div className="flex-1 rounded-lg bg-black p-1 min-h-0" style={{ overflow: 'hidden' }}>
           {/* Clean xterm container - NO padding, NO overflow-hidden, explicit dimensions */}
           <div
             ref={terminalRef}
