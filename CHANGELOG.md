@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.17](https://github.com/AnsoCode/Sencho/compare/v0.46.16...v0.46.17) (2026-04-14)
+
+
+### Fixed
+
+* **notifications:** resolve version notification showing 0.0.0 and backfill missing image update notifications ([#586](https://github.com/AnsoCode/Sencho/issues/586)) ([4a03193](https://github.com/AnsoCode/Sencho/commit/4a0319331a80a63273b8299ee3cbca75c88a91ce))
+
 ## [0.46.16](https://github.com/AnsoCode/Sencho/compare/v0.46.15...v0.46.16) (2026-04-14)
 
 
