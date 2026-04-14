@@ -10,6 +10,7 @@ const {
   mockGetEnabledNotificationRoutes,
   mockGetEnabledAgents,
   mockAddNotificationHistory,
+  mockUpdateNotificationDispatchError,
 } = vi.hoisted(() => ({
   mockGetEnabledNotificationRoutes: vi.fn().mockReturnValue([]),
   mockGetEnabledAgents: vi.fn().mockReturnValue([]),
@@ -20,6 +21,7 @@ const {
     timestamp: Date.now(),
     is_read: 0,
   }),
+  mockUpdateNotificationDispatchError: vi.fn(),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -28,6 +30,7 @@ vi.mock('../services/DatabaseService', () => ({
       getEnabledNotificationRoutes: mockGetEnabledNotificationRoutes,
       getEnabledAgents: mockGetEnabledAgents,
       addNotificationHistory: mockAddNotificationHistory,
+      updateNotificationDispatchError: mockUpdateNotificationDispatchError,
     }),
   },
 }));
@@ -244,5 +247,39 @@ describe('NotificationService - routing logic', () => {
         body: expect.stringContaining('Critical failure'),
       })
     );
+  });
+
+  it('records dispatch errors when route webhook fails', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
+    mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
+
+    await svc.dispatchAlert('error', 'Test', 'my-app');
+
+    expect(mockUpdateNotificationDispatchError).toHaveBeenCalledWith(
+      1, // notification id from mock
+      expect.stringContaining('Connection refused')
+    );
+  });
+
+  it('records dispatch errors when global agent webhook fails', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([]);
+    mockGetEnabledAgents.mockReturnValue([makeAgent()]);
+    mockFetch.mockRejectedValueOnce(new Error('Timeout'));
+
+    await svc.dispatchAlert('warning', 'Host alert');
+
+    expect(mockUpdateNotificationDispatchError).toHaveBeenCalledWith(
+      1,
+      expect.stringContaining('Timeout')
+    );
+  });
+
+  it('does not record dispatch errors when all dispatches succeed', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
+    mockFetch.mockResolvedValueOnce({ ok: true });
+
+    await svc.dispatchAlert('info', 'All good', 'my-app');
+
+    expect(mockUpdateNotificationDispatchError).not.toHaveBeenCalled();
   });
 });

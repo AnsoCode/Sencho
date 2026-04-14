@@ -4203,22 +4203,49 @@ app.get('/api/system/cache-stats', async (req: Request, res: Response) => {
 
 // --- Notification & Alerting Routes ---
 
-app.get('/api/agents', async (req: Request, res: Response) => {
+const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
+
+/** Trim, deduplicate, and drop empty entries from a stack_patterns array. */
+const cleanStackPatterns = (patterns: string[]): string[] =>
+  [...new Set(patterns.map(p => p.trim()).filter(Boolean))];
+
+/** Validate that a string is a well-formed HTTPS URL. Returns an error string or null. */
+function validateHttpsUrl(value: unknown): string | null {
+  if (!value || typeof value !== 'string' || !value.startsWith('https://')) return 'must be a valid HTTPS URL';
+  try { new URL(value); } catch { return 'is not a valid URL'; }
+  return null;
+}
+
+app.get('/api/agents', authMiddleware, async (req: Request, res: Response) => {
   try {
     const agents = DatabaseService.getInstance().getAgents();
     res.json(agents);
   } catch (error) {
+    console.error('Failed to fetch agents:', error);
     res.status(500).json({ error: 'Failed to fetch agents' });
   }
 });
 
-app.post('/api/agents', async (req: Request, res: Response) => {
+app.post('/api/agents', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const agent = req.body;
-    DatabaseService.getInstance().upsertAgent(agent);
+    const { type, url, enabled } = req.body;
+    if (!type || !NOTIFICATION_CHANNEL_TYPES.includes(type)) {
+      res.status(400).json({ error: `type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
+      return;
+    }
+    const urlErr = validateHttpsUrl(url);
+    if (urlErr) { res.status(400).json({ error: `url ${urlErr}` }); return; }
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled must be a boolean' });
+      return;
+    }
+    DatabaseService.getInstance().upsertAgent({ type, url, enabled });
+    console.log(`[Agents] Agent ${type} updated`);
+    if (isDebugEnabled()) console.log(`[Agents:diag] Agent ${type} upsert: enabled=${enabled}`);
     res.json({ success: true });
   } catch (error) {
+    console.error('Failed to update agent:', error);
     res.status(500).json({ error: 'Failed to update agent' });
   }
 });
@@ -4382,6 +4409,7 @@ app.post('/api/notifications/read', authMiddleware, async (req: Request, res: Re
 app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id as string, 10);
+    if (isNaN(id)) { res.status(400).json({ error: 'Invalid notification ID' }); return; }
     DatabaseService.getInstance().deleteNotification(id);
     res.json({ success: true });
   } catch (error) {
@@ -4398,26 +4426,20 @@ app.delete('/api/notifications', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
-
 app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { type, url } = req.body;
     if (!type || !NOTIFICATION_CHANNEL_TYPES.includes(type)) {
-      res.status(400).json({ error: 'type must be discord, slack, or webhook' });
+      res.status(400).json({ error: `type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
       return;
     }
-    if (!url || typeof url !== 'string' || !url.startsWith('https://')) {
-      res.status(400).json({ error: 'url must be a valid HTTPS URL' });
-      return;
-    }
-    try { new URL(url); } catch { res.status(400).json({ error: 'url is not a valid URL' }); return; }
+    const urlErr = validateHttpsUrl(url);
+    if (urlErr) { res.status(400).json({ error: `url ${urlErr}` }); return; }
     await NotificationService.getInstance().testDispatch(type, url);
     res.json({ success: true });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Test failed', details: msg });
+    res.status(500).json({ error: 'Test failed', details: getErrorMessage(error, String(error)) });
   }
 });
 
@@ -4445,23 +4467,34 @@ app.post('/api/notification-routes', authMiddleware, async (req: Request, res: R
       res.status(400).json({ error: 'Name is required' });
       return;
     }
-    if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string' || !(p as string).trim())) {
+    if (name.trim().length > 100) {
+      res.status(400).json({ error: 'Name must be 100 characters or fewer' });
+      return;
+    }
+    if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
       res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
       return;
     }
-    if (!NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
-      res.status(400).json({ error: 'channel_type must be discord, slack, or webhook' });
+    const cleanedPatterns = cleanStackPatterns(stack_patterns);
+    if (cleanedPatterns.length === 0) {
+      res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
       return;
     }
-    if (!channel_url || typeof channel_url !== 'string' || !channel_url.startsWith('https://')) {
-      res.status(400).json({ error: 'channel_url must be a valid HTTPS URL' });
+    if (!NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
+      res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
+      return;
+    }
+    const channelUrlErr = validateHttpsUrl(channel_url);
+    if (channelUrlErr) { res.status(400).json({ error: `channel_url ${channelUrlErr}` }); return; }
+    if (priority !== undefined && (typeof priority !== 'number' || !Number.isFinite(priority))) {
+      res.status(400).json({ error: 'priority must be a finite number' });
       return;
     }
 
     const now = Date.now();
     const route = DatabaseService.getInstance().createNotificationRoute({
       name: name.trim(),
-      stack_patterns: stack_patterns.map((p: string) => p.trim()),
+      stack_patterns: cleanedPatterns,
       channel_type,
       channel_url: channel_url.trim(),
       priority: typeof priority === 'number' ? priority : 0,
@@ -4469,6 +4502,8 @@ app.post('/api/notification-routes', authMiddleware, async (req: Request, res: R
       created_at: now,
       updated_at: now,
     });
+    console.log(`[Routes] Route "${route.name}" created (id=${route.id})`);
+    if (isDebugEnabled()) console.log(`[Routes:diag] Route "${route.name}" created with patterns=[${cleanedPatterns}], channel=${channel_type}`);
     res.status(201).json(route);
   } catch (error) {
     console.error('Failed to create notification route:', error);
@@ -4492,22 +4527,42 @@ app.put('/api/notification-routes/:id', authMiddleware, async (req: Request, res
       res.status(400).json({ error: 'Name must be a non-empty string' });
       return;
     }
-    if (stack_patterns !== undefined && (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string' || !(p as string).trim()))) {
-      res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+    if (name !== undefined && name.trim().length > 100) {
+      res.status(400).json({ error: 'Name must be 100 characters or fewer' });
       return;
+    }
+    let cleanedPatterns: string[] | undefined;
+    if (stack_patterns !== undefined) {
+      if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
+        res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+        return;
+      }
+      cleanedPatterns = cleanStackPatterns(stack_patterns);
+      if (cleanedPatterns.length === 0) {
+        res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
+        return;
+      }
     }
     if (channel_type !== undefined && !NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
-      res.status(400).json({ error: 'channel_type must be discord, slack, or webhook' });
+      res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
       return;
     }
-    if (channel_url !== undefined && (typeof channel_url !== 'string' || !channel_url.startsWith('https://'))) {
-      res.status(400).json({ error: 'channel_url must be a valid HTTPS URL' });
+    if (channel_url !== undefined) {
+      const urlErr = validateHttpsUrl(channel_url);
+      if (urlErr) { res.status(400).json({ error: `channel_url ${urlErr}` }); return; }
+    }
+    if (priority !== undefined && (typeof priority !== 'number' || !Number.isFinite(priority))) {
+      res.status(400).json({ error: 'priority must be a finite number' });
+      return;
+    }
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled must be a boolean' });
       return;
     }
 
     const updates: Record<string, unknown> = { updated_at: Date.now() };
     if (name !== undefined) updates.name = name.trim();
-    if (stack_patterns !== undefined) updates.stack_patterns = stack_patterns.map((p: string) => p.trim());
+    if (cleanedPatterns !== undefined) updates.stack_patterns = cleanedPatterns;
     if (channel_type !== undefined) updates.channel_type = channel_type;
     if (channel_url !== undefined) updates.channel_url = channel_url.trim();
     if (priority !== undefined) updates.priority = priority;
@@ -4515,6 +4570,8 @@ app.put('/api/notification-routes/:id', authMiddleware, async (req: Request, res
 
     DatabaseService.getInstance().updateNotificationRoute(id, updates);
     const updated = DatabaseService.getInstance().getNotificationRoute(id);
+    console.log(`[Routes] Route ${id} updated`);
+    if (isDebugEnabled()) console.log(`[Routes:diag] Route ${id} update fields: ${Object.keys(updates).filter(k => k !== 'updated_at')}`);
     res.json(updated);
   } catch (error) {
     console.error('Failed to update notification route:', error);
@@ -4531,6 +4588,7 @@ app.delete('/api/notification-routes/:id', authMiddleware, (req: Request, res: R
 
     const changes = DatabaseService.getInstance().deleteNotificationRoute(id);
     if (changes === 0) { res.status(404).json({ error: 'Route not found' }); return; }
+    console.log(`[Routes] Route ${id} deleted`);
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to delete notification route:', error);
@@ -4548,6 +4606,7 @@ app.post('/api/notification-routes/:id/test', authMiddleware, async (req: Reques
     const route = DatabaseService.getInstance().getNotificationRoute(id);
     if (!route) { res.status(404).json({ error: 'Route not found' }); return; }
 
+    if (isDebugEnabled()) console.log(`[Routes:diag] Test dispatch for route ${id} (${route.channel_type} -> ${route.channel_url})`);
     await NotificationService.getInstance().testDispatch(route.channel_type, route.channel_url);
     res.json({ success: true });
   } catch (error: unknown) {
