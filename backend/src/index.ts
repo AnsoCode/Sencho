@@ -5730,6 +5730,7 @@ app.get('/api/system/networks/topology', async (req: Request, res: Response) => 
     const knownStacks = await FileSystemService.getInstance(req.nodeId).getStacks();
     const dockerController = DockerController.getInstance(req.nodeId);
     const topology = await dockerController.getTopologyData(knownStacks, includeSystem);
+    console.log(`[Resources] Topology fetched: ${topology.length} networks, includeSystem=${includeSystem}`);
     if (isDebugEnabled()) console.debug('[Resources:debug] Topology fetched', { networkCount: topology.length, includeSystem });
     res.json(topology);
   } catch (error: unknown) {
