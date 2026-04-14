@@ -142,6 +142,13 @@
 
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+
+  /* Terminal (dark well even in light theme) */
+  --terminal-bg: oklch(0.12 0 0);
+  --terminal-fg: oklch(0.85 0 0);
+  --terminal-cursor: oklch(1 0 0);
+  --terminal-cursor-accent: oklch(0 0 0);
+  --terminal-selection: oklch(1 0 0 / 0.3);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -271,6 +278,10 @@
   --shadow-lg: 0px 4px 6px -1px hsl(0 0% 0% / 0.15);
   --shadow-xl: 0px 8px 10px -1px hsl(0 0% 0% / 0.20);
   --shadow-2xl: 0px 12px 20px -2px hsl(0 0% 0% / 0.30);
+
+  /* Terminal (recessed well, matches page background)
+     --terminal-fg/cursor/selection: inherited from :root (both themes use a dark terminal) */
+  --terminal-bg: oklch(0.08 0 0);
 }
 
 /* ─────────────────────────────────────────────────────────────

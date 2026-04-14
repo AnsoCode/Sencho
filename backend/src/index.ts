@@ -2887,6 +2887,27 @@ server.on('upgrade', async (req, socket, head) => {
       wsApiTokenScope = apiToken.scope;
     }
 
+    // For user session tokens (no scope), resolve against DB for up-to-date role and
+    // token_version checks. This mirrors what authMiddleware does for HTTP requests.
+    // Scoped tokens (api_token, node_proxy, console_session) skip this: they are
+    // validated by their own logic above or by the gateway that issued them.
+    let wsResolvedUser: { username: string; role: UserRole; token_version: number } | undefined;
+    if (!decoded.scope && decoded.username) {
+      const dbUser = DatabaseService.getInstance().getUserByUsername(decoded.username);
+      if (!dbUser) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      if (decoded.tv !== undefined && dbUser.token_version !== decoded.tv) {
+        console.log('[Auth] WS session rejected: token version mismatch for:', decoded.username);
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wsResolvedUser = { username: dbUser.username, role: dbUser.role as UserRole, token_version: dbUser.token_version };
+    }
+
     const url = req.url || '';
     const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
@@ -3018,10 +3039,22 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
+      // RBAC gate: only users with 'system:console' permission may access the host console.
+      // Console_session tokens are pre-validated by the gateway's requireAdmin() middleware,
+      // so they skip this check. API tokens are already blocked by the scope gate above.
+      const isConsoleSession = decoded.scope === 'console_session';
+      if (!isConsoleSession) {
+        const userRole = wsResolvedUser?.role;
+        if (!userRole || !ROLE_PERMISSIONS[userRole]?.includes('system:console')) {
+          console.log('[HostConsole] Access denied: insufficient permissions', { username: wsResolvedUser?.username || decoded.username, role: userRole });
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
       // Admiral license gate: host console requires Admiral (paid + team variant).
       // For proxied connections (console_session tokens), trust the tier headers sent by the gateway;
       // for direct connections, check the local LicenseService.
-      const isConsoleSession = decoded.scope === 'console_session';
       const consoleTierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
       const consoleVariantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
       const ls = LicenseService.getInstance();
@@ -3036,13 +3069,15 @@ server.on('upgrade', async (req, socket, head) => {
         socket.destroy();
         return;
       }
+      const consoleUsername = wsResolvedUser?.username || decoded.username || 'console_session';
+      const stackParam = parsedUrl.searchParams.get('stack');
+      console.log('[HostConsole] WebSocket upgrade accepted', { username: consoleUsername, nodeId, stack: stackParam || '(root)' });
       const hostConsoleWss = new WebSocketServer({ noServer: true });
       hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
         hostConsoleWss.close();
         let targetDirectory = '';
         try {
           const baseDir = FileSystemService.getInstance(nodeId).getBaseDir();
-          const stackParam = parsedUrl.searchParams.get('stack');
           if (stackParam) {
             const resolved = path.resolve(baseDir, stackParam);
             if (!resolved.startsWith(path.resolve(baseDir))) {
@@ -3058,11 +3093,11 @@ server.on('upgrade', async (req, socket, head) => {
           targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
         }
         try {
-          HostTerminalService.spawnTerminal(ws, targetDirectory);
+          HostTerminalService.spawnTerminal(ws, targetDirectory, consoleUsername);
         } catch (error) {
-          console.error('Failed to spawn host terminal:', error);
+          console.error('[HostConsole] Unhandled spawn error:', { user: consoleUsername, error: (error as Error).message });
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(`Error spawning terminal: ${(error as Error).message}\r\n`);
+            ws.send('Error: Failed to start terminal session.\r\n');
             ws.close();
           }
         }

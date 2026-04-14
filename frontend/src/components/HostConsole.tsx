@@ -11,6 +11,18 @@ interface HostConsoleProps {
     onClose: () => void;
 }
 
+/** Build the xterm theme from CSS custom properties (resolved once per call). */
+function getTerminalTheme() {
+    const s = getComputedStyle(document.documentElement);
+    return {
+        background: s.getPropertyValue('--terminal-bg').trim(),
+        foreground: s.getPropertyValue('--terminal-fg').trim(),
+        cursor: s.getPropertyValue('--terminal-cursor').trim(),
+        cursorAccent: s.getPropertyValue('--terminal-cursor-accent').trim(),
+        selectionBackground: s.getPropertyValue('--terminal-selection').trim(),
+    };
+}
+
 export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
     const { activeNode } = useNodes();
     const terminalRef = useRef<HTMLDivElement>(null);
@@ -39,13 +51,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
         let mounted = true;
 
         const term = new Terminal({
-            theme: {
-                background: '#1e1e1e',
-                foreground: '#d4d4d4',
-                cursor: '#ffffff',
-                cursorAccent: '#000000',
-                selectionBackground: 'rgba(255, 255, 255, 0.3)',
-            },
+            theme: getTerminalTheme(),
             fontFamily: "'Geist Mono', monospace",
             fontSize: 14,
             cursorBlink: true,
@@ -154,10 +160,10 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
     }, [stackName, cleanup]);
 
     return (
-        <div className="flex flex-col h-full w-full bg-background border rounded-lg overflow-hidden shadow-sm">
-            <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40 shrink-0">
+        <div className="flex flex-col h-full w-full rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel overflow-hidden transition-colors hover:border-t-card-border-hover">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-card-border bg-muted/40 shrink-0">
                 <div className="flex items-center gap-2 font-medium">
-                    <TerminalIcon className="w-4 h-4 text-muted-foreground" />
+                    <TerminalIcon className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
                     <span>Host Console</span>
                     {activeNode && (
                         <span className="text-muted-foreground font-normal text-sm">
@@ -176,11 +182,14 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
                     )}
                 </div>
                 <Button variant="ghost" size="sm" onClick={onClose} className="h-8 gap-1.5 text-muted-foreground hover:text-foreground">
-                    <X className="w-4 h-4" />
+                    <X className="w-4 h-4" strokeWidth={1.5} />
                     Close Console
                 </Button>
             </div>
-            <div className="flex-1 bg-[#1e1e1e] p-2 min-h-0 relative" style={{ overflow: 'hidden' }}>
+            <div
+                className="flex-1 p-2 min-h-0 relative shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]"
+                style={{ backgroundColor: 'var(--terminal-bg)', overflow: 'hidden' }}
+            >
                 <div ref={terminalRef} style={{ width: '100%', height: '100%' }} />
             </div>
         </div>
