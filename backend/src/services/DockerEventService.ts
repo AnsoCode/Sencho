@@ -9,6 +9,7 @@ import {
     ContainerLifecycleState,
 } from './ContainerLifecycleClassifier';
 import { isDebugEnabled } from '../utils/debug';
+import { getErrorMessage } from '../utils/errors';
 
 /**
  * DockerEventService
@@ -218,7 +219,7 @@ export class DockerEventService {
         }
 
         if (isDebugEnabled()) {
-            console.log(`[DockerEventService:${this.nodeName}] disconnected:`,
+            console.log(`[DockerEvents:${this.nodeName}:diag] disconnected:`,
                 error instanceof Error ? error.message : error);
         }
         this.scheduleReconnect();
@@ -260,7 +261,7 @@ export class DockerEventService {
             containers = await this.docker.listContainers({ all: true });
         } catch (err) {
             if (isDebugEnabled()) {
-                console.log(`[DockerEventService:${this.nodeName}] reconcile list failed:`,
+                console.log(`[DockerEvents:${this.nodeName}:diag] reconcile list failed:`,
                     err instanceof Error ? err.message : err);
             }
             return;
@@ -292,7 +293,17 @@ export class DockerEventService {
         } else {
             // Inspect + classify in parallel. Below the mass-event threshold
             // newlyExited is small by definition, so unbounded concurrency is fine.
-            await Promise.all(newlyExited.map(id => this.classifyGap(id)));
+            // Each gap is isolated with .catch() so a single failed inspect
+            // (e.g. container removed between list and inspect) does not abort
+            // the rest of the batch.
+            await Promise.all(newlyExited.map(id =>
+                this.classifyGap(id).catch(err => {
+                    if (isDebugEnabled()) {
+                        console.log(`[DockerEvents:${this.nodeName}:diag] gap classify failed for ${id}:`,
+                            err instanceof Error ? err.message : err);
+                    }
+                })
+            ));
         }
 
         this.exitedBaseline = exitedNow;
@@ -312,7 +323,7 @@ export class DockerEventService {
             await this.emitClassification(classification, null, { name, exitCode, stackName });
         } catch (err) {
             if (isDebugEnabled()) {
-                console.log(`[DockerEventService:${this.nodeName}] gap inspect failed:`,
+                console.log(`[DockerEvents:${this.nodeName}:diag] gap inspect failed:`,
                     err instanceof Error ? err.message : err);
             }
         }
@@ -334,7 +345,7 @@ export class DockerEventService {
             this.handleEvent(payload);
         } catch (err) {
             if (isDebugEnabled()) {
-                console.log(`[DockerEventService:${this.nodeName}] event handler threw:`,
+                console.log(`[DockerEvents:${this.nodeName}:diag] event handler threw:`,
                     err instanceof Error ? err.message : err);
             }
         }
@@ -377,7 +388,7 @@ export class DockerEventService {
         if (existing) clearTimeout(existing);
         const timer = setTimeout(() => {
             this.pendingDieTimers.delete(id);
-            this.classifyDie(id, event);
+            void this.classifyDie(id, event);
         }, DIE_GRACE_WINDOW_MS);
         this.pendingDieTimers.set(id, timer);
     }
@@ -420,14 +431,14 @@ export class DockerEventService {
         }
     }
 
-    private classifyDie(id: string, event: DockerEventPayload): void {
+    private async classifyDie(id: string, event: DockerEventPayload): Promise<void> {
         const state = this.getOrCreateState(id, event);
         const exitCodeStr = event.Actor?.Attributes?.exitCode;
         const parsedExit = exitCodeStr !== undefined ? parseInt(exitCodeStr, 10) : undefined;
         const exitCode = Number.isFinite(parsedExit) ? (parsedExit as number) : undefined;
         const now = Date.now();
 
-        const classification = classifyDie(
+        let classification = classifyDie(
             { at: this.eventTimeMs(event), exitCode },
             { lastKillAt: state.lastKillAt, oomPending: state.oomPending },
         );
@@ -438,12 +449,32 @@ export class DockerEventService {
 
         if (classification === 'intentional' || classification === 'clean') return;
 
-        // Dedup: skip if we already alerted on this container within the window.
+        // Dedup early: crashloops repeatedly reach this point with exit 137,
+        // and the OOM fallback below issues a Docker inspect. Skipping the
+        // inspect on deduped crashes avoids hammering the daemon.
         if (state.lastCrashAlertAt && now - state.lastCrashAlertAt < CRASH_DEDUP_MS) {
             return;
         }
 
-        void this.emitClassification(classification, state, {
+        // OOM fallback: if Docker never emitted an `oom` event but the exit
+        // code is 137 (SIGKILL, often the cgroup OOM killer), inspect the
+        // container and reuse classifyGapExit so the "what counts as OOM
+        // from inspect" rule lives in one place.
+        if (classification === 'crash' && exitCode === 137) {
+            try {
+                const inspect = await this.docker.getContainer(id).inspect();
+                if (classifyGapExit(inspect) === 'oom') {
+                    classification = 'oom';
+                }
+            } catch (err) {
+                if (isDebugEnabled()) {
+                    console.log(`[DockerEvents:${this.nodeName}:diag] OOM fallback inspect failed for ${id}:`,
+                        getErrorMessage(err, 'unknown error'));
+                }
+            }
+        }
+
+        await this.emitClassification(classification, state, {
             name: state.name ?? id.slice(0, 12),
             exitCode: exitCode ?? 0,
             stackName: state.stackName,
@@ -492,7 +523,7 @@ export class DockerEventService {
             // Default-deny on settings lookup failure: don't spam users if the
             // DB is temporarily unavailable.
             if (isDebugEnabled()) {
-                console.log(`[DockerEventService:${this.nodeName}] settings lookup failed:`,
+                console.log(`[DockerEvents:${this.nodeName}:diag] settings lookup failed:`,
                     err instanceof Error ? err.message : err);
             }
         }

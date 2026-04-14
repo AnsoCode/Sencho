@@ -10,6 +10,7 @@ import {
     classifyDie,
     classifyGapExit,
     INTENTIONAL_KILL_WINDOW_MS,
+    MAX_NEGATIVE_SKEW_MS,
 } from '../services/ContainerLifecycleClassifier';
 
 describe('classifyDie', () => {
@@ -86,6 +87,28 @@ describe('classifyDie', () => {
             { lastKillAt: now + (INTENTIONAL_KILL_WINDOW_MS + 1) },
         );
         expect(result).toBe('crash');
+    });
+
+    it('rejects a die with a wildly future-dated timestamp (clock skew)', () => {
+        // Die timestamp 120s in the future while the kill happened "now":
+        // a real out-of-order delivery is bounded by the 500ms grace window,
+        // so 120s of future skew must not match an earlier intentional kill.
+        const result = classifyDie(
+            { at: now + 120_000, exitCode: 1 },
+            { lastKillAt: now },
+        );
+        expect(result).toBe('crash');
+    });
+
+    it('accepts a die with modest negative skew within the tolerance window', () => {
+        // Kill happened slightly after the die (bounded out-of-order delivery
+        // plus normal clock skew, under MAX_NEGATIVE_SKEW_MS). Still intentional.
+        const skew = MAX_NEGATIVE_SKEW_MS - 1_000;
+        const result = classifyDie(
+            { at: now, exitCode: 1 },
+            { lastKillAt: now + skew },
+        );
+        expect(result).toBe('intentional');
     });
 });
 

@@ -452,6 +452,134 @@ describe('DockerEventService - reconnect', () => {
     });
 });
 
+// ── Hardening: gap isolation / OOM fallback / concurrent dies ─────────
+
+describe('DockerEventService - hardening', () => {
+    it('isolates failures inside classifyGap so one bad inspect does not abort the batch', async () => {
+        // 1 exit out of 10 (10%) stays below the 20% mass-event threshold, so
+        // the gap classifier inspects the container individually. That inspect
+        // fails; the service must isolate the failure and still classify a
+        // subsequent die as a crash.
+        const baseline = Array.from({ length: 10 }, (_, i) => ({
+            Id: `c-${i}`,
+            State: 'running',
+        }));
+        mockListContainers.mockResolvedValueOnce(baseline);
+
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        stream.error(new Error('broken'));
+        stream = makeStream();
+        mockGetEvents.mockImplementation(async () => stream);
+
+        const postReconnect = baseline.map((c, i) => ({
+            Id: c.Id,
+            State: i < 1 ? 'exited' : 'running',
+        }));
+        mockListContainers.mockResolvedValueOnce(postReconnect);
+        mockInspect.mockRejectedValueOnce(new Error('gone'));
+
+        await vi.advanceTimersByTimeAsync(2_000);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        mockDispatchAlert.mockClear();
+        stream.push({
+            Type: 'container',
+            Action: 'die',
+            Actor: { ID: 'post-recovery', Attributes: { exitCode: '1', name: 'app' } },
+        });
+        await vi.advanceTimersByTimeAsync(600);
+
+        expect(mockDispatchAlert).toHaveBeenCalledWith(
+            'error',
+            expect.stringContaining('Container Crash Detected'),
+            undefined,
+        );
+    });
+
+    it('classifies exit code 137 as OOM when container inspect reports OOMKilled (no oom event)', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        // Inspect fallback: no prior `oom` event, but the container's
+        // State.OOMKilled is true.
+        mockInspect.mockResolvedValueOnce({
+            State: { OOMKilled: true, ExitCode: 137 },
+        });
+
+        stream.push({
+            Type: 'container',
+            Action: 'die',
+            Actor: { ID: 'cgroup-killed', Attributes: { exitCode: '137', name: 'hog' } },
+        });
+        await vi.advanceTimersByTimeAsync(600);
+        // Allow the awaited inspect in classifyDie to resolve.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const oomCall = mockDispatchAlert.mock.calls.find(c =>
+            typeof c[1] === 'string' && c[1].includes('OOM Kill'));
+        const crashCall = mockDispatchAlert.mock.calls.find(c =>
+            typeof c[1] === 'string' && c[1].includes('Crash Detected'));
+        expect(oomCall).toBeDefined();
+        expect(crashCall).toBeUndefined();
+    });
+
+    it('falls back to crash when exit 137 die inspect fails', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        mockInspect.mockRejectedValueOnce(new Error('no such container'));
+
+        stream.push({
+            Type: 'container',
+            Action: 'die',
+            Actor: { ID: 'gone', Attributes: { exitCode: '137', name: 'ephemeral' } },
+        });
+        await vi.advanceTimersByTimeAsync(600);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Inspect failed, so classification stays as the original 'crash'.
+        expect(mockDispatchAlert).toHaveBeenCalledWith(
+            'error',
+            expect.stringContaining('Container Crash Detected'),
+            undefined,
+        );
+    });
+
+    it('collapses duplicate die events for the same container within the grace window', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        // Two dies for the same container within 500ms: the second cancels
+        // the first pending timer and reschedules. Exactly one crash alert
+        // must fire, using the later exit code.
+        stream.push({
+            Type: 'container',
+            Action: 'die',
+            Actor: { ID: 'dup', Attributes: { exitCode: '1', name: 'dup' } },
+        });
+        await vi.advanceTimersByTimeAsync(100);
+        stream.push({
+            Type: 'container',
+            Action: 'die',
+            Actor: { ID: 'dup', Attributes: { exitCode: '2', name: 'dup' } },
+        });
+        await vi.advanceTimersByTimeAsync(700);
+
+        const crashCalls = mockDispatchAlert.mock.calls.filter(c =>
+            typeof c[1] === 'string' && c[1].includes('Crash Detected'));
+        expect(crashCalls).toHaveLength(1);
+        expect(crashCalls[0][1]).toContain('Code: 2');
+    });
+});
+
 // ── Diagnostics ────────────────────────────────────────────────────────
 
 describe('DockerEventService - getStatus', () => {

@@ -230,6 +230,18 @@ Expected. Intentional stops, `docker stop` from a host terminal, and scheduled s
 
 Expected. When a large share of containers exits during a Docker daemon interruption, Sencho consolidates them into a single informational notification instead of paging per container. Individual crashes that happen after the reconnect are alerted on as normal.
 
+### Crash alerts stopped arriving and nothing else looks wrong
+
+Check, in order:
+
+1. Open **Settings > System** and confirm **Global Crash Detection** is on. When it is off, crash, OOM, and unhealthy notifications stop on all nodes while stack metric alerts and update notifications continue as normal.
+2. Look in the in-app notifications panel for a **Lost connection to Docker daemon** warning. If present, Sencho is not receiving events from the affected node and is retrying in the background; a **Reconnected to Docker daemon** info entry will appear when monitoring resumes.
+3. Confirm the affected node is reachable from the host running Sencho. For remote nodes, the remote Sencho instance is responsible for its own crash detection; check its status from that instance.
+
+### A burst of crashes happened but I only see about twenty alerts
+
+Expected, and by design. Sencho caps crash notifications at around 20 per minute per node so a runaway restart loop or a stack-wide failure cannot flood your notification channels. Any crashes beyond the cap in that window are rolled up into a single **N additional containers crashed in the last minute** warning. The complete, unredacted list of events is always visible in the in-app notifications panel; only external channel delivery (Discord, Slack, webhooks) is rate-limited.
+
 ### Delete confirmation dialog
 
 Deleting an alert rule now requires confirmation. Click the trash icon next to a rule, then confirm in the dialog that appears.
