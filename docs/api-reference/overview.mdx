@@ -203,5 +203,5 @@ ws.send(JSON.stringify({ type: "resize", cols: 120, rows: 40 }));
 </CodeGroup>
 
 <Warning>
-  Container exec requires a Sencho **Admiral Team** license and is blocked for API tokens and node proxy tokens.
+  Container exec requires an **admin** role. API tokens with `read-only` or `deploy-only` scope are blocked, as are node proxy tokens.
 </Warning>

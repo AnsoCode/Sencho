@@ -64,11 +64,34 @@ The terminal supports search (find text within the log output) and export (downl
 
 ### Container terminal (exec)
 
-The terminal modal from the container action buttons gives you an interactive bash shell inside a running container, equivalent to `docker exec -it <id> bash`. It uses a full xterm.js emulator with color support and tab completion.
+The terminal modal from the container action buttons gives you an interactive bash shell inside a running container, equivalent to `docker exec -it <id> bash`. It uses a full terminal emulator with colour support, tab completion, and automatic resizing when you resize the browser window.
+
+#### Access requirements
+
+- **Admin role required.** Only admin users see the terminal button in the container actions. Non-admin users cannot open a shell session.
+- **Container must be running.** The button is disabled for stopped containers, and the backend will reject exec attempts against non-running containers.
+- **API token restrictions.** API tokens with `read-only` or `deploy-only` scope cannot open exec sessions. Only `full-admin` API tokens are permitted.
+
+<Frame>
+  <img src="/images/editor/container-exec-modal.png" alt="Container exec modal showing a connected bash session with a root shell prompt" />
+</Frame>
+
+#### Shell selection
+
+Sencho tries `/bin/bash` first. If bash is not available inside the container, it automatically falls back to `/bin/sh`. This happens transparently; no user action is needed.
 
 <Warning>
-  The container terminal requires the container to have `bash` (or `sh`) installed. Minimal images (e.g. Alpine-based) may need `sh` instead.
+  The container terminal requires the container to have `bash` or `sh` installed. Minimal base images (e.g. `scratch`, `distroless`) that ship no shell will not work with container exec.
 </Warning>
+
+#### Troubleshooting
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| "Container is not running" error | The container stopped between clicking the button and the exec starting | Start the container and try again |
+| "Failed to start shell" error | The container image has no shell binary (`/bin/bash` or `/bin/sh`) | Use an image that includes a shell, or install one in your Dockerfile |
+| Terminal connects but immediately shows "Session ended" | The shell process inside the container exited immediately | Check the container logs for errors; the container's entrypoint may be overriding the shell |
+| Terminal is unresponsive | WebSocket connection dropped silently | Close the modal and reopen it to establish a new session |
 
 ## Log viewer
 
