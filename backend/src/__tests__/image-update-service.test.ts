@@ -6,8 +6,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
 
-const { mockGetAuthForRegistry } = vi.hoisted(() => ({
+const {
+  mockGetAuthForRegistry,
+  mockGetStackUpdateStatus, mockUpsertStackUpdateStatus, mockClearStackUpdateStatus,
+  mockGetSystemState, mockSetSystemState, mockAddNotificationHistory,
+  mockDispatchAlert,
+  mockGetStacks, mockGetStackContent, mockGetEnvContent,
+  mockGetAllContainers,
+} = vi.hoisted(() => ({
   mockGetAuthForRegistry: vi.fn().mockResolvedValue(null),
+  mockGetStackUpdateStatus: vi.fn().mockReturnValue({}),
+  mockUpsertStackUpdateStatus: vi.fn(),
+  mockClearStackUpdateStatus: vi.fn(),
+  mockGetSystemState: vi.fn().mockReturnValue('1'), // default: backfilled
+  mockSetSystemState: vi.fn(),
+  mockAddNotificationHistory: vi.fn(),
+  mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
+  mockGetStacks: vi.fn().mockResolvedValue([]),
+  mockGetStackContent: vi.fn().mockResolvedValue(''),
+  mockGetEnvContent: vi.fn().mockRejectedValue(new Error('no env')),
+  mockGetAllContainers: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../services/RegistryService', () => ({
@@ -23,19 +41,40 @@ vi.mock('../services/DatabaseService', () => ({
     getInstance: () => ({
       getGlobalSettings: () => ({ developer_mode: '0' }),
       getNodes: () => [],
-      upsertStackUpdateStatus: vi.fn(),
-      getStackUpdateStatus: () => ({}),
-      clearStackUpdateStatus: vi.fn(),
+      upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+      getStackUpdateStatus: mockGetStackUpdateStatus,
+      clearStackUpdateStatus: mockClearStackUpdateStatus,
+      getSystemState: mockGetSystemState,
+      setSystemState: mockSetSystemState,
+      addNotificationHistory: mockAddNotificationHistory,
+    }),
+  },
+}));
+
+vi.mock('../services/NotificationService', () => ({
+  NotificationService: {
+    getInstance: () => ({
+      dispatchAlert: mockDispatchAlert,
     }),
   },
 }));
 
 vi.mock('../services/FileSystemService', () => ({
-  FileSystemService: { getInstance: () => ({}) },
+  FileSystemService: {
+    getInstance: () => ({
+      getStacks: mockGetStacks,
+      getStackContent: mockGetStackContent,
+      getEnvContent: mockGetEnvContent,
+    }),
+  },
 }));
 
 vi.mock('../services/DockerController', () => ({
-  default: { getInstance: () => ({}) },
+  default: {
+    getInstance: () => ({
+      getAllContainers: mockGetAllContainers,
+    }),
+  },
 }));
 
 vi.mock('../services/NodeRegistry', () => ({
@@ -296,5 +335,110 @@ services:
     image: \${UNSET_VAR}
 `;
     expect(extractImagesFromCompose(yaml, {})).toEqual([]);
+  });
+});
+
+// ── Notification dispatch on state transitions ────────────────────────
+
+describe('ImageUpdateService - notification dispatch', () => {
+  const COMPOSE = `
+services:
+  app:
+    image: nginx:latest
+`;
+
+  const fakeDb = () => ({
+    getStackUpdateStatus: mockGetStackUpdateStatus,
+    upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+    clearStackUpdateStatus: mockClearStackUpdateStatus,
+    getSystemState: mockGetSystemState,
+    setSystemState: mockSetSystemState,
+    addNotificationHistory: mockAddNotificationHistory,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+    // Default: backfill complete so transition logic applies normally.
+    mockGetSystemState.mockReturnValue('1');
+    mockGetStacks.mockResolvedValue(['stackA']);
+    mockGetStackContent.mockResolvedValue(COMPOSE);
+    mockGetAllContainers.mockResolvedValue([]);
+  });
+
+  /**
+   * Stubs the private checkImage method so tests don't need to mock
+   * the entire registry-fetch stack.
+   */
+  function stubCheckImage(service: ImageUpdateService, hasUpdate: boolean) {
+    (service as any).checkImage = vi.fn().mockResolvedValue({ hasUpdate });
+  }
+
+  it('dispatches notification when a stack transitions from no-update to has-update', async () => {
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: false });
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, true);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockDispatchAlert).toHaveBeenCalledTimes(1);
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('stackA'),
+      'stackA',
+    );
+    expect(mockUpsertStackUpdateStatus).toHaveBeenCalledWith(1, 'stackA', true, expect.any(Number));
+  });
+
+  it('does not re-fire notification for a stack already known to have updates', async () => {
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: true });
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, true);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockDispatchAlert).not.toHaveBeenCalled();
+  });
+
+  it('backfills catch-up notifications once for pre-existing has_update rows', async () => {
+    // Simulate a stale DB: two stacks already have has_update = true,
+    // but the backfill flag is not set.
+    mockGetSystemState.mockReturnValue(null);
+    mockGetStacks.mockResolvedValue(['stackA', 'stackB']);
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: true, stackB: true });
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, true);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockDispatchAlert).toHaveBeenCalledTimes(2);
+    const dispatched = mockDispatchAlert.mock.calls.map(call => call[2]);
+    expect(dispatched).toEqual(expect.arrayContaining(['stackA', 'stackB']));
+    expect(mockSetSystemState).toHaveBeenCalledWith('image_update_notifications_backfilled', '1');
+
+    // Second run with backfill flag set and the same state: no further notifications.
+    vi.clearAllMocks();
+    mockGetSystemState.mockReturnValue('1');
+    mockGetStacks.mockResolvedValue(['stackA', 'stackB']);
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: true, stackB: true });
+    stubCheckImage(service, true);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockDispatchAlert).not.toHaveBeenCalled();
+  });
+
+  it('surfaces dispatch failures as an error entry in notification history', async () => {
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: false });
+    mockDispatchAlert.mockRejectedValueOnce(new Error('webhook timeout'));
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, true);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockAddNotificationHistory).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'error',
+      message: expect.stringContaining('webhook timeout'),
+    }));
   });
 });

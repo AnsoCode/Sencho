@@ -146,11 +146,21 @@ Sencho can notify you when software updates are available, both for Sencho itsel
 
 ### Sencho version updates
 
-When a newer version of Sencho is published, an informational notification is dispatched through your configured channels. This check runs periodically and only notifies once per new version. After you update, the cycle resets and you will be notified when the next release is available.
+When a newer version of Sencho is published, an informational notification is dispatched through your configured channels. Each Sencho instance runs its own version check roughly once every 6 hours and notifies exactly once per new version, so remote nodes self-report their own availability alerts. After you update, the cycle resets and you will be notified when the next release becomes available.
+
+The notification message includes the version you are running and the version that was detected, for example:
+
+```
+Sencho 0.47.0 is available (currently running 0.46.16). Visit the Fleet dashboard to update.
+```
 
 ### Stack image updates
 
-When the periodic image check (every 6 hours) detects that a stack has new upstream images available, a notification is dispatched for each affected stack. Notifications are sent only on state transitions: you will be notified once when a new update appears, not on every check cycle. After you update the stack, the status resets.
+When the periodic image check (every 6 hours) detects that a stack has new upstream images available, a notification is dispatched for each affected stack. Notifications are sent only on state transitions: you will be notified once when an update first appears, not on every check cycle. After you update the stack, the status resets so a future release can notify again.
+
+<Note>
+  If you upgraded to a Sencho version that added image update notifications and you already had stacks flagged as having updates, the first check after the upgrade sends one catch-up notification per affected stack so the in-app bell stays in sync with the blue update indicator.
+</Note>
 
 Both notification types use the same channel routing as alerts: if notification routes are configured for a stack, those channels receive the message; otherwise, global notification channels are used as a fallback.
 
@@ -173,3 +183,13 @@ Both notification types use the same channel routing as alerts: if notification 
 ### Delete confirmation dialog
 
 Deleting an alert rule now requires confirmation. Click the trash icon next to a rule, then confirm in the dialog that appears.
+
+### Version notification shows "currently running 0.0.0"
+
+This affected older Sencho builds that read the running version from an environment variable which was not always populated. Update to the current release; the running version is now resolved from the packaged manifest and the notification will report it correctly the next time a new release is detected.
+
+### A stack shows the blue update indicator but no notification was received
+
+If the blue indicator was already visible before you upgraded to a Sencho version that supports image update notifications, the first image check after the upgrade sends one catch-up notification per affected stack. Subsequent checks notify only when a stack newly transitions from "no updates" to "updates available".
+
+If the indicator appeared after the upgrade but no notification followed, open the notification bell. Dispatch failures (for example, a misconfigured Discord or Slack webhook) are logged as error entries in the bell so they are visible without tailing logs. Confirm at least one channel is enabled in **Settings > Notifications**; the in-app bell receives all notifications regardless of external channel configuration.

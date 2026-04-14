@@ -9,6 +9,9 @@ import { RegistryService } from './RegistryService';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 import { isDebugEnabled } from '../utils/debug';
+import { getErrorMessage } from '../utils/errors';
+
+const BACKFILL_KEY = 'image_update_notifications_backfilled';
 
 // ─── Image ref parsing ────────────────────────────────────────────────────────
 
@@ -377,6 +380,10 @@ export class ImageUpdateService {
         // Read previous state to detect new updates for notifications
         const previousState = db.getStackUpdateStatus(nodeId);
 
+        // One-time backfill: pre-existing has_update rows predate the notification pipeline;
+        // treat them as unnotified on first run so users get a catch-up entry per affected stack.
+        const isBackfilled = db.getSystemState(BACKFILL_KEY) === '1';
+
         // Write status for ALL stacks (including those with no pullable images)
         const now = Date.now();
         let updatesFound = 0;
@@ -386,7 +393,7 @@ export class ImageUpdateService {
             if (hasUpdate) {
                 updatesFound++;
                 // Notify only on state transition: was false/absent, now true
-                if (!previousState[stackName]) {
+                if (!isBackfilled || !previousState[stackName]) {
                     newlyUpdated.push(stackName);
                 }
             }
@@ -405,8 +412,23 @@ export class ImageUpdateService {
                     );
                 } catch (e) {
                     console.error(`[ImageUpdateService] Failed to dispatch update notification for "${stackName}":`, e);
+                    // Direct DB write to avoid recursing through dispatchAlert if it is what failed.
+                    try {
+                        db.addNotificationHistory({
+                            level: 'error',
+                            message: `[Node: ${nodeName}] Failed to notify about image updates for stack "${stackName}": ${getErrorMessage(e, String(e))}`,
+                            timestamp: Date.now(),
+                        });
+                    } catch (dbErr) {
+                        console.error('[ImageUpdateService] Failed to record dispatch error:', dbErr);
+                    }
                 }
             }
+        }
+
+        // Mark the backfill flag after the first run so future checks use strict transitions.
+        if (!isBackfilled) {
+            db.setSystemState(BACKFILL_KEY, '1');
         }
 
         console.log(`[ImageUpdateService] Node ${nodeId}: checked ${allImages.size} image(s), ${updatesFound} stack(s) with updates`);
