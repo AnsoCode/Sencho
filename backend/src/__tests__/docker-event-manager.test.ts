@@ -13,9 +13,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
-// Note: the hoisted factory runs before imports, so we require `events`
-// inline rather than referencing the top-level EventEmitter import.
-
+// Note: the hoisted factory runs before top-level imports resolve, so we
+// load `events` via require() here rather than referencing the top-level
+// EventEmitter import (which is not yet initialised at hoist time). A
+// top-level `await import()` would trigger TS1378 under the current
+// tsconfig, so require is the pragmatic choice for this hoisted factory.
 const {
     mockGetNodes,
     mockGetNode,
@@ -24,6 +26,7 @@ const {
     DockerEventServiceCtor,
     registryInstance,
 } = vi.hoisted(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { EventEmitter: HoistedEE } = require('events');
     const start = vi.fn().mockResolvedValue(undefined);
     const shutdown = vi.fn();
