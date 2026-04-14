@@ -109,6 +109,7 @@ export interface NotificationHistory {
     message: string;
     timestamp: number;
     is_read: boolean;
+    dispatch_error?: string;
 }
 
 export interface FleetSnapshot {
