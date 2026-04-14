@@ -5405,6 +5405,27 @@ app.get('/api/scheduled-tasks/:id/runs', (req: Request, res: Response): void => 
 
 const VALID_REGISTRY_TYPES = ['dockerhub', 'ghcr', 'ecr', 'custom'] as const;
 
+function isValidRegistryUrl(url: string, type: string): boolean {
+  // Docker Hub is fixed server-side to the legacy URL; no validation needed.
+  if (type === 'dockerhub') return true;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Reject any non-http(s) scheme (file://, ftp://, javascript:, etc.).
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('file:') || lower.startsWith('ftp:')) {
+    return false;
+  }
+  // Parse with a default https:// prefix so bare hosts validate.
+  try {
+    const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (!parsed.hostname) return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 app.get('/api/registries', (req: Request, res: Response): void => {
   if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
   if (!requireAdmin(req, res)) return;
@@ -5432,6 +5453,9 @@ app.post('/api/registries', (req: Request, res: Response): void => {
     }
     if (!type || !VALID_REGISTRY_TYPES.includes(type)) {
       res.status(400).json({ error: `Type must be one of: ${VALID_REGISTRY_TYPES.join(', ')}` }); return;
+    }
+    if (!isValidRegistryUrl(url, type)) {
+      res.status(400).json({ error: 'Registry URL must use http:// or https:// (or no protocol).' }); return;
     }
     if (!username || typeof username !== 'string') {
       res.status(400).json({ error: 'Username is required.' }); return;
@@ -5474,6 +5498,9 @@ app.put('/api/registries/:id', (req: Request, res: Response): void => {
       res.status(400).json({ error: `Type must be one of: ${VALID_REGISTRY_TYPES.join(', ')}` }); return;
     }
     const effectiveType = type ?? existing.type;
+    if (url !== undefined && !isValidRegistryUrl(url, effectiveType)) {
+      res.status(400).json({ error: 'Registry URL must use http:// or https:// (or no protocol).' }); return;
+    }
     if (effectiveType === 'ecr' && aws_region !== undefined && (typeof aws_region !== 'string' || !aws_region)) {
       res.status(400).json({ error: 'AWS region is required for ECR registries.' }); return;
     }
@@ -5517,6 +5544,49 @@ app.post('/api/registries/:id/test', async (req: Request, res: Response): Promis
     res.json(result);
   } catch (error) {
     console.error('[Registries] Test error:', error);
+    res.status(500).json({ error: 'Failed to test registry connection' });
+  }
+});
+
+// Stateless test: validate credentials without persisting. Powers the
+// "Test connection" button inside the create/edit form so users can verify
+// creds before saving.
+app.post('/api/registries/test', async (req: Request, res: Response): Promise<void> => {
+  if (req.apiTokenScope) { res.status(403).json({ error: 'API tokens cannot manage registry credentials.', code: 'SCOPE_DENIED' }); return; }
+  if (!requireAdmin(req, res)) return;
+  if (!requireAdmiral(req, res)) return;
+  try {
+    const { type, url, username, secret, aws_region } = req.body;
+
+    if (!type || !VALID_REGISTRY_TYPES.includes(type)) {
+      res.status(400).json({ error: `Type must be one of: ${VALID_REGISTRY_TYPES.join(', ')}` }); return;
+    }
+    if (typeof url !== 'string' || url.length === 0 || url.length > 500) {
+      res.status(400).json({ error: 'URL is required (max 500 characters).' }); return;
+    }
+    if (!isValidRegistryUrl(url, type)) {
+      res.status(400).json({ error: 'Registry URL must use http:// or https:// (or no protocol).' }); return;
+    }
+    if (typeof username !== 'string' || username.length === 0) {
+      res.status(400).json({ error: 'Username is required.' }); return;
+    }
+    if (typeof secret !== 'string' || secret.length === 0) {
+      res.status(400).json({ error: 'Secret/token is required.' }); return;
+    }
+    if (type === 'ecr' && (typeof aws_region !== 'string' || !aws_region)) {
+      res.status(400).json({ error: 'AWS region is required for ECR registries.' }); return;
+    }
+
+    const result = await RegistryService.getInstance().testWithCredentials({
+      type,
+      url,
+      username,
+      secret,
+      aws_region: aws_region ?? null,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('[Registries] Stateless test error:', error);
     res.status(500).json({ error: 'Failed to test registry connection' });
   }
 });
