@@ -1,4 +1,5 @@
 import semver from 'semver';
+import { CacheService } from '../services/CacheService';
 
 /**
  * Fetches the latest Sencho release version from GitHub or Docker Hub.
@@ -49,4 +50,27 @@ export async function fetchLatestSenchoVersion(): Promise<string> {
   // Throw so CacheService falls back to a stale value if one exists,
   // and so we do not poison the cache with null.
   throw new Error('Both GitHub and Docker Hub version lookups failed');
+}
+
+/**
+ * Cached wrapper shared by the Fleet endpoint and MonitorService.
+ * CacheService provides TTL, inflight deduplication, and stale-on-error
+ * fallback so transient network blips do not cause user-visible gaps.
+ */
+const LATEST_VERSION_CACHE_KEY = 'latest-version';
+const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+export async function getLatestVersion(forceRefresh = false): Promise<string | null> {
+  if (forceRefresh) {
+    CacheService.getInstance().invalidate(LATEST_VERSION_CACHE_KEY);
+  }
+  try {
+    return await CacheService.getInstance().getOrFetch<string>(
+      LATEST_VERSION_CACHE_KEY,
+      LATEST_VERSION_CACHE_TTL,
+      fetchLatestSenchoVersion,
+    );
+  } catch {
+    return null;
+  }
 }

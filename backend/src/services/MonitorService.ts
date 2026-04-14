@@ -6,7 +6,7 @@ import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
 import { NotificationService } from './NotificationService';
 import { isValidVersion, getSenchoVersion } from './CapabilityRegistry';
-import { fetchLatestSenchoVersion } from '../utils/version-check';
+import { getLatestVersion } from '../utils/version-check';
 import { isDebugEnabled } from '../utils/debug';
 
 const execAsync = promisify(exec);
@@ -76,6 +76,7 @@ export class MonitorService {
     // Sencho version check cooldown (6 hours between external API calls)
     private lastVersionCheckAt = 0;
     private static readonly VERSION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    private static readonly SENCHO_UPDATE_NOTIFIED_KEY = 'last_sencho_update_notified_version';
 
     private constructor() { }
 
@@ -209,30 +210,82 @@ export class MonitorService {
         }
 
         // 4. Sencho version update check (runs once per VERSION_CHECK_INTERVAL_MS)
-        if (Date.now() - this.lastVersionCheckAt > MonitorService.VERSION_CHECK_INTERVAL_MS) {
-            this.lastVersionCheckAt = Date.now();
-            try {
-                // Resolve from the packaged manifest: process.env.npm_package_version is
-                // only set by npm scripts, so it is undefined in Docker (node dist/index.js).
-                const currentVersion = getSenchoVersion();
-                const latest = await fetchLatestSenchoVersion();
-                if (isValidVersion(latest) && isValidVersion(currentVersion) && semver.gt(latest, currentVersion)) {
-                    const db = DatabaseService.getInstance();
-                    const stateKey = 'last_sencho_update_notified_version';
-                    const lastNotified = db.getSystemState(stateKey) || '';
-                    if (lastNotified !== latest) {
-                        const notifier = NotificationService.getInstance();
-                        await notifier.dispatchAlert('info',
-                            `Sencho ${latest} is available (currently running ${currentVersion}). Visit the Fleet dashboard to update.`);
-                        db.setSystemState(stateKey, latest);
-                    }
-                } else if (isDebugEnabled() && !isValidVersion(currentVersion)) {
-                    console.debug('[Monitor:diag] Sencho version unresolvable; skipping update notification');
-                }
-            } catch (e) {
-                // Network errors are expected; do not spam logs
-                if (isDebugEnabled()) console.debug('[Monitor:diag] Sencho version check failed:', e);
+        await this.checkSenchoVersion();
+    }
+
+    /**
+     * Check GitHub/Docker Hub for a newer Sencho release and dispatch a
+     * one-shot notification. Uses getLatestVersion() which wraps CacheService
+     * (30 min TTL + inflight dedup + stale-on-error) so transient network
+     * blips do not cause gaps, and the check stays consistent with the Fleet
+     * update banner.
+     *
+     * The 6-hour cooldown gate prevents bell spam: it is only advanced on a
+     * SUCCESSFUL lookup. A failed lookup retries on the next eval cycle
+     * (30 seconds) instead of locking for 6 hours.
+     */
+    private async checkSenchoVersion(): Promise<void> {
+        const sinceLast = Date.now() - this.lastVersionCheckAt;
+        if (sinceLast <= MonitorService.VERSION_CHECK_INTERVAL_MS) {
+            if (isDebugEnabled()) {
+                const nextInMs = MonitorService.VERSION_CHECK_INTERVAL_MS - sinceLast;
+                console.debug(`[Monitor:diag] Sencho version check in cooldown (next in ~${Math.round(nextInMs / 60000)}m)`);
             }
+            return;
+        }
+
+        // Resolve from the packaged manifest: process.env.npm_package_version is
+        // only set by npm scripts, so it is undefined in Docker (node dist/index.js).
+        const currentVersion = getSenchoVersion();
+        if (!isValidVersion(currentVersion)) {
+            if (isDebugEnabled()) console.debug('[Monitor:diag] Sencho version unresolvable; skipping update notification');
+            return;
+        }
+
+        const latest = await getLatestVersion();
+        if (!isValidVersion(latest)) {
+            // Network failure (GitHub + Docker Hub both down, no stale cache).
+            // Do NOT advance the cooldown so the next eval retries.
+            if (isDebugEnabled()) console.debug('[Monitor:diag] Latest Sencho version unresolvable; will retry next cycle');
+            return;
+        }
+
+        this.lastVersionCheckAt = Date.now();
+
+        const db = DatabaseService.getInstance();
+        const stateKey = MonitorService.SENCHO_UPDATE_NOTIFIED_KEY;
+        const storedLastNotified = db.getSystemState(stateKey) || '';
+
+        // Self-heal: if the user has reached the previously-notified version,
+        // clear the dedup so future releases always trigger a fresh notification.
+        // This also recovers from stale state left over by the pre-586 "0.0.0" bug.
+        let effectiveLastNotified = storedLastNotified;
+        if (storedLastNotified && isValidVersion(storedLastNotified) && semver.gte(currentVersion, storedLastNotified)) {
+            if (isDebugEnabled()) console.debug(`[Monitor:diag] Clearing stale dedup key (running ${currentVersion} >= last notified ${storedLastNotified})`);
+            db.setSystemState(stateKey, '');
+            effectiveLastNotified = '';
+        }
+
+        if (!semver.gt(latest, currentVersion)) {
+            if (isDebugEnabled()) console.debug(`[Monitor:diag] Running ${currentVersion} is up-to-date with latest ${latest}`);
+            return;
+        }
+
+        if (effectiveLastNotified === latest) {
+            if (isDebugEnabled()) console.debug(`[Monitor:diag] Already notified for Sencho ${latest}`);
+            return;
+        }
+
+        try {
+            const notifier = NotificationService.getInstance();
+            await notifier.dispatchAlert('info',
+                `Sencho ${latest} is available (currently running ${currentVersion}). Visit the Fleet dashboard to update.`);
+            db.setSystemState(stateKey, latest);
+            if (isDebugEnabled()) console.debug(`[Monitor:diag] Dispatched version notification: ${currentVersion} -> ${latest}`);
+        } catch (e) {
+            // dispatchAlert normally catches channel errors internally, but the
+            // history insert or WebSocket broadcast can throw on an unhealthy DB.
+            console.error('[MonitorService] Failed to dispatch Sencho version notification:', e);
         }
     }
 

@@ -158,10 +158,6 @@ Sencho 0.47.0 is available (currently running 0.46.16). Visit the Fleet dashboar
 
 When the periodic image check (every 6 hours) detects that a stack has new upstream images available, a notification is dispatched for each affected stack. Notifications are sent only on state transitions: you will be notified once when an update first appears, not on every check cycle. After you update the stack, the status resets so a future release can notify again.
 
-<Note>
-  If you upgraded to a Sencho version that added image update notifications and you already had stacks flagged as having updates, the first check after the upgrade sends one catch-up notification per affected stack so the in-app bell stays in sync with the blue update indicator.
-</Note>
-
 Both notification types use the same channel routing as alerts: if notification routes are configured for a stack, those channels receive the message; otherwise, global notification channels are used as a fallback.
 
 ## Container crash detection
@@ -220,11 +216,7 @@ When many crashes land in a short window (for example, a large stack coming down
 
 ### I stopped a stack but got a crash alert
 
-This should not happen on current versions. If it does, confirm Sencho can reach the Docker daemon on the affected node (the **Lost connection to Docker daemon** warning is dispatched when the socket is unreachable). Previously, Sencho relied on polling and could mistake intentional stops for crashes; detection is now causal and in real time.
-
-### I'm seeing fewer crash alerts after upgrading
-
-Expected. Intentional stops, `docker stop` from a host terminal, and scheduled stack recreations no longer trigger crash alerts. Real crashes, OOM kills, and failing healthchecks still alert. If you want to opt out entirely, toggle **Global Crash Detection** off in **Settings > System**.
+This should not happen. Sencho distinguishes intentional stops from crashes by correlating each container exit with the action that triggered it. If you do see a crash alert for a stack you stopped, confirm Sencho can reach the Docker daemon on the affected node: the **Lost connection to Docker daemon** warning is dispatched when the socket is unreachable, and exits observed during an outage may be classified as crashes on reconnect.
 
 ### After a Docker daemon restart I only got one summary notification
 
@@ -246,12 +238,12 @@ Expected, and by design. Sencho caps crash notifications at around 20 per minute
 
 Deleting an alert rule now requires confirmation. Click the trash icon next to a rule, then confirm in the dialog that appears.
 
-### Version notification shows "currently running 0.0.0"
+### Fleet shows an update button but I never received a Sencho version notification
 
-This affected older Sencho builds that read the running version from an environment variable which was not always populated. Update to the current release; the running version is now resolved from the packaged manifest and the notification will report it correctly the next time a new release is detected.
+Fleet and the in-app bell share the same version lookup. Each Sencho instance checks for a new release roughly every 6 hours and notifies exactly once per version, so if a check already fired for the latest release the bell will not notify again for that same version.
+
+If the update button is visible but no notification is in the bell, a transient network failure during the last successful check can briefly delay delivery; the next evaluation cycle (about every 30 seconds) retries automatically. To confirm external channels (Discord, Slack, webhooks) are reachable, open **Settings > Notifications** and click **Test** on each. The in-app bell receives every notification regardless of external channel configuration.
 
 ### A stack shows the blue update indicator but no notification was received
 
-If the blue indicator was already visible before you upgraded to a Sencho version that supports image update notifications, the first image check after the upgrade sends one catch-up notification per affected stack. Subsequent checks notify only when a stack newly transitions from "no updates" to "updates available".
-
-If the indicator appeared after the upgrade but no notification followed, open the notification bell. Dispatch failures (for example, a misconfigured Discord or Slack webhook) are logged as error entries in the bell so they are visible without tailing logs. Confirm at least one channel is enabled in **Settings > Notifications**; the in-app bell receives all notifications regardless of external channel configuration.
+Open the notification bell. Dispatch failures (for example, a misconfigured Discord or Slack webhook) are logged as error entries in the bell so they are visible without tailing logs. Confirm at least one channel is enabled in **Settings > Notifications**; the in-app bell receives all notifications regardless of external channel configuration.

@@ -43,6 +43,16 @@ CVE-2026-32282
 # Go rebuild; revisit on next CLI/Compose release.
 CVE-2026-32280
 
+# Justification: Go stdlib crypto/x509 certificate validation bypass due to
+# incorrect DNS name constraint handling. Fixed in Go 1.26.2, but Docker CLI
+# 29.4.0 ships Go 1.26.1 and no newer upstream static binary is available.
+# Same exposure profile as CVE-2026-32280: the Docker CLI and compose plugin
+# only validate certificates from well-known registry CAs and the local
+# Docker socket in our usage, not from attacker-controlled CAs with crafted
+# DNS name constraints. Blocked on upstream Go rebuild; revisit on next
+# CLI/Compose release.
+CVE-2026-33810
+
 # ---------------------------------------------------------------------------
 # Bundled inside /usr/local/lib/docker/cli-plugins/docker-compose (v5.1.2)
 # ---------------------------------------------------------------------------

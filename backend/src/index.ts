@@ -60,7 +60,7 @@ function invalidateNodeCaches(nodeId: number): void {
 }
 
 import { isDebugEnabled } from './utils/debug';
-import { fetchLatestSenchoVersion } from './utils/version-check';
+import { getLatestVersion } from './utils/version-check';
 import { getErrorMessage } from './utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
@@ -1281,29 +1281,9 @@ const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
-// Latest Sencho version cache (fetched from GitHub Releases).
-// Backed by CacheService: TTL, inflight dedup, and stale-on-error are all
-// handled by the unified cache layer.
-const LATEST_VERSION_CACHE_KEY = 'latest-version';
-const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
-// Version fetch logic lives in utils/version-check.ts; imported below for getLatestVersion().
-// fetchFromGitHub + fetchFromDockerHub + fetchLatestSenchoVersion are shared with MonitorService.
-
-async function getLatestVersion(forceRefresh = false): Promise<string | null> {
-  if (forceRefresh) {
-    CacheService.getInstance().invalidate(LATEST_VERSION_CACHE_KEY);
-  }
-  try {
-    return await CacheService.getInstance().getOrFetch<string>(
-      LATEST_VERSION_CACHE_KEY,
-      LATEST_VERSION_CACHE_TTL,
-      fetchLatestSenchoVersion,
-    );
-  } catch {
-    return null;
-  }
-}
+// Latest Sencho version lookup and caching live in utils/version-check.ts
+// (shared with MonitorService). Fleet compares the gateway version against
+// whatever getLatestVersion() returns from GitHub or Docker Hub.
 
 /** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
 async function getCompareTarget(gatewayVersion: string | null) {
