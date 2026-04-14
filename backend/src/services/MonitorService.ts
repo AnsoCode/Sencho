@@ -5,7 +5,7 @@ import semver from 'semver';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
 import { NotificationService } from './NotificationService';
-import { isValidVersion } from './CapabilityRegistry';
+import { isValidVersion, getSenchoVersion } from './CapabilityRegistry';
 import { fetchLatestSenchoVersion } from '../utils/version-check';
 import { isDebugEnabled } from '../utils/debug';
 
@@ -266,7 +266,9 @@ export class MonitorService {
         if (Date.now() - this.lastVersionCheckAt > MonitorService.VERSION_CHECK_INTERVAL_MS) {
             this.lastVersionCheckAt = Date.now();
             try {
-                const currentVersion = process.env.npm_package_version || '0.0.0';
+                // Resolve from the packaged manifest: process.env.npm_package_version is
+                // only set by npm scripts, so it is undefined in Docker (node dist/index.js).
+                const currentVersion = getSenchoVersion();
                 const latest = await fetchLatestSenchoVersion();
                 if (isValidVersion(latest) && isValidVersion(currentVersion) && semver.gt(latest, currentVersion)) {
                     const db = DatabaseService.getInstance();
@@ -278,6 +280,8 @@ export class MonitorService {
                             `Sencho ${latest} is available (currently running ${currentVersion}). Visit the Fleet dashboard to update.`);
                         db.setSystemState(stateKey, latest);
                     }
+                } else if (isDebugEnabled() && !isValidVersion(currentVersion)) {
+                    console.debug('[Monitor:diag] Sencho version unresolvable; skipping update notification');
                 }
             } catch (e) {
                 // Network errors are expected; do not spam logs
