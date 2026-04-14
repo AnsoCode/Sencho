@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.47.0](https://github.com/AnsoCode/Sencho/compare/v0.46.20...v0.47.0) (2026-04-14)
+
+
+### Added
+
+* **registries:** harden Private Registry Credentials feature ([#597](https://github.com/AnsoCode/Sencho/issues/597)) ([6275adc](https://github.com/AnsoCode/Sencho/commit/6275adc6b35eaad1322dedd537551b7519052980))
+
 ## [0.46.20](https://github.com/AnsoCode/Sencho/compare/v0.46.19...v0.46.20) (2026-04-14)
 
 
