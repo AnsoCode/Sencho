@@ -4,14 +4,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import { TierBadge } from './TierBadge';
-import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock, Zap } from 'lucide-react';
 
 type RegistryType = 'dockerhub' | 'ghcr' | 'ecr' | 'custom';
 
@@ -26,6 +26,19 @@ interface RegistryItem {
     created_at: number;
     updated_at: number;
 }
+
+interface ApiError {
+    error?: string;
+    message?: string;
+    data?: { error?: string };
+}
+
+const TYPE_OPTIONS: { value: RegistryType; label: string }[] = [
+    { value: 'dockerhub', label: 'Docker Hub' },
+    { value: 'ghcr', label: 'GitHub Container Registry (GHCR)' },
+    { value: 'ecr', label: 'AWS Elastic Container Registry (ECR)' },
+    { value: 'custom', label: 'Custom / Self-hosted' },
+];
 
 const TYPE_LABELS: Record<RegistryType, string> = {
     dockerhub: 'Docker Hub',
@@ -62,6 +75,12 @@ const TYPE_SECRET_HINT: Record<RegistryType, string> = {
     custom: 'Password or token',
 };
 
+/** Defensive toast chain per CLAUDE.md Directive 6. */
+function toastError(e: unknown, fallback: string): void {
+    const err = e as ApiError | undefined;
+    toast.error(err?.message || err?.error || err?.data?.error || fallback);
+}
+
 function formatDate(ts: number): string {
     return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -73,6 +92,7 @@ export function RegistriesSection() {
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [testingId, setTestingId] = useState<number | null>(null);
+    const [testingForm, setTestingForm] = useState(false);
 
     const [formName, setFormName] = useState('');
     const [formUrl, setFormUrl] = useState('');
@@ -126,12 +146,58 @@ export function RegistriesSection() {
         setShowForm(true);
     };
 
+    const validateForm = (): boolean => {
+        if (!formName.trim()) { toast.error('Name is required.'); return false; }
+        if (!formUrl.trim()) { toast.error('URL is required.'); return false; }
+        if (!formUsername.trim()) { toast.error('Username is required.'); return false; }
+        if (!editingId && !formSecret.trim()) { toast.error('Secret/token is required.'); return false; }
+        if (formType === 'ecr' && !formAwsRegion.trim()) { toast.error('AWS region is required for ECR.'); return false; }
+        return true;
+    };
+
+    const handleTestForm = async () => {
+        // Stateless test requires a secret; on edit, user must re-enter it.
+        if (!formUrl.trim() || !formUsername.trim() || !formSecret.trim()) {
+            toast.error('Fill URL, username, and secret to test.');
+            return;
+        }
+        if (formType === 'ecr' && !formAwsRegion.trim()) {
+            toast.error('AWS region is required for ECR.');
+            return;
+        }
+        setTestingForm(true);
+        try {
+            const res = await apiFetch('/registries/test', {
+                method: 'POST',
+                localOnly: true,
+                body: JSON.stringify({
+                    type: formType,
+                    url: formUrl.trim(),
+                    username: formUsername.trim(),
+                    secret: formSecret.trim(),
+                    aws_region: formType === 'ecr' ? formAwsRegion.trim() : null,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    toast.success('Connection successful.');
+                } else {
+                    toast.error(data.error || 'Connection failed.');
+                }
+            } else {
+                const err = await res.json().catch(() => ({}));
+                toastError(err, 'Test failed.');
+            }
+        } catch (e) {
+            toastError(e, 'Network error.');
+        } finally {
+            setTestingForm(false);
+        }
+    };
+
     const handleSave = async () => {
-        if (!formName.trim()) { toast.error('Name is required.'); return; }
-        if (!formUrl.trim()) { toast.error('URL is required.'); return; }
-        if (!formUsername.trim()) { toast.error('Username is required.'); return; }
-        if (!editingId && !formSecret.trim()) { toast.error('Secret/token is required.'); return; }
-        if (formType === 'ecr' && !formAwsRegion.trim()) { toast.error('AWS region is required for ECR.'); return; }
+        if (!validateForm()) return;
 
         setSaving(true);
         try {
@@ -159,10 +225,10 @@ export function RegistriesSection() {
                 fetchRegistries();
             } else {
                 const err = await res.json().catch(() => ({}));
-                toast.error(err?.error || err?.message || 'Failed to save registry.');
+                toastError(err, 'Failed to save registry.');
             }
-        } catch (e: unknown) {
-            toast.error((e as Error)?.message || 'Network error.');
+        } catch (e) {
+            toastError(e, 'Network error.');
         } finally {
             setSaving(false);
         }
@@ -176,10 +242,10 @@ export function RegistriesSection() {
                 fetchRegistries();
             } else {
                 const err = await res.json().catch(() => ({}));
-                toast.error(err?.error || err?.message || 'Failed to delete registry.');
+                toastError(err, 'Failed to delete registry.');
             }
-        } catch {
-            toast.error('Network error.');
+        } catch (e) {
+            toastError(e, 'Network error.');
         }
     };
 
@@ -190,16 +256,16 @@ export function RegistriesSection() {
             if (res.ok) {
                 const data = await res.json();
                 if (data.success) {
-                    toast.success('Connection successful!');
+                    toast.success('Connection successful.');
                 } else {
                     toast.error(data.error || 'Connection failed.');
                 }
             } else {
                 const err = await res.json().catch(() => ({}));
-                toast.error(err?.error || err?.message || 'Test failed.');
+                toastError(err, 'Test failed.');
             }
-        } catch {
-            toast.error('Network error.');
+        } catch (e) {
+            toastError(e, 'Network error.');
         } finally {
             setTestingId(null);
         }
@@ -219,24 +285,22 @@ export function RegistriesSection() {
                         </p>
                     </div>
                     <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
-                        <Plus className="w-4 h-4 mr-1.5" /> Add Registry
+                        <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Add Registry
                     </Button>
                 </div>
 
                 {/* Create / Edit form */}
                 {showForm && (
-                    <div className="space-y-4 bg-muted/10 p-4 border border-border rounded-xl">
+                    <div className="space-y-4 p-4 rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
                         <div className="space-y-2">
                             <Label>Registry Type</Label>
-                            <Select value={formType} onValueChange={(v) => handleTypeChange(v as RegistryType)}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="dockerhub">Docker Hub</SelectItem>
-                                    <SelectItem value="ghcr">GitHub Container Registry (GHCR)</SelectItem>
-                                    <SelectItem value="ecr">AWS Elastic Container Registry (ECR)</SelectItem>
-                                    <SelectItem value="custom">Custom / Self-hosted</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <Combobox
+                                options={TYPE_OPTIONS}
+                                value={formType}
+                                onValueChange={(v) => handleTypeChange(v as RegistryType)}
+                                placeholder="Select a registry type"
+                                searchPlaceholder="Search types..."
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>Name</Label>
@@ -254,6 +318,7 @@ export function RegistriesSection() {
                                 value={formUrl}
                                 onChange={e => setFormUrl(e.target.value)}
                                 maxLength={500}
+                                disabled={formType === 'dockerhub'}
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -285,11 +350,27 @@ export function RegistriesSection() {
                                 />
                             </div>
                         )}
-                        <div className="flex justify-end gap-2 pt-2">
-                            <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
-                            <Button size="sm" onClick={handleSave} disabled={saving}>
-                                {saving ? <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />Saving...</> : editingId ? 'Update' : 'Add'}
+                        <div className="flex justify-between items-center gap-2 pt-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleTestForm}
+                                disabled={testingForm || saving}
+                            >
+                                {testingForm ? (
+                                    <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Testing...</>
+                                ) : (
+                                    <><Zap className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Test connection</>
+                                )}
                             </Button>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
+                                <Button size="sm" onClick={handleSave} disabled={saving}>
+                                    {saving ? (
+                                        <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Saving...</>
+                                    ) : editingId ? 'Update' : 'Add'}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -297,15 +378,15 @@ export function RegistriesSection() {
                 {/* Loading state */}
                 {loading && (
                     <div className="space-y-3">
-                        <Skeleton className="h-20 w-full rounded-xl" />
-                        <Skeleton className="h-20 w-full rounded-xl" />
+                        <Skeleton className="h-20 w-full rounded-lg" />
+                        <Skeleton className="h-20 w-full rounded-lg" />
                     </div>
                 )}
 
                 {/* Empty state */}
                 {!loading && registries.length === 0 && !showForm && (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Database className="w-10 h-10 text-muted-foreground/50 mb-3" />
+                        <Database className="w-10 h-10 text-muted-foreground/50 mb-3" strokeWidth={1.5} />
                         <p className="text-sm text-muted-foreground">No private registries configured.</p>
                         <p className="text-xs text-muted-foreground mt-1">Add one to pull images from Docker Hub orgs, GHCR, ECR, or self-hosted registries.</p>
                     </div>
@@ -313,10 +394,10 @@ export function RegistriesSection() {
 
                 {/* Registry list */}
                 {!loading && registries.map(reg => (
-                    <div key={reg.id} className="border border-border rounded-xl p-4 space-y-3">
+                    <div key={reg.id} className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel transition-colors hover:border-t-card-border-hover p-4 space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
-                                <Database className="w-4 h-4 text-muted-foreground shrink-0" />
+                                <Database className="w-4 h-4 text-stat-icon shrink-0" strokeWidth={1.5} />
                                 <span className="font-medium text-sm truncate">{reg.name}</span>
                                 <Badge variant={TYPE_BADGE_VARIANT[reg.type]} className="text-[10px] shrink-0">
                                     {TYPE_LABELS[reg.type]}
@@ -331,18 +412,23 @@ export function RegistriesSection() {
                                     title="Test connection"
                                 >
                                     {testingId === reg.id ? (
-                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.5} />
                                     ) : (
-                                        <CheckCircle className="w-4 h-4" />
+                                        <CheckCircle className="w-4 h-4" strokeWidth={1.5} />
                                     )}
                                 </Button>
                                 <Button variant="ghost" size="sm" onClick={() => startEdit(reg)} title="Edit">
-                                    <Pencil className="w-4 h-4" />
+                                    <Pencil className="w-4 h-4" strokeWidth={1.5} />
                                 </Button>
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" title="Delete">
-                                            <Trash2 className="w-4 h-4" />
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                                         </Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
@@ -362,19 +448,19 @@ export function RegistriesSection() {
                                 </AlertDialog>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-4 text-xs text-stat-subtitle">
                             <span className="font-mono truncate max-w-[200px]" title={reg.url}>{reg.url}</span>
                             <span>{reg.username}</span>
                             <span className="flex items-center gap-1">
                                 {reg.has_secret ? (
-                                    <><CheckCircle className="w-3 h-3 text-success" /> Secret stored</>
+                                    <><CheckCircle className="w-3 h-3 text-success" strokeWidth={1.5} /> Secret stored</>
                                 ) : (
-                                    <><XCircle className="w-3 h-3 text-destructive" /> No secret</>
+                                    <><XCircle className="w-3 h-3 text-destructive" strokeWidth={1.5} /> No secret</>
                                 )}
                             </span>
                             {reg.aws_region && <span>Region: {reg.aws_region}</span>}
                             <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
+                                <Clock className="w-3 h-3" strokeWidth={1.5} />
                                 {formatDate(reg.created_at)}
                             </span>
                         </div>

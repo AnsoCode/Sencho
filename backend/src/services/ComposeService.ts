@@ -80,7 +80,10 @@ export class ComposeService {
     });
   }
 
-  private async withRegistryAuth<T>(fn: (env: Record<string, string | undefined>) => Promise<T>): Promise<T> {
+  private async withRegistryAuth<T>(
+    fn: (env: Record<string, string | undefined>) => Promise<T>,
+    sendOutput?: (data: string) => void,
+  ): Promise<T> {
     const registries = DatabaseService.getInstance().getRegistries();
     if (registries.length === 0) {
       return fn({
@@ -89,21 +92,29 @@ export class ComposeService {
       });
     }
 
-    const dockerConfig = await RegistryService.getInstance().resolveDockerConfig();
+    const { config, warnings } = await RegistryService.getInstance().resolveDockerConfig();
+    if (warnings.length > 0 && sendOutput) {
+      for (const warning of warnings) {
+        sendOutput(`[Sencho] Warning: ${warning}\n`);
+      }
+    }
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sencho-docker-'));
     const configPath = path.join(tmpDir, 'config.json');
 
     try {
-      fs.writeFileSync(configPath, JSON.stringify(dockerConfig), { mode: 0o600 });
+      fs.writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
       return await fn({
         ...process.env,
         DOCKER_CONFIG: tmpDir,
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       });
     } finally {
-      try { fs.unlinkSync(configPath); fs.rmdirSync(tmpDir); } catch (e) {
-        // Best-effort cleanup: temp config dir may already be removed or locked
-        console.warn('[ComposeService] Could not clean up temp Docker config dir:', (e as Error).message);
+      // Best-effort cleanup; each step runs independently so a file that was never
+      // written (e.g., writeFileSync threw) does not prevent the directory removal.
+      try { fs.unlinkSync(configPath); } catch { /* file may not exist */ }
+      try { fs.rmdirSync(tmpDir); } catch (e) {
+        console.warn('[ComposeService] Could not remove temp Docker config dir:', (e as Error).message);
       }
     }
   }
@@ -147,7 +158,7 @@ export class ComposeService {
 
       await this.withRegistryAuth(async (env) => {
         await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
-      });
+      }, sendOutput);
 
       // Post-Deploy Health Probe
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -181,7 +192,7 @@ export class ComposeService {
           await fsSvc.restoreStackFiles(stackName);
           await this.withRegistryAuth(async (env) => {
             await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
-          });
+          }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);
@@ -341,7 +352,7 @@ export class ComposeService {
 
         sendOutput('=== Recreating containers ===\n');
         await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
-      });
+      }, sendOutput);
 
       // Post-Update Health Probe
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -377,7 +388,7 @@ export class ComposeService {
           await fsSvc.restoreStackFiles(stackName);
           await this.withRegistryAuth(async (env) => {
             await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
-          });
+          }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
           console.error(`Rollback failed for ${stackName}:`, rollbackError);

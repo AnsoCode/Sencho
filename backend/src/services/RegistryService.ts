@@ -2,6 +2,7 @@ import https from 'https';
 import http from 'http';
 import { CryptoService } from './CryptoService';
 import { DatabaseService, type Registry, type RegistryType } from './DatabaseService';
+import { isDebugEnabled } from '../utils/debug';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,21 @@ export interface RegistryUpdateInput {
     aws_region?: string | null;
 }
 
-interface DockerConfigJson {
+export interface TestCredentialsInput {
+    type: RegistryType;
+    url: string;
+    username: string;
+    secret: string;
+    aws_region?: string | null;
+}
+
+export interface DockerConfigJson {
     auths: Record<string, { auth: string }>;
+}
+
+export interface ResolvedDockerConfig {
+    config: DockerConfigJson;
+    warnings: string[];
 }
 
 interface HttpResult {
@@ -33,16 +47,109 @@ interface HttpResult {
     body: string;
 }
 
-// ─── HTTP helper ─────────────────────────────────────────────────────────────
+interface EcrCacheEntry {
+    username: string;
+    password: string;
+    expiresAt: number; // epoch ms
+}
 
-function httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 10000): Promise<HttpResult> {
+const DOCKER_HUB_AUTHS_KEY = 'https://index.docker.io/v1/';
+const ECR_CACHE_SAFETY_MS = 5 * 60 * 1000;
+const ECR_DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
+
+// ─── URL helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Canonical storage form for a registry URL.
+ *
+ * - Docker Hub: always the legacy v1 URL (what the Docker CLI expects in
+ *   `~/.docker/config.json`).
+ * - All other types: protocol stripped, trailing slashes removed. This keeps
+ *   stored URLs aligned with the `auths` key format Docker uses, and makes
+ *   host matching unambiguous.
+ */
+export function normalizeRegistryUrl(url: string, type: RegistryType): string {
+    if (type === 'dockerhub') return DOCKER_HUB_AUTHS_KEY;
+    return url.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+/** HTTP URL used to probe the registry's /v2/ endpoint. Always has a protocol. */
+function toProbeUrl(url: string, type: RegistryType): string {
+    if (type === 'dockerhub') return 'https://index.docker.io';
+    const stripped = url.trim().replace(/\/+$/, '');
+    if (stripped.startsWith('http://') || stripped.startsWith('https://')) return stripped;
+    return `https://${stripped}`;
+}
+
+/** Canonical host for matching (image ref → stored credential). */
+function hostFromStoredRegistry(reg: Pick<Registry, 'url' | 'type'>): string {
+    if (reg.type === 'dockerhub') return 'index.docker.io';
+    try {
+        const withProtocol = reg.url.startsWith('http') ? reg.url : `https://${reg.url}`;
+        return new URL(withProtocol).host.toLowerCase();
+    } catch {
+        return reg.url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+    }
+}
+
+/** Normalize an image reference's host (the thing ImageUpdateService passes in). */
+function normalizeImageHost(host: string): string {
+    const lower = host.trim().toLowerCase();
+    // Docker Hub aliases resolve to the same credential.
+    if (lower === 'docker.io' || lower === 'registry-1.docker.io' || lower === '') {
+        return 'index.docker.io';
+    }
+    return lower;
+}
+
+// ─── HTTP helper (one-hop redirect) ──────────────────────────────────────────
+
+function httpGet(
+    url: string,
+    headers: Record<string, string> = {},
+    timeoutMs = 10000,
+    allowRedirect = true,
+): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
         const lib = url.startsWith('https:') ? https : http;
         const req = lib.get(url, { headers }, (res) => {
+            const status = res.statusCode ?? 0;
+            const location = res.headers.location;
+            if (allowRedirect && location && (status === 301 || status === 302 || status === 307 || status === 308)) {
+                res.resume();
+                let nextUrl: URL;
+                try {
+                    nextUrl = new URL(location, url);
+                } catch {
+                    reject(new Error('Invalid redirect location'));
+                    return;
+                }
+                // Strip Authorization on cross-host redirects to prevent leaking credentials
+                // to a registry-controlled Location header.
+                let nextHeaders = headers;
+                try {
+                    const originalHost = new URL(url).host.toLowerCase();
+                    if (nextUrl.host.toLowerCase() !== originalHost) {
+                        const { Authorization: _drop, ...rest } = headers;
+                        void _drop;
+                        nextHeaders = rest;
+                    }
+                } catch {
+                    // If the original URL cannot be parsed, err on the safe side and strip.
+                    const { Authorization: _drop, ...rest } = headers;
+                    void _drop;
+                    nextHeaders = rest;
+                }
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] redirect ${status} ${url} -> ${nextUrl.toString()} (auth ${nextHeaders === headers ? 'kept' : 'stripped'})`);
+                }
+                httpGet(nextUrl.toString(), nextHeaders, timeoutMs, false).then(resolve, reject);
+                return;
+            }
             let body = '';
             res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
             res.on('end', () => resolve({
-                statusCode: res.statusCode ?? 0,
+                statusCode: status,
                 headers: res.headers as Record<string, string | string[] | undefined>,
                 body,
             }));
@@ -57,6 +164,7 @@ function httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 
 export class RegistryService {
     private static instance: RegistryService;
     private crypto: CryptoService;
+    private ecrCache = new Map<number, EcrCacheEntry>();
 
     private constructor() {
         this.crypto = CryptoService.getInstance();
@@ -90,9 +198,9 @@ export class RegistryService {
     public create(input: RegistryCreateInput): number {
         const db = DatabaseService.getInstance();
         const now = Date.now();
-        return db.addRegistry({
+        const id = db.addRegistry({
             name: input.name,
-            url: input.url,
+            url: normalizeRegistryUrl(input.url, input.type),
             type: input.type,
             username: input.username,
             secret: this.crypto.encrypt(input.secret),
@@ -100,6 +208,8 @@ export class RegistryService {
             created_at: now,
             updated_at: now,
         });
+        console.info(`[RegistryService] Registry created: id=${id} type=${input.type} name="${input.name}"`);
+        return id;
     }
 
     public update(id: number, input: RegistryUpdateInput): void {
@@ -112,8 +222,9 @@ export class RegistryService {
         };
 
         if (input.name !== undefined) updates.name = input.name;
-        if (input.url !== undefined) updates.url = input.url;
         if (input.type !== undefined) updates.type = input.type;
+        const effectiveType = input.type ?? existing.type;
+        if (input.url !== undefined) updates.url = normalizeRegistryUrl(input.url, effectiveType);
         if (input.username !== undefined) updates.username = input.username;
         if (input.secret !== undefined && input.secret !== '') {
             updates.secret = this.crypto.encrypt(input.secret);
@@ -121,57 +232,105 @@ export class RegistryService {
         if (input.aws_region !== undefined) updates.aws_region = input.aws_region;
 
         db.updateRegistry(id, updates);
+        this.ecrCache.delete(id);
+        console.info(`[RegistryService] Registry updated: id=${id} name="${existing.name}"`);
     }
 
     public delete(id: number): void {
-        DatabaseService.getInstance().deleteRegistry(id);
+        const db = DatabaseService.getInstance();
+        const existing = db.getRegistry(id);
+        db.deleteRegistry(id);
+        this.ecrCache.delete(id);
+        if (existing) {
+            console.info(`[RegistryService] Registry deleted: id=${id} name="${existing.name}"`);
+        }
     }
 
     // ─── Test connectivity ───────────────────────────────────────────────────
 
+    /** Test an already-saved registry by id. Decrypts the stored secret. */
     public async testConnection(id: number): Promise<{ success: boolean; error?: string }> {
         const db = DatabaseService.getInstance();
         const reg = db.getRegistry(id);
         if (!reg) return { success: false, error: 'Registry not found' };
 
+        let password: string;
         try {
-            const username = reg.username;
-            const password = this.crypto.decrypt(reg.secret);
+            password = this.crypto.decrypt(reg.secret);
+        } catch (e) {
+            return { success: false, error: `Could not decrypt stored secret: ${(e as Error).message}` };
+        }
 
-            if (reg.type === 'ecr') {
-                await this.getEcrToken(username, password, reg.aws_region!);
-                return { success: true };
-            }
+        return this.testWithCredentials({
+            type: reg.type,
+            url: reg.url,
+            username: reg.username,
+            secret: password,
+            aws_region: reg.aws_region,
+        });
+    }
 
-            // Standard registry: attempt /v2/ ping with Basic auth
-            const registryUrl = this.normalizeRegistryUrl(reg.url);
-            const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
-            const res = await httpGet(`${registryUrl}/v2/`, { Authorization: `Basic ${basicAuth}` });
-
-            if (res.statusCode === 200 || res.statusCode === 401) {
-                // 401 with valid challenge means registry is reachable
-                // Try token-based auth if we got 401
-                if (res.statusCode === 401) {
-                    const wwwAuth = res.headers['www-authenticate'] as string | undefined;
-                    if (!wwwAuth) return { success: false, error: 'Registry returned 401 without auth challenge' };
-
-                    const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
-                    if (!realmMatch) return { success: false, error: 'Could not parse auth challenge' };
-
-                    const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
-                    const params = new URLSearchParams();
-                    if (serviceMatch) params.set('service', serviceMatch[1]);
-                    const tokenUrl = `${realmMatch[1]}?${params.toString()}`;
-
-                    const tokenRes = await httpGet(tokenUrl, { Authorization: `Basic ${basicAuth}` });
-                    if (tokenRes.statusCode !== 200) {
-                        return { success: false, error: `Authentication failed (${tokenRes.statusCode})` };
-                    }
+    /**
+     * Test credentials without persisting them. Powers the "Test before save"
+     * UX in the create/edit form.
+     */
+    public async testWithCredentials(input: TestCredentialsInput): Promise<{ success: boolean; error?: string }> {
+        const t0 = Date.now();
+        try {
+            if (input.type === 'ecr') {
+                if (!input.aws_region) {
+                    return { success: false, error: 'AWS region is required for ECR registries.' };
+                }
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] testWithCredentials ECR region=${input.aws_region}`);
+                }
+                await this.fetchEcrToken(input.username, input.secret, input.aws_region);
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] ECR test succeeded in ${Date.now() - t0}ms`);
                 }
                 return { success: true };
             }
 
-            return { success: false, error: `Registry returned HTTP ${res.statusCode}` };
+            const probeUrl = toProbeUrl(input.url, input.type);
+            const basicAuth = Buffer.from(`${input.username}:${input.secret}`).toString('base64');
+            if (isDebugEnabled()) {
+                console.debug(`[RegistryService][debug] testWithCredentials probing ${probeUrl}/v2/`);
+            }
+            const res = await httpGet(`${probeUrl}/v2/`, { Authorization: `Basic ${basicAuth}` });
+
+            if (res.statusCode === 200) {
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] test succeeded via 200 in ${Date.now() - t0}ms`);
+                }
+                return { success: true };
+            }
+
+            if (res.statusCode === 401) {
+                const wwwAuth = res.headers['www-authenticate'] as string | undefined;
+                if (!wwwAuth) return { success: false, error: 'Registry returned 401 without an auth challenge.' };
+
+                const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
+                if (!realmMatch) return { success: false, error: 'Could not parse registry auth challenge.' };
+
+                const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
+                const params = new URLSearchParams();
+                if (serviceMatch) params.set('service', serviceMatch[1]);
+                const tokenUrl = `${realmMatch[1]}?${params.toString()}`;
+
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] exchanging Basic for Bearer at ${tokenUrl}`);
+                }
+                const tokenRes = await httpGet(tokenUrl, { Authorization: `Basic ${basicAuth}` });
+                if (tokenRes.statusCode !== 200) {
+                    return { success: false, error: `Authentication failed (HTTP ${tokenRes.statusCode}).` };
+                }
+                if (isDebugEnabled()) {
+                    console.debug(`[RegistryService][debug] test succeeded via bearer in ${Date.now() - t0}ms`);
+                }
+                return { success: true };
+            }
+
+            return { success: false, error: `Registry returned HTTP ${res.statusCode}.` };
         } catch (e) {
             return { success: false, error: (e as Error).message };
         }
@@ -179,31 +338,40 @@ export class RegistryService {
 
     // ─── Docker config resolution (for ComposeService) ───────────────────────
 
-    public async resolveDockerConfig(): Promise<DockerConfigJson> {
+    public async resolveDockerConfig(): Promise<ResolvedDockerConfig> {
         const db = DatabaseService.getInstance();
         const registries = db.getRegistries();
         const auths: Record<string, { auth: string }> = {};
+        const warnings: string[] = [];
+
+        if (isDebugEnabled()) {
+            const summary = registries.map(r => `${r.type}:${r.name}`).join(', ');
+            console.debug(`[RegistryService][debug] resolveDockerConfig registries=[${summary}]`);
+        }
 
         for (const reg of registries) {
             try {
-                const decryptedSecret = this.crypto.decrypt(reg.secret);
                 let username = reg.username;
-                let password = decryptedSecret;
+                let password: string;
 
                 if (reg.type === 'ecr') {
-                    const ecrCreds = await this.getEcrToken(reg.username, decryptedSecret, reg.aws_region!);
-                    username = ecrCreds.username;
-                    password = ecrCreds.password;
+                    const creds = await this.getEcrCredentials(reg);
+                    username = creds.username;
+                    password = creds.password;
+                } else {
+                    password = this.crypto.decrypt(reg.secret);
                 }
 
-                const auth = Buffer.from(`${username}:${password}`).toString('base64');
-                auths[reg.url] = { auth };
+                const authsKey = reg.type === 'dockerhub' ? DOCKER_HUB_AUTHS_KEY : reg.url;
+                auths[authsKey] = { auth: Buffer.from(`${username}:${password}`).toString('base64') };
             } catch (e) {
-                console.error(`[RegistryService] Failed to resolve credentials for ${reg.name}:`, e);
+                const msg = `Registry "${reg.name}" credentials unavailable: ${(e as Error).message}`;
+                console.warn(`[RegistryService] ${msg}`);
+                warnings.push(msg);
             }
         }
 
-        return { auths };
+        return { config: { auths }, warnings };
     }
 
     // ─── Registry auth for ImageUpdateService ────────────────────────────────
@@ -211,32 +379,65 @@ export class RegistryService {
     public async getAuthForRegistry(registryHost: string): Promise<{ username: string; password: string } | null> {
         const db = DatabaseService.getInstance();
         const registries = db.getRegistries();
+        const normalized = normalizeImageHost(registryHost);
 
-        // Match by URL containing the registry host
-        const match = registries.find(r => {
-            const normalizedUrl = r.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-            return normalizedUrl === registryHost || normalizedUrl.includes(registryHost) || registryHost.includes(normalizedUrl);
-        });
+        const match = registries.find(r => hostFromStoredRegistry(r) === normalized);
+
+        if (isDebugEnabled()) {
+            console.debug(`[RegistryService][debug] getAuthForRegistry host="${registryHost}" normalized="${normalized}" matchId=${match?.id ?? 'none'}`);
+        }
 
         if (!match) return null;
 
         try {
-            const decryptedSecret = this.crypto.decrypt(match.secret);
-
             if (match.type === 'ecr') {
-                return await this.getEcrToken(match.username, decryptedSecret, match.aws_region!);
+                return await this.getEcrCredentials(match);
             }
-
-            return { username: match.username, password: decryptedSecret };
+            return { username: match.username, password: this.crypto.decrypt(match.secret) };
         } catch (e) {
-            console.error(`[RegistryService] Failed to resolve auth for ${registryHost}:`, e);
+            console.warn(`[RegistryService] Could not resolve auth for ${registryHost}: ${(e as Error).message}`);
             return null;
         }
     }
 
-    // ─── ECR token fetch ─────────────────────────────────────────────────────
+    // ─── ECR token fetch + cache ─────────────────────────────────────────────
 
-    private async getEcrToken(accessKeyId: string, secretAccessKey: string, region: string): Promise<{ username: string; password: string }> {
+    private async getEcrCredentials(reg: Registry): Promise<{ username: string; password: string }> {
+        if (!reg.aws_region) {
+            throw new Error(`ECR registry "${reg.name}" is missing aws_region. Re-save the registry with a region.`);
+        }
+
+        const now = Date.now();
+        const cached = this.ecrCache.get(reg.id);
+        if (cached && cached.expiresAt - ECR_CACHE_SAFETY_MS > now) {
+            if (isDebugEnabled()) {
+                const remainingMs = cached.expiresAt - now;
+                console.debug(`[RegistryService][debug] ECR cache hit id=${reg.id} remaining=${Math.round(remainingMs / 1000)}s`);
+            }
+            return { username: cached.username, password: cached.password };
+        }
+
+        if (isDebugEnabled()) {
+            console.debug(`[RegistryService][debug] ECR cache miss id=${reg.id}, fetching fresh token`);
+        }
+
+        const decryptedSecret = this.crypto.decrypt(reg.secret);
+        const t0 = Date.now();
+        const result = await this.fetchEcrToken(reg.username, decryptedSecret, reg.aws_region);
+        const elapsed = Date.now() - t0;
+        if (isDebugEnabled()) {
+            console.debug(`[RegistryService][debug] ECR STS fetch id=${reg.id} took=${elapsed}ms expiresAt=${new Date(result.expiresAt).toISOString()}`);
+        }
+
+        this.ecrCache.set(reg.id, result);
+        return { username: result.username, password: result.password };
+    }
+
+    private async fetchEcrToken(
+        accessKeyId: string,
+        secretAccessKey: string,
+        region: string,
+    ): Promise<EcrCacheEntry> {
         const { ECRClient, GetAuthorizationTokenCommand } = await import('@aws-sdk/client-ecr');
         const client = new ECRClient({
             region,
@@ -247,17 +448,22 @@ export class RegistryService {
         if (!authData?.authorizationToken) throw new Error('ECR returned no authorization token');
 
         const decoded = Buffer.from(authData.authorizationToken, 'base64').toString();
-        const [username, ...passwordParts] = decoded.split(':');
-        return { username, password: passwordParts.join(':') };
+        const colonIdx = decoded.indexOf(':');
+        if (colonIdx <= 0 || colonIdx === decoded.length - 1) {
+            throw new Error('ECR returned a malformed authorization token');
+        }
+        const username = decoded.slice(0, colonIdx);
+        const password = decoded.slice(colonIdx + 1);
+        const expiresAt = authData.expiresAt instanceof Date
+            ? authData.expiresAt.getTime()
+            : Date.now() + ECR_DEFAULT_TTL_MS;
+
+        return { username, password, expiresAt };
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-
-    private normalizeRegistryUrl(url: string): string {
-        // Ensure URL has a protocol
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            url = `https://${url}`;
-        }
-        return url.replace(/\/$/, '');
+    /** Exposed for tests and for admin-triggered cache busts. */
+    public invalidateEcrCache(id?: number): void {
+        if (id === undefined) this.ecrCache.clear();
+        else this.ecrCache.delete(id);
     }
 }
