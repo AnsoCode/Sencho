@@ -69,10 +69,9 @@ export class MonitorService {
     // key: rule_id, value: AlertState
     private activeBreaches = new Map<number, AlertState>();
 
-    // Track containers that have already been alerted as crashed to avoid
-    // duplicate alerts. key: containerId, value: timestamp when alerted.
-    private alertedCrashes = new Map<string, number>();
-    private static readonly CRASH_ALERT_TTL_MS = 60 * 60 * 1000; // 1 hour
+    // Crash and healthcheck detection live in DockerEventService (event-driven,
+    // causal classification). MonitorService no longer polls for container
+    // exits; see backend/src/services/DockerEventService.ts.
 
     // Sencho version check cooldown (6 hours between external API calls)
     private lastVersionCheckAt = 0;
@@ -126,7 +125,6 @@ export class MonitorService {
     }
 
     private async evaluateGlobalSettings(settings: Record<string, string>) {
-        const notifier = NotificationService.getInstance();
         const HOST_ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between repeat alerts
 
         // 1. Host Limits
@@ -160,61 +158,9 @@ export class MonitorService {
             console.error('Error checking host limits in watchdog', e);
         }
 
-        // 2. Global Crash Detect
-        if (settings['global_crash'] === '1') {
-            // Prune expired entries from the crash tracker
-            const now = Date.now();
-            for (const [id, ts] of this.alertedCrashes) {
-                if (now - ts > MonitorService.CRASH_ALERT_TTL_MS) this.alertedCrashes.delete(id);
-            }
-
-            try {
-                const nodes = DatabaseService.getInstance().getNodes();
-                const runningIds = new Set<string>();
-
-                for (const node of nodes) {
-                    if (!node.id) continue;
-                    // Remote nodes run their own MonitorService locally
-                    if (node.type === 'remote') continue;
-                    try {
-                        const docker = DockerController.getInstance(node.id);
-                        const containers = await docker.getAllContainers();
-                        for (const c of containers) {
-                            if (c.State === 'running') {
-                                runningIds.add(c.Id);
-                                continue;
-                            }
-                            // Skip containers already alerted
-                            if (this.alertedCrashes.has(c.Id)) continue;
-
-                            const containerStack = c.Labels?.['com.docker.compose.project'] || undefined;
-
-                            if (c.State === 'exited') {
-                                const match = c.Status.match(/Exited \((\d+)\)/i);
-                                const exitCode = match ? parseInt(match[1], 10) : null;
-                                const intentionalExitCodes = [0, 137, 143, 255];
-                                if (exitCode !== null && !intentionalExitCodes.includes(exitCode)) {
-                                    await notifier.dispatchAlert('error', `[Node: ${node.name}] Container Crash Detected: ${c.Names[0]} exited unexpectedly (Code: ${exitCode}).`, containerStack);
-                                    this.alertedCrashes.set(c.Id, now);
-                                }
-                            } else if (String(c.Status).includes('unhealthy')) {
-                                await notifier.dispatchAlert('error', `[Node: ${node.name}] Healthcheck Failed: Container ${c.Names[0]} is unhealthy.`, containerStack);
-                                this.alertedCrashes.set(c.Id, now);
-                            }
-                        }
-                    } catch (err) {
-                        console.error(`Error checking crashes on node ${node.name}`, err);
-                    }
-                }
-
-                // Clear crash tracking for containers that are running again
-                for (const id of this.alertedCrashes.keys()) {
-                    if (runningIds.has(id)) this.alertedCrashes.delete(id);
-                }
-            } catch (e) {
-                console.error('Error checking global crashes', e);
-            }
-        }
+        // 2. (Removed) Container crash + healthcheck detection moved to
+        //    DockerEventService: event-driven, causal, distinguishes
+        //    intentional stops from real crashes, detects OOM kills.
 
         // 3. Docker Janitor Check
         try {

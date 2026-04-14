@@ -23,6 +23,7 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
@@ -6226,6 +6227,10 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
       api_token: api_token || '',
     });
 
+    // Notify subscribers (e.g. DockerEventManager) so a new local node gets
+    // its event stream spun up immediately, not on next restart.
+    NodeRegistry.getInstance().notifyNodeAdded(id);
+
     const isPlainHttp = type === 'remote' && api_url && api_url.startsWith('http://');
     res.json({
       success: true,
@@ -6266,6 +6271,7 @@ app.put('/api/nodes/:id', async (req: Request, res: Response) => {
 
     // Evict cached Docker connection so it reconnects with new config
     NodeRegistry.getInstance().evictConnection(id);
+    NodeRegistry.getInstance().notifyNodeUpdated(id);
 
     const isPlainHttp = updates.api_url && updates.api_url.startsWith('http://');
     res.json({
@@ -6292,6 +6298,7 @@ app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
     const id = parseInt(nodeIdParam);
     DatabaseService.getInstance().deleteNode(id);
     NodeRegistry.getInstance().evictConnection(id);
+    NodeRegistry.getInstance().notifyNodeRemoved(id);
     CacheService.getInstance().invalidate(`${REMOTE_META_NAMESPACE}:${id}`);
     updateTracker.delete(id);
     res.json({ success: true });
@@ -6410,6 +6417,9 @@ async function startServer() {
   // Start Background Watchdog
   MonitorService.getInstance().start();
 
+  // Start Docker Event Stream (causal crash/OOM/health detection per local node)
+  await DockerEventManager.getInstance().start();
+
   // Start Background Image Update Checker
   ImageUpdateService.getInstance().start();
 
@@ -6442,6 +6452,9 @@ const gracefulShutdown = (signal: string) => {
     }
     try { MonitorService.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] MonitorService cleanup failed:', (e as Error).message);
+    }
+    try { DockerEventManager.getInstance().stop(); } catch (e) {
+      console.warn('[Shutdown] DockerEventManager cleanup failed:', (e as Error).message);
     }
     try { ImageUpdateService.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] ImageUpdateService cleanup failed:', (e as Error).message);

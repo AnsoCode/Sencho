@@ -164,6 +164,44 @@ When the periodic image check (every 6 hours) detects that a stack has new upstr
 
 Both notification types use the same channel routing as alerts: if notification routes are configured for a stack, those channels receive the message; otherwise, global notification channels are used as a fallback.
 
+## Container crash detection
+
+Sencho watches every container on each of your nodes in real time and notifies you when something exits unexpectedly. Detection is causal: Sencho distinguishes crashes from intentional stops, so stopping a stack, restarting it, or running `docker compose down` will not produce a false crash alert.
+
+### What triggers a crash alert
+
+| Situation | Alert |
+|---|---|
+| Container exits with a non-zero exit code without being asked to stop | **Crash** alert (level: error) |
+| Container is killed by the kernel for exceeding its memory limit | **OOM Kill** alert (level: error) |
+| Healthcheck reports the container as unhealthy | **Healthcheck failed** alert (level: error) |
+
+Alerts arrive within a couple of seconds of the event, not on a polling interval.
+
+### What does not trigger a crash alert
+
+- Stopping, restarting, updating, or removing a stack from Sencho
+- Running `docker stop`, `docker restart`, or `docker compose down` from a terminal on the host
+- A container exiting cleanly with exit code `0`
+- A container being replaced during an image update
+
+### Global toggle
+
+Crash and unhealthy alerts are gated by the **Global Crash Detection** toggle in **Settings > System**. When disabled, Sencho stops dispatching crash and unhealthy notifications on all nodes. Stack metric alerts and update notifications are unaffected by this toggle.
+
+### Docker daemon interruptions
+
+If the Docker daemon becomes unreachable (daemon restart, socket lost, network issue on a remote node), Sencho sends a single **Lost connection to Docker daemon** warning and pauses crash detection on the affected node. When the connection is restored, Sencho reconciles container state against a pre-disconnect snapshot:
+
+- If most of your containers are still running, individual gap exits are classified and alerts are sent as normal.
+- If a large share of containers exited during the outage (for example after a daemon restart), Sencho consolidates them into a single **Docker daemon interruption detected** informational notification instead of paging you for every container.
+
+A matching **Reconnected to Docker daemon** info notification confirms monitoring has resumed.
+
+### High-churn events
+
+When many crashes land in a short window (for example, a large stack coming down unexpectedly), Sencho dispatches an initial batch and summarizes the remainder in a single **N additional containers crashed in the last minute** entry so your notification channels are not flooded.
+
 ## Troubleshooting
 
 ### Notifications not being delivered
@@ -179,6 +217,18 @@ Both notification types use the same channel routing as alerts: if notification 
 - Check that the **duration** has elapsed; the condition must hold continuously for the configured duration before an alert fires
 - Check the **cooldown** period; after an alert fires, it will not fire again until the cooldown expires
 - Verify the metric is being collected; container must be running for stats to be gathered
+
+### I stopped a stack but got a crash alert
+
+This should not happen on current versions. If it does, confirm Sencho can reach the Docker daemon on the affected node (the **Lost connection to Docker daemon** warning is dispatched when the socket is unreachable). Previously, Sencho relied on polling and could mistake intentional stops for crashes; detection is now causal and in real time.
+
+### I'm seeing fewer crash alerts after upgrading
+
+Expected. Intentional stops, `docker stop` from a host terminal, and scheduled stack recreations no longer trigger crash alerts. Real crashes, OOM kills, and failing healthchecks still alert. If you want to opt out entirely, toggle **Global Crash Detection** off in **Settings > System**.
+
+### After a Docker daemon restart I only got one summary notification
+
+Expected. When a large share of containers exits during a Docker daemon interruption, Sencho consolidates them into a single informational notification instead of paging per container. Individual crashes that happen after the reconnect are alerted on as normal.
 
 ### Delete confirmation dialog
 
