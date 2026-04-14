@@ -1070,7 +1070,7 @@ class DockerController {
       // some runtimes reject unknown binaries at start(), not at creation.
       const execOpts = { AttachStdin: true, AttachStdout: true, AttachStderr: true, Tty: true } as const;
       let dockerExec: Docker.Exec;
-      let stream: NodeJS.ReadWriteStream;
+      let stream: import('stream').Duplex;
       let shellType = '/bin/bash';
       try {
         dockerExec = await container.exec({ ...execOpts, Cmd: ['/bin/bash'] });
