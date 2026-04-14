@@ -25,7 +25,8 @@ Sencho can store credentials for your private Docker registries and inject them 
 3. Select the registry type. When you switch types, the URL field auto-fills with the standard endpoint for Docker Hub and GHCR.
 4. Enter a descriptive name, the registry URL, and your credentials.
 5. For **ECR** registries, also provide the AWS region (e.g., `us-east-1`).
-6. Click **Add**.
+6. Click **Test connection** to verify the credentials work before saving. Sencho talks to the registry's `/v2/` endpoint (or the AWS STS API for ECR) and reports success or the specific failure reason.
+7. Click **Add** to store the credentials.
 
 <Frame>
   <img src="/images/private-registries/registries-with-entry.png" alt="Private Registries management view in Settings Hub showing a configured Docker Hub registry" />
@@ -56,9 +57,12 @@ When editing a registry, you can leave the secret field blank to keep the existi
 
 ### Testing connectivity
 
-Click the checkmark icon on any registry card to test the connection. Sencho authenticates against the registry's `/v2/` endpoint and reports success or failure.
+You can test credentials at two points:
 
-For ECR registries, the test verifies that the AWS credentials can successfully obtain an authorization token.
+- **Before saving**, using the **Test connection** button inside the add or edit form. This is useful for confirming a token or password works without committing it to storage first.
+- **After saving**, by clicking the checkmark icon on any registry card. This re-decrypts the stored secret and re-runs the same probe.
+
+For standard registries, Sencho authenticates against `/v2/` using Basic auth and falls back to the registry's token endpoint if it receives a `401` with a `WWW-Authenticate` challenge. For ECR registries, the test verifies that the AWS credentials can successfully obtain an authorization token.
 
 ## How credentials are applied
 
@@ -67,13 +71,15 @@ For ECR registries, the test verifies that the AWS credentials can successfully 
 When you deploy or update a stack, Sencho:
 
 1. Resolves credentials for all configured registries.
-2. For ECR registries, fetches a fresh authorization token from AWS (ECR tokens are short-lived, lasting 12 hours).
+2. For ECR registries, reuses a cached authorization token when one is still valid; otherwise fetches a fresh token from AWS. Cached tokens are refreshed a few minutes before AWS reports them as expired, so deploys never fail on a borderline token.
 3. Writes a temporary Docker config file with all registry auth entries.
 4. Sets the `DOCKER_CONFIG` environment variable so `docker compose` uses the temporary config.
 5. Runs the compose operation (pull and/or up).
 6. Cleans up the temporary config file immediately after.
 
 This approach ensures credentials are never persisted on disk beyond the duration of the operation.
+
+If a stored secret cannot be decrypted at deploy time (for example, because the encryption key file was replaced), Sencho skips that one registry, records a warning in the deploy log stream prefixed with `[Sencho] Warning:`, and continues. This lets public-image deploys succeed even when one private registry is misconfigured, while making the failure visible so you can re-save the credentials.
 
 ### Image update checks
 
@@ -85,7 +91,7 @@ AWS ECR uses short-lived authentication tokens (valid for 12 hours) derived from
 
 1. Store your **AWS Access Key ID** and **Secret Access Key** as the username and secret.
 2. Specify the **AWS Region** where your ECR registry lives.
-3. On every deploy or pull, Sencho calls the AWS `GetAuthorizationToken` API to obtain a fresh token.
+3. On every deploy or pull, Sencho reuses a cached authorization token when one is still valid, or calls the AWS `GetAuthorizationToken` API to obtain a fresh one.
 
 <Warning>
   Use an IAM user or role with only the `ecr:GetAuthorizationToken` and `ecr:BatchGetImage` permissions. Avoid using root account credentials.
@@ -131,3 +137,33 @@ AWS ECR uses short-lived authentication tokens (valid for 12 hours) derived from
 ## Multi-node behavior
 
 Registry credentials are stored per Sencho instance. When managing remote nodes, each node runs its own Sencho instance with its own registry credentials. Configure private registries on each node that needs access to private images.
+
+## Troubleshooting
+
+### Pull fails with a 401 even though the credentials saved successfully
+
+The most common cause is a URL format mismatch. Use the forms in the **Registry URL reference** table above, and note that the URL is case-sensitive for most registries. For Docker Hub, any URL you enter is stored as the canonical `https://index.docker.io/v1/` because that is the key the Docker CLI expects.
+
+If the URL is correct, re-open the registry, re-enter the secret, and click **Test connection** inside the form. Some providers rotate tokens silently, and the card view cannot tell you that the stored token was revoked without attempting a live probe.
+
+### An ECR registry works for a while and then stops pulling
+
+AWS ECR authorization tokens are valid for 12 hours. Sencho caches the token in memory and refreshes it automatically a few minutes before the AWS-reported expiry, so no action is needed on your part.
+
+If pulls still fail, confirm the IAM user still has the `ecr:GetAuthorizationToken` permission and that the AWS Access Key ID has not been rotated. Click **Test connection** on the registry card to force a fresh token fetch.
+
+### The deploy log shows `[Sencho] Warning: Registry "X" credentials unavailable`
+
+Sencho could not decrypt the stored secret for that registry. The deploy continues without that registry's credentials, which is fine if the stack pulls only public images.
+
+To fix the registry, open it in the Registries tab, re-enter the secret, and save. If the same warning appears for every registry, the encryption key file at your data directory has been replaced or lost, and every stored secret needs to be re-entered.
+
+### Test connection says it failed, but deploys still pull images successfully
+
+Some registries (notably certain self-hosted mirrors and proxy caches) restrict access to the `/v2/` discovery endpoint while still allowing pulls. Sencho uses `/v2/` as the probe target, so a failure there does not always indicate broken credentials.
+
+If your deploys succeed, you can safely ignore the test result. The test is a best-effort check, not a gate on saving.
+
+### Credentials work on the local node but not on a remote node
+
+Registry credentials are stored per Sencho instance, not shared across nodes. Open the remote node from the node switcher and configure the same registry on that node's Registries tab.
