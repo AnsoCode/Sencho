@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.19](https://github.com/AnsoCode/Sencho/compare/v0.46.18...v0.46.19) (2026-04-14)
+
+
+### Fixed
+
+* **docker-events:** harden crash detection against edge cases ([#591](https://github.com/AnsoCode/Sencho/issues/591)) ([44a89d9](https://github.com/AnsoCode/Sencho/commit/44a89d9d2e4c114859a1f54665ad08c112632c1d))
+
 ## [0.46.18](https://github.com/AnsoCode/Sencho/compare/v0.46.17...v0.46.18) (2026-04-14)
 
 
