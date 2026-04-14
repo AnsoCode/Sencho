@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import bcrypt from 'bcrypt';
-import { setupTestDb, cleanupTestDb, loginAsTestAdmin, TEST_USERNAME } from './helpers/setupTestDb';
+import { setupTestDb, cleanupTestDb, loginAsTestAdmin } from './helpers/setupTestDb';
 
 let tmpDir: string;
 let app: import('express').Express;
