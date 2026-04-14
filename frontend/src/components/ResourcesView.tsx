@@ -841,6 +841,7 @@ export default function ResourcesView() {
                                             </div>
                                         }>
                                             <NetworkTopologyView
+                                                key={activeNode?.id}
                                                 onContainerClick={(id, name) => {
                                                     window.dispatchEvent(new CustomEvent<SenchoOpenLogsDetail>(SENCHO_OPEN_LOGS_EVENT, {
                                                         detail: { containerId: id, containerName: name },

@@ -16,10 +16,11 @@ import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { Container, Network, Loader2 } from 'lucide-react';
+import { Container, Network, Loader2, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -309,6 +310,16 @@ export default function NetworkTopologyView({ onContainerClick }: NetworkTopolog
                 <Label htmlFor="show-system" className="text-xs cursor-pointer">
                     Show system networks
                 </Label>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto h-7 w-7"
+                    onClick={() => fetchTopology()}
+                    disabled={loading}
+                    aria-label="Refresh topology"
+                >
+                    <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} strokeWidth={1.5} />
+                </Button>
             </div>
             <div className="h-[500px] w-full">
                 <ReactFlow

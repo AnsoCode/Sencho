@@ -438,6 +438,8 @@ class DockerController {
     knownStackNames: string[],
     includeSystem: boolean,
   ): Promise<TopologyNetwork[]> {
+    const debug = isDebugEnabled();
+    const t0 = debug ? Date.now() : 0;
     const knownSet = new Set(knownStackNames);
 
     const [rawNetworks, rawContainers, projectToStack] = await Promise.all([
@@ -505,7 +507,7 @@ class DockerController {
 
         topology.containers.push({
           id: c.Id,
-          name: (c.Names?.[0] ?? '').replace(/^\//, ''),
+          name: (c.Names?.[0] ?? '').replace(/^\//, '') || (c.Id ?? '').substring(0, 12),
           ip: netInfo.IPAddress ?? '',
           state: c.State ?? 'unknown',
           image: c.Image ?? '',
@@ -514,7 +516,20 @@ class DockerController {
       }
     }
 
-    return Array.from(networkMap.values());
+    const result = Array.from(networkMap.values());
+
+    if (debug) {
+      const totalContainers = result.reduce((sum, n) => sum + n.containers.length, 0);
+      console.debug('[Resources:debug] Topology built', {
+        ms: Date.now() - t0,
+        networks: result.length,
+        containers: totalContainers,
+        systemFiltered: !includeSystem,
+        stacksKnown: knownStackNames.length,
+      });
+    }
+
+    return result;
   }
 
   /** Resolves a Docker Compose project label to a known Sencho stack name, or null. */
