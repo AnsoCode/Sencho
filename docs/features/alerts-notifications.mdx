@@ -250,6 +250,16 @@ Deleting an alert rule now requires confirmation. Click the trash icon next to a
 
 This affected older Sencho builds that read the running version from an environment variable which was not always populated. Update to the current release; the running version is now resolved from the packaged manifest and the notification will report it correctly the next time a new release is detected.
 
+### Fleet shows an update button but I never received a Sencho version notification
+
+Fleet and the in-app bell share the same version lookup. If the update button is visible but no notification was delivered for the current latest, one of the following may apply:
+
+- **A prior Sencho release already fired the notification and the bell entry scrolled out of view.** The in-app bell keeps a rolling history; older entries may no longer be visible even though the dedup record persists. Newer releases will fire a fresh notification automatically. No action needed.
+- **A transient network failure at boot used to silence the check for 6 hours.** Current versions retry on the next evaluation cycle (about every 30 seconds) instead of locking on a single failed lookup.
+- **A stale dedup record from an older build.** The record now self-heals: once the instance is running at or above the previously-notified version, the next successful check clears the record and future releases re-notify as expected.
+
+If you want to confirm the check is reaching external channels (Discord, Slack, webhooks), open **Settings > Notifications** and click **Test** on each channel. The in-app bell receives every notification regardless of external channel configuration.
+
 ### A stack shows the blue update indicator but no notification was received
 
 If the blue indicator was already visible before you upgraded to a Sencho version that supports image update notifications, the first image check after the upgrade sends one catch-up notification per affected stack. Subsequent checks notify only when a stack newly transitions from "no updates" to "updates available".
