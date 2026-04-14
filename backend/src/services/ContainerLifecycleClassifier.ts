@@ -14,6 +14,14 @@ export type Classification = 'intentional' | 'clean' | 'crash' | 'oom';
 /** Window (ms) after a `kill` event within which a subsequent `die` is considered intentional. */
 export const INTENTIONAL_KILL_WINDOW_MS = 60_000;
 
+/**
+ * Maximum negative age (ms) tolerated when matching a kill to a later die.
+ * Absorbs small out-of-order deliveries and minor clock skew, but rejects
+ * wildly future-dated Docker timestamps that could otherwise flip a genuine
+ * crash into an "intentional" classification.
+ */
+export const MAX_NEGATIVE_SKEW_MS = 10_000;
+
 export interface ContainerLifecycleState {
     /** Timestamp (ms) of the most recent `kill` event for this container, if any. */
     lastKillAt?: number;
@@ -44,11 +52,12 @@ export function classifyDie(
     if (state.oomPending) return 'oom';
 
     if (typeof state.lastKillAt === 'number') {
-        // Use absolute age so out-of-order deliveries (kill arrives slightly
-        // after die) still classify as intentional. DockerEventService's 500ms
-        // die grace window makes this realistically bounded.
-        const age = Math.abs(input.at - state.lastKillAt);
-        if (age <= INTENTIONAL_KILL_WINDOW_MS) {
+        // Use signed age so a die with a wildly future-dated timestamp
+        // (clock skew / bad container clock) cannot match a past kill.
+        // Allow modest negative skew so out-of-order deliveries still
+        // classify as intentional within DockerEventService's grace window.
+        const age = input.at - state.lastKillAt;
+        if (age >= -MAX_NEGATIVE_SKEW_MS && age <= INTENTIONAL_KILL_WINDOW_MS) {
             return 'intentional';
         }
     }

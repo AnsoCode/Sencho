@@ -46,6 +46,8 @@ export class DockerEventManager {
         const nodes = DatabaseService.getInstance().getNodes()
             .filter(n => n.type === 'local' && typeof n.id === 'number');
         await Promise.all(nodes.map(n => this.spawn(n)));
+
+        console.log(`[DockerEvents] Started; watching ${this.services.size} local node(s) for container lifecycle events`);
     }
 
     /** Shutdown: stop every service and unsubscribe from registry events. */
@@ -60,6 +62,8 @@ export class DockerEventManager {
 
         for (const service of this.services.values()) service.shutdown();
         this.services.clear();
+
+        console.log('[DockerEvents] Stopped');
     }
 
     /** Aggregated status for diagnostics (e.g. /api/health). */
@@ -119,7 +123,7 @@ export class DockerEventManager {
             await service.start();
         } catch (err) {
             if (isDebugEnabled()) {
-                console.log(`[DockerEventManager] failed to start service for node ${node.name}:`,
+                console.log(`[DockerEvents:diag] failed to start service for node ${node.name}:`,
                     err instanceof Error ? err.message : err);
             }
         }
