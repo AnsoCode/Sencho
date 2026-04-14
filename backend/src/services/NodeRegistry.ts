@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
 import axios from 'axios';
+import { EventEmitter } from 'events';
 import { DatabaseService, Node } from './DatabaseService';
 import { fetchRemoteMeta } from './CapabilityRegistry';
 
@@ -10,12 +11,23 @@ import { fetchRemoteMeta } from './CapabilityRegistry';
  * - Local nodes: direct Docker socket connection via Dockerode (unchanged)
  * - Remote nodes: HTTP/WS proxy to a remote Sencho instance (api_url + api_token)
  *   No direct Docker TCP connections are made for remote nodes.
+ *
+ * Extends EventEmitter so subscribers (e.g. DockerEventManager) can react to
+ * node lifecycle changes. Emits:
+ *   - 'node-added'   (nodeId: number) after a node is created
+ *   - 'node-removed' (nodeId: number) after a node is deleted
+ *   - 'node-updated' (nodeId: number) after a node is updated (type may change)
+ * Route handlers in index.ts are responsible for calling the notify* helpers.
  */
-export class NodeRegistry {
+export class NodeRegistry extends EventEmitter {
     private static instance: NodeRegistry;
     private connections: Map<number, Docker> = new Map();
 
-    private constructor() { }
+    private constructor() {
+        super();
+        // Raise the default listener cap (10) so future subscribers do not trip a warning.
+        this.setMaxListeners(50);
+    }
 
     public static getInstance(): NodeRegistry {
         if (!NodeRegistry.instance) {
@@ -208,6 +220,31 @@ export class NodeRegistry {
      */
     public evictConnection(nodeId: number): void {
         this.connections.delete(nodeId);
+    }
+
+    /**
+     * Emit 'node-added' for subscribers (e.g. DockerEventManager).
+     * Call this from the POST /api/nodes route after the DB insert succeeds.
+     */
+    public notifyNodeAdded(nodeId: number): void {
+        this.emit('node-added', nodeId);
+    }
+
+    /**
+     * Emit 'node-removed' for subscribers.
+     * Call this from the DELETE /api/nodes/:id route after the DB delete succeeds.
+     */
+    public notifyNodeRemoved(nodeId: number): void {
+        this.emit('node-removed', nodeId);
+    }
+
+    /**
+     * Emit 'node-updated' for subscribers. Type changes (local<->remote) are
+     * handled downstream by tearing down and respawning the subscription.
+     * Call this from the PUT /api/nodes/:id route after the DB update succeeds.
+     */
+    public notifyNodeUpdated(nodeId: number): void {
+        this.emit('node-updated', nodeId);
     }
 
     /**

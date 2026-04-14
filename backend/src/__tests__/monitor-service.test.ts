@@ -313,68 +313,8 @@ describe('MonitorService - evaluateGlobalSettings', () => {
   });
 });
 
-// ── Global crash detection ─────────────────────────────────────────────
-
-describe('MonitorService - global crash detection', () => {
-  it('detects exited containers with non-intentional exit codes', async () => {
-    mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
-    mockGetAllContainers.mockResolvedValue([{
-      Id: 'crash-1',
-      State: 'exited',
-      Status: 'Exited (1) 5 seconds ago',
-      Names: ['/my-container'],
-    }]);
-
-    const svc = MonitorService.getInstance();
-    await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
-
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('Crash'), undefined);
-  });
-
-  it('ignores exit codes 0, 137, 143, 255', async () => {
-    mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
-    const intentionalExits = [0, 137, 143, 255];
-
-    for (const code of intentionalExits) {
-      mockDispatchAlert.mockClear();
-      mockGetAllContainers.mockResolvedValue([{
-        Id: `safe-${code}`,
-        State: 'exited',
-        Status: `Exited (${code}) 5 seconds ago`,
-        Names: ['/safe-container'],
-      }]);
-
-      const svc = MonitorService.getInstance();
-      (MonitorService as any).instance = undefined;
-      await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
-      expect(mockDispatchAlert).not.toHaveBeenCalledWith('error', expect.stringContaining('Crash'));
-    }
-  });
-
-  it('detects unhealthy containers', async () => {
-    mockGetNodes.mockReturnValue([{ id: 1, name: 'local', type: 'local' }]);
-    mockGetAllContainers.mockResolvedValue([{
-      Id: 'sick-1',
-      State: 'unhealthy',
-      Status: 'Up 2 hours (unhealthy)',
-      Names: ['/sick-container'],
-    }]);
-
-    const svc = MonitorService.getInstance();
-    await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
-
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('unhealthy'), undefined);
-  });
-
-  it('skips remote nodes', async () => {
-    mockGetNodes.mockReturnValue([{ id: 2, name: 'remote-node', type: 'remote' }]);
-
-    const svc = MonitorService.getInstance();
-    await (svc as any).evaluateGlobalSettings({ global_crash: '1' });
-
-    expect(mockGetAllContainers).not.toHaveBeenCalled();
-  });
-});
+// Crash + healthcheck detection now lives in DockerEventService (event-driven).
+// Tests for those flows live in docker-event-service.test.ts.
 
 // ── Alert breach state machine ─────────────────────────────────────────
 
