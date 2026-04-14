@@ -22,7 +22,7 @@ const {
   mockContainerInspect: vi.fn().mockResolvedValue({ State: { ExitCode: 0 } }),
   mockContainerLogs: vi.fn().mockResolvedValue(Buffer.from('')),
   mockGetRegistries: vi.fn().mockReturnValue([]),
-  mockResolveDockerConfig: vi.fn().mockResolvedValue({ auths: {} }),
+  mockResolveDockerConfig: vi.fn().mockResolvedValue({ config: { auths: {} }, warnings: [] }),
   mockBackupStackFiles: vi.fn().mockResolvedValue(undefined),
   mockRestoreStackFiles: vi.fn().mockResolvedValue(undefined),
   mockMkdtempSync: vi.fn().mockReturnValue('/tmp/sencho-docker-test'),
@@ -314,7 +314,7 @@ describe('ComposeService - withRegistryAuth', () => {
 
   it('creates temp config dir when registries exist', async () => {
     mockGetRegistries.mockReturnValue([{ url: 'https://registry.example.com', username: 'user', password: 'pass' }]);
-    mockResolveDockerConfig.mockResolvedValue({ auths: { 'registry.example.com': { auth: 'dXNlcjpwYXNz' } } });
+    mockResolveDockerConfig.mockResolvedValue({ config: { auths: { 'registry.example.com': { auth: 'dXNlcjpwYXNz' } } }, warnings: [] });
     setupAutoCloseSpawn();
     mockListContainers.mockResolvedValue([]);
 
@@ -330,9 +330,29 @@ describe('ComposeService - withRegistryAuth', () => {
     expect(mockRmdirSync).toHaveBeenCalled();
   });
 
+  it('surfaces resolveDockerConfig warnings to the WebSocket output', async () => {
+    mockGetRegistries.mockReturnValue([{ url: 'https://registry.example.com' }]);
+    mockResolveDockerConfig.mockResolvedValue({
+      config: { auths: {} },
+      warnings: ['Registry "broken" credentials unavailable: bad key'],
+    });
+    setupAutoCloseSpawn();
+    mockListContainers.mockResolvedValue([]);
+    const ws = createMockWs();
+
+    const svc = ComposeService.getInstance(1);
+    const promise = svc.deployStack('my-stack', ws as any);
+
+    await vi.advanceTimersByTimeAsync(3100);
+    await promise;
+
+    const sendCalls = ws.send.mock.calls.map(c => c[0]);
+    expect(sendCalls.some((msg: string) => msg.includes('[Sencho] Warning') && msg.includes('bad key'))).toBe(true);
+  });
+
   it('cleans up temp dir even on command failure', async () => {
     mockGetRegistries.mockReturnValue([{ url: 'https://registry.example.com' }]);
-    mockResolveDockerConfig.mockResolvedValue({ auths: {} });
+    mockResolveDockerConfig.mockResolvedValue({ config: { auths: {} }, warnings: [] });
 
     // Make spawn fail
     mockSpawn.mockImplementation(() => {
