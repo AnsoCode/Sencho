@@ -1,9 +1,13 @@
 import si from 'systeminformation';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import semver from 'semver';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
 import { NotificationService } from './NotificationService';
+import { isValidVersion } from './CapabilityRegistry';
+import { fetchLatestSenchoVersion } from '../utils/version-check';
+import { isDebugEnabled } from '../utils/debug';
 
 const execAsync = promisify(exec);
 
@@ -12,8 +16,8 @@ const getMetricDetails = (metric: string): { name: string, unit: string } => {
         case 'cpu_percent': return { name: 'CPU usage', unit: '%' };
         case 'memory_percent': return { name: 'Memory usage', unit: '%' };
         case 'memory_mb': return { name: 'Memory allocation', unit: ' MB' };
-        case 'net_rx': return { name: 'Inbound network traffic', unit: ' MB/s' };
-        case 'net_tx': return { name: 'Outbound network traffic', unit: ' MB/s' };
+        case 'net_rx': return { name: 'Inbound network traffic', unit: ' MB' };
+        case 'net_tx': return { name: 'Outbound network traffic', unit: ' MB' };
         case 'restart_count': return { name: 'Restart count', unit: ' restarts' };
         default: return { name: metric, unit: '' };
     }
@@ -25,6 +29,25 @@ const getOperatorPhrase = (operator: string): string => {
     if (operator === '==') return 'has reached your threshold of';
     return `triggered the operator ${operator}`;
 };
+
+/** Shape of the JSON returned by Docker container stats (stream: false). */
+interface DockerContainerStats {
+    cpu_stats?: {
+        cpu_usage?: { total_usage: number; percpu_usage?: number[] };
+        system_cpu_usage?: number;
+        online_cpus?: number;
+    };
+    precpu_stats?: {
+        cpu_usage?: { total_usage: number };
+        system_cpu_usage?: number;
+    };
+    memory_stats?: {
+        usage?: number;
+        limit?: number;
+        stats?: { cache?: number };
+    };
+    networks?: Record<string, { rx_bytes: number; tx_bytes: number }>;
+}
 
 interface AlertState {
     breachStartedAt: number; // timestamp when the rule first breached
@@ -51,6 +74,10 @@ export class MonitorService {
     private alertedCrashes = new Map<string, number>();
     private static readonly CRASH_ALERT_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+    // Sencho version check cooldown (6 hours between external API calls)
+    private lastVersionCheckAt = 0;
+    private static readonly VERSION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
     private constructor() { }
 
     public static getInstance(): MonitorService {
@@ -62,6 +89,7 @@ export class MonitorService {
 
     public start() {
         if (this.intervalId) return;
+        if (isDebugEnabled()) console.log('[Monitor:diag] Starting evaluation loop (30s interval)');
 
         // Run every 30 seconds
         this.intervalId = setInterval(() => {
@@ -76,6 +104,7 @@ export class MonitorService {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
+            if (isDebugEnabled()) console.log('[Monitor:diag] Evaluation loop stopped');
         }
     }
 
@@ -232,11 +261,42 @@ export class MonitorService {
         } catch (e) {
             console.error('Error checking docker janitor limits', e);
         }
+
+        // 4. Sencho version update check (runs once per VERSION_CHECK_INTERVAL_MS)
+        if (Date.now() - this.lastVersionCheckAt > MonitorService.VERSION_CHECK_INTERVAL_MS) {
+            this.lastVersionCheckAt = Date.now();
+            try {
+                const currentVersion = process.env.npm_package_version || '0.0.0';
+                const latest = await fetchLatestSenchoVersion();
+                if (isValidVersion(latest) && isValidVersion(currentVersion) && semver.gt(latest, currentVersion)) {
+                    const db = DatabaseService.getInstance();
+                    const stateKey = 'last_sencho_update_notified_version';
+                    const lastNotified = db.getSystemState(stateKey) || '';
+                    if (lastNotified !== latest) {
+                        const notifier = NotificationService.getInstance();
+                        await notifier.dispatchAlert('info',
+                            `Sencho ${latest} is available (currently running ${currentVersion}). Visit the Fleet dashboard to update.`);
+                        db.setSystemState(stateKey, latest);
+                    }
+                }
+            } catch (e) {
+                // Network errors are expected; do not spam logs
+                if (isDebugEnabled()) console.debug('[Monitor:diag] Sencho version check failed:', e);
+            }
+        }
     }
 
     private async evaluateStackAlerts(db: DatabaseService) {
         const alerts = db.getStackAlerts();
         const nodes = db.getNodes();
+
+        // Pre-group alerts by stack name to avoid O(containers * alerts) scanning
+        const alertsByStack = new Map<string, typeof alerts>();
+        for (const a of alerts) {
+            const list = alertsByStack.get(a.stack_name);
+            if (list) list.push(a);
+            else alertsByStack.set(a.stack_name, [a]);
+        }
 
         for (const node of nodes) {
             if (!node.id) continue;
@@ -250,16 +310,24 @@ export class MonitorService {
 
                     try {
                         const rawStats = await docker.getContainerStatsStream(container.Id);
-                        const stats = JSON.parse(rawStats);
+                        const stats: DockerContainerStats = JSON.parse(rawStats);
 
                         const usedMemory = (stats.memory_stats?.usage || 0) - (stats.memory_stats?.stats?.cache || 0);
+
+                        // Only fetch restart count when at least one rule for this stack uses it
+                        const stackAlerts = alertsByStack.get(stackName) || [];
+                        const needsRestartCount = stackAlerts.some(a => a.metric === 'restart_count');
+                        const restartCount = needsRestartCount
+                            ? await docker.getContainerRestartCount(container.Id)
+                            : 0;
+
                         const metrics = {
                             cpu_percent: this.calculateCpuPercent(stats),
                             memory_percent: this.calculateMemoryPercent(stats),
                             memory_mb: Math.max(0, usedMemory) / (1024 * 1024),
                             net_rx: this.calculateNetwork(stats, 'rx'),
                             net_tx: this.calculateNetwork(stats, 'tx'),
-                            restart_count: 0 // Simplification since ContainerInfo doesn't have it natively
+                            restart_count: restartCount,
                         };
 
                         db.addContainerMetric({
@@ -272,7 +340,6 @@ export class MonitorService {
                             timestamp: Date.now()
                         });
 
-                        const stackAlerts = alerts.filter(a => a.stack_name === stackName);
                         for (const rule of stackAlerts) {
                             const ruleId = rule.id!;
                             const currentValue = metrics[rule.metric as keyof typeof metrics];
@@ -284,6 +351,7 @@ export class MonitorService {
                             if (isBreaching) {
                                 if (!this.activeBreaches.has(ruleId)) {
                                     this.activeBreaches.set(ruleId, { breachStartedAt: Date.now() });
+                                    if (isDebugEnabled()) console.log(`[Monitor:diag] Breach entered: rule ${ruleId} (${rule.metric} ${rule.operator} ${rule.threshold}) on stack "${rule.stack_name}"`);
                                 }
 
                                 const breachState = this.activeBreaches.get(ruleId)!;
@@ -305,6 +373,7 @@ export class MonitorService {
 
                                         const message = `[Node: ${node.name}] The **${metricName}** for **${rule.stack_name}** ${operatorPhrase} **${safeThreshold}${unit}** (Currently: ${safeCurrent}${unit}).`;
 
+                                        if (isDebugEnabled()) console.log(`[Monitor:diag] Duration met for rule ${ruleId}, dispatching alert`);
                                         await NotificationService.getInstance().dispatchAlert(
                                             'warning',
                                             message,
@@ -313,11 +382,14 @@ export class MonitorService {
 
                                         // Update last fired
                                         db.updateStackAlertLastFired(ruleId, Date.now());
+                                    } else if (isDebugEnabled()) {
+                                        console.log(`[Monitor:diag] Cooldown active for rule ${ruleId}: ${Math.round((requiredCooldownMs - timeSinceLastFired) / 1000)}s remaining`);
                                     }
                                 }
                             } else {
                                 // Rule isn't breaching anymore, reset tracker
                                 if (this.activeBreaches.has(ruleId)) {
+                                    if (isDebugEnabled()) console.log(`[Monitor:diag] Breach cleared: rule ${ruleId} on stack "${rule.stack_name}"`);
                                     this.activeBreaches.delete(ruleId);
                                 }
                             }
@@ -347,6 +419,7 @@ export class MonitorService {
             db.cleanupOldNotifications(isNaN(retentionDays) ? 30 : retentionDays);
             const auditRetentionDays = parseInt(settings['audit_retention_days'] || '90', 10);
             db.cleanupOldAuditLogs(isNaN(auditRetentionDays) ? 90 : auditRetentionDays);
+            if (isDebugEnabled()) console.log(`[Monitor:diag] Cleanup: metrics ${isNaN(retentionHours) ? 24 : retentionHours}h, notifications ${isNaN(retentionDays) ? 30 : retentionDays}d, audit ${isNaN(auditRetentionDays) ? 90 : auditRetentionDays}d`);
         } catch (e) {
             console.error('MonitorService: failed to cleanup old data', e);
         }
@@ -376,7 +449,7 @@ export class MonitorService {
         }
     }
 
-    private calculateCpuPercent(stats: any): number {
+    private calculateCpuPercent(stats: DockerContainerStats): number {
         let cpuPercent = 0.0;
         if (!stats?.cpu_stats?.cpu_usage || !stats?.precpu_stats?.cpu_usage) return 0.0;
 
@@ -390,7 +463,7 @@ export class MonitorService {
         return cpuPercent;
     }
 
-    private calculateMemoryPercent(stats: any): number {
+    private calculateMemoryPercent(stats: DockerContainerStats): number {
         if (!stats?.memory_stats?.usage || !stats?.memory_stats?.limit) return 0.0;
 
         const used_memory = stats.memory_stats.usage - (stats.memory_stats.stats?.cache || 0);
@@ -401,11 +474,12 @@ export class MonitorService {
         return 0.0;
     }
 
-    private calculateNetwork(stats: any, direction: 'rx' | 'tx'): number {
+    private calculateNetwork(stats: DockerContainerStats, direction: 'rx' | 'tx'): number {
         let bytes = 0;
         if (stats.networks) {
+            const key = direction === 'rx' ? 'rx_bytes' : 'tx_bytes';
             for (const iface in stats.networks) {
-                bytes += stats.networks[iface][`${direction}_bytes`];
+                bytes += stats.networks[iface][key];
             }
         }
         return bytes / (1024 * 1024); // Return in MB

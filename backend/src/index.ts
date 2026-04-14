@@ -59,6 +59,7 @@ function invalidateNodeCaches(nodeId: number): void {
 }
 
 import { isDebugEnabled } from './utils/debug';
+import { fetchLatestSenchoVersion } from './utils/version-check';
 import { getErrorMessage } from './utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
@@ -1285,50 +1286,8 @@ const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull 
 const LATEST_VERSION_CACHE_KEY = 'latest-version';
 const LATEST_VERSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
-async function fetchFromGitHub(): Promise<string | null> {
-  const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) return null;
-  const data = await res.json() as { tag_name?: string };
-  const tag = data.tag_name?.replace(/^v/, '') ?? null;
-  return tag && semver.valid(tag) ? tag : null;
-}
-
-async function fetchFromDockerHub(): Promise<string | null> {
-  const res = await fetch(
-    'https://hub.docker.com/v2/repositories/saelix/sencho/tags/?page_size=50&ordering=last_updated',
-    { headers: { 'User-Agent': 'Sencho' }, signal: AbortSignal.timeout(10000) },
-  );
-  if (!res.ok) return null;
-  const data = await res.json() as { results?: { name: string }[] };
-  const tags = (data.results ?? [])
-    .map(t => t.name)
-    .filter(n => semver.valid(n));
-  if (tags.length === 0) return null;
-  tags.sort(semver.rcompare);
-  return tags[0];
-}
-
-async function fetchLatestSenchoVersion(): Promise<string> {
-  try {
-    const gh = await fetchFromGitHub();
-    if (gh) return gh;
-  } catch (err) {
-    // GitHub API fails for private repos or rate limits; try Docker Hub
-    console.warn('[VersionCheck] GitHub fetch failed:', (err as Error).message);
-  }
-  try {
-    const hub = await fetchFromDockerHub();
-    if (hub) return hub;
-  } catch (err) {
-    console.warn('[VersionCheck] Docker Hub fetch failed:', (err as Error).message);
-  }
-  // Throw so CacheService falls back to a stale value if one exists,
-  // and so we do not poison the cache with null.
-  throw new Error('Both GitHub and Docker Hub version lookups failed');
-}
+// Version fetch logic lives in utils/version-check.ts; imported below for getLatestVersion().
+// fetchFromGitHub + fetchFromDockerHub + fetchLatestSenchoVersion are shared with MonitorService.
 
 async function getLatestVersion(forceRefresh = false): Promise<string | null> {
   if (forceRefresh) {
@@ -4354,7 +4313,7 @@ app.patch('/api/settings', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/alerts', async (req: Request, res: Response) => {
+app.get('/api/alerts', authMiddleware, async (req: Request, res: Response) => {
   try {
     let stackName = req.query.stackName as string | undefined;
     if (Array.isArray(stackName)) stackName = stackName[0] as string;
@@ -4375,7 +4334,7 @@ const AlertCreateSchema = z.object({
   cooldown_mins: z.coerce.number().int().min(0).max(10080),
 });
 
-app.post('/api/alerts', async (req: Request, res: Response) => {
+app.post('/api/alerts', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const parsed = AlertCreateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -4383,15 +4342,15 @@ app.post('/api/alerts', async (req: Request, res: Response) => {
     return;
   }
   try {
-    DatabaseService.getInstance().addStackAlert(parsed.data);
-    res.json({ success: true });
+    const created = DatabaseService.getInstance().addStackAlert(parsed.data);
+    res.status(201).json(created);
   } catch (error) {
     console.error('Failed to add alert:', error);
     res.status(500).json({ error: 'Failed to add alert' });
   }
 });
 
-app.delete('/api/alerts/:id', async (req: Request, res: Response) => {
+app.delete('/api/alerts/:id', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const id = parseInt(req.params.id as string, 10);
@@ -4439,20 +4398,30 @@ app.delete('/api/notifications', authMiddleware, async (req: Request, res: Respo
   }
 });
 
+const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
+
 app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { type, url } = req.body;
+    if (!type || !NOTIFICATION_CHANNEL_TYPES.includes(type)) {
+      res.status(400).json({ error: 'type must be discord, slack, or webhook' });
+      return;
+    }
+    if (!url || typeof url !== 'string' || !url.startsWith('https://')) {
+      res.status(400).json({ error: 'url must be a valid HTTPS URL' });
+      return;
+    }
+    try { new URL(url); } catch { res.status(400).json({ error: 'url is not a valid URL' }); return; }
     await NotificationService.getInstance().testDispatch(type, url);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Test failed', details: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: 'Test failed', details: msg });
   }
 });
 
 // --- Notification Routes (Admiral) ---
-
-const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
 
 app.get('/api/notification-routes', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;

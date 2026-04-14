@@ -30,7 +30,11 @@ Three channel types are available, each configured with a webhook URL and an ena
 
 ### Generic Webhook
 
-Any HTTP endpoint that accepts a POST with a JSON body can receive Sencho alerts. Go to **Settings > Notifications > Webhook**, enter the URL, enable the toggle, and click **Save**.
+Any HTTPS endpoint that accepts a POST with a JSON body can receive Sencho alerts. Go to **Settings > Notifications > Webhook**, enter the URL, enable the toggle, and click **Save**.
+
+<Note>
+  All webhook URLs (Discord, Slack, and generic) must use HTTPS. HTTP URLs are rejected.
+</Note>
 
 The payload format is:
 
@@ -73,8 +77,8 @@ The panel includes:
 | CPU Usage (%) | CPU usage relative to total host cores |
 | Memory Usage (%) | Memory used as a fraction of the host total |
 | Memory Usage (MB) | RSS memory used by the container |
-| Network In (MB) | Inbound network throughput |
-| Network Out (MB) | Outbound network throughput |
+| Network In (MB) | Cumulative inbound network bytes (in MB) |
+| Network Out (MB) | Cumulative outbound network bytes (in MB) |
 | Restart Count | Number of times the container has restarted |
 
 ### Example: alert on high CPU
@@ -135,3 +139,37 @@ The alert panel shows a blue info banner when you are configuring alerts on a re
 2. From your **primary** instance, switch to the remote node
 3. Right-click a stack and select **Alerts** to create rules
 4. The remote instance handles monitoring and notification delivery independently
+
+## Update availability notifications
+
+Sencho can notify you when software updates are available, both for Sencho itself and for your stack images.
+
+### Sencho version updates
+
+When a newer version of Sencho is published, an informational notification is dispatched through your configured channels. This check runs periodically and only notifies once per new version. After you update, the cycle resets and you will be notified when the next release is available.
+
+### Stack image updates
+
+When the periodic image check (every 6 hours) detects that a stack has new upstream images available, a notification is dispatched for each affected stack. Notifications are sent only on state transitions: you will be notified once when a new update appears, not on every check cycle. After you update the stack, the status resets.
+
+Both notification types use the same channel routing as alerts: if notification routes are configured for a stack, those channels receive the message; otherwise, global notification channels are used as a fallback.
+
+## Troubleshooting
+
+### Notifications not being delivered
+
+- Verify at least one notification channel is enabled in **Settings > Notifications**
+- Click **Test** on the channel to confirm the webhook URL is reachable
+- Check that the webhook URL uses HTTPS
+- If using notification routing (Admiral tier), verify the route pattern matches the stack name
+
+### Alert not firing
+
+- Confirm the alert rule exists by opening the stack's alert panel
+- Check that the **duration** has elapsed; the condition must hold continuously for the configured duration before an alert fires
+- Check the **cooldown** period; after an alert fires, it will not fire again until the cooldown expires
+- Verify the metric is being collected; container must be running for stats to be gathered
+
+### Delete confirmation dialog
+
+Deleting an alert rule now requires confirmation. Click the trash icon next to a rule, then confirm in the dialog that appears.
