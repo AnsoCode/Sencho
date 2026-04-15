@@ -31,6 +31,8 @@ import { NodeRegistry } from './services/NodeRegistry';
 import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
+import { MfaService } from './services/MfaService';
+import { CryptoService } from './services/CryptoService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CacheService } from './services/CacheService';
@@ -95,6 +97,9 @@ const PORT = 3000;
 
 // Cookie settings
 const COOKIE_NAME = 'sencho_token';
+const MFA_PENDING_COOKIE_NAME = 'sencho_mfa_pending';
+const MFA_PENDING_SCOPE = 'mfa_pending';
+const MFA_PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutes to complete the challenge
 
 // Helper to determine if request is secure (HTTPS or behind a proxy that terminates SSL)
 const isSecureRequest = (req: Request): boolean => {
@@ -405,6 +410,10 @@ declare global {
       proxyTier?: LicenseTier;
       /** License variant asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
       proxyVariant?: LicenseVariant;
+      /** User ID carried by a scoped `mfa_pending` token. Only set while the user is completing the MFA challenge. */
+      mfaPendingUserId?: number;
+      /** True when the pending MFA session originated from an SSO login (LDAP or OIDC) rather than a password login. */
+      mfaPendingSso?: boolean;
     }
   }
 }
@@ -436,7 +445,7 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const jwtSecret = settings.auth_jwt_secret;
     if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string; tv?: number };
+    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string; tv?: number; user_id?: number; sso?: boolean };
 
     if (isDebugEnabled()) console.log('[Auth:diag] Token type:', bearerToken ? 'bearer' : 'cookie', 'scope:', decoded.scope || 'user-session');
 
@@ -464,6 +473,23 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
       req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer', userId: apiToken.user_id };
       req.apiTokenScope = apiToken.scope as 'read-only' | 'deploy-only' | 'full-admin';
       if (isDebugEnabled()) console.log('[Auth:diag] API token authenticated:', { scope: apiToken.scope, user: creator?.username, tokenName: apiToken.name });
+      next();
+      return;
+    }
+
+    // Partial-auth session: a password/SSO credential has verified, but the
+    // TOTP second factor is still required. Such a token can only be used to
+    // complete the MFA challenge or to abort the flow by logging out. Every
+    // other route must reject it so no privileged action is reachable before
+    // the second factor clears.
+    if (decoded.scope === MFA_PENDING_SCOPE) {
+      const allowedPath = req.path === '/api/auth/login/mfa' || req.path === '/api/auth/logout';
+      if (!allowedPath) {
+        res.status(403).json({ error: 'Two-factor authentication required', code: 'MFA_PENDING' });
+        return;
+      }
+      req.mfaPendingUserId = typeof decoded.user_id === 'number' ? decoded.user_id : undefined;
+      req.mfaPendingSso = decoded.sso === true;
       next();
       return;
     }
@@ -536,6 +562,36 @@ function issueSessionCookie(
   res.cookie(COOKIE_NAME, token, getCookieOptions(req));
 }
 
+/**
+ * Sign a short-lived `mfa_pending` JWT and set it as an httpOnly cookie. This
+ * represents the partial-auth session that exists between password (or SSO)
+ * success and TOTP verification. The scope is enforced in `authMiddleware`, so
+ * this cookie cannot be used to reach any route other than
+ * `/api/auth/login/mfa` or `/api/auth/logout`.
+ */
+function issueMfaPendingCookie(
+  res: Response,
+  req: Request,
+  user: { id: number; username: string },
+  jwtSecret: string,
+  opts: { sso?: boolean } = {},
+): void {
+  const token = jwt.sign(
+    { scope: MFA_PENDING_SCOPE, user_id: user.id, username: user.username, sso: opts.sso === true },
+    jwtSecret,
+    { expiresIn: Math.floor(MFA_PENDING_TTL_MS / 1000) },
+  );
+  res.cookie(MFA_PENDING_COOKIE_NAME, token, {
+    ...getCookieOptions(req),
+    maxAge: MFA_PENDING_TTL_MS,
+  });
+}
+
+/** Clear the partial-auth cookie. Called on successful MFA verification and on logout. */
+function clearMfaPendingCookie(res: Response, req: Request): void {
+  res.clearCookie(MFA_PENDING_COOKIE_NAME, getCookieOptions(req));
+}
+
 // Rate limiter for auth endpoints - prevents brute-force attacks.
 // Production: 5 attempts per 15-minute window per IP.
 // Development: 100 attempts (so E2E tests and local tooling are not blocked).
@@ -570,15 +626,30 @@ app.get('/api/meta', (_req: Request, res: Response): void => {
 
 // Auth Routes (no authentication required)
 
-// Check if setup is needed
+// Check if setup is needed, and whether the caller currently holds a valid
+// `mfa_pending` partial-auth cookie (so the frontend can route to the
+// challenge screen on a page reload mid-flow, for example after an OIDC
+// redirect).
 app.get('/api/auth/status', async (req: Request, res: Response): Promise<void> => {
   try {
     const settings = DatabaseService.getInstance().getGlobalSettings();
     const needsSetup = !settings.auth_username || !settings.auth_password_hash || !settings.auth_jwt_secret;
-    res.json({ needsSetup });
+
+    let mfaPending = false;
+    const mfaCookie = req.cookies?.[MFA_PENDING_COOKIE_NAME];
+    if (mfaCookie && settings.auth_jwt_secret) {
+      try {
+        const decoded = jwt.verify(mfaCookie, settings.auth_jwt_secret) as { scope?: string };
+        mfaPending = decoded.scope === MFA_PENDING_SCOPE;
+      } catch {
+        // Expired or invalid cookie; treat as no pending challenge.
+      }
+    }
+
+    res.json({ needsSetup, mfaPending });
   } catch (error) {
     console.error('Error checking setup status:', error);
-    res.json({ needsSetup: true });
+    res.json({ needsSetup: true, mfaPending: false });
   }
 });
 
@@ -654,6 +725,18 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
         const settings = db.getGlobalSettings();
         const jwtSecret = settings.auth_jwt_secret;
         if (!jwtSecret) throw new Error('JWT secret missing from DB');
+
+        // If MFA is enabled for this user, issue only the partial-auth cookie
+        // and signal the client to complete the TOTP challenge. No session
+        // cookie is set until the second factor is verified.
+        const mfa = db.getUserMfa(user.id);
+        if (mfa?.enabled) {
+          issueMfaPendingCookie(res, req, user, jwtSecret);
+          console.log('[Auth] Login password OK, MFA challenge pending:', user.username);
+          res.json({ success: true, mfaRequired: true });
+          return;
+        }
+
         issueSessionCookie(res, req, user, jwtSecret);
         console.log('[Auth] Login successful:', user.username);
         res.json({ success: true, message: 'Login successful' });
@@ -726,6 +809,9 @@ app.post('/api/auth/logout', (req: Request, res: Response): void => {
     secure: isSecureRequest(req),
     sameSite: 'strict',
   });
+  // Also clear any partial-auth cookie so a user aborting the MFA challenge
+  // is returned to a fully unauthenticated state.
+  clearMfaPendingCookie(res, req);
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -806,6 +892,17 @@ app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Respon
 
     // Issue JWT (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
+
+    // If MFA is enabled AND the user has opted into SSO enforcement, route
+    // through the TOTP challenge. Otherwise SSO bypasses MFA (default).
+    const mfa = DatabaseService.getInstance().getUserMfa(user.id);
+    if (mfa?.enabled && mfa.sso_enforce_mfa) {
+      issueMfaPendingCookie(res, req, user, settings.auth_jwt_secret, { sso: true });
+      console.log(`[SSO] LDAP login password OK, MFA challenge pending: ${user.username}`);
+      res.json({ success: true, mfaRequired: true });
+      return;
+    }
+
     issueSessionCookie(res, req, user, settings.auth_jwt_secret);
     console.log(`[SSO] LDAP login successful: ${user.username}`);
     res.json({ success: true, message: 'Login successful' });
@@ -918,6 +1015,18 @@ app.get('/api/auth/sso/oidc/:provider/callback', ssoRateLimiter, async (req: Req
 
     // Issue JWT + cookie (same as local login)
     const settings = DatabaseService.getInstance().getGlobalSettings();
+
+    // If MFA is enabled AND the user has opted into SSO enforcement, set only
+    // the partial-auth cookie. The frontend surfaces the challenge screen
+    // based on `/api/auth/status` after the redirect lands.
+    const mfa = DatabaseService.getInstance().getUserMfa(user.id);
+    if (mfa?.enabled && mfa.sso_enforce_mfa) {
+      issueMfaPendingCookie(res, req, user, settings.auth_jwt_secret, { sso: true });
+      console.log(`[SSO] OIDC login password OK, MFA challenge pending: ${user.username} via ${provider}`);
+      res.redirect('/');
+      return;
+    }
+
     issueSessionCookie(res, req, user, settings.auth_jwt_secret);
     console.log(`[SSO] OIDC login successful: ${user.username} via ${provider}`);
 
@@ -926,6 +1035,382 @@ app.get('/api/auth/sso/oidc/:provider/callback', ssoRateLimiter, async (req: Req
     const msg = error instanceof Error ? error.message : 'SSO callback failed';
     console.error('[SSO] OIDC callback error:', msg);
     res.redirect(`/?sso_error=${encodeURIComponent(msg)}`);
+  }
+});
+
+// --- MFA (TOTP) Routes ---
+
+const MFA_MAX_FAILED = 5;
+const MFA_LOCKOUT_MS = 15 * 60 * 1000;
+const MFA_REPLAY_TTL_MS = 120 * 1000;
+const MFA_REPLAY_PURGE_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Complete the second factor of login. Consumes the short-lived
+ * `sencho_mfa_pending` cookie and, on success, clears it and issues a full
+ * session cookie. Accepts either a 6-digit TOTP or one of the user's backup
+ * codes (single-use). Enforces per-user failure counter and lockout.
+ */
+app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const db = DatabaseService.getInstance();
+    const settings = db.getGlobalSettings();
+    const jwtSecret = settings.auth_jwt_secret;
+    if (!jwtSecret) {
+      res.status(500).json({ error: 'Server is not configured' });
+      return;
+    }
+
+    const pendingCookie = req.cookies?.[MFA_PENDING_COOKIE_NAME];
+    if (!pendingCookie) {
+      res.status(401).json({ error: 'No pending two-factor challenge. Please sign in again.' });
+      return;
+    }
+
+    let decoded: { scope?: string; user_id?: number; username?: string; sso?: boolean };
+    try {
+      decoded = jwt.verify(pendingCookie, jwtSecret) as typeof decoded;
+    } catch {
+      clearMfaPendingCookie(res, req);
+      res.status(401).json({ error: 'Two-factor challenge expired. Please sign in again.' });
+      return;
+    }
+
+    if (decoded.scope !== MFA_PENDING_SCOPE || typeof decoded.user_id !== 'number') {
+      clearMfaPendingCookie(res, req);
+      res.status(401).json({ error: 'Invalid two-factor challenge' });
+      return;
+    }
+
+    const user = db.getUserById(decoded.user_id);
+    const mfa = db.getUserMfa(decoded.user_id);
+    if (!user || !mfa?.enabled || !mfa.totp_secret_encrypted) {
+      clearMfaPendingCookie(res, req);
+      res.status(401).json({ error: 'Two-factor authentication is not configured' });
+      return;
+    }
+
+    // Lockout check
+    if (mfa.locked_until && mfa.locked_until > Date.now()) {
+      const retryAfter = Math.ceil((mfa.locked_until - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(423).json({ error: 'Too many failed attempts. Try again later.', retryAfter });
+      return;
+    }
+
+    const rawCode = typeof req.body?.code === 'string' ? req.body.code : '';
+    const isBackup = req.body?.isBackupCode === true;
+    if (!rawCode) {
+      res.status(400).json({ error: 'A verification code is required' });
+      return;
+    }
+
+    const cryptoSvc = CryptoService.getInstance();
+    const secret = cryptoSvc.decrypt(mfa.totp_secret_encrypted);
+    let verified = false;
+
+    if (isBackup) {
+      const hashes: string[] = mfa.backup_codes_json ? JSON.parse(mfa.backup_codes_json) : [];
+      const result = await MfaService.verifyBackupCode(hashes, rawCode);
+      if (result.matched) {
+        db.upsertUserMfa(decoded.user_id, { backup_codes_json: JSON.stringify(result.remainingHashes) });
+        verified = true;
+      }
+    } else {
+      const trimmed = rawCode.trim().replace(/\s+/g, '');
+      if (MfaService.verifyTotp(secret, trimmed)) {
+        const window = MfaService.currentWindow();
+        if (db.isMfaCodeUsed(decoded.user_id, trimmed, window)) {
+          db.recordMfaFailure(decoded.user_id);
+          res.status(401).json({ error: 'This code was already used. Please wait for the next one.', code: 'OTP_REPLAY' });
+          return;
+        }
+        db.markMfaCodeUsed(decoded.user_id, trimmed, window);
+        verified = true;
+      }
+    }
+
+    if (!verified) {
+      const failedCount = db.recordMfaFailure(decoded.user_id);
+      if (failedCount >= MFA_MAX_FAILED) {
+        db.lockMfa(decoded.user_id, Date.now() + MFA_LOCKOUT_MS);
+        res.setHeader('Retry-After', String(Math.ceil(MFA_LOCKOUT_MS / 1000)));
+        res.status(423).json({ error: 'Too many failed attempts. Try again later.', retryAfter: Math.ceil(MFA_LOCKOUT_MS / 1000) });
+        return;
+      }
+      res.status(401).json({ error: 'Invalid verification code' });
+      return;
+    }
+
+    db.clearMfaFailures(decoded.user_id);
+    clearMfaPendingCookie(res, req);
+    issueSessionCookie(res, req, user, jwtSecret);
+    console.log('[Auth] MFA challenge cleared:', user.username);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    console.error('[Auth] MFA verification error:', (error as Error).message);
+    res.status(500).json({ error: 'Two-factor verification failed' });
+  }
+});
+
+/** Report the current user's MFA state. Used by the Account settings UI. */
+app.get('/api/auth/mfa/status', authMiddleware, (req: Request, res: Response): void => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const mfa = db.getUserMfa(req.user.userId);
+    const hashes: string[] = mfa?.backup_codes_json ? JSON.parse(mfa.backup_codes_json) : [];
+    res.json({
+      enabled: mfa?.enabled === 1,
+      backupCodesRemaining: hashes.length,
+      sso_enforce_mfa: mfa?.sso_enforce_mfa === 1,
+    });
+  } catch (error: unknown) {
+    console.error('[MFA] status error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to load MFA status' });
+  }
+});
+
+/**
+ * Begin enrolment: generate a fresh TOTP secret, store it encrypted with
+ * `enabled=0`, and return the otpauth URI plus the raw base32 secret so the
+ * frontend can render a QR code and the manual-entry fallback.
+ */
+app.post('/api/auth/mfa/enroll/start', authMiddleware, (req: Request, res: Response): void => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (req.apiTokenScope) {
+      res.status(403).json({ error: 'API tokens cannot manage MFA.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const existing = db.getUserMfa(req.user.userId);
+    if (existing?.enabled) {
+      res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+      return;
+    }
+
+    const secret = MfaService.generateSecret();
+    const cryptoSvc = CryptoService.getInstance();
+    db.upsertUserMfa(req.user.userId, {
+      enabled: false,
+      totp_secret_encrypted: cryptoSvc.encrypt(secret),
+      backup_codes_json: null,
+      failed_attempts: 0,
+      locked_until: null,
+    });
+
+    const otpauthUri = MfaService.buildOtpauthUri(secret, req.user.username);
+    res.json({ otpauthUri, secret });
+  } catch (error: unknown) {
+    console.error('[MFA] enroll start error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to start enrolment' });
+  }
+});
+
+/**
+ * Finalise enrolment: verify the user's first TOTP against the pending
+ * secret, flip `enabled=1`, generate + hash + return the backup codes ONCE,
+ * and bump `token_version` so any other sessions re-authenticate.
+ */
+app.post('/api/auth/mfa/enroll/confirm', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (req.apiTokenScope) {
+      res.status(403).json({ error: 'API tokens cannot manage MFA.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    if (!code) {
+      res.status(400).json({ error: 'A verification code is required' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const mfa = db.getUserMfa(req.user.userId);
+    if (!mfa?.totp_secret_encrypted) {
+      res.status(400).json({ error: 'No enrolment in progress. Start enrolment first.' });
+      return;
+    }
+    if (mfa.enabled) {
+      res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+      return;
+    }
+
+    const cryptoSvc = CryptoService.getInstance();
+    const secret = cryptoSvc.decrypt(mfa.totp_secret_encrypted);
+    if (!MfaService.verifyTotp(secret, code)) {
+      res.status(401).json({ error: 'Invalid verification code' });
+      return;
+    }
+
+    const backupCodes = MfaService.generateBackupCodes();
+    const hashes = await MfaService.hashBackupCodes(backupCodes);
+    db.upsertUserMfa(req.user.userId, {
+      enabled: true,
+      backup_codes_json: JSON.stringify(hashes),
+      failed_attempts: 0,
+      locked_until: null,
+    });
+    db.bumpTokenVersion(req.user.userId);
+
+    // The token_version bump invalidates the caller's current session cookie.
+    // Since the user has just proven possession of the TOTP secret, re-issue a
+    // session cookie that carries the new token_version so they stay signed in
+    // long enough to see and save the backup codes.
+    const refreshed = db.getUserById(req.user.userId);
+    const settings = db.getGlobalSettings();
+    if (refreshed && settings.auth_jwt_secret) {
+      issueSessionCookie(res, req, refreshed, settings.auth_jwt_secret);
+    }
+
+    res.json({ backupCodes: backupCodes.map((c) => MfaService.formatBackupCodeForDisplay(c)) });
+  } catch (error: unknown) {
+    console.error('[MFA] enroll confirm error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to confirm enrolment' });
+  }
+});
+
+/**
+ * Disable MFA for the current user. Requires a valid TOTP or backup code to
+ * prove possession, so a stolen session cookie alone cannot turn off the
+ * second factor. Bumps `token_version` on success.
+ */
+app.post('/api/auth/mfa/disable', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (req.apiTokenScope) {
+      res.status(403).json({ error: 'API tokens cannot manage MFA.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    const isBackup = req.body?.isBackupCode === true;
+    if (!code) {
+      res.status(400).json({ error: 'A verification code is required to disable two-factor authentication' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const mfa = db.getUserMfa(req.user.userId);
+    if (!mfa?.enabled || !mfa.totp_secret_encrypted) {
+      res.status(400).json({ error: 'Two-factor authentication is not enabled' });
+      return;
+    }
+
+    let ok = false;
+    if (isBackup) {
+      const hashes: string[] = mfa.backup_codes_json ? JSON.parse(mfa.backup_codes_json) : [];
+      ok = (await MfaService.verifyBackupCode(hashes, code)).matched;
+    } else {
+      const cryptoSvc = CryptoService.getInstance();
+      ok = MfaService.verifyTotp(cryptoSvc.decrypt(mfa.totp_secret_encrypted), code);
+    }
+
+    if (!ok) {
+      res.status(401).json({ error: 'Invalid verification code' });
+      return;
+    }
+
+    db.deleteUserMfa(req.user.userId);
+    db.bumpTokenVersion(req.user.userId);
+
+    // Re-issue the session cookie so the user stays signed in after the bump.
+    // They just proved possession of a current factor, so granting them the
+    // new token_version is safe and avoids a surprising forced re-login.
+    const refreshed = db.getUserById(req.user.userId);
+    const settings = db.getGlobalSettings();
+    if (refreshed && settings.auth_jwt_secret) {
+      issueSessionCookie(res, req, refreshed, settings.auth_jwt_secret);
+    }
+
+    res.json({ success: true });
+  } catch (error: unknown) {
+    console.error('[MFA] disable error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to disable two-factor authentication' });
+  }
+});
+
+/**
+ * Regenerate backup codes. Requires a valid TOTP so a stolen session alone
+ * cannot print new codes. The old set is invalidated immediately; the new
+ * set is returned in cleartext ONCE.
+ */
+app.post('/api/auth/mfa/backup-codes/regenerate', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (req.apiTokenScope) {
+      res.status(403).json({ error: 'API tokens cannot manage MFA.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    if (!code) {
+      res.status(400).json({ error: 'A verification code is required' });
+      return;
+    }
+
+    const db = DatabaseService.getInstance();
+    const mfa = db.getUserMfa(req.user.userId);
+    if (!mfa?.enabled || !mfa.totp_secret_encrypted) {
+      res.status(400).json({ error: 'Two-factor authentication is not enabled' });
+      return;
+    }
+
+    const cryptoSvc = CryptoService.getInstance();
+    if (!MfaService.verifyTotp(cryptoSvc.decrypt(mfa.totp_secret_encrypted), code)) {
+      res.status(401).json({ error: 'Invalid verification code' });
+      return;
+    }
+
+    const backupCodes = MfaService.generateBackupCodes();
+    const hashes = await MfaService.hashBackupCodes(backupCodes);
+    db.upsertUserMfa(req.user.userId, { backup_codes_json: JSON.stringify(hashes) });
+    res.json({ backupCodes: backupCodes.map((c) => MfaService.formatBackupCodeForDisplay(c)) });
+  } catch (error: unknown) {
+    console.error('[MFA] regenerate backup codes error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to regenerate backup codes' });
+  }
+});
+
+/** Toggle whether SSO logins must also complete the TOTP challenge. */
+app.put('/api/auth/mfa/sso-bypass', authMiddleware, (req: Request, res: Response): void => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (req.apiTokenScope) {
+      res.status(403).json({ error: 'API tokens cannot manage MFA.', code: 'SCOPE_DENIED' });
+      return;
+    }
+    const enforce = req.body?.enforce === true;
+    const db = DatabaseService.getInstance();
+    const mfa = db.getUserMfa(req.user.userId);
+    if (!mfa?.enabled) {
+      res.status(400).json({ error: 'Two-factor authentication is not enabled' });
+      return;
+    }
+    if ((mfa.sso_enforce_mfa === 1) !== enforce) {
+      db.upsertUserMfa(req.user.userId, { sso_enforce_mfa: enforce });
+    }
+    res.json({ success: true, sso_enforce_mfa: enforce });
+  } catch (error: unknown) {
+    console.error('[MFA] sso-bypass error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to update SSO enforcement' });
   }
 });
 
@@ -2393,8 +2878,14 @@ app.get('/api/users', authMiddleware, async (req: Request, res: Response): Promi
   }
   if (!requireAdmin(req, res)) return;
   try {
-    const users = DatabaseService.getInstance().getUsers();
-    res.json(users);
+    const db = DatabaseService.getInstance();
+    const users = db.getUsers();
+    const mfaUserIds = db.getUsersWithMfaEnabled();
+    const enriched = users.map((u) => ({
+      ...u,
+      mfaEnabled: mfaUserIds.has(u.id),
+    }));
+    res.json(enriched);
   } catch (error) {
     console.error('[Users] List error:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
@@ -2571,6 +3062,54 @@ app.delete('/api/users/:id', authMiddleware, async (req: Request, res: Response)
   } catch (error) {
     console.error('[Users] Delete error:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+/**
+ * Admin reset: clear a target user's MFA enrolment and force re-auth. Used
+ * when a user has lost their authenticator AND exhausted their backup codes,
+ * and another admin is available. For total lockout (including sole admin),
+ * see the CLI `reset-mfa` command.
+ */
+app.post('/api/users/:id/mfa/reset', authMiddleware, (req: Request, res: Response): void => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot access user management.', code: 'SCOPE_DENIED' });
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+  try {
+    const id = parseInt(req.params.id as string, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: 'Invalid user id' });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const target = db.getUser(id);
+    if (!target) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    db.deleteUserMfa(id);
+    db.bumpTokenVersion(id);
+    try {
+      db.insertAuditLog({
+        timestamp: Date.now(),
+        username: req.user!.username,
+        method: 'POST',
+        path: req.originalUrl,
+        status_code: 200,
+        node_id: null,
+        ip_address: req.ip || 'unknown',
+        summary: `Admin reset two-factor authentication for ${target.username}`,
+      });
+    } catch (err) {
+      console.warn('[MFA] Admin reset audit log write failed:', (err as Error).message);
+    }
+    console.log('[MFA] Admin reset: target=', target.username, 'by=', req.user!.username);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    console.error('[MFA] Admin reset error:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to reset two-factor authentication' });
   }
 });
 
@@ -6798,6 +7337,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Start server with migration
+let mfaReplayPurgeTimer: NodeJS.Timeout | null = null;
+
 async function startServer() {
   try {
     // Run migration before starting server
@@ -6832,6 +7373,18 @@ async function startServer() {
   sweepStaleGitTempDirs().catch((err) => {
     console.warn('[GitSource] Temp dir sweep failed:', (err as Error).message);
   });
+
+  // Periodic purge of used-MFA-code rows so the replay blacklist stays
+  // bounded even without verification traffic. The table holds (user, code,
+  // window) tuples for the last ~2 minutes; older rows are safe to drop.
+  mfaReplayPurgeTimer = setInterval(() => {
+    try {
+      DatabaseService.getInstance().purgeOldMfaCodes(Date.now() - MFA_REPLAY_TTL_MS);
+    } catch (err) {
+      console.warn('[MFA] Replay purge failed:', (err as Error).message);
+    }
+  }, MFA_REPLAY_PURGE_INTERVAL_MS);
+  mfaReplayPurgeTimer.unref();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -6868,6 +7421,10 @@ const gracefulShutdown = (signal: string) => {
     }
     try { SchedulerService.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] SchedulerService cleanup failed:', (e as Error).message);
+    }
+    if (mfaReplayPurgeTimer) {
+      clearInterval(mfaReplayPurgeTimer);
+      mfaReplayPurgeTimer = null;
     }
     try { DatabaseService.getInstance().getDb().close(); } catch (e) {
       console.warn('[Shutdown] Database close failed:', (e as Error).message);

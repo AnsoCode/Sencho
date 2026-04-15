@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 
-type AppStatus = 'loading' | 'needsSetup' | 'notAuthenticated' | 'authenticated';
+type AppStatus = 'loading' | 'needsSetup' | 'notAuthenticated' | 'mfaChallenge' | 'authenticated';
 
 export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin' | 'auditor';
 
@@ -30,8 +30,10 @@ interface AuthContextType {
   isAdmin: boolean;
   permissions: PermissionsData | null;
   can: (action: PermissionAction, resourceType?: string, resourceId?: string) => boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  ssoLdapLogin: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string; mfaRequired?: boolean }>;
+  ssoLdapLogin: (username: string, password: string) => Promise<{ success: boolean; error?: string; mfaRequired?: boolean }>;
+  submitMfa: (code: string, opts?: { isBackupCode?: boolean }) => Promise<{ success: boolean; error?: string; retryAfter?: number }>;
+  cancelMfa: () => Promise<void>;
   logout: () => Promise<void>;
   completeSetup: () => void;
   checkAuth: () => Promise<void>;
@@ -56,6 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAppStatus('needsSetup');
         setUser(null);
         setPermissions(null);
+        return;
+      }
+
+      // If a partial-auth (mfa_pending) cookie is active, route to the
+      // challenge screen. This handles reloads in the middle of the flow,
+      // including post-OIDC redirects.
+      if (statusData.mfaPending) {
+        setUser(null);
+        setPermissions(null);
+        setAppStatus('mfaChallenge');
         return;
       }
 
@@ -115,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, [permissions]);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string; mfaRequired?: boolean }> => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -129,6 +141,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        if (data.mfaRequired) {
+          // Password was accepted but a second factor is required. Pull the
+          // updated /auth/status so the app routes to the challenge screen.
+          await checkAuth();
+          return { success: true, mfaRequired: true };
+        }
         setAppStatus('authenticated');
         // Fetch user info (role, username) so isAdmin is correct immediately
         await checkAuth();
@@ -141,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const ssoLdapLogin = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const ssoLdapLogin = async (username: string, password: string): Promise<{ success: boolean; error?: string; mfaRequired?: boolean }> => {
     try {
       const response = await fetch('/api/auth/sso/ldap', {
         method: 'POST',
@@ -153,6 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        if (data.mfaRequired) {
+          await checkAuth();
+          return { success: true, mfaRequired: true };
+        }
         setAppStatus('authenticated');
         await checkAuth();
         return { success: true };
@@ -161,6 +183,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
+  const submitMfa = async (
+    code: string,
+    opts: { isBackupCode?: boolean } = {},
+  ): Promise<{ success: boolean; error?: string; retryAfter?: number }> => {
+    try {
+      const response = await fetch('/api/auth/login/mfa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code, isBackupCode: opts.isBackupCode === true }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        await checkAuth();
+        return { success: true };
+      }
+      const retryAfter = typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
+      return { success: false, error: data.error || 'Verification failed', retryAfter };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
+  const cancelMfa = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch (error) {
+      console.error('Cancel MFA error:', error);
+    } finally {
+      setUser(null);
+      setPermissions(null);
+      setAppStatus('notAuthenticated');
     }
   };
 
@@ -195,6 +252,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can,
       login,
       ssoLdapLogin,
+      submitMfa,
+      cancelMfa,
       logout,
       completeSetup,
       checkAuth

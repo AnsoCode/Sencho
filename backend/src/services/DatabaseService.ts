@@ -112,6 +112,27 @@ export interface User {
     updated_at: number;
 }
 
+export interface UserMfa {
+    user_id: number;
+    enabled: number;
+    totp_secret_encrypted: string | null;
+    backup_codes_json: string | null;
+    sso_enforce_mfa: number;
+    failed_attempts: number;
+    locked_until: number | null;
+    created_at: number;
+    updated_at: number;
+}
+
+export type UserMfaUpdate = Partial<{
+    enabled: boolean;
+    totp_secret_encrypted: string | null;
+    backup_codes_json: string | null;
+    sso_enforce_mfa: boolean;
+    failed_attempts: number;
+    locked_until: number | null;
+}>;
+
 export interface RoleAssignment {
     id: number;
     user_id: number;
@@ -486,6 +507,28 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_label_assignments_stack
         ON stack_label_assignments(stack_name, node_id);
+
+      CREATE TABLE IF NOT EXISTS user_mfa (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        totp_secret_encrypted TEXT,
+        backup_codes_json TEXT,
+        sso_enforce_mfa INTEGER NOT NULL DEFAULT 0,
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS mfa_used_tokens (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code TEXT NOT NULL,
+        window INTEGER NOT NULL,
+        used_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, code, window)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mfa_used_tokens_used_at ON mfa_used_tokens(used_at);
 
       CREATE TABLE IF NOT EXISTS stack_git_sources (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1248,6 +1291,115 @@ export class DatabaseService {
 
     public bumpTokenVersion(userId: number): void {
         this.db.prepare('UPDATE users SET token_version = token_version + 1, updated_at = ? WHERE id = ?').run(Date.now(), userId);
+    }
+
+    // --- User MFA ---
+
+    public getUserMfa(userId: number): UserMfa | undefined {
+        return this.db.prepare('SELECT * FROM user_mfa WHERE user_id = ?').get(userId) as UserMfa | undefined;
+    }
+
+    /**
+     * Create or merge a user_mfa row. Any field left undefined on the update
+     * object is preserved. Boolean flags are normalized to 0/1.
+     */
+    public upsertUserMfa(userId: number, updates: UserMfaUpdate): void {
+        const now = Date.now();
+        const existing = this.getUserMfa(userId);
+
+        if (!existing) {
+            this.db.prepare(
+                `INSERT INTO user_mfa
+                  (user_id, enabled, totp_secret_encrypted, backup_codes_json, sso_enforce_mfa,
+                   failed_attempts, locked_until, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+                userId,
+                updates.enabled ? 1 : 0,
+                updates.totp_secret_encrypted ?? null,
+                updates.backup_codes_json ?? null,
+                updates.sso_enforce_mfa ? 1 : 0,
+                updates.failed_attempts ?? 0,
+                updates.locked_until ?? null,
+                now,
+                now,
+            );
+            return;
+        }
+
+        const fields: string[] = [];
+        const values: (string | number | null)[] = [];
+        if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+        if (updates.totp_secret_encrypted !== undefined) { fields.push('totp_secret_encrypted = ?'); values.push(updates.totp_secret_encrypted); }
+        if (updates.backup_codes_json !== undefined) { fields.push('backup_codes_json = ?'); values.push(updates.backup_codes_json); }
+        if (updates.sso_enforce_mfa !== undefined) { fields.push('sso_enforce_mfa = ?'); values.push(updates.sso_enforce_mfa ? 1 : 0); }
+        if (updates.failed_attempts !== undefined) { fields.push('failed_attempts = ?'); values.push(updates.failed_attempts); }
+        if (updates.locked_until !== undefined) { fields.push('locked_until = ?'); values.push(updates.locked_until); }
+
+        if (fields.length === 0) return;
+
+        fields.push('updated_at = ?');
+        values.push(now);
+        values.push(userId);
+        this.db.prepare(`UPDATE user_mfa SET ${fields.join(', ')} WHERE user_id = ?`).run(...values);
+    }
+
+    public deleteUserMfa(userId: number): void {
+        this.db.prepare('DELETE FROM user_mfa WHERE user_id = ?').run(userId);
+        this.db.prepare('DELETE FROM mfa_used_tokens WHERE user_id = ?').run(userId);
+    }
+
+    /**
+     * Single-query helper to enrich a user list with MFA status without the
+     * N+1 cost of calling getUserMfa() per row.
+     */
+    public getUsersWithMfaEnabled(): Set<number> {
+        const rows = this.db.prepare('SELECT user_id FROM user_mfa WHERE enabled = 1').all() as { user_id: number }[];
+        return new Set(rows.map((r) => r.user_id));
+    }
+
+    public recordMfaFailure(userId: number): number {
+        const row = this.db.prepare(
+            `UPDATE user_mfa
+                SET failed_attempts = failed_attempts + 1,
+                    updated_at = ?
+              WHERE user_id = ?
+          RETURNING failed_attempts`
+        ).get(Date.now(), userId) as { failed_attempts: number } | undefined;
+        return row?.failed_attempts ?? 0;
+    }
+
+    public clearMfaFailures(userId: number): void {
+        this.db.prepare(
+            `UPDATE user_mfa
+                SET failed_attempts = 0,
+                    locked_until = NULL,
+                    updated_at = ?
+              WHERE user_id = ?`
+        ).run(Date.now(), userId);
+    }
+
+    public lockMfa(userId: number, untilMs: number): void {
+        this.db.prepare(
+            `UPDATE user_mfa SET locked_until = ?, updated_at = ? WHERE user_id = ?`
+        ).run(untilMs, Date.now(), userId);
+    }
+
+    public isMfaCodeUsed(userId: number, code: string, window: number): boolean {
+        const row = this.db.prepare(
+            'SELECT 1 FROM mfa_used_tokens WHERE user_id = ? AND code = ? AND window = ?'
+        ).get(userId, code, window);
+        return !!row;
+    }
+
+    public markMfaCodeUsed(userId: number, code: string, window: number): void {
+        this.db.prepare(
+            'INSERT OR IGNORE INTO mfa_used_tokens (user_id, code, window, used_at) VALUES (?, ?, ?, ?)'
+        ).run(userId, code, window, Date.now());
+    }
+
+    public purgeOldMfaCodes(olderThanMs: number): void {
+        this.db.prepare('DELETE FROM mfa_used_tokens WHERE used_at < ?').run(olderThanMs);
     }
 
     // --- Role Assignments ---

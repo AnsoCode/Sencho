@@ -60,3 +60,37 @@ export function cleanupTestDb(tmpDir: string): void {
     // best-effort cleanup
   }
 }
+
+/**
+ * Seed a user with MFA enrolled. Returns the raw TOTP secret (for generating
+ * valid codes in tests) and the cleartext backup codes. Callers are expected
+ * to have already called `setupTestDb`.
+ */
+export async function seedMfaUser(
+  username: string,
+  password: string,
+  opts: { role?: 'admin' | 'viewer' | 'deployer' | 'node-admin' | 'auditor'; ssoEnforce?: boolean } = {},
+): Promise<{ userId: number; secret: string; backupCodes: string[] }> {
+  const bcryptMod = (await import('bcrypt')).default;
+  const { DatabaseService } = await import('../../services/DatabaseService');
+  const { CryptoService } = await import('../../services/CryptoService');
+  const { MfaService } = await import('../../services/MfaService');
+
+  const db = DatabaseService.getInstance();
+  const passwordHash = await bcryptMod.hash(password, 1);
+  const userId = db.addUser({ username, password_hash: passwordHash, role: opts.role ?? 'viewer' });
+
+  const secret = MfaService.generateSecret();
+  const backupCodes = MfaService.generateBackupCodes();
+  const hashes = await MfaService.hashBackupCodes(backupCodes);
+  db.upsertUserMfa(userId, {
+    enabled: true,
+    totp_secret_encrypted: CryptoService.getInstance().encrypt(secret),
+    backup_codes_json: JSON.stringify(hashes),
+    sso_enforce_mfa: opts.ssoEnforce === true,
+    failed_attempts: 0,
+    locked_until: null,
+  });
+
+  return { userId, secret, backupCodes };
+}
