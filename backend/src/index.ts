@@ -3931,6 +3931,119 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
+  if (!requirePermission(req, res, 'stack:create')) return;
+  try {
+    const {
+      stack_name,
+      repo_url,
+      branch,
+      compose_path,
+      sync_env,
+      env_path,
+      auth_type,
+      token,
+      auto_apply_on_webhook,
+      auto_deploy_on_apply,
+      deploy_now,
+    } = req.body ?? {};
+
+    if (typeof stack_name !== 'string' || !stack_name.trim()) {
+      return res.status(400).json({ error: 'stack_name is required' });
+    }
+    if (!isValidStackName(stack_name)) {
+      return res.status(400).json({ error: 'Stack name can only contain alphanumeric characters, hyphens, and underscores' });
+    }
+    if (typeof repo_url !== 'string' || !repo_url.trim()) {
+      return res.status(400).json({ error: 'repo_url is required' });
+    }
+    if (typeof branch !== 'string' || !branch.trim()) {
+      return res.status(400).json({ error: 'branch is required' });
+    }
+    if (typeof compose_path !== 'string' || !compose_path.trim()) {
+      return res.status(400).json({ error: 'compose_path is required' });
+    }
+    const resolvedAuthType = auth_type === 'token' ? 'token' : 'none';
+    if (!/^https:\/\//i.test(repo_url)) {
+      return res.status(400).json({ error: 'Only HTTPS repository URLs are supported' });
+    }
+    if (repo_url.length > 2048) {
+      return res.status(400).json({ error: 'repo_url is too long' });
+    }
+    if (branch.length > 256) {
+      return res.status(400).json({ error: 'branch is too long' });
+    }
+    if (compose_path.length > 1024) {
+      return res.status(400).json({ error: 'compose_path is too long' });
+    }
+    if (typeof env_path === 'string' && env_path.length > 1024) {
+      return res.status(400).json({ error: 'env_path is too long' });
+    }
+    if (typeof token === 'string' && token.length > 8192) {
+      return res.status(400).json({ error: 'token is too long' });
+    }
+
+    // Reject if a stack with this name already exists on disk. Without this
+    // the service would catch it at createStack() time, but erroring early
+    // avoids spinning up a temp clone we will not use.
+    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    if (stacks.includes(stack_name)) {
+      return res.status(409).json({ error: 'Stack already exists' });
+    }
+
+    const syncEnv = Boolean(sync_env);
+    const resolvedEnvPath = syncEnv
+      ? (typeof env_path === 'string' && env_path.trim()
+        ? env_path
+        : path.posix.join(path.posix.dirname(compose_path.replace(/\\/g, '/')) || '.', '.env'))
+      : null;
+
+    const result = await GitSourceService.getInstance().createStackFromGit({
+      stackName: stack_name.trim(),
+      repoUrl: repo_url.trim(),
+      branch: branch.trim(),
+      composePath: compose_path.trim(),
+      syncEnv,
+      envPath: resolvedEnvPath,
+      authType: resolvedAuthType,
+      token: resolvedAuthType === 'token' && typeof token === 'string' && token !== '' ? token : null,
+      autoApplyOnWebhook: Boolean(auto_apply_on_webhook),
+      autoDeployOnApply: Boolean(auto_deploy_on_apply),
+    });
+
+    invalidateNodeCaches(req.nodeId);
+
+    // Deploy is best-effort. The compose file is already on disk and the
+    // git source is linked, so a deploy failure does not roll back the
+    // stack; the user can retry the deploy from the editor. This mirrors
+    // the apply-then-deploy behavior in GitSourceService.apply().
+    let deployed = false;
+    let deployError: string | undefined;
+    if (deploy_now === true) {
+      try {
+        await ComposeService.getInstance(req.nodeId).deployStack(stack_name);
+        deployed = true;
+        invalidateNodeCaches(req.nodeId);
+      } catch (e) {
+        deployError = getErrorMessage(e, 'Deploy failed');
+        console.error(`[Stacks] Deploy after create-from-git failed for ${stack_name}:`, deployError);
+      }
+    }
+
+    console.log(`[Stacks] Stack created from Git: ${stack_name} at ${result.commitSha.slice(0, 7)}`);
+    res.json({
+      name: stack_name,
+      source: result.source,
+      commitSha: result.commitSha,
+      envWritten: result.envWritten,
+      deployed,
+      deployError,
+    });
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
 app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:delete', 'stack', stackName)) return;
