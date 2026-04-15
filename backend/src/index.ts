@@ -730,6 +730,9 @@ app.post('/api/auth/login', authRateLimiter, async (req: Request, res: Response)
         // and signal the client to complete the TOTP challenge. No session
         // cookie is set until the second factor is verified.
         const mfa = db.getUserMfa(user.id);
+        if (isDebugEnabled()) {
+          console.log('[MFA:diag] login: path=local user=', user.username, 'mfaEnabled=', !!mfa?.enabled, 'failedAttempts=', mfa?.failed_attempts ?? 0, 'lockedUntil=', mfa?.locked_until ?? null);
+        }
         if (mfa?.enabled) {
           issueMfaPendingCookie(res, req, user, jwtSecret);
           console.log('[Auth] Login password OK, MFA challenge pending:', user.username);
@@ -896,6 +899,9 @@ app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Respon
     // If MFA is enabled AND the user has opted into SSO enforcement, route
     // through the TOTP challenge. Otherwise SSO bypasses MFA (default).
     const mfa = DatabaseService.getInstance().getUserMfa(user.id);
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] login: path=ldap user=', user.username, 'mfaEnabled=', !!mfa?.enabled, 'ssoEnforce=', mfa?.sso_enforce_mfa === 1);
+    }
     if (mfa?.enabled && mfa.sso_enforce_mfa) {
       issueMfaPendingCookie(res, req, user, settings.auth_jwt_secret, { sso: true });
       console.log(`[SSO] LDAP login password OK, MFA challenge pending: ${user.username}`);
@@ -1020,6 +1026,9 @@ app.get('/api/auth/sso/oidc/:provider/callback', ssoRateLimiter, async (req: Req
     // the partial-auth cookie. The frontend surfaces the challenge screen
     // based on `/api/auth/status` after the redirect lands.
     const mfa = DatabaseService.getInstance().getUserMfa(user.id);
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] login: path=oidc provider=', provider, 'user=', user.username, 'mfaEnabled=', !!mfa?.enabled, 'ssoEnforce=', mfa?.sso_enforce_mfa === 1);
+    }
     if (mfa?.enabled && mfa.sso_enforce_mfa) {
       issueMfaPendingCookie(res, req, user, settings.auth_jwt_secret, { sso: true });
       console.log(`[SSO] OIDC login password OK, MFA challenge pending: ${user.username} via ${provider}`);
@@ -1052,6 +1061,7 @@ const MFA_REPLAY_PURGE_INTERVAL_MS = 60 * 1000;
  * codes (single-use). Enforces per-user failure counter and lockout.
  */
 app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  const startedAt = Date.now();
   try {
     const db = DatabaseService.getInstance();
     const settings = db.getGlobalSettings();
@@ -1063,6 +1073,7 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
 
     const pendingCookie = req.cookies?.[MFA_PENDING_COOKIE_NAME];
     if (!pendingCookie) {
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: no pending cookie');
       res.status(401).json({ error: 'No pending two-factor challenge. Please sign in again.' });
       return;
     }
@@ -1072,12 +1083,14 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
       decoded = jwt.verify(pendingCookie, jwtSecret) as typeof decoded;
     } catch {
       clearMfaPendingCookie(res, req);
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: pending cookie expired or invalid');
       res.status(401).json({ error: 'Two-factor challenge expired. Please sign in again.' });
       return;
     }
 
     if (decoded.scope !== MFA_PENDING_SCOPE || typeof decoded.user_id !== 'number') {
       clearMfaPendingCookie(res, req);
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: bad cookie scope=', decoded.scope, 'userId=', decoded.user_id);
       res.status(401).json({ error: 'Invalid two-factor challenge' });
       return;
     }
@@ -1086,14 +1099,20 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
     const mfa = db.getUserMfa(decoded.user_id);
     if (!user || !mfa?.enabled || !mfa.totp_secret_encrypted) {
       clearMfaPendingCookie(res, req);
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: mfa not configured for userId=', decoded.user_id);
       res.status(401).json({ error: 'Two-factor authentication is not configured' });
       return;
+    }
+
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] login/mfa: entry user=', user.username, 'sso=', !!decoded.sso, 'failedAttempts=', mfa.failed_attempts, 'lockedUntil=', mfa.locked_until ?? null, 'lockedRemainingMs=', mfa.locked_until ? Math.max(0, mfa.locked_until - Date.now()) : 0);
     }
 
     // Lockout check
     if (mfa.locked_until && mfa.locked_until > Date.now()) {
       const retryAfter = Math.ceil((mfa.locked_until - Date.now()) / 1000);
       res.setHeader('Retry-After', String(retryAfter));
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: rejected (locked) user=', user.username, 'retryAfter=', retryAfter);
       res.status(423).json({ error: 'Too many failed attempts. Try again later.', retryAfter });
       return;
     }
@@ -1111,17 +1130,24 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
 
     if (isBackup) {
       const hashes: string[] = mfa.backup_codes_json ? JSON.parse(mfa.backup_codes_json) : [];
+      const bcryptStart = Date.now();
       const result = await MfaService.verifyBackupCode(hashes, rawCode);
+      const bcryptMs = Date.now() - bcryptStart;
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: branch=backup user=', user.username, 'matched=', result.matched, 'bcryptMs=', bcryptMs, 'hashesChecked=', hashes.length);
+      if (bcryptMs > 500) console.warn('[MFA] Slow backup-code verify for user=', user.username, 'durationMs=', bcryptMs);
       if (result.matched) {
         db.upsertUserMfa(decoded.user_id, { backup_codes_json: JSON.stringify(result.remainingHashes) });
         verified = true;
       }
     } else {
       const trimmed = rawCode.trim().replace(/\s+/g, '');
-      if (MfaService.verifyTotp(secret, trimmed)) {
-        const window = MfaService.currentWindow();
+      const totpOk = MfaService.verifyTotp(secret, trimmed);
+      const window = MfaService.currentWindow();
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: branch=totp user=', user.username, 'formatOk=', /^\d{6}$/.test(trimmed), 'totpOk=', totpOk, 'window=', window);
+      if (totpOk) {
         if (db.isMfaCodeUsed(decoded.user_id, trimmed, window)) {
           db.recordMfaFailure(decoded.user_id);
+          if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: replay rejected user=', user.username, 'window=', window);
           res.status(401).json({ error: 'This code was already used. Please wait for the next one.', code: 'OTP_REPLAY' });
           return;
         }
@@ -1132,9 +1158,12 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
 
     if (!verified) {
       const failedCount = db.recordMfaFailure(decoded.user_id);
+      if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: verify failed user=', user.username, 'failedCount=', failedCount, 'lockoutThreshold=', MFA_MAX_FAILED);
       if (failedCount >= MFA_MAX_FAILED) {
-        db.lockMfa(decoded.user_id, Date.now() + MFA_LOCKOUT_MS);
+        const lockedUntil = Date.now() + MFA_LOCKOUT_MS;
+        db.lockMfa(decoded.user_id, lockedUntil);
         res.setHeader('Retry-After', String(Math.ceil(MFA_LOCKOUT_MS / 1000)));
+        console.warn('[MFA] Lockout engaged: user=', user.username, 'lockedUntil=', new Date(lockedUntil).toISOString());
         res.status(423).json({ error: 'Too many failed attempts. Try again later.', retryAfter: Math.ceil(MFA_LOCKOUT_MS / 1000) });
         return;
       }
@@ -1146,6 +1175,7 @@ app.post('/api/auth/login/mfa', authRateLimiter, async (req: Request, res: Respo
     clearMfaPendingCookie(res, req);
     issueSessionCookie(res, req, user, jwtSecret);
     console.log('[Auth] MFA challenge cleared:', user.username);
+    if (isDebugEnabled()) console.log('[MFA:diag] login/mfa: success user=', user.username, 'durationMs=', Date.now() - startedAt);
     res.json({ success: true });
   } catch (error: unknown) {
     console.error('[Auth] MFA verification error:', (error as Error).message);
@@ -1194,6 +1224,9 @@ app.post('/api/auth/mfa/enroll/start', authMiddleware, (req: Request, res: Respo
     if (existing?.enabled) {
       res.status(409).json({ error: 'Two-factor authentication is already enabled' });
       return;
+    }
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] enroll/start user=', req.user.username, 'hadPendingSecret=', Boolean(existing?.totp_secret_encrypted));
     }
 
     const secret = MfaService.generateSecret();
@@ -1273,6 +1306,10 @@ app.post('/api/auth/mfa/enroll/confirm', authMiddleware, async (req: Request, re
       issueSessionCookie(res, req, refreshed, settings.auth_jwt_secret);
     }
 
+    console.log('[MFA] Enrolment completed:', req.user.username);
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] enroll/confirm backupCodesIssued=', backupCodes.length, 'user=', req.user.username);
+    }
     res.json({ backupCodes: backupCodes.map((c) => MfaService.formatBackupCodeForDisplay(c)) });
   } catch (error: unknown) {
     console.error('[MFA] enroll confirm error:', (error as Error).message);
@@ -1318,6 +1355,10 @@ app.post('/api/auth/mfa/disable', authMiddleware, async (req: Request, res: Resp
       ok = MfaService.verifyTotp(cryptoSvc.decrypt(mfa.totp_secret_encrypted), code);
     }
 
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] disable user=', req.user.username, 'codeType=', isBackup ? 'backup' : 'totp', 'verified=', ok);
+    }
+
     if (!ok) {
       res.status(401).json({ error: 'Invalid verification code' });
       return;
@@ -1335,6 +1376,7 @@ app.post('/api/auth/mfa/disable', authMiddleware, async (req: Request, res: Resp
       issueSessionCookie(res, req, refreshed, settings.auth_jwt_secret);
     }
 
+    console.log('[MFA] Disabled by user:', req.user.username);
     res.json({ success: true });
   } catch (error: unknown) {
     console.error('[MFA] disable error:', (error as Error).message);
@@ -1379,6 +1421,10 @@ app.post('/api/auth/mfa/backup-codes/regenerate', authMiddleware, async (req: Re
     const backupCodes = MfaService.generateBackupCodes();
     const hashes = await MfaService.hashBackupCodes(backupCodes);
     db.upsertUserMfa(req.user.userId, { backup_codes_json: JSON.stringify(hashes) });
+    console.log('[MFA] Backup codes regenerated:', req.user.username);
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] backup-codes/regenerate user=', req.user.username, 'codesIssued=', backupCodes.length);
+    }
     res.json({ backupCodes: backupCodes.map((c) => MfaService.formatBackupCodeForDisplay(c)) });
   } catch (error: unknown) {
     console.error('[MFA] regenerate backup codes error:', (error as Error).message);
@@ -1406,6 +1452,7 @@ app.put('/api/auth/mfa/sso-bypass', authMiddleware, (req: Request, res: Response
     }
     if ((mfa.sso_enforce_mfa === 1) !== enforce) {
       db.upsertUserMfa(req.user.userId, { sso_enforce_mfa: enforce });
+      console.log('[MFA] SSO bypass toggled:', req.user.username, 'enforce=', enforce);
     }
     res.json({ success: true, sso_enforce_mfa: enforce });
   } catch (error: unknown) {
@@ -3106,6 +3153,9 @@ app.post('/api/users/:id/mfa/reset', authMiddleware, (req: Request, res: Respons
       console.warn('[MFA] Admin reset audit log write failed:', (err as Error).message);
     }
     console.log('[MFA] Admin reset: target=', target.username, 'by=', req.user!.username);
+    if (isDebugEnabled()) {
+      console.log('[MFA:diag] admin-reset target=', target.username, 'actor=', req.user!.username);
+    }
     res.json({ success: true });
   } catch (error: unknown) {
     console.error('[MFA] Admin reset error:', (error as Error).message);
@@ -7379,7 +7429,10 @@ async function startServer() {
   // window) tuples for the last ~2 minutes; older rows are safe to drop.
   mfaReplayPurgeTimer = setInterval(() => {
     try {
-      DatabaseService.getInstance().purgeOldMfaCodes(Date.now() - MFA_REPLAY_TTL_MS);
+      const deleted = DatabaseService.getInstance().purgeOldMfaCodes(Date.now() - MFA_REPLAY_TTL_MS);
+      if (isDebugEnabled() && deleted > 0) {
+        console.log('[MFA:diag] replay purge deleted=', deleted);
+      }
     } catch (err) {
       console.warn('[MFA] Replay purge failed:', (err as Error).message);
     }

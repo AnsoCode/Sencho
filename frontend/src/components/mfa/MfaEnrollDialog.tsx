@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Copy, Download, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 
 interface MfaEnrollDialogProps {
   open: boolean;
@@ -33,6 +34,8 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  // Latch so auto-submit only fires once per complete entry.
+  const submittedRef = useRef(false);
 
   // When the dialog opens, start enrolment so the QR is ready immediately.
   useEffect(() => {
@@ -43,6 +46,7 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
     setError('');
     setBackupCodes([]);
     setShowSecret(false);
+    submittedRef.current = false;
     setLoading(true);
     apiFetch('/auth/mfa/enroll/start', { method: 'POST', localOnly: true })
       .then(async (r) => {
@@ -65,27 +69,50 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
     return () => { cancelled = true; };
   }, [open, onOpenChange]);
 
-  const handleConfirm = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitConfirm = async (valueToSubmit: string) => {
     setError('');
     setLoading(true);
     try {
       const res = await apiFetch('/auth/mfa/enroll/confirm', {
         method: 'POST',
         localOnly: true,
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: valueToSubmit }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error || 'Verification failed');
+        setCode('');
+        submittedRef.current = false;
         return;
       }
       setBackupCodes(data.backupCodes || []);
       setStep('backup');
     } catch (err) {
       setError((err as Error)?.message || 'Verification failed');
+      submittedRef.current = false;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading || code.length !== TOTP_LENGTH) return;
+    submittedRef.current = true;
+    void submitConfirm(code);
+  };
+
+  const handleCodeChange = (raw: string) => {
+    const normalized = normalizeTotpInput(raw);
+    setCode(normalized);
+    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (
+      normalized.length === TOTP_LENGTH &&
+      !loading &&
+      !submittedRef.current
+    ) {
+      submittedRef.current = true;
+      requestAnimationFrame(() => { void submitConfirm(normalized); });
     }
   };
 
@@ -202,9 +229,9 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
                 autoComplete="one-time-code"
                 autoFocus
                 required
-                maxLength={6}
+                maxLength={TOTP_LENGTH}
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => handleCodeChange(e.target.value)}
                 className="font-mono tabular-nums tracking-widest text-center"
                 placeholder="123456"
               />
@@ -212,7 +239,7 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
             {error && <div className="text-sm text-destructive">{error}</div>}
             <DialogFooter className="gap-2 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => setStep('qr')} disabled={loading}>Back</Button>
-              <Button type="submit" disabled={loading || code.length !== 6}>
+              <Button type="submit" disabled={loading || code.length !== TOTP_LENGTH}>
                 {loading ? 'Verifying...' : 'Verify'}
               </Button>
             </DialogFooter>

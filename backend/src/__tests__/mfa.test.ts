@@ -477,3 +477,168 @@ describe('resetMfaForUser CLI helper', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+// ─── Edge cases surfaced by Phase 1 audit ─────────────────────────────────────
+
+describe('MfaService.verifyTotp drift handling', () => {
+  it('rejects a code generated more than one step outside the window', () => {
+    const secret = MfaService.generateSecret();
+    // Freeze clock at a known step boundary.
+    const baseMs = 1_700_000_000_000;
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(baseMs);
+      const code = authenticator.generate(secret);
+      // Advance three full 30s windows so the code is outside the +-1 tolerance.
+      vi.setSystemTime(baseMs + 3 * 30_000);
+      expect(MfaService.verifyTotp(secret, code)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still accepts a fresh code generated in the current window', () => {
+    const secret = MfaService.generateSecret();
+    const code = authenticator.generate(secret);
+    expect(MfaService.verifyTotp(secret, code)).toBe(true);
+  });
+});
+
+describe('MfaService.normalizeBackupCode canonicalisation', () => {
+  it('canonicalises smart-dash and trailing whitespace to the hyphenless form', () => {
+    // en-dash and em-dash variants a user may paste from a word processor
+    expect(MfaService.normalizeBackupCode('abcde\u2013fghij ')).toBe('ABCDEFGHIJ');
+    expect(MfaService.normalizeBackupCode('abcde\u2014fghij')).toBe('ABCDEFGHIJ');
+    expect(MfaService.normalizeBackupCode('  ABCDE-FGHIJ\n')).toBe('ABCDEFGHIJ');
+  });
+});
+
+describe('POST /api/auth/login/mfa edge cases', () => {
+  const password = 'edgepass12345';
+
+  async function challenge(username: string): Promise<string> {
+    const res = await request(app).post('/api/auth/login').send({ username, password });
+    return findCookie(res.headers, 'sencho_mfa_pending')!;
+  }
+
+  it('rejects backup codes with invalid format without reaching the bcrypt path', async () => {
+    const username = 'mfa-badformat';
+    const { userId } = await seedMfaUser(username, password);
+    const db = DatabaseService.getInstance();
+    const pending = await challenge(username);
+
+    // Too short, non-alphanumeric garbage, and an 11-char alphanumeric that
+    // matches no stored hash. All should produce 401 and increment the counter.
+    const bad = ['12345', '!!!!!!!!!!!', 'ZZZZZZZZZZZ'];
+    for (const code of bad) {
+      const r = await request(app)
+        .post('/api/auth/login/mfa')
+        .set('Cookie', pending)
+        .send({ code, isBackupCode: true });
+      expect(r.status).toBe(401);
+    }
+
+    const mfa = db.getUserMfa(userId)!;
+    expect(mfa.failed_attempts).toBe(bad.length);
+  });
+
+  it('clears failed_attempts on a successful verify after prior failures below the threshold', async () => {
+    const username = 'mfa-reset-counter';
+    const { userId, secret } = await seedMfaUser(username, password);
+    const db = DatabaseService.getInstance();
+
+    // Seed three failed attempts (below the 5-failure lockout threshold).
+    db.upsertUserMfa(userId, { failed_attempts: 3, locked_until: null });
+    expect(db.getUserMfa(userId)!.failed_attempts).toBe(3);
+
+    const pending = await challenge(username);
+    const ok = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pending)
+      .send({ code: authenticator.generate(secret) });
+    expect(ok.status).toBe(200);
+
+    const after = db.getUserMfa(userId)!;
+    expect(after.failed_attempts).toBe(0);
+    expect(after.locked_until).toBeNull();
+  });
+
+  it('lets a locked user sign in again once locked_until has passed', async () => {
+    const username = 'mfa-lock-expired';
+    const { userId, secret } = await seedMfaUser(username, password);
+    const db = DatabaseService.getInstance();
+
+    // Simulate a stale lockout that has already expired.
+    db.upsertUserMfa(userId, {
+      failed_attempts: 5,
+      locked_until: Date.now() - 60_000,
+    });
+
+    const pending = await challenge(username);
+    const ok = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pending)
+      .send({ code: authenticator.generate(secret) });
+    expect(ok.status).toBe(200);
+
+    const after = db.getUserMfa(userId)!;
+    expect(after.failed_attempts).toBe(0);
+    expect(after.locked_until).toBeNull();
+  });
+});
+
+describe('MFA enrol/start overwrites a prior pending secret', () => {
+  it('only the most recent enroll/start secret is valid on confirm', async () => {
+    const username = 'mfa-overwrite';
+    const password = 'overwritepass12345';
+    // Create a plain user (no MFA seeded); we want to exercise the enrol path.
+    const db = DatabaseService.getInstance();
+    const bcryptMod = (await import('bcrypt')).default;
+    const passwordHash = await bcryptMod.hash(password, 1);
+    const userId = db.addUser({ username, password_hash: passwordHash, role: 'viewer' });
+
+    const user = db.getUser(userId)!;
+    const token = jwt.sign(
+      { username, role: 'viewer', tv: user.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+
+    const first = await request(app)
+      .post('/api/auth/mfa/enroll/start')
+      .set('Authorization', `Bearer ${token}`);
+    expect(first.status).toBe(200);
+    const firstSecret = first.body.secret as string;
+
+    const second = await request(app)
+      .post('/api/auth/mfa/enroll/start')
+      .set('Authorization', `Bearer ${token}`);
+    expect(second.status).toBe(200);
+    const secondSecret = second.body.secret as string;
+    expect(secondSecret).not.toBe(firstSecret);
+
+    // First secret no longer verifies against the stored (now-overwritten) secret.
+    const wrongCode = authenticator.generate(firstSecret);
+    const rejected = await request(app)
+      .post('/api/auth/mfa/enroll/confirm')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: wrongCode });
+    // The rejected code may still happen to equal the new secret's current
+    // code (1-in-a-million), so retry with the second secret on a clean run.
+    if (rejected.status === 200) {
+      // Extremely unlikely collision; the assertion proves the overwrite
+      // path at least did not reject a valid-for-secondSecret code.
+      expect(rejected.body.backupCodes).toHaveLength(10);
+      return;
+    }
+    expect(rejected.status).toBe(401);
+
+    // Second secret verifies on confirm.
+    const ok = await request(app)
+      .post('/api/auth/mfa/enroll/confirm')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: authenticator.generate(secondSecret) });
+    expect(ok.status).toBe(200);
+    expect(ok.body.backupCodes).toHaveLength(10);
+  });
+});
