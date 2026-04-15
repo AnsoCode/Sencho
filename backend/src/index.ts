@@ -35,6 +35,7 @@ import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CacheService } from './services/CacheService';
 import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
+import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, type GitSourceErrorCode } from './services/GitSourceService';
 
 // ── Hot-path cache TTLs ────────────────────────────────────────────────
 // Short TTLs collapse concurrent polling pressure across browser tabs and
@@ -2254,9 +2255,13 @@ app.post('/api/webhooks', authMiddleware, async (req: Request, res: Response): P
       res.status(400).json({ error: 'name, stack_name, and action are required' });
       return;
     }
-    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull'];
+    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull', 'git-pull'];
     if (!validActions.includes(action)) {
       res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
+      return;
+    }
+    if (action === 'git-pull' && !GitSourceService.getInstance().get(stack_name)) {
+      res.status(400).json({ error: 'Configure a Git source for this stack before creating a git-pull webhook' });
       return;
     }
 
@@ -2283,10 +2288,17 @@ app.put('/api/webhooks/:id', authMiddleware, async (req: Request, res: Response)
     if (!webhook) { res.status(404).json({ error: 'Webhook not found' }); return; }
 
     const { name, stack_name, action, enabled } = req.body;
-    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull'];
+    const validActions = ['deploy', 'restart', 'stop', 'start', 'pull', 'git-pull'];
     if (action && !validActions.includes(action)) {
       res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
       return;
+    }
+    if (action === 'git-pull') {
+      const targetStack = stack_name || webhook.stack_name;
+      if (!GitSourceService.getInstance().get(targetStack)) {
+        res.status(400).json({ error: 'Configure a Git source for this stack before enabling a git-pull webhook' });
+        return;
+      }
     }
 
     DatabaseService.getInstance().updateWebhook(id, { name, stack_name, action, enabled });
@@ -3678,6 +3690,182 @@ app.put('/api/stacks/:stackName/env', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[Stacks] Failed to save env file:', error);
     res.status(500).json({ error: 'Failed to save env file' });
+  }
+});
+
+// ── Git sources ────────────────────────────────────────────────────────
+// Map GitSourceError codes to HTTP statuses so the UI can tell apart things
+// a user can fix (bad token, missing file) from transient failures.
+function gitSourceStatus(code: GitSourceErrorCode): number {
+  switch (code) {
+    case 'AUTH_FAILED': return 401;
+    case 'REPO_NOT_FOUND':
+    case 'BRANCH_NOT_FOUND':
+    case 'FILE_NOT_FOUND':
+      return 404;
+    case 'NETWORK_TIMEOUT': return 504;
+    default: return 400;
+  }
+}
+
+function sendGitSourceError(res: Response, err: unknown): void {
+  if (err instanceof GitSourceError) {
+    res.status(gitSourceStatus(err.code)).json({ error: err.message, code: err.code });
+    return;
+  }
+  console.error('[GitSource] Unexpected error:', err);
+  res.status(500).json({ error: 'Git source operation failed' });
+}
+
+app.get('/api/git-sources', async (_req: Request, res: Response) => {
+  try {
+    const sources = GitSourceService.getInstance().list();
+    res.json(sources);
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.get('/api/stacks/:stackName/git-source', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    const source = GitSourceService.getInstance().get(stackName);
+    if (!source) return res.status(404).json({ error: 'No Git source configured for this stack' });
+    res.json(source);
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.put('/api/stacks/:stackName/git-source', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    const {
+      repo_url,
+      branch,
+      compose_path,
+      sync_env,
+      env_path,
+      auth_type,
+      token,
+      auto_apply_on_webhook,
+      auto_deploy_on_apply,
+    } = req.body ?? {};
+
+    if (typeof repo_url !== 'string' || !repo_url.trim()) {
+      return res.status(400).json({ error: 'repo_url is required' });
+    }
+    if (typeof branch !== 'string' || !branch.trim()) {
+      return res.status(400).json({ error: 'branch is required' });
+    }
+    if (typeof compose_path !== 'string' || !compose_path.trim()) {
+      return res.status(400).json({ error: 'compose_path is required' });
+    }
+    if (auth_type !== 'none' && auth_type !== 'token') {
+      return res.status(400).json({ error: 'auth_type must be "none" or "token"' });
+    }
+    if (!/^https?:\/\//i.test(repo_url)) {
+      return res.status(400).json({ error: 'Only HTTPS repository URLs are supported' });
+    }
+
+    const syncEnv = Boolean(sync_env);
+    const resolvedEnvPath = syncEnv
+      ? (typeof env_path === 'string' && env_path.trim()
+        ? env_path
+        : path.posix.join(path.posix.dirname(compose_path.replace(/\\/g, '/')) || '.', '.env'))
+      : null;
+
+    const source = await GitSourceService.getInstance().upsert({
+      stackName,
+      repoUrl: repo_url.trim(),
+      branch: branch.trim(),
+      composePath: compose_path.trim(),
+      syncEnv,
+      envPath: resolvedEnvPath,
+      authType: auth_type,
+      token: typeof token === 'string' ? token : undefined,
+      autoApplyOnWebhook: Boolean(auto_apply_on_webhook),
+      autoDeployOnApply: Boolean(auto_deploy_on_apply),
+    });
+
+    console.log(`[GitSource] Configured git source for ${stackName}`);
+    res.json(source);
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.delete('/api/stacks/:stackName/git-source', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    GitSourceService.getInstance().delete(stackName);
+    console.log(`[GitSource] Removed git source for ${stackName}`);
+    res.json({ success: true });
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.post('/api/stacks/:stackName/git-source/pull', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    const result = await GitSourceService.getInstance().pull(stackName);
+    res.json(result);
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.post('/api/stacks/:stackName/git-source/apply', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    const { commitSha, deploy } = req.body ?? {};
+    if (typeof commitSha !== 'string' || !commitSha.trim()) {
+      return res.status(400).json({ error: 'commitSha is required' });
+    }
+    const result = await GitSourceService.getInstance().apply(
+      stackName,
+      commitSha.trim(),
+      { deploy: typeof deploy === 'boolean' ? deploy : undefined }
+    );
+    invalidateNodeCaches(req.nodeId);
+    console.log(`[GitSource] Applied commit ${commitSha.trim().slice(0, 7)} to ${stackName}${result.deployed ? ' (deployed)' : ''}`);
+    res.json(result);
+  } catch (error) {
+    sendGitSourceError(res, error);
+  }
+});
+
+app.post('/api/stacks/:stackName/git-source/dismiss-pending', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    GitSourceService.getInstance().dismissPending(stackName);
+    res.json({ success: true });
+  } catch (error) {
+    sendGitSourceError(res, error);
   }
 });
 
@@ -6475,6 +6663,11 @@ async function startServer() {
 
   // Start Scheduled Operations Service
   SchedulerService.getInstance().start();
+
+  // Sweep any leftover git-source temp clones from a crashed prior run
+  sweepStaleGitTempDirs().catch((err) => {
+    console.warn('[GitSource] Temp dir sweep failed:', (err as Error).message);
+  });
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

@@ -21,7 +21,7 @@ import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highli
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -44,6 +44,7 @@ import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import { cn } from '@/lib/utils';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
+import { GitSourcePanel } from './stack/GitSourcePanel';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
@@ -123,6 +124,8 @@ export default function EditorLayout() {
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const [gitSourceOpen, setGitSourceOpen] = useState(false);
+  const [gitSourcePendingMap, setGitSourcePendingMap] = useState<Record<string, boolean>>({});
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -415,6 +418,26 @@ export default function EditorLayout() {
     }
   };
 
+  /**
+   * Populate the per-stack "pending git source update" map. Runs on mount and
+   * whenever a git-source change is signalled by the panel. Backend failure
+   * leaves the map empty, which is the correct fallback (no badges shown).
+   */
+  const refreshGitSourcePending = async () => {
+    try {
+      const res = await apiFetch('/git-sources');
+      if (!res.ok) return;
+      const sources: Array<{ stack_name: string; pending_commit_sha: string | null }> = await res.json();
+      const map: Record<string, boolean> = {};
+      for (const s of sources) {
+        if (s.pending_commit_sha) map[s.stack_name] = true;
+      }
+      setGitSourcePendingMap(map);
+    } catch {
+      // Non-critical; leave prior state.
+    }
+  };
+
   const handleScanStacks = async () => {
     if (isScanning) return;
     setIsScanning(true);
@@ -616,6 +639,7 @@ export default function EditorLayout() {
 
     refreshStacks();
     fetchImageUpdates();
+    refreshGitSourcePending();
 
     // Poll for image update results every 5 minutes so background checks are picked up
     const imageUpdateInterval = setInterval(fetchImageUpdates, 5 * 60 * 1000);
@@ -1566,6 +1590,27 @@ export default function EditorLayout() {
                                 </CursorProvider>
                               )}
 
+                              {gitSourcePendingMap[file] && (
+                                <CursorProvider>
+                                  <CursorContainer className="inline-flex items-center shrink-0">
+                                    <GitBranch className="w-3 h-3 text-brand" strokeWidth={1.5} />
+                                  </CursorContainer>
+                                  <Cursor>
+                                    <div className="h-2 w-2 rounded-full bg-brand" />
+                                  </Cursor>
+                                  <CursorFollow
+                                    side="bottom"
+                                    sideOffset={4}
+                                    align="center"
+                                    transition={{ stiffness: 400, damping: 40, bounce: 0 }}
+                                  >
+                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+                                      <span className="font-mono text-xs tabular-nums text-stat-value">Git source update pending</span>
+                                    </div>
+                                  </CursorFollow>
+                                </CursorProvider>
+                              )}
+
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -2179,7 +2224,19 @@ export default function EditorLayout() {
                       )}
                     </div>
                     {can('stack:edit', 'stack', stackName) && (
-                      <div className="flex items-center">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-lg relative"
+                          onClick={() => setGitSourceOpen(true)}
+                        >
+                          <GitBranch className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                          Git Source
+                          {gitSourcePendingMap[stackName] && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-brand animate-pulse" />
+                          )}
+                        </Button>
                         {!isEditing ? (
                           <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
                             <Pencil className="w-4 h-4 mr-2" />
@@ -2425,6 +2482,18 @@ export default function EditorLayout() {
         onClose={() => setAlertSheetOpen(false)}
         stackName={alertSheetStack}
       />
+
+      {/* Git Source Panel */}
+      {stackName && (
+        <GitSourcePanel
+          open={gitSourceOpen}
+          onOpenChange={setGitSourceOpen}
+          stackName={stackName}
+          canEdit={can('stack:edit', 'stack', stackName)}
+          isDarkMode={isDarkMode}
+          onSourceChanged={refreshGitSourcePending}
+        />
+      )}
     </div>
   );
 }

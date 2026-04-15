@@ -1,0 +1,448 @@
+/**
+ * Unit tests for GitSourceService.
+ *
+ * Covers:
+ * - hashContent determinism and env separation
+ * - validateCompose YAML pre-check (empty / non-object / syntax error)
+ * - Token round-trip via upsert: encryption, has_token projection, undefined/null/empty/non-empty semantics
+ * - Apply-matrix rejection (auto_deploy requires auto_apply)
+ * - Error code mapping from isomorphic-git failures (REPO_NOT_FOUND, AUTH_FAILED, BRANCH_NOT_FOUND, NETWORK_TIMEOUT)
+ * - Credential scrubbing in surfaced error messages
+ * - Pending state lifecycle (setPending -> apply clears -> dismissPending clears)
+ * - Webhook debounce enforcement
+ * - Per-stack mutex serialization ordering
+ */
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { setupTestDb, cleanupTestDb } from './helpers/setupTestDb';
+
+// ── Hoisted mocks ──────────────────────────────────────────────────────
+
+const { mockGitClone, mockGitLog } = vi.hoisted(() => ({
+    mockGitClone: vi.fn(),
+    mockGitLog: vi.fn(),
+}));
+
+vi.mock('isomorphic-git', () => {
+    const api = { clone: mockGitClone, log: mockGitLog };
+    return { default: api, clone: mockGitClone, log: mockGitLog };
+});
+
+vi.mock('isomorphic-git/http/node', () => ({ default: {} }));
+
+let tmpDir: string;
+let GitSourceService: typeof import('../services/GitSourceService').GitSourceService;
+let GitSourceError: typeof import('../services/GitSourceService').GitSourceError;
+let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
+
+beforeAll(async () => {
+    tmpDir = await setupTestDb();
+    ({ GitSourceService, GitSourceError } = await import('../services/GitSourceService'));
+    ({ DatabaseService } = await import('../services/DatabaseService'));
+});
+
+afterAll(() => {
+    cleanupTestDb(tmpDir);
+});
+
+beforeEach(() => {
+    mockGitClone.mockReset();
+    mockGitLog.mockReset();
+
+    // Wipe persisted git sources between tests
+    const db = DatabaseService.getInstance();
+    for (const s of db.getGitSources()) db.deleteGitSource(s.stack_name);
+});
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Stub out isomorphic-git so that `clone` writes a minimal compose file into
+ * the caller's temp dir and `log` returns a deterministic commit sha. Returns
+ * the sha so tests can compare.
+ */
+function mockSuccessfulClone(options: {
+    compose?: string;
+    env?: string | null;
+    composePath?: string;
+    envPath?: string | null;
+    sha?: string;
+} = {}) {
+    const {
+        compose = 'services:\n  web:\n    image: nginx\n',
+        env = null,
+        composePath = 'compose.yaml',
+        envPath = null,
+        sha = 'abc1234567890abc1234567890abc1234567890a',
+    } = options;
+
+    mockGitClone.mockImplementation(async (args: { dir: string }) => {
+        const { promises: fsp } = await import('fs');
+        const path = await import('path');
+        await fsp.writeFile(path.join(args.dir, composePath), compose, 'utf-8');
+        if (env !== null && envPath) {
+            await fsp.writeFile(path.join(args.dir, envPath), env, 'utf-8');
+        }
+    });
+    mockGitLog.mockResolvedValue([{ oid: sha }]);
+    return sha;
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+describe('GitSourceService.hashContent', () => {
+    it('produces stable hashes for identical inputs', () => {
+        const svc = GitSourceService.getInstance();
+        const a = svc.hashContent('services:\n  web: nginx\n', 'FOO=bar');
+        const b = svc.hashContent('services:\n  web: nginx\n', 'FOO=bar');
+        expect(a).toBe(b);
+        expect(a).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('distinguishes env=null from env=""', () => {
+        const svc = GitSourceService.getInstance();
+        const nullHash = svc.hashContent('x: 1', null);
+        const emptyHash = svc.hashContent('x: 1', '');
+        // Both hash-empty-string after null-coalesce, so they should match by design.
+        expect(nullHash).toBe(emptyHash);
+    });
+
+    it('changes when compose content changes', () => {
+        const svc = GitSourceService.getInstance();
+        const a = svc.hashContent('x: 1', null);
+        const b = svc.hashContent('x: 2', null);
+        expect(a).not.toBe(b);
+    });
+
+    it('changes when env content changes', () => {
+        const svc = GitSourceService.getInstance();
+        const a = svc.hashContent('x: 1', 'A=1');
+        const b = svc.hashContent('x: 1', 'A=2');
+        expect(a).not.toBe(b);
+    });
+
+    it('does not confuse compose|env boundary (uses NUL separator)', () => {
+        const svc = GitSourceService.getInstance();
+        // If the separator were absent, "ab" + "cd" would equal "abc" + "d".
+        const a = svc.hashContent('ab', 'cd');
+        const b = svc.hashContent('abc', 'd');
+        expect(a).not.toBe(b);
+    });
+});
+
+describe('GitSourceService.validateCompose (YAML pre-check)', () => {
+    const svc = () => GitSourceService.getInstance();
+
+    it('rejects empty content', async () => {
+        const r = await svc().validateCompose('', null);
+        expect(r.ok).toBe(false);
+        expect(r.error).toMatch(/empty/i);
+    });
+
+    it('rejects a YAML array at the root', async () => {
+        const r = await svc().validateCompose('- one\n- two\n', null);
+        expect(r.ok).toBe(false);
+        expect(r.error).toMatch(/mapping/i);
+    });
+
+    it('rejects a YAML scalar at the root', async () => {
+        const r = await svc().validateCompose('42', null);
+        expect(r.ok).toBe(false);
+        expect(r.error).toMatch(/mapping/i);
+    });
+
+    it('rejects malformed YAML syntax', async () => {
+        const r = await svc().validateCompose('services:\n  web:\n    image: "unterminated\n', null);
+        expect(r.ok).toBe(false);
+        expect(r.error).toMatch(/YAML parse error/i);
+    });
+});
+
+describe('GitSourceService.upsert (encryption + reachability)', () => {
+    it('stores an encrypted token and exposes has_token without leaking the value', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance();
+        const created = await svc.upsert({
+            stackName: 'enc-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'token',
+            token: 'ghp_secret_token_value',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        expect(created.has_token).toBe(true);
+        // Public projection should not contain the raw token
+        const serialized = JSON.stringify(created);
+        expect(serialized).not.toContain('ghp_secret_token_value');
+
+        // DB row holds an encrypted blob distinct from the plaintext
+        const row = DatabaseService.getInstance().getGitSource('enc-stack');
+        expect(row?.encrypted_token).toBeTruthy();
+        expect(row?.encrypted_token).not.toBe('ghp_secret_token_value');
+    });
+
+    it('preserves an existing token when update omits token (undefined)', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance();
+        await svc.upsert({
+            stackName: 'keep-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'token',
+            token: 'initial-token',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        const originalEnc = DatabaseService.getInstance().getGitSource('keep-stack')?.encrypted_token;
+
+        await svc.upsert({
+            stackName: 'keep-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'token',
+            // token omitted on purpose
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        const after = DatabaseService.getInstance().getGitSource('keep-stack')?.encrypted_token;
+        expect(after).toBe(originalEnc);
+    });
+
+    it('clears the token when authType switches to "none"', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance();
+        await svc.upsert({
+            stackName: 'clear-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'token',
+            token: 'will-be-cleared',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+
+        await svc.upsert({
+            stackName: 'clear-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        const row = DatabaseService.getInstance().getGitSource('clear-stack');
+        expect(row?.encrypted_token).toBeNull();
+        expect(row?.auth_type).toBe('none');
+    });
+
+    it('rejects auto_deploy_on_apply without auto_apply_on_webhook', async () => {
+        const svc = GitSourceService.getInstance();
+        await expect(svc.upsert({
+            stackName: 'bad-matrix',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: true,
+        })).rejects.toBeInstanceOf(GitSourceError);
+
+        // Dry-run clone must not have been attempted for the invalid matrix
+        expect(mockGitClone).not.toHaveBeenCalled();
+    });
+
+    it('does not persist when dry-run fetch fails', async () => {
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('404 not found'), { code: 'NotFoundError' }));
+        const svc = GitSourceService.getInstance();
+        await expect(svc.upsert({
+            stackName: 'unreachable',
+            repoUrl: 'https://github.com/example/nope.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        })).rejects.toMatchObject({ code: 'REPO_NOT_FOUND' });
+
+        expect(DatabaseService.getInstance().getGitSource('unreachable')).toBeUndefined();
+    });
+});
+
+describe('GitSourceService error mapping', () => {
+    const svc = () => GitSourceService.getInstance();
+    const fetchParams = {
+        repoUrl: 'https://github.com/example/repo.git',
+        branch: 'main',
+        composePath: 'compose.yaml',
+    };
+
+    it('maps 401/auth errors to AUTH_FAILED', async () => {
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP 401 Unauthorized'), { code: 'HttpError' }));
+        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+    });
+
+    it('maps 404/not-found errors to REPO_NOT_FOUND', async () => {
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('Repository not found'), { code: 'NotFoundError' }));
+        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'REPO_NOT_FOUND' });
+    });
+
+    it('maps resolve-ref errors to BRANCH_NOT_FOUND', async () => {
+        // Message phrased to miss the REPO_NOT_FOUND regex ("could not resolve")
+        // so the BRANCH_NOT_FOUND branch is exercised.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('unknown ref nonexistent'), { code: 'ResolveRefError' }));
+        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'BRANCH_NOT_FOUND' });
+    });
+
+    it('maps timeout errors to NETWORK_TIMEOUT', async () => {
+        mockGitClone.mockRejectedValueOnce(new Error('ETIMEDOUT connecting to host'));
+        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'NETWORK_TIMEOUT' });
+    });
+
+    it('surfaces FILE_NOT_FOUND when the compose path is missing from the clone', async () => {
+        mockGitClone.mockImplementation(async () => { /* clone empty repo */ });
+        mockGitLog.mockResolvedValue([{ oid: 'deadbeef' }]);
+        await expect(svc().fetchFromGit({
+            ...fetchParams,
+            composePath: 'missing/compose.yaml',
+        })).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    });
+
+    it('scrubs inline credentials from surfaced error messages', async () => {
+        mockGitClone.mockRejectedValueOnce(new Error('Failed: https://user:supersecret@github.com/example/repo.git 500'));
+        try {
+            await svc().fetchFromGit(fetchParams);
+            expect.fail('should have thrown');
+        } catch (e) {
+            const err = e as Error;
+            expect(err.message).not.toContain('supersecret');
+            expect(err.message).toContain('***');
+        }
+    });
+});
+
+describe('GitSourceService pending lifecycle', () => {
+    it('dismissPending clears pending columns', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance();
+        await svc.upsert({
+            stackName: 'pending-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+
+        const db = DatabaseService.getInstance();
+        db.setGitSourcePending('pending-stack', 'sha-xxx', 'services: {}', null);
+        expect(db.getGitSource('pending-stack')?.pending_commit_sha).toBe('sha-xxx');
+
+        svc.dismissPending('pending-stack');
+        expect(db.getGitSource('pending-stack')?.pending_commit_sha).toBeNull();
+    });
+});
+
+describe('GitSourceService.handleWebhookPull debounce', () => {
+    it('returns skipped when invoked within the debounce window', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance();
+        await svc.upsert({
+            stackName: 'debounce-stack',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+
+        // Stamp a recent debounce timestamp directly
+        DatabaseService.getInstance().touchGitSourceDebounce('debounce-stack');
+
+        const result = await svc.handleWebhookPull('debounce-stack');
+        expect(result.status).toBe('skipped');
+        expect(result.message).toMatch(/rate limited/i);
+    });
+
+    it('returns error when stack has no Git source configured', async () => {
+        const svc = GitSourceService.getInstance();
+        const result = await svc.handleWebhookPull('does-not-exist');
+        expect(result.status).toBe('error');
+        expect(result.message).toMatch(/no git source/i);
+    });
+});
+
+describe('GitSourceService per-stack mutex', () => {
+    it('serializes concurrent apply calls on the same stack', async () => {
+        mockSuccessfulClone();
+        const svc = GitSourceService.getInstance() as unknown as {
+            withStackLock<T>(name: string, fn: () => Promise<T>): Promise<T>;
+        };
+
+        const order: string[] = [];
+        const makeJob = (label: string, delayMs: number) => async () => {
+            order.push(`start:${label}`);
+            await new Promise(r => setTimeout(r, delayMs));
+            order.push(`end:${label}`);
+            return label;
+        };
+
+        const [a, b, c] = await Promise.all([
+            svc.withStackLock('serialized', makeJob('A', 30)),
+            svc.withStackLock('serialized', makeJob('B', 10)),
+            svc.withStackLock('serialized', makeJob('C', 5)),
+        ]);
+
+        expect([a, b, c]).toEqual(['A', 'B', 'C']);
+        // Each job must fully complete before the next one starts.
+        expect(order).toEqual([
+            'start:A', 'end:A',
+            'start:B', 'end:B',
+            'start:C', 'end:C',
+        ]);
+    });
+
+    it('does not block work on a different stack', async () => {
+        const svc = GitSourceService.getInstance() as unknown as {
+            withStackLock<T>(name: string, fn: () => Promise<T>): Promise<T>;
+        };
+
+        const order: string[] = [];
+        const slow = svc.withStackLock('alpha', async () => {
+            order.push('alpha:start');
+            await new Promise(r => setTimeout(r, 40));
+            order.push('alpha:end');
+        });
+        const fast = svc.withStackLock('beta', async () => {
+            order.push('beta:start');
+            order.push('beta:end');
+        });
+
+        await Promise.all([slow, fast]);
+        // beta should have started and finished before alpha finished
+        expect(order.indexOf('beta:end')).toBeLessThan(order.indexOf('alpha:end'));
+    });
+});

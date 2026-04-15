@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { DatabaseService } from './DatabaseService';
 import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
+import { GitSourceService } from './GitSourceService';
 import { NodeRegistry } from './NodeRegistry';
 
 export class WebhookService {
@@ -76,6 +77,32 @@ export class WebhookService {
                 case 'pull':
                     await compose.updateStack(webhook.stack_name, undefined, atomic);
                     break;
+                case 'git-pull': {
+                    const result = await GitSourceService.getInstance().handleWebhookPull(webhook.stack_name);
+                    const duration_ms = Date.now() - startTime;
+                    if (result.status === 'error') {
+                        db.addWebhookExecution({
+                            webhook_id: webhookId,
+                            action,
+                            status: 'failure',
+                            trigger_source: triggerSource,
+                            duration_ms,
+                            error: result.message,
+                            executed_at: Date.now(),
+                        });
+                        return { success: false, error: result.message, duration_ms };
+                    }
+                    db.addWebhookExecution({
+                        webhook_id: webhookId,
+                        action,
+                        status: result.status === 'skipped' ? 'failure' : 'success',
+                        trigger_source: triggerSource,
+                        duration_ms,
+                        error: result.status === 'skipped' ? result.message : null,
+                        executed_at: Date.now(),
+                    });
+                    return { success: result.status === 'success', error: result.status === 'skipped' ? result.message : undefined, duration_ms };
+                }
                 default:
                     throw new Error(`Unknown action: ${action}`);
             }

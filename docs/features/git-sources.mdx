@@ -1,0 +1,160 @@
+---
+title: Git Sources
+description: Link a stack to a Git repository and keep compose.yaml in sync via manual pulls or webhook triggers.
+---
+
+Git Sources turn any stack into a GitOps target. Point Sencho at a repository, branch, and `compose.yaml` path; pull updates on demand or from CI; and review a diff before applying changes to disk. Optional sibling `.env` sync keeps configuration consistent too.
+
+Git Sources are available to all Sencho users on the Community tier.
+
+## How it works
+
+1. Open a stack's editor and click **Git Source**.
+2. Fill in the repository URL, branch, and compose file path. Add a token if the repo is private.
+3. Click **Pull now** to fetch the latest compose content. Sencho shows a side-by-side diff.
+4. Click **Apply** to write the incoming content to disk. Optionally deploy immediately.
+
+Writes land in the stack's existing directory using the same storage Sencho uses for the in-browser editor. Existing history, alerts, and metrics are unaffected.
+
+## Configure a source
+
+<Frame>
+  <img src="/images/git-sources/panel.png" alt="Git Source panel with repository URL, branch, compose path, and apply mode" />
+</Frame>
+
+| Field | Description |
+|-------|-------------|
+| **Repository URL** | `https://github.com/your-org/your-repo.git` (HTTPS only) |
+| **Branch** | Branch to track (e.g. `main`) |
+| **Compose file path** | Path within the repo (e.g. `deploy/compose.yaml`) |
+| **Also sync sibling `.env`** | When enabled, also pulls `.env` from the same directory as the compose file |
+| **Auth** | `None` for public repos, `Personal Access Token` for private repos |
+| **Apply behavior** | See the three modes below |
+
+Saving runs a reachability check against the repository. If the URL is wrong, the token is invalid, the branch does not exist, or the file is missing, Sencho surfaces the error inline and nothing is persisted.
+
+### Apply behavior modes
+
+| Mode | What happens when a webhook fires |
+|------|-----------------------------------|
+| **Review only** | Sencho fetches + validates the incoming commit and marks the stack as having a pending update. You review the diff and apply manually. |
+| **Auto-write** | Sencho writes the new compose + env to disk automatically but does not redeploy. Use this when another process handles rollout. |
+| **Auto-deploy** | Sencho writes the files and immediately runs `docker compose up -d` so the stack picks up the new configuration. |
+
+You can always override on the spot: when you click **Apply** in the diff dialog, a **Deploy after apply** checkbox lets you deploy regardless of the configured mode.
+
+## Pulling and reviewing changes
+
+Click **Pull now** on the Git Source panel to fetch the latest commit on the configured branch.
+
+<Frame>
+  <img src="/images/git-sources/diff-dialog.png" alt="Diff dialog showing a side-by-side comparison between the on-disk compose.yaml and the incoming commit" />
+</Frame>
+
+The diff dialog shows:
+
+- The commit sha being compared (short form, next to the stack name)
+- A side-by-side compare of the on-disk compose file and the incoming version
+- A `.env` tab when the source is configured to sync `.env`
+- A **validation** banner when the incoming compose fails `docker compose config` (you cannot apply an invalid file)
+- A **local edits detected** banner when the on-disk content differs from the last applied commit. Applying in this state overwrites those edits. The Apply button becomes a confirmation prompt.
+
+### Pending updates
+
+When a webhook fires in **Review only** mode, the stack gets a pending update badge in the sidebar and a dot on the **Git Source** button in the editor. Clicking either opens the diff dialog with the incoming content already loaded; there's no second network round-trip to apply.
+
+<Frame>
+  <img src="/images/git-sources/sidebar-badge.png" alt="Sidebar stack entry with a small branded dot indicating a pending Git source update" />
+</Frame>
+
+Click **Dismiss** on the Git Source panel to discard a pending update without applying.
+
+## Trigger from CI with a webhook
+
+Git sources integrate with Sencho's existing webhook system. Create a webhook targeting the stack with the **Git source sync** action.
+
+<Frame>
+  <img src="/images/git-sources/webhook-action.png" alt="Webhook creation form with Git source sync selected in the action dropdown" />
+</Frame>
+
+The webhook's behavior on trigger depends on the source's apply mode:
+
+- **Review only**: fetch + validate + diff, mark pending.
+- **Auto-write**: fetch, validate, write to disk.
+- **Auto-deploy**: fetch, validate, write, deploy.
+
+The Git source sync action is only selectable on webhooks whose target stack already has a Git source configured. Webhook triggers for a single source are debounced so a runaway pipeline cannot overwhelm Sencho (or your repository host's rate limits); the dashboard records the skipped trigger in the webhook's execution history.
+
+### GitHub Actions example
+
+```yaml
+- name: Sync compose via Sencho
+  run: |
+    BODY='{}'
+    SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "${{ secrets.SENCHO_WEBHOOK_SECRET }}" | cut -d' ' -f2)
+    curl -X POST "${{ secrets.SENCHO_URL }}/api/webhooks/${{ secrets.SENCHO_WEBHOOK_ID }}/trigger" \
+      -H "Content-Type: application/json" \
+      -H "X-Webhook-Signature: sha256=$SIGNATURE" \
+      -d "$BODY"
+```
+
+See the [Webhooks](/features/webhooks) page for the full signing protocol.
+
+## Private repositories
+
+For private repositories, use a Personal Access Token scoped to read access on the target repo:
+
+- **GitHub**: a fine-grained PAT with **Contents: Read** permission on the repo, or a classic PAT with the `repo` scope.
+- **GitLab**: a project or group access token with the `read_repository` scope.
+- **Bitbucket**: an app password with **Repositories: Read**.
+
+Paste the token into the **Token** field and save. Sencho stores it encrypted at rest and never returns it in API responses or UI. When editing the source later, the token field shows a masked placeholder; leave it blank to keep the stored value, or type a new token to replace it. Switching the auth type to **None** clears the stored token.
+
+## Local edits vs Git
+
+Sencho tracks a hash of the compose + env contents at the moment of the last apply. When you pull, it compares that hash against the current on-disk content.
+
+- Matching hash: applying overwrites content that Sencho itself last wrote.
+- Differing hash: someone edited the files outside Git. The diff dialog shows a warning, and Apply requires confirmation.
+
+The in-browser editor and the Git Source panel both write to the same files, so you can always fall back to editing locally. The next pull will just flag the divergence rather than silently clobbering your edits.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Repository not found or not accessible">
+    Verify the URL is reachable from the Sencho host and ends with `.git`. For private repos, confirm the token is present and has read access. If you rotated the token, open the panel and paste the new value.
+  </Accordion>
+
+  <Accordion title="Authentication failed">
+    Your token is missing, expired, or lacks read access to the repository. Generate a new token and replace the value in the **Token** field.
+  </Accordion>
+
+  <Accordion title="Branch not found">
+    The branch name is case-sensitive and must exist on the remote. Confirm the branch with `git ls-remote <url>` from a shell that has access.
+  </Accordion>
+
+  <Accordion title="File not found">
+    The compose path is relative to the repository root and must point at the file, not its parent directory. If the file was moved, update the path on the panel and save.
+  </Accordion>
+
+  <Accordion title="Compose validation failed">
+    Sencho runs `docker compose config` against the incoming content before letting you apply. The error banner shows the exact message. Common causes: unresolved `${VAR}` interpolation (fix by enabling sibling `.env` sync and committing the file), invalid `include:` paths, or schema issues introduced by a recent compose change.
+  </Accordion>
+
+  <Accordion title="Local edits detected">
+    The on-disk files diverge from the last applied Git commit. Either apply anyway to overwrite the local edits (the confirmation prompt makes this explicit), or discard local work with a redeploy from the stack editor, or commit your local changes back to the repo so the diff becomes clean.
+  </Accordion>
+
+  <Accordion title="Webhook skipped (rate limited)">
+    Sencho debounces rapid-fire triggers per source. Wait a few seconds and retry, or consolidate multiple CI triggers into a single call at the end of your pipeline.
+  </Accordion>
+
+  <Accordion title="Network timeout">
+    The clone did not finish in time. Check that the Sencho host can reach the repository host (proxies, firewalls, DNS) and try again.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Git Sources currently use HTTPS only. SSH URLs and SSH keys are not supported.
+</Note>

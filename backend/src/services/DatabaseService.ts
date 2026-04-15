@@ -45,13 +45,40 @@ export interface Label {
     color: string;
 }
 
+export type WebhookAction = 'deploy' | 'restart' | 'stop' | 'start' | 'pull' | 'git-pull';
+
 export interface Webhook {
     id?: number;
     name: string;
     stack_name: string;
-    action: 'deploy' | 'restart' | 'stop' | 'start' | 'pull';
+    action: WebhookAction;
     secret: string;
     enabled: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+export type GitSourceAuthType = 'none' | 'token';
+
+export interface StackGitSource {
+    id?: number;
+    stack_name: string;
+    repo_url: string;
+    branch: string;
+    compose_path: string;
+    sync_env: boolean;
+    env_path: string | null;
+    auth_type: GitSourceAuthType;
+    encrypted_token: string | null;
+    auto_apply_on_webhook: boolean;
+    auto_deploy_on_apply: boolean;
+    last_applied_commit_sha: string | null;
+    last_applied_content_hash: string | null;
+    pending_commit_sha: string | null;
+    pending_compose_content: string | null;
+    pending_env_content: string | null;
+    pending_fetched_at: number | null;
+    last_debounce_at: number | null;
     created_at: number;
     updated_at: number;
 }
@@ -459,6 +486,29 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_label_assignments_stack
         ON stack_label_assignments(stack_name, node_id);
+
+      CREATE TABLE IF NOT EXISTS stack_git_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stack_name TEXT NOT NULL UNIQUE,
+        repo_url TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        compose_path TEXT NOT NULL,
+        sync_env INTEGER NOT NULL DEFAULT 0,
+        env_path TEXT,
+        auth_type TEXT NOT NULL DEFAULT 'none',
+        encrypted_token TEXT,
+        auto_apply_on_webhook INTEGER NOT NULL DEFAULT 0,
+        auto_deploy_on_apply INTEGER NOT NULL DEFAULT 0,
+        last_applied_commit_sha TEXT,
+        last_applied_content_hash TEXT,
+        pending_commit_sha TEXT,
+        pending_compose_content TEXT,
+        pending_env_content TEXT,
+        pending_fetched_at INTEGER,
+        last_debounce_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -1465,6 +1515,127 @@ export class DatabaseService {
 
     public deleteRegistry(id: number): void {
         this.db.prepare('DELETE FROM registries WHERE id = ?').run(id);
+    }
+
+    // --- Stack Git Sources ---
+
+    private parseGitSource(row: Record<string, unknown> | undefined): StackGitSource | undefined {
+        if (!row) return undefined;
+        return {
+            id: row.id as number,
+            stack_name: row.stack_name as string,
+            repo_url: row.repo_url as string,
+            branch: row.branch as string,
+            compose_path: row.compose_path as string,
+            sync_env: Number(row.sync_env) === 1,
+            env_path: (row.env_path as string | null) ?? null,
+            auth_type: row.auth_type as GitSourceAuthType,
+            encrypted_token: (row.encrypted_token as string | null) ?? null,
+            auto_apply_on_webhook: Number(row.auto_apply_on_webhook) === 1,
+            auto_deploy_on_apply: Number(row.auto_deploy_on_apply) === 1,
+            last_applied_commit_sha: (row.last_applied_commit_sha as string | null) ?? null,
+            last_applied_content_hash: (row.last_applied_content_hash as string | null) ?? null,
+            pending_commit_sha: (row.pending_commit_sha as string | null) ?? null,
+            pending_compose_content: (row.pending_compose_content as string | null) ?? null,
+            pending_env_content: (row.pending_env_content as string | null) ?? null,
+            pending_fetched_at: (row.pending_fetched_at as number | null) ?? null,
+            last_debounce_at: (row.last_debounce_at as number | null) ?? null,
+            created_at: row.created_at as number,
+            updated_at: row.updated_at as number,
+        };
+    }
+
+    public getGitSource(stackName: string): StackGitSource | undefined {
+        const row = this.db.prepare('SELECT * FROM stack_git_sources WHERE stack_name = ?').get(stackName) as Record<string, unknown> | undefined;
+        return this.parseGitSource(row);
+    }
+
+    public getGitSources(): StackGitSource[] {
+        const rows = this.db.prepare('SELECT * FROM stack_git_sources ORDER BY stack_name ASC').all() as Record<string, unknown>[];
+        return rows.map(r => this.parseGitSource(r)!);
+    }
+
+    public upsertGitSource(source: Omit<StackGitSource, 'id' | 'created_at' | 'updated_at'>): number {
+        const now = Date.now();
+        const existing = this.getGitSource(source.stack_name);
+        if (existing) {
+            this.db.prepare(
+                `UPDATE stack_git_sources SET
+                    repo_url = ?, branch = ?, compose_path = ?, sync_env = ?, env_path = ?,
+                    auth_type = ?, encrypted_token = ?,
+                    auto_apply_on_webhook = ?, auto_deploy_on_apply = ?,
+                    updated_at = ?
+                 WHERE stack_name = ?`
+            ).run(
+                source.repo_url, source.branch, source.compose_path,
+                source.sync_env ? 1 : 0, source.env_path,
+                source.auth_type, source.encrypted_token,
+                source.auto_apply_on_webhook ? 1 : 0, source.auto_deploy_on_apply ? 1 : 0,
+                now, source.stack_name
+            );
+            return existing.id!;
+        }
+        const result = this.db.prepare(
+            `INSERT INTO stack_git_sources
+                (stack_name, repo_url, branch, compose_path, sync_env, env_path,
+                 auth_type, encrypted_token, auto_apply_on_webhook, auto_deploy_on_apply,
+                 created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+            source.stack_name, source.repo_url, source.branch, source.compose_path,
+            source.sync_env ? 1 : 0, source.env_path,
+            source.auth_type, source.encrypted_token,
+            source.auto_apply_on_webhook ? 1 : 0, source.auto_deploy_on_apply ? 1 : 0,
+            now, now
+        );
+        return result.lastInsertRowid as number;
+    }
+
+    public deleteGitSource(stackName: string): void {
+        this.db.prepare('DELETE FROM stack_git_sources WHERE stack_name = ?').run(stackName);
+    }
+
+    public setGitSourcePending(stackName: string, commitSha: string, composeContent: string, envContent: string | null): void {
+        this.db.prepare(
+            `UPDATE stack_git_sources SET
+                pending_commit_sha = ?,
+                pending_compose_content = ?,
+                pending_env_content = ?,
+                pending_fetched_at = ?,
+                updated_at = ?
+             WHERE stack_name = ?`
+        ).run(commitSha, composeContent, envContent, Date.now(), Date.now(), stackName);
+    }
+
+    public clearGitSourcePending(stackName: string): void {
+        this.db.prepare(
+            `UPDATE stack_git_sources SET
+                pending_commit_sha = NULL,
+                pending_compose_content = NULL,
+                pending_env_content = NULL,
+                pending_fetched_at = NULL,
+                updated_at = ?
+             WHERE stack_name = ?`
+        ).run(Date.now(), stackName);
+    }
+
+    public markGitSourceApplied(stackName: string, commitSha: string, contentHash: string): void {
+        this.db.prepare(
+            `UPDATE stack_git_sources SET
+                last_applied_commit_sha = ?,
+                last_applied_content_hash = ?,
+                pending_commit_sha = NULL,
+                pending_compose_content = NULL,
+                pending_env_content = NULL,
+                pending_fetched_at = NULL,
+                updated_at = ?
+             WHERE stack_name = ?`
+        ).run(commitSha, contentHash, Date.now(), stackName);
+    }
+
+    public touchGitSourceDebounce(stackName: string): void {
+        this.db.prepare('UPDATE stack_git_sources SET last_debounce_at = ? WHERE stack_name = ?')
+            .run(Date.now(), stackName);
     }
 
     // --- Scheduled Tasks ---

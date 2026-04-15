@@ -108,6 +108,7 @@
               "features/alerts-notifications",
               "features/notification-routing",
               "features/webhooks",
+              "features/git-sources",
               "features/rbac",
               "features/atomic-deployments",
               "features/fleet-backups",
