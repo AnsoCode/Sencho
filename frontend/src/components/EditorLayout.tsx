@@ -33,6 +33,8 @@ import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
 import { ScrollArea } from './ui/scroll-area';
+import { Checkbox } from './ui/checkbox';
+import { GitSourceFields, type ApplyMode } from './stack/GitSourceFields';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
@@ -129,8 +131,19 @@ export default function EditorLayout() {
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<'empty' | 'git'>('empty');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
+  // "From Git" tab state
+  const [gitRepoUrl, setGitRepoUrl] = useState('');
+  const [gitBranch, setGitBranch] = useState('main');
+  const [gitComposePath, setGitComposePath] = useState('compose.yaml');
+  const [gitSyncEnv, setGitSyncEnv] = useState(false);
+  const [gitAuthType, setGitAuthType] = useState<'none' | 'token'>('none');
+  const [gitToken, setGitToken] = useState('');
+  const [gitApplyMode, setGitApplyMode] = useState<ApplyMode>('review');
+  const [gitDeployNow, setGitDeployNow] = useState(false);
+  const [creatingFromGit, setCreatingFromGit] = useState(false);
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -1301,6 +1314,83 @@ export default function EditorLayout() {
     }
   };
 
+  const resetCreateFromGitForm = () => {
+    setNewStackName('');
+    setGitRepoUrl('');
+    setGitBranch('main');
+    setGitComposePath('compose.yaml');
+    setGitSyncEnv(false);
+    setGitAuthType('none');
+    setGitToken('');
+    setGitApplyMode('review');
+    setGitDeployNow(false);
+  };
+
+  const handleCreateStackFromGit = async () => {
+    const stackName = newStackName.trim();
+    if (!stackName) {
+      toast.error('Stack name is required.');
+      return;
+    }
+    if (!gitRepoUrl.trim() || !gitBranch.trim() || !gitComposePath.trim()) {
+      toast.error('Repository URL, branch, and compose path are required.');
+      return;
+    }
+    if (!/^https:\/\//i.test(gitRepoUrl.trim())) {
+      toast.error('Only HTTPS repository URLs are supported.');
+      return;
+    }
+    setCreatingFromGit(true);
+    const loadingId = toast.loading(gitDeployNow ? 'Fetching, creating, and deploying...' : 'Fetching and creating stack...');
+    try {
+      const autoApply = gitApplyMode !== 'review';
+      const autoDeploy = gitApplyMode === 'auto-deploy';
+      const body: Record<string, unknown> = {
+        stack_name: stackName,
+        repo_url: gitRepoUrl.trim(),
+        branch: gitBranch.trim(),
+        compose_path: gitComposePath.trim(),
+        sync_env: gitSyncEnv,
+        auth_type: gitAuthType,
+        auto_apply_on_webhook: autoApply,
+        auto_deploy_on_apply: autoDeploy,
+        deploy_now: gitDeployNow,
+      };
+      if (gitAuthType === 'token' && gitToken !== '') {
+        body.token = gitToken;
+      }
+      const response = await apiFetch('/stacks/from-git', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        if (response.status === 409) {
+          throw new Error(err?.error || 'Stack already exists.');
+        }
+        throw new Error(err?.error || 'Failed to create stack from Git.');
+      }
+      const data: { deployed?: boolean; deployError?: string } = await response.json();
+      if (gitDeployNow && data.deployError) {
+        toast.warning(`Stack created, but deploy failed: ${data.deployError}`);
+      } else if (gitDeployNow && data.deployed) {
+        toast.success('Stack created and deployed from Git.');
+      } else {
+        toast.success('Stack created from Git.');
+      }
+      setCreateDialogOpen(false);
+      resetCreateFromGitForm();
+      await refreshStacks();
+      await loadFile(stackName);
+    } catch (error) {
+      console.error('Failed to create stack from Git:', error);
+      toast.error((error as Error)?.message || 'Failed to create stack from Git.');
+    } finally {
+      toast.dismiss(loadingId);
+      setCreatingFromGit(false);
+    }
+  };
+
   const openBashModal = (containerId: string, containerName: string) => {
     setSelectedContainer({ id: containerId, name: containerName });
     setBashModalOpen(true);
@@ -1427,29 +1517,119 @@ export default function EditorLayout() {
 
         {/* Create Stack & Scan Buttons */}
         {can('stack:create') && <div className="p-4 flex gap-2">
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <Dialog open={createDialogOpen} onOpenChange={(o) => {
+            setCreateDialogOpen(o);
+            if (!o) {
+              setCreateMode('empty');
+              resetCreateFromGitForm();
+            }
+          }}>
             <DialogTrigger asChild>
               <Button variant="outline" className="flex-1 rounded-lg">
                 <Plus className="w-4 h-4 mr-2" />
                 Create Stack
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
+            <DialogContent className="max-w-xl w-[95vw] p-0 gap-0">
+              <DialogHeader className="px-6 pt-6 pb-3">
                 <DialogTitle>Create New Stack</DialogTitle>
               </DialogHeader>
-              <div className="py-4 space-y-2">
-                <Label htmlFor="create-stack-name">Stack Name</Label>
-                <Input
-                  id="create-stack-name"
-                  placeholder="Stack name (e.g., myapp)"
-                  value={newStackName}
-                  onChange={(e) => setNewStackName(e.target.value)}
-                />
+
+              <div className="px-6 pb-2">
+                <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git')}>
+                  <TabsList>
+                    <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                      <TabsHighlightItem value="empty">
+                        <TabsTrigger value="empty">
+                          <Plus className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                          Empty
+                        </TabsTrigger>
+                      </TabsHighlightItem>
+                      <TabsHighlightItem value="git">
+                        <TabsTrigger value="git">
+                          <GitBranch className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                          From Git
+                        </TabsTrigger>
+                      </TabsHighlightItem>
+                    </TabsHighlight>
+                  </TabsList>
+                </Tabs>
               </div>
-              <DialogFooter>
-                <Button onClick={handleCreateStack}>Create</Button>
-              </DialogFooter>
+
+              {createMode === 'empty' ? (
+                <>
+                  <div className="px-6 py-4 space-y-2">
+                    <Label htmlFor="create-stack-name">Stack Name</Label>
+                    <Input
+                      id="create-stack-name"
+                      placeholder="Stack name (e.g., myapp)"
+                      value={newStackName}
+                      onChange={(e) => setNewStackName(e.target.value)}
+                    />
+                  </div>
+                  <DialogFooter className="px-6 pb-6">
+                    <Button onClick={handleCreateStack}>Create</Button>
+                  </DialogFooter>
+                </>
+              ) : (
+                <>
+                  <ScrollArea className="max-h-[70vh]">
+                    <div className="px-6 py-4 space-y-5">
+                      <div className="space-y-2">
+                        <Label htmlFor="create-git-stack-name">Stack Name</Label>
+                        <Input
+                          id="create-git-stack-name"
+                          placeholder="Stack name (e.g., myapp)"
+                          value={newStackName}
+                          onChange={(e) => setNewStackName(e.target.value)}
+                          disabled={creatingFromGit}
+                        />
+                      </div>
+
+                      <GitSourceFields
+                        variant="create"
+                        disabled={creatingFromGit}
+                        repoUrl={gitRepoUrl}
+                        branch={gitBranch}
+                        composePath={gitComposePath}
+                        syncEnv={gitSyncEnv}
+                        authType={gitAuthType}
+                        token={gitToken}
+                        hasStoredToken={false}
+                        applyMode={gitApplyMode}
+                        onRepoUrlChange={setGitRepoUrl}
+                        onBranchChange={setGitBranch}
+                        onComposePathChange={setGitComposePath}
+                        onSyncEnvChange={setGitSyncEnv}
+                        onAuthTypeChange={setGitAuthType}
+                        onTokenChange={setGitToken}
+                        onApplyModeChange={setGitApplyMode}
+                      />
+
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="create-git-deploy-now"
+                          checked={gitDeployNow}
+                          onCheckedChange={(c) => setGitDeployNow(c === true)}
+                          disabled={creatingFromGit}
+                        />
+                        <Label htmlFor="create-git-deploy-now" className="text-xs cursor-pointer">
+                          Deploy after create
+                        </Label>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                  <DialogFooter className="px-6 py-4 border-t border-glass-border">
+                    <Button onClick={handleCreateStackFromGit} disabled={creatingFromGit}>
+                      {creatingFromGit ? (
+                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
+                      ) : (
+                        <><GitBranch className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create from Git</>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
             </DialogContent>
           </Dialog>
           <TooltipProvider>

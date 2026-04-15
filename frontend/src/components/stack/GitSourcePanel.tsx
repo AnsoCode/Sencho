@@ -12,15 +12,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { cn } from '@/lib/utils';
 import { GitSourceDiffDialog, type PullResult } from './GitSourceDiffDialog';
+import { GitSourceFields, type ApplyMode } from './GitSourceFields';
 
 export interface GitSource {
   id: number;
@@ -40,8 +37,6 @@ export interface GitSource {
   created_at: number;
   updated_at: number;
 }
-
-type ApplyMode = 'review' | 'auto-write' | 'auto-deploy';
 
 interface GitSourcePanelProps {
   open: boolean;
@@ -277,33 +272,6 @@ export function GitSourcePanel({
     }
   };
 
-  const radioOption = (mode: ApplyMode, title: string, description: string) => (
-    <button
-      type="button"
-      key={mode}
-      onClick={() => canEdit && setApplyModeOverride(mode)}
-      disabled={!canEdit}
-      className={cn(
-        'w-full text-left rounded-md border px-3 py-2 transition-colors',
-        applyMode === mode
-          ? 'border-brand/60 bg-brand/5'
-          : 'border-glass-border hover:border-card-border-hover',
-        !canEdit && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      <div className="flex items-start gap-2">
-        <div className={cn(
-          'w-3.5 h-3.5 rounded-full border mt-0.5 shrink-0 transition-colors',
-          applyMode === mode ? 'border-brand bg-brand' : 'border-stat-subtitle',
-        )} />
-        <div>
-          <p className="text-xs font-medium">{title}</p>
-          <p className="text-[11px] text-stat-subtitle mt-0.5">{description}</p>
-        </div>
-      </div>
-    </button>
-  );
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -350,111 +318,25 @@ export function GitSourcePanel({
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="git-source-repo">Repository URL</Label>
-                    <Input
-                      id="git-source-repo"
-                      placeholder="https://github.com/org/repo.git"
-                      value={repoUrl}
-                      onChange={(e) => setRepoUrl(e.target.value)}
-                      disabled={!canEdit || saving}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="git-source-branch">Branch</Label>
-                      <Input
-                        id="git-source-branch"
-                        placeholder="main"
-                        value={branch}
-                        onChange={(e) => setBranch(e.target.value)}
-                        disabled={!canEdit || saving}
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="git-source-path">Compose file path</Label>
-                      <Input
-                        id="git-source-path"
-                        placeholder="compose.yaml"
-                        value={composePath}
-                        onChange={(e) => setComposePath(e.target.value)}
-                        disabled={!canEdit || saving}
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="git-source-sync-env"
-                      checked={syncEnv}
-                      onCheckedChange={(c) => setSyncEnv(c === true)}
-                      disabled={!canEdit || saving}
-                    />
-                    <Label htmlFor="git-source-sync-env" className="text-xs cursor-pointer">
-                      Also sync sibling <span className="font-mono">.env</span> file
-                    </Label>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Authentication</Label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => canEdit && setAuthType('none')}
-                        disabled={!canEdit || saving}
-                        className={cn(
-                          'flex-1 rounded-md border px-3 py-1.5 text-xs transition-colors',
-                          authType === 'none'
-                            ? 'border-brand/60 bg-brand/5'
-                            : 'border-glass-border hover:border-card-border-hover',
-                        )}
-                      >
-                        Public (no auth)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => canEdit && setAuthType('token')}
-                        disabled={!canEdit || saving}
-                        className={cn(
-                          'flex-1 rounded-md border px-3 py-1.5 text-xs transition-colors',
-                          authType === 'token'
-                            ? 'border-brand/60 bg-brand/5'
-                            : 'border-glass-border hover:border-card-border-hover',
-                        )}
-                      >
-                        Personal Access Token
-                      </button>
-                    </div>
-                    {authType === 'token' && (
-                      <div className="space-y-1.5">
-                        <Input
-                          type="password"
-                          placeholder={source?.has_token ? '••••••••  (leave blank to keep current)' : 'ghp_xxx... or glpat-xxx...'}
-                          value={token}
-                          onChange={(e) => setToken(e.target.value)}
-                          disabled={!canEdit || saving}
-                          className="font-mono text-xs"
-                          autoComplete="off"
-                        />
-                        <p className="text-[11px] text-stat-subtitle">
-                          Token is encrypted at rest and never returned from the API.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Apply behavior</Label>
-                    <div className="space-y-1.5">
-                      {radioOption('review', 'Review only', 'Webhook fetches and flags a pending diff. You apply manually.')}
-                      {radioOption('auto-write', 'Auto-write files', 'Webhook writes to disk. You deploy manually.')}
-                      {radioOption('auto-deploy', 'Auto-deploy', 'Webhook writes and deploys in one step.')}
-                    </div>
-                  </div>
+                  <GitSourceFields
+                    variant="edit"
+                    disabled={!canEdit || saving}
+                    repoUrl={repoUrl}
+                    branch={branch}
+                    composePath={composePath}
+                    syncEnv={syncEnv}
+                    authType={authType}
+                    token={token}
+                    hasStoredToken={source?.has_token ?? false}
+                    applyMode={applyMode}
+                    onRepoUrlChange={setRepoUrl}
+                    onBranchChange={setBranch}
+                    onComposePathChange={setComposePath}
+                    onSyncEnvChange={setSyncEnv}
+                    onAuthTypeChange={setAuthType}
+                    onTokenChange={setToken}
+                    onApplyModeChange={setApplyModeOverride}
+                  />
 
                   {source && (
                     <div className="rounded-md border border-glass-border bg-muted/30 px-3 py-2 text-[11px] text-stat-subtitle space-y-0.5 shadow-card-bevel">

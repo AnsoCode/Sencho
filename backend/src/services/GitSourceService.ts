@@ -65,6 +65,25 @@ export interface UpsertInput {
     autoDeployOnApply: boolean;
 }
 
+export interface CreateStackFromGitInput {
+    stackName: string;
+    repoUrl: string;
+    branch: string;
+    composePath: string;
+    syncEnv: boolean;
+    envPath: string | null;
+    authType: GitSourceAuthType;
+    token: string | null;
+    autoApplyOnWebhook: boolean;
+    autoDeployOnApply: boolean;
+}
+
+export interface CreateStackFromGitResult {
+    source: PublicGitSource;
+    commitSha: string;
+    envWritten: boolean;
+}
+
 export interface PullResult {
     commitSha: string;
     incomingCompose: string;
@@ -675,6 +694,117 @@ export class GitSourceService {
 
     public dismissPending(stackName: string): void {
         DatabaseService.getInstance().clearGitSourcePending(stackName);
+    }
+
+    // ─── Create stack from Git ───────────────────────────────────────────────
+
+    /**
+     * Fetch a compose file from a Git repository and use it to create a
+     * brand-new stack on disk + the matching git-source row. The caller is
+     * responsible for rolling back (deleteStack + deleteGitSource) if a
+     * later step such as an optional deploy fails; this method itself will
+     * undo its own partial state if anything *before* the DB insert fails.
+     *
+     * Serialized under the same per-stack mutex as pull/apply so a racing
+     * webhook cannot collide with a fresh create.
+     */
+    public async createStackFromGit(input: CreateStackFromGitInput): Promise<CreateStackFromGitResult> {
+        return this.withStackLock(input.stackName, async () => {
+            const fsSvc = FileSystemService.getInstance();
+            const db = DatabaseService.getInstance();
+            const diag = isDebugEnabled();
+
+            if (input.autoDeployOnApply && !input.autoApplyOnWebhook) {
+                throw new GitSourceError('GIT_ERROR', 'Auto-deploy requires auto-apply-on-webhook to be enabled.');
+            }
+
+            // 1. Fetch from git BEFORE touching disk or DB. If the fetch
+            //    fails there is nothing to clean up.
+            const fetched = await this.fetchFromGit({
+                repoUrl: input.repoUrl,
+                branch: input.branch,
+                composePath: input.composePath,
+                envPath: input.syncEnv ? input.envPath : null,
+                token: input.token,
+            });
+
+            // 2. Validate against the same `docker compose config` check the
+            //    apply path uses. Reject before creating anything on disk.
+            const validation = await this.validateCompose(fetched.composeContent, fetched.envContent);
+            if (!validation.ok) {
+                throw new GitSourceError('GIT_ERROR', `Compose validation failed: ${validation.error}`);
+            }
+
+            // 3. Create directory + boilerplate, then overwrite with the
+            //    fetched content. createStack() throws if the directory
+            //    already exists, so a name collision is caught here.
+            let stackCreated = false;
+            try {
+                await fsSvc.createStack(input.stackName);
+                stackCreated = true;
+                await fsSvc.saveStackContent(input.stackName, fetched.composeContent);
+                let envWritten = false;
+                if (input.syncEnv && fetched.envContent !== null) {
+                    await fsSvc.saveEnvContent(input.stackName, fetched.envContent);
+                    envWritten = true;
+                }
+
+                // 4. Insert the git-source row, then mark it applied so future
+                //    pulls diff against the fetched commit rather than treating
+                //    it as "local edits detected".
+                const encryptedToken = input.authType === 'token' && input.token
+                    ? this.crypto.encrypt(input.token)
+                    : null;
+                db.upsertGitSource({
+                    stack_name: input.stackName,
+                    repo_url: input.repoUrl,
+                    branch: input.branch,
+                    compose_path: input.composePath,
+                    sync_env: input.syncEnv,
+                    env_path: input.syncEnv ? input.envPath : null,
+                    auth_type: input.authType,
+                    encrypted_token: encryptedToken,
+                    auto_apply_on_webhook: input.autoApplyOnWebhook,
+                    auto_deploy_on_apply: input.autoDeployOnApply,
+                    last_applied_commit_sha: fetched.commitSha,
+                    last_applied_content_hash: this.hashContent(fetched.composeContent, fetched.envContent),
+                    pending_commit_sha: null,
+                    pending_compose_content: null,
+                    pending_env_content: null,
+                    pending_fetched_at: null,
+                    last_debounce_at: null,
+                });
+                db.markGitSourceApplied(
+                    input.stackName,
+                    fetched.commitSha,
+                    this.hashContent(fetched.composeContent, fetched.envContent),
+                );
+
+                const source = this.get(input.stackName);
+                if (!source) {
+                    throw new GitSourceError('GIT_ERROR', 'Failed to read back created git source.');
+                }
+
+                console.log(`[GitSource] Created stack ${input.stackName} from ${repoHost(input.repoUrl)} at ${fetched.commitSha.slice(0, 7)}`);
+                if (diag) {
+                    console.log(`[GitSource:diag] createStackFromGit ok stack=${input.stackName} sha=${fetched.commitSha.slice(0, 7)} envWritten=${envWritten}`);
+                }
+                return { source, commitSha: fetched.commitSha, envWritten };
+            } catch (e) {
+                // Roll back any partial on-disk state so the caller can retry
+                // cleanly. The DB row is only inserted at step 4, so an error
+                // earlier leaves nothing to clean in the DB.
+                if (stackCreated) {
+                    try {
+                        await fsSvc.deleteStack(input.stackName);
+                    } catch (cleanupErr) {
+                        console.error(`[GitSource] Rollback: failed to remove partial stack dir ${input.stackName}:`, cleanupErr);
+                    }
+                }
+                db.deleteGitSource(input.stackName);
+                throw e;
+            }
+        });
     }
 
     // ─── Webhook-triggered pull ──────────────────────────────────────────────

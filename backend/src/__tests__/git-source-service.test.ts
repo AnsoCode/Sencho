@@ -493,6 +493,155 @@ describe('GitSourceService.pull', () => {
     });
 });
 
+describe('GitSourceService.createStackFromGit', () => {
+    async function cleanupStackDir(name: string) {
+        const { FileSystemService } = await import('../services/FileSystemService');
+        try {
+            await FileSystemService.getInstance().deleteStack(name);
+        } catch {
+            // directory may not exist; ignore
+        }
+    }
+
+    it('creates a stack on disk, writes compose, and seeds last_applied columns', async () => {
+        const sha = 'fedcba9876543210fedcba9876543210fedcba98';
+        mockSuccessfulClone({
+            compose: 'services:\n  web:\n    image: nginx\n',
+            sha,
+        });
+        const svc = GitSourceService.getInstance();
+
+        const result = await svc.createStackFromGit({
+            stackName: 'create-happy',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+
+        expect(result.commitSha).toBe(sha);
+        expect(result.envWritten).toBe(false);
+        expect(result.source.last_applied_commit_sha).toBe(sha);
+        expect(result.source.pending_commit_sha).toBeNull();
+
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const onDisk = await FileSystemService.getInstance().getStackContent('create-happy');
+        expect(onDisk).toContain('image: nginx');
+
+        await cleanupStackDir('create-happy');
+    });
+
+    it('writes the env file when sync_env is enabled', async () => {
+        const sha = '0101010101010101010101010101010101010101';
+        mockSuccessfulClone({
+            compose: 'services:\n  web:\n    image: nginx\n',
+            env: 'FOO=bar\n',
+            envPath: '.env',
+            sha,
+        });
+        const svc = GitSourceService.getInstance();
+
+        const result = await svc.createStackFromGit({
+            stackName: 'create-env',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: true,
+            envPath: '.env',
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        expect(result.envWritten).toBe(true);
+
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const env = await FileSystemService.getInstance().getEnvContent('create-env');
+        expect(env).toBe('FOO=bar\n');
+
+        await cleanupStackDir('create-env');
+    });
+
+    it('rejects an invalid apply-matrix without fetching or writing disk', async () => {
+        const svc = GitSourceService.getInstance();
+        await expect(svc.createStackFromGit({
+            stackName: 'create-bad-matrix',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: true,
+        })).rejects.toBeInstanceOf(GitSourceError);
+
+        expect(mockGitClone).not.toHaveBeenCalled();
+        expect(DatabaseService.getInstance().getGitSource('create-bad-matrix')).toBeUndefined();
+    });
+
+    it('rejects when compose validation fails and leaves no stack/row behind', async () => {
+        mockSuccessfulClone({
+            // Non-mapping root is rejected by validateCompose() pre-check
+            compose: '- not-a-mapping\n',
+        });
+        const svc = GitSourceService.getInstance();
+
+        await expect(svc.createStackFromGit({
+            stackName: 'create-bad-yaml',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        })).rejects.toMatchObject({ code: 'GIT_ERROR' });
+
+        expect(DatabaseService.getInstance().getGitSource('create-bad-yaml')).toBeUndefined();
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const stacks = await FileSystemService.getInstance().getStacks();
+        expect(stacks).not.toContain('create-bad-yaml');
+    });
+
+    it('rolls back the stack dir when a post-create step fails', async () => {
+        mockSuccessfulClone({
+            compose: 'services:\n  web:\n    image: nginx\n',
+        });
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const saveSpy = vi.spyOn(FileSystemService.prototype, 'saveStackContent')
+            .mockRejectedValueOnce(new Error('simulated disk failure'));
+
+        const svc = GitSourceService.getInstance();
+        await expect(svc.createStackFromGit({
+            stackName: 'create-rollback',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        })).rejects.toThrow(/simulated disk failure/);
+
+        expect(DatabaseService.getInstance().getGitSource('create-rollback')).toBeUndefined();
+        const stacks = await FileSystemService.getInstance().getStacks();
+        expect(stacks).not.toContain('create-rollback');
+
+        saveSpy.mockRestore();
+    });
+});
+
 describe('GitSourceService.apply', () => {
     async function seedPending(stackName: string, composeContent: string, commitSha: string) {
         mockSuccessfulClone({ compose: composeContent, sha: commitSha });

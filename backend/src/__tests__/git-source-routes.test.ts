@@ -165,6 +165,68 @@ describe('git-source routes — invalid stack names', () => {
     });
 });
 
+describe('POST /api/stacks/from-git', () => {
+    const validBody = {
+        stack_name: 'route-from-git',
+        repo_url: 'https://github.com/example/repo.git',
+        branch: 'main',
+        compose_path: 'compose.yaml',
+        auth_type: 'none' as const,
+    };
+
+    it('returns 401 without auth', async () => {
+        const res = await request(app).post('/api/stacks/from-git').send(validBody);
+        expect(res.status).toBe(401);
+    });
+
+    it('rejects missing stack_name with 400', async () => {
+        const { stack_name: _unused, ...body } = validBody;
+        void _unused;
+        const res = await request(app)
+            .post('/api/stacks/from-git')
+            .set('Authorization', `Bearer ${adminToken()}`)
+            .send(body);
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/stack_name/i);
+    });
+
+    it('rejects invalid stack name with 400', async () => {
+        const res = await request(app)
+            .post('/api/stacks/from-git')
+            .set('Authorization', `Bearer ${adminToken()}`)
+            .send({ ...validBody, stack_name: '../escape' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/stack name/i);
+    });
+
+    it('rejects http:// URLs with 400', async () => {
+        const res = await request(app)
+            .post('/api/stacks/from-git')
+            .set('Authorization', `Bearer ${adminToken()}`)
+            .send({ ...validBody, repo_url: 'http://github.com/example/repo.git' });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/HTTPS/i);
+    });
+
+    it('rejects oversized repo_url with 400', async () => {
+        const res = await request(app)
+            .post('/api/stacks/from-git')
+            .set('Authorization', `Bearer ${adminToken()}`)
+            .send({ ...validBody, repo_url: 'https://example.com/' + 'a'.repeat(2048) });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/repo_url/i);
+    });
+
+    it('returns 409 when a stack with that name already exists on disk', async () => {
+        const res = await request(app)
+            .post('/api/stacks/from-git')
+            .set('Authorization', `Bearer ${adminToken()}`)
+            .send({ ...validBody, stack_name: 'existing-stack' });
+        expect(res.status).toBe(409);
+        expect(res.body.error).toMatch(/already exists/i);
+    });
+});
+
 describe('GET /api/git-sources', () => {
     it('returns 200 and a JSON array for an authenticated admin', async () => {
         const res = await request(app)
