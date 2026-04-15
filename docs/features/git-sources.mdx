@@ -16,6 +16,27 @@ Git Sources are available to all Sencho users on the Community tier.
 
 Writes land in the stack's existing directory using the same storage Sencho uses for the in-browser editor. Existing history, alerts, and metrics are unaffected.
 
+## Create a stack from a Git repository
+
+Skip the "empty stack then link later" detour and point at a repo from the start. Click **Create Stack** in the sidebar, switch to the **From Git** tab, and fill in the same fields you would on the Git Source panel.
+
+<Frame>
+  <img src="/images/git-sources/create-from-git-tab.png" alt="Create Stack dialog with the From Git tab selected, showing stack name, repository URL, branch, compose path, and a Deploy after create checkbox" />
+</Frame>
+
+Sencho fetches the compose file, validates it with `docker compose config`, writes it to a fresh stack directory, and links the git source in one step. The last-applied commit sha is seeded from the fetch so the first pull produces a clean diff rather than a "local edits detected" warning.
+
+Tick **Deploy after create** to run `docker compose up -d` immediately after the files land. If the deploy fails, the stack and git source are kept on disk so you can fix the underlying issue (missing image, port conflict, host resources) and retry the deploy from the editor.
+
+### Failure modes on create
+
+| Situation | What happens |
+|-----------|--------------|
+| Stack name already exists | Sencho returns **409** with "Stack already exists" and makes no changes on disk or in the database. Pick a different name or remove the existing stack. |
+| Repository unreachable or auth failed | Fetch fails before anything is created. The form stays open with an error toast describing the cause. |
+| Fetched compose fails validation | The stack directory is not created and no git source row is inserted. The error toast shows the `docker compose config` message. |
+| Fetch + validate succeed but optional deploy fails | The stack and git source are kept. The toast reads "Stack created, but deploy failed: ..." and you can retry the deploy from the editor. |
+
 ## Configure a source
 
 <Frame>
