@@ -172,14 +172,29 @@ The in-browser editor and the Git Source panel both write to the same files, so 
   </Accordion>
 
   <Accordion title="Network timeout">
-    The clone did not finish in time. Check that the Sencho host can reach the repository host (proxies, firewalls, DNS) and try again.
+    The clone did not finish in time. Fetches run with a bounded timeout to keep a slow or unreachable host from hanging the stack panel. Check that the Sencho host can reach the repository host (proxies, firewalls, DNS) and try again. If the repository is genuinely large, pin a smaller compose subpath or mirror it somewhere closer to the Sencho host.
   </Accordion>
 
   <Accordion title="Applied but deploy failed">
     The incoming compose file was written to disk successfully, but the subsequent `docker compose up -d` did not complete. The toast message includes the underlying reason (for example, an image pull failure or a port conflict). The stack is already on the new content, so you can retry the deploy directly from the editor's **Deploy** button without re-pulling. Fix the root cause first (image availability, host resources, network config) and redeploy.
   </Accordion>
+
+  <Accordion title="Stack contents look wrong or appear empty">
+    If the compose file in your repository is tracked via Git LFS, Sencho will refuse the link and surface an LFS error rather than write a pointer stub as real content. Commit the plain compose file (and any synced `.env`) without LFS, or replace the LFS pointer in-place, then retry.
+  </Accordion>
+
+  <Accordion title="A build context or volume points at an empty folder">
+    Repositories that use Git submodules do not have their submodule contents cloned during a Git Source fetch. Sencho surfaces a warning on create when `.gitmodules` is present. If the compose file references paths inside a submodule (build contexts, volume mounts, include directives), inline the referenced files into the main repository or flatten the submodule so the paths resolve at deploy time.
+  </Accordion>
+
+  <Accordion title="Only HTTPS is supported">
+    Git Sources fetch over HTTPS only. SSH clone URLs (`git@host:org/repo.git`) and custom protocols are rejected with a client-side validation error. Paste the `https://...` URL and use a Personal Access Token for authentication on private repositories.
+  </Accordion>
 </AccordionGroup>
 
-<Note>
-  Git Sources currently use HTTPS only. SSH URLs and SSH keys are not supported.
-</Note>
+## Known limitations
+
+- **HTTPS only.** SSH URLs and SSH keys are not supported. Use a Personal Access Token for private repos.
+- **No Git LFS.** Compose and env files stored via LFS are rejected. Commit plain files instead.
+- **No submodules.** Submodule contents are not fetched; paths inside a submodule directory will be missing at deploy time. A warning is shown on create when `.gitmodules` is present.
+- **Branch-tracking only.** Sources follow the head of a branch. Specific commit SHAs and tags are not pinnable.
