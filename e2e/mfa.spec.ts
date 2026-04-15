@@ -40,6 +40,36 @@ test.describe.serial('Two-factor authentication', () => {
   let secret = '';
   let backupCodes: string[] = [];
 
+  // Safety net: if any test above fails, Playwright skips the rest of the
+  // serial block, so the "disable 2FA" test never runs and the shared test
+  // user stays MFA-enabled in the dev DB. That wrecks every subsequent spec
+  // (nodes, stacks, screenshots) because their loginAs helper does not know
+  // about the challenge screen. afterAll always runs, so we clear MFA here
+  // via the API using whatever enrolment state we captured.
+  test.afterAll(async ({ request }) => {
+    if (!secret || backupCodes.length < 2) return;
+    try {
+      // Use backup codes for both steps: they are single-use and sidestep
+      // the TOTP replay blacklist, so we do not need to reason about which
+      // 30-second window we are currently in.
+      const loginBackup = backupCodes[backupCodes.length - 2];
+      const disableBackup = backupCodes[backupCodes.length - 1];
+      await request.post('/api/auth/login', {
+        data: { username: TEST_USERNAME, password: TEST_PASSWORD },
+      });
+      const loginRes = await request.post('/api/auth/login/mfa', {
+        data: { code: loginBackup, isBackupCode: true },
+      });
+      if (!loginRes.ok()) return;
+      await request.post('/api/auth/mfa/disable', {
+        data: { code: disableBackup, isBackupCode: true },
+      });
+    } catch {
+      // Best effort; if this fails the next full-suite run will need a
+      // manual DB wipe or CLI reset.
+    }
+  });
+
   test('enrol from Account settings captures secret and backup codes', async ({ page }) => {
     await loginAs(page, TEST_USERNAME, TEST_PASSWORD);
     await openAccountSettings(page);
@@ -77,10 +107,10 @@ test.describe.serial('Two-factor authentication', () => {
   });
 
   test('login with a valid TOTP code reaches the dashboard', async ({ page }) => {
-    await loginAs(page, TEST_USERNAME, TEST_PASSWORD);
-    await logout(page);
-
-    // Re-login: password passes but the MFA challenge screen appears.
+    // Fresh page lands on the login screen; password passes but the MFA
+    // challenge appears because test #1 enrolled the user.
+    await page.goto('/');
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
     await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
 
@@ -91,8 +121,8 @@ test.describe.serial('Two-factor authentication', () => {
   });
 
   test('backup code works once and cannot be replayed', async ({ page }) => {
-    await loginAs(page, TEST_USERNAME, TEST_PASSWORD);
-    await logout(page);
+    await page.goto('/');
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
 
     const code = backupCodes[0];
     expect(code).toBeTruthy();
