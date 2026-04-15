@@ -104,7 +104,6 @@ export class MfaService {
             // bcrypt.compare is constant-time for a given hash. We still check
             // every hash regardless of an early hit to avoid leaking which
             // slot matched via timing.
-            // eslint-disable-next-line no-await-in-loop
             const ok = await bcrypt.compare(normalized, hashes[i]);
             if (ok) {
                 const remaining = hashes.slice(0, i).concat(hashes.slice(i + 1));

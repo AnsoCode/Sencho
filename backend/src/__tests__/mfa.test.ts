@@ -20,7 +20,6 @@ import {
   cleanupTestDb,
   seedMfaUser,
   TEST_USERNAME,
-  TEST_PASSWORD,
   TEST_JWT_SECRET,
 } from './helpers/setupTestDb';
 
