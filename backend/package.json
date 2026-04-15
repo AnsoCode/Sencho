@@ -58,6 +58,7 @@
     "helmet": "^8.1.0",
     "http-proxy": "^1.18.1",
     "http-proxy-middleware": "^3.0.5",
+    "isomorphic-git": "^1.37.5",
     "jsonwebtoken": "^9.0.3",
     "ldapts": "^8.1.7",
     "node-pty": "^1.1.0",

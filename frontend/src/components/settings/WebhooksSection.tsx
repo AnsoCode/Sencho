@@ -191,6 +191,7 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
                                 <SelectItem value="stop">Stop</SelectItem>
                                 <SelectItem value="start">Start</SelectItem>
                                 <SelectItem value="pull">Pull & Update</SelectItem>
+                                <SelectItem value="git-pull">Git source sync</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
