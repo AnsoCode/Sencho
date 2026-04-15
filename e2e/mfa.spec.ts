@@ -25,10 +25,7 @@ async function logout(page: Page) {
 
 async function openAccountSettings(page: Page) {
   await page.getByRole('button', { name: /profile/i }).click();
-  await page.getByRole('menuitem', { name: /settings/i }).click().catch(async () => {
-    // Profile dropdown uses Button rather than menuitem in some builds.
-    await page.getByRole('button', { name: /settings/i }).click();
-  });
+  await page.getByRole('button', { name: /settings/i }).click();
   await expect(page.getByRole('heading', { name: /Account & Security/i })).toBeVisible();
 }
 
