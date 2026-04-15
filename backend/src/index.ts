@@ -35,7 +35,7 @@ import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CacheService } from './services/CacheService';
 import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
-import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, type GitSourceErrorCode } from './services/GitSourceService';
+import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, repoHost as gitRepoHost, type GitSourceErrorCode } from './services/GitSourceService';
 
 // ── Hot-path cache TTLs ────────────────────────────────────────────────
 // Short TTLs collapse concurrent polling pressure across browser tabs and
@@ -3933,6 +3933,9 @@ app.post('/api/stacks', async (req: Request, res: Response) => {
 
 app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
   if (!requirePermission(req, res, 'stack:create')) return;
+  const fromGitStartedAt = Date.now();
+  const fromGitDiag = isDebugEnabled();
+  let fromGitStackName = '';
   try {
     const {
       stack_name,
@@ -3947,6 +3950,7 @@ app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
       auto_deploy_on_apply,
       deploy_now,
     } = req.body ?? {};
+    fromGitStackName = typeof stack_name === 'string' ? stack_name : '';
 
     if (typeof stack_name !== 'string' || !stack_name.trim()) {
       return res.status(400).json({ error: 'stack_name is required' });
@@ -3998,6 +4002,12 @@ app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
         : path.posix.join(path.posix.dirname(compose_path.replace(/\\/g, '/')) || '.', '.env'))
       : null;
 
+    if (fromGitDiag) {
+      console.log(
+        `[Stacks:diag] from-git start stack=${stack_name} nodeId=${req.nodeId ?? 'local'} host=${gitRepoHost(repo_url)} branch=${branch} composePath=${compose_path} envPath=${resolvedEnvPath ?? 'none'} authType=${resolvedAuthType} autoApplyOnWebhook=${Boolean(auto_apply_on_webhook)} autoDeployOnApply=${Boolean(auto_deploy_on_apply)} deployNow=${deploy_now === true}`
+      );
+    }
+
     const result = await GitSourceService.getInstance().createStackFromGit({
       stackName: stack_name.trim(),
       repoUrl: repo_url.trim(),
@@ -4031,15 +4041,27 @@ app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
     }
 
     console.log(`[Stacks] Stack created from Git: ${stack_name} at ${result.commitSha.slice(0, 7)}`);
+    if (fromGitDiag) {
+      console.log(
+        `[Stacks:diag] from-git ok stack=${stack_name} sha=${result.commitSha.slice(0, 7)} deployed=${deployed} envWritten=${result.envWritten} warnings=${result.warnings.length} elapsedMs=${Date.now() - fromGitStartedAt}`
+      );
+    }
     res.json({
       name: stack_name,
       source: result.source,
       commitSha: result.commitSha,
       envWritten: result.envWritten,
+      warnings: result.warnings,
       deployed,
       deployError,
     });
   } catch (error) {
+    if (fromGitDiag) {
+      const code = error instanceof GitSourceError ? error.code : 'UNKNOWN';
+      console.log(
+        `[Stacks:diag] from-git fail stack=${fromGitStackName} code=${code} elapsedMs=${Date.now() - fromGitStartedAt}`
+      );
+    }
     sendGitSourceError(res, error);
   }
 });
