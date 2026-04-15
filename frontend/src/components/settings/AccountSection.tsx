@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
-import { RefreshCw, Shield, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Shield, ShieldCheck } from 'lucide-react';
 import { MfaEnrollDialog } from '@/components/mfa/MfaEnrollDialog';
 import { MfaDisableDialog } from '@/components/mfa/MfaDisableDialog';
 import { MfaBackupCodesDialog } from '@/components/mfa/MfaBackupCodesDialog';
@@ -144,9 +144,36 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
                             <div className="mt-4 text-xs text-muted-foreground">Loading…</div>
                         ) : mfa?.enabled ? (
                             <div className="mt-4 space-y-3">
-                                <div className="text-xs text-muted-foreground font-mono tabular-nums">
-                                    {mfa.backupCodesRemaining} backup code{mfa.backupCodesRemaining === 1 ? '' : 's'} remaining
-                                </div>
+                                {mfa.backupCodesRemaining === 0 ? (
+                                    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-destructive" strokeWidth={1.5} />
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium text-destructive">No backup codes left</div>
+                                            <div className="text-xs text-destructive/80 mt-0.5">
+                                                Regenerate a new set before you lose access to your authenticator app. Without codes, recovery needs an administrator.
+                                            </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="mt-2 h-7 px-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                                onClick={() => setRegenOpen(true)}
+                                            >
+                                                Regenerate now
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : mfa.backupCodesRemaining <= 2 ? (
+                                    <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-warning">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+                                        <span>
+                                            {mfa.backupCodesRemaining} backup code{mfa.backupCodesRemaining === 1 ? '' : 's'} remaining, regenerate a fresh set
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <div className="text-xs text-muted-foreground font-mono tabular-nums">
+                                        {mfa.backupCodesRemaining} backup codes remaining
+                                    </div>
+                                )}
 
                                 {hasSso && (
                                     <div className="flex items-start justify-between gap-3 rounded-md border border-card-border bg-background/40 p-3">
