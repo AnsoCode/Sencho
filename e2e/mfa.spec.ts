@@ -88,12 +88,13 @@ test.describe.serial('Two-factor authentication', () => {
     // Step 1 (QR) -> Next
     await page.getByRole('button', { name: /^Next$/ }).click();
 
-    // Step 2 (Confirm): enter a fresh TOTP and capture the backup codes.
+    // Step 2 (Confirm): enter a fresh TOTP. The confirm step auto-submits on
+    // the sixth digit, so no explicit click is required. Capture the backup
+    // codes from the response.
     const confirmPromise = page.waitForResponse(
       (r) => r.url().includes('/api/auth/mfa/enroll/confirm') && r.status() === 200,
     );
     await page.locator('#mfa-confirm-code').fill(totpNow(secret));
-    await page.getByRole('button', { name: /^Verify$/ }).click();
     const confirmRes = await confirmPromise;
     const confirmBody = await confirmRes.json();
     backupCodes = confirmBody.backupCodes;
@@ -106,17 +107,83 @@ test.describe.serial('Two-factor authentication', () => {
     await expect(page.getByText(/^Enabled$/)).toBeVisible();
   });
 
-  test('login with a valid TOTP code reaches the dashboard', async ({ page }) => {
+  test('low backup codes warning renders when <=2 codes remain', async ({ page }) => {
+    // Mock the status endpoint so we can exercise the warning branch without
+    // racing backup-code consumption in this serial suite. The UI only cares
+    // about the fields on the response, so this is a pure rendering check.
+    await page.route('**/api/auth/mfa/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ enabled: true, backupCodesRemaining: 1, sso_enforce_mfa: false }),
+      });
+    });
+
+    // The test user has MFA on, so loginAs is not usable. Drive the challenge
+    // manually with a backup code so we do not race the TOTP replay blacklist
+    // against the next test's fresh code in the same 30-second window.
+    await page.goto('/');
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
+    await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
+    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
+    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
+    await page.locator('#mfa-code').fill(backupCodes[5]);
+    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
+
+    await openAccountSettings(page);
+    await expect(page.getByText(/1 backup code remaining/i)).toBeVisible();
+    await expect(page.getByText(/regenerate a fresh set/i)).toBeVisible();
+
+    // Now exercise the exhausted branch (0 codes): the dedicated warning card.
+    await page.unroute('**/api/auth/mfa/status');
+    await page.route('**/api/auth/mfa/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ enabled: true, backupCodesRemaining: 0, sso_enforce_mfa: false }),
+      });
+    });
+
+    // Re-open the account section so it refetches status with the new mock.
+    await page.keyboard.press('Escape').catch(() => {});
+    await openAccountSettings(page);
+    await expect(page.getByText(/No backup codes left/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Regenerate now/i })).toBeVisible();
+
+    await page.unroute('**/api/auth/mfa/status');
+  });
+
+  test('typing a 6-digit TOTP auto-submits and reaches the dashboard', async ({ page }) => {
     // Fresh page lands on the login screen; password passes but the MFA
-    // challenge appears because test #1 enrolled the user.
+    // challenge appears because test #1 enrolled the user. Entering the 6th
+    // digit must auto-submit the form without the user clicking "Verify".
     await page.goto('/');
     await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
     await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
 
+    // fill() emits the final value in a single onChange, which at length === 6
+    // schedules a submit via requestAnimationFrame. No explicit click.
     await page.locator('#mfa-code').fill(totpNow(secret));
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
 
+    await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
+  });
+
+  test('backup code entered without the dash still succeeds', async ({ page }) => {
+    // The backup-code input accepts any paste form; the client normalises to
+    // 10 alphanumeric characters before sending. Consumes backupCodes[4].
+    await page.goto('/');
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
+
+    const raw = backupCodes[4].replace('-', '');
+    expect(raw).toMatch(/^[A-Z0-9]{10}$/);
+
+    await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
+    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
+    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
+    await page.locator('#mfa-code').fill(raw);
+    await page.getByRole('button', { name: /Verify and sign in/i }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
   });
 
