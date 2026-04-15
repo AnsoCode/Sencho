@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -13,6 +13,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import {
+  BACKUP_CODE_DISPLAY_LENGTH,
+  BACKUP_CODE_RAW_LENGTH,
+  TOTP_LENGTH,
+  normalizeBackupCodeInput,
+  normalizeTotpInput,
+} from '@/lib/mfa';
 
 interface MfaDisableDialogProps {
   open: boolean;
@@ -21,42 +28,92 @@ interface MfaDisableDialogProps {
 }
 
 export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableDialogProps) {
-  const [code, setCode] = useState('');
+  // `display` is what the input shows (backup codes carry a dash after five chars);
+  // `raw` is the normalized value sent to the server.
+  const [display, setDisplay] = useState('');
+  const [raw, setRaw] = useState('');
   const [useBackup, setUseBackup] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     if (open) {
-      setCode('');
+      setDisplay('');
+      setRaw('');
       setError('');
       setUseBackup(false);
+      submittedRef.current = false;
     }
   }, [open]);
 
-  const handleDisable = async () => {
+  const submitDisable = async (valueToSubmit: string) => {
     setError('');
     setLoading(true);
     try {
       const res = await apiFetch('/auth/mfa/disable', {
         method: 'POST',
         localOnly: true,
-        body: JSON.stringify({ code, isBackupCode: useBackup }),
+        body: JSON.stringify({ code: valueToSubmit, isBackupCode: useBackup }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error || 'Could not disable two-factor authentication');
+        setDisplay('');
+        setRaw('');
+        submittedRef.current = false;
         return;
       }
       toast.success('Two-factor authentication disabled');
-      setCode('');
+      setDisplay('');
+      setRaw('');
       onOpenChange(false);
       onDisabled();
     } catch (err) {
       setError((err as Error)?.message || 'Could not disable two-factor authentication');
+      submittedRef.current = false;
     } finally {
       setLoading(false);
     }
+  };
+
+  const expectedLength = useBackup ? BACKUP_CODE_RAW_LENGTH : TOTP_LENGTH;
+
+  const handleCodeChange = (value: string) => {
+    if (useBackup) {
+      const next = normalizeBackupCodeInput(value);
+      setDisplay(next.display);
+      setRaw(next.raw);
+      // Never auto-submit a backup code; the action is destructive.
+      if (next.raw.length < BACKUP_CODE_RAW_LENGTH) submittedRef.current = false;
+      return;
+    }
+    const normalized = normalizeTotpInput(value);
+    setDisplay(normalized);
+    setRaw(normalized);
+    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (
+      normalized.length === TOTP_LENGTH &&
+      !loading &&
+      !submittedRef.current
+    ) {
+      submittedRef.current = true;
+      requestAnimationFrame(() => { void submitDisable(normalized); });
+    }
+  };
+
+  const handleToggleBackup = () => {
+    setUseBackup((v) => !v);
+    setDisplay('');
+    setRaw('');
+    setError('');
+    submittedRef.current = false;
+  };
+
+  const handleDisableClick = () => {
+    if (loading || raw.length !== expectedLength) return;
+    submittedRef.current = true;
+    void submitDisable(raw);
   };
 
   return (
@@ -77,9 +134,9 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
               type="text"
               inputMode={useBackup ? 'text' : 'numeric'}
               autoComplete="one-time-code"
-              maxLength={useBackup ? 12 : 6}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
+              maxLength={useBackup ? BACKUP_CODE_DISPLAY_LENGTH : TOTP_LENGTH}
+              value={display}
+              onChange={(e) => handleCodeChange(e.target.value)}
               className="font-mono tabular-nums tracking-widest text-center"
               placeholder={useBackup ? 'ABCDE-FGHIJ' : '123456'}
             />
@@ -87,7 +144,7 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
           <button
             type="button"
             className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
-            onClick={() => { setUseBackup((v) => !v); setCode(''); setError(''); }}
+            onClick={handleToggleBackup}
           >
             {useBackup ? 'Use your authenticator app instead' : 'Use a backup code instead'}
           </button>
@@ -100,8 +157,8 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
             type="button"
             variant="ghost"
             className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-            disabled={loading || !code}
-            onClick={handleDisable}
+            disabled={loading || raw.length !== expectedLength}
+            onClick={handleDisableClick}
           >
             {loading ? 'Disabling...' : 'Disable'}
           </Button>

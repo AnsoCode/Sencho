@@ -1,37 +1,84 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  BACKUP_CODE_DISPLAY_LENGTH,
+  TOTP_LENGTH,
+  normalizeBackupCodeInput,
+  normalizeTotpInput,
+} from '@/lib/mfa';
 
 export function MfaChallenge({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<'div'>) {
   const { submitMfa, cancelMfa } = useAuth();
-  const [code, setCode] = useState('');
+  // `display` is what the user sees in the input (with dash for backup codes);
+  // `raw` is the normalized value we send to the server.
+  const [display, setDisplay] = useState('');
+  const [raw, setRaw] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [useBackup, setUseBackup] = useState(false);
+  // Latch so auto-submit only fires once per full code entry: cleared on any
+  // edit that brings the input back below a full code.
+  const submittedRef = useRef(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const runSubmit = async (valueToSubmit: string) => {
     setError('');
     setIsLoading(true);
-    const result = await submitMfa(code, { isBackupCode: useBackup });
+    const result = await submitMfa(valueToSubmit, { isBackupCode: useBackup });
     if (!result.success) {
       const retryNote = result.retryAfter ? ` (try again in ${Math.ceil(result.retryAfter / 60)} min)` : '';
       setError((result.error || 'Verification failed') + retryNote);
-      setCode('');
+      setDisplay('');
+      setRaw('');
+      submittedRef.current = false;
     }
     setIsLoading(false);
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isLoading || !raw) return;
+    submittedRef.current = true;
+    void runSubmit(raw);
+  };
+
+  const handleChange = (value: string) => {
+    if (useBackup) {
+      const next = normalizeBackupCodeInput(value);
+      setDisplay(next.display);
+      setRaw(next.raw);
+      if (next.raw.length < 10) submittedRef.current = false;
+      // Backup codes are longer and deliberate; do not auto-submit.
+      return;
+    }
+    const normalized = normalizeTotpInput(value);
+    setDisplay(normalized);
+    setRaw(normalized);
+    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (
+      normalized.length === TOTP_LENGTH &&
+      !isLoading &&
+      !submittedRef.current
+    ) {
+      submittedRef.current = true;
+      // Let the state update flush before firing so the spinner state lines
+      // up with the disabled button.
+      requestAnimationFrame(() => { void runSubmit(normalized); });
+    }
+  };
+
   const handleToggleBackup = () => {
     setUseBackup((v) => !v);
-    setCode('');
+    setDisplay('');
+    setRaw('');
     setError('');
+    submittedRef.current = false;
   };
 
   return (
@@ -89,9 +136,9 @@ export function MfaChallenge({
                   autoComplete="one-time-code"
                   autoFocus
                   required
-                  maxLength={useBackup ? 12 : 6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  maxLength={useBackup ? BACKUP_CODE_DISPLAY_LENGTH : TOTP_LENGTH}
+                  value={display}
+                  onChange={(e) => handleChange(e.target.value)}
                   className="font-mono tabular-nums tracking-widest text-center"
                   placeholder={useBackup ? 'ABCDE-FGHIJ' : '123456'}
                 />
@@ -101,7 +148,7 @@ export function MfaChallenge({
                   {error}
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={isLoading || !code}>
+              <Button type="submit" className="w-full" disabled={isLoading || !raw}>
                 {isLoading ? 'Verifying...' : 'Verify and sign in'}
               </Button>
               <button
