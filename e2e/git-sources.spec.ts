@@ -1,0 +1,136 @@
+/**
+ * Git Sources E2E - configure, save, pull, remove.
+ *
+ * These tests use a throwaway stack that is created via the browser's
+ * authenticated fetch (so cookies are carried) and cleaned up in afterAll.
+ * Pull tests use an unreachable URL on purpose so the suite does not depend
+ * on real network egress or a specific upstream repo being available.
+ */
+import { test, expect, Page } from '@playwright/test';
+import { loginAs } from './helpers';
+
+const TEST_STACK = 'e2e-git-source-stack';
+
+async function createTestStackViaApi(page: Page) {
+  return page.evaluate(async (name) => {
+    const res = await fetch(`/api/stacks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ stackName: name }),
+    });
+    return res.status;
+  }, TEST_STACK);
+}
+
+async function deleteTestStackViaApi(page: Page) {
+  await page.evaluate(async (name) => {
+    // Drop any orphaned git-source row first (safe even if the stack is already gone).
+    await fetch(`/api/stacks/${name}/git-source`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+    await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+  }, TEST_STACK);
+}
+
+async function openGitSourcePanel(page: Page) {
+  await page.getByText(TEST_STACK).first().click();
+  const gitBtn = page.getByRole('button', { name: /Git Source/i });
+  await expect(gitBtn).toBeVisible({ timeout: 10_000 });
+  await gitBtn.click();
+  await expect(page.getByRole('dialog').getByText('Git Source', { exact: false })).toBeVisible({ timeout: 5_000 });
+}
+
+test.describe('Git Sources', () => {
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await loginAs(page);
+    await deleteTestStackViaApi(page);
+    await createTestStackViaApi(page);
+    await page.close();
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await loginAs(page);
+    await deleteTestStackViaApi(page);
+    await page.close();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await loginAs(page);
+    await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
+  });
+
+  test('rejects non-HTTPS repository URLs client-side', async ({ page }) => {
+    await openGitSourcePanel(page);
+
+    await page.locator('#git-source-repo').fill('git@github.com:org/repo.git');
+    await page.locator('#git-source-branch').fill('main');
+    await page.locator('#git-source-path').fill('compose.yaml');
+
+    await page.getByRole('dialog').getByRole('button', { name: /^Save$/ }).click();
+
+    await expect(page.getByText(/Only HTTPS repository URLs are supported/i)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('surfaces reachability error on save with unreachable repo', async ({ page }) => {
+    await openGitSourcePanel(page);
+
+    // Use a URL that resolves but returns 404 for the git protocol so the dry-run
+    // fetch fails with a clean error. reserved-TLDs like .invalid trigger DNS failure
+    // which maps to NETWORK_TIMEOUT or REPO_NOT_FOUND.
+    await page.locator('#git-source-repo').fill('https://git.invalid.example/nope/nope.git');
+    await page.locator('#git-source-branch').fill('main');
+    await page.locator('#git-source-path').fill('compose.yaml');
+
+    await page.getByRole('dialog').getByRole('button', { name: /^Save$/ }).click();
+
+    // Any of the mapped error messages is acceptable; the key is that nothing
+    // persisted silently and the user sees a toast.
+    await expect(
+      page.getByText(/not found|unreachable|network|timeout|authentication failed/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('configure, view pending-empty state, and remove via AlertDialog', async ({ page }) => {
+    // Seed a git source directly via API so we can exercise the remove-confirm
+    // flow without depending on a reachable upstream.
+    const putStatus = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/${name}/git-source`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          repo_url: 'https://github.com/docker/awesome-compose.git',
+          branch: 'master',
+          compose_path: 'nginx-golang/compose.yaml',
+          sync_env: false,
+          auth_type: 'none',
+          auto_apply_on_webhook: false,
+          auto_deploy_on_apply: false,
+        }),
+      });
+      return res.status;
+    }, TEST_STACK);
+
+    // Either the dry-run succeeded (2xx) or the network blocked it (4xx/5xx).
+    // If it failed, skip the rest of the remove flow to keep the suite robust.
+    if (putStatus >= 400) {
+      test.skip(true, `Upstream dry-run returned ${putStatus}; skipping remove path`);
+      return;
+    }
+
+    await openGitSourcePanel(page);
+
+    // Source should render with the saved repo URL.
+    await expect(page.locator('#git-source-repo')).toHaveValue(/awesome-compose/);
+
+    // Click Remove → AlertDialog appears → confirm → source cleared.
+    await page.getByRole('dialog').getByRole('button', { name: /Remove/i }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('alertdialog').getByRole('button', { name: /^Remove$/ }).click();
+
+    // After removal, the "Remove" button is gone from the panel footer.
+    await expect(page.getByRole('dialog').getByRole('button', { name: /^Remove$/ })).not.toBeVisible({ timeout: 5_000 });
+  });
+});

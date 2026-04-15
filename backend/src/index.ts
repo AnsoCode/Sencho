@@ -3914,6 +3914,8 @@ app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     // Clean up any scoped role assignments referencing this stack
     DatabaseService.getInstance().deleteRoleAssignmentsByResource('stack', stackName);
+    // Remove any linked Git source so it does not resurface on a future stack with the same name
+    DatabaseService.getInstance().deleteGitSource(stackName);
 
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Stack deleted: ${stackName}`);
