@@ -200,3 +200,7 @@ If not set, Sencho auto-detects the URL from the request's `Host` header and pro
 - **Admin-only configuration** - Only Admiral administrators can enable or configure SSO providers
 
 For common SSO issues (LDAP connection errors, OAuth callback mismatches, SSO buttons not appearing), see the [Troubleshooting](/operations/troubleshooting#ldap-connection-refused) page.
+
+## Combining SSO with two-factor authentication
+
+SSO and [two-factor authentication](/features/two-factor-authentication) can coexist. By default, users who have 2FA enrolled skip the TOTP challenge when they sign in through SSO, since the identity provider has already authenticated them. Users who want stricter sign-in can opt in to requiring 2FA on SSO from their Account & Security screen.

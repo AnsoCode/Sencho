@@ -118,6 +118,7 @@
               "features/auto-update-policies",
               "features/scheduled-operations",
               "features/sso",
+              "features/two-factor-authentication",
               "features/licensing"
             ]
           },
@@ -137,7 +138,8 @@
               "operations/troubleshooting",
               "operations/backup",
               "operations/upgrade",
-              "operations/self-hosting"
+              "operations/self-hosting",
+              "operations/two-factor-admin"
             ]
           }
         ]

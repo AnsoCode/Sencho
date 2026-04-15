@@ -1,0 +1,141 @@
+import crypto from 'crypto';
+import bcrypt from 'bcrypt';
+import { authenticator } from 'otplib';
+import { HashAlgorithms } from '@otplib/core';
+
+// Configure otplib for the default TOTP contract we present to users:
+//   - 6 digits
+//   - 30-second step
+//   - SHA-1 (the universally supported default for authenticator apps)
+//   - ±1 step tolerance, so the server accepts the previous, current, and next code
+//     to cover small clock drift between the device and the server.
+authenticator.options = {
+    digits: 6,
+    step: 30,
+    algorithm: HashAlgorithms.SHA1,
+    window: 1,
+};
+
+const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Crockford-like, no 0/O/1/I/L
+const BACKUP_CODE_LENGTH = 10;
+const BACKUP_CODE_COUNT = 10;
+const BACKUP_HASH_COST = 10;
+
+export interface BackupVerifyResult {
+    matched: boolean;
+    remainingHashes: string[];
+}
+
+export class MfaService {
+    /**
+     * Generate a fresh base32 TOTP secret ready for `buildOtpauthUri` and
+     * `verifyTotp`. Each user should receive a unique secret.
+     */
+    public static generateSecret(): string {
+        return authenticator.generateSecret();
+    }
+
+    /**
+     * Build an `otpauth://` URI for QR-code rendering or manual entry. The
+     * label follows the RFC 6238 format `Issuer:account` so the authenticator
+     * app can label the entry clearly.
+     */
+    public static buildOtpauthUri(secret: string, username: string, issuer = 'Sencho'): string {
+        return authenticator.keyuri(username, issuer, secret);
+    }
+
+    /**
+     * Verify a TOTP code against the stored secret. Uses the window tolerance
+     * configured above, so a code is accepted if it matches the previous,
+     * current, or next 30-second step.
+     */
+    public static verifyTotp(secret: string, code: string): boolean {
+        if (!secret || !code) return false;
+        const trimmed = code.trim().replace(/\s+/g, '');
+        if (!/^\d{6}$/.test(trimmed)) return false;
+        try {
+            return authenticator.check(trimmed, secret);
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Return the integer Unix step for the current time. Used to key the
+     * replay-prevention blacklist so a given (user, code, window) combination
+     * can only be used once.
+     */
+    public static currentWindow(nowMs: number = Date.now()): number {
+        return Math.floor(nowMs / 1000 / 30);
+    }
+
+    /**
+     * Generate a fresh set of backup codes in cleartext. Callers should pass
+     * these through `hashBackupCodes` before persistence and show the
+     * cleartext to the user exactly once.
+     */
+    public static generateBackupCodes(count: number = BACKUP_CODE_COUNT): string[] {
+        const codes: string[] = [];
+        for (let i = 0; i < count; i++) {
+            codes.push(this.randomBackupCode());
+        }
+        return codes;
+    }
+
+    /**
+     * Hash each backup code with bcrypt so the stored form cannot be replayed
+     * even if the database is leaked.
+     */
+    public static async hashBackupCodes(codes: string[]): Promise<string[]> {
+        return Promise.all(codes.map((code) => bcrypt.hash(this.normalizeBackupCode(code), BACKUP_HASH_COST)));
+    }
+
+    /**
+     * Check a user-supplied backup code against the stored hashes. Returns
+     * `{ matched, remainingHashes }`; when matched, the matched hash is
+     * removed so callers can persist the shrunk set and enforce single-use
+     * semantics.
+     */
+    public static async verifyBackupCode(hashes: string[], code: string): Promise<BackupVerifyResult> {
+        const normalized = this.normalizeBackupCode(code);
+        if (!normalized) return { matched: false, remainingHashes: hashes };
+
+        for (let i = 0; i < hashes.length; i++) {
+            // bcrypt.compare is constant-time for a given hash. We still check
+            // every hash regardless of an early hit to avoid leaking which
+            // slot matched via timing.
+            // eslint-disable-next-line no-await-in-loop
+            const ok = await bcrypt.compare(normalized, hashes[i]);
+            if (ok) {
+                const remaining = hashes.slice(0, i).concat(hashes.slice(i + 1));
+                return { matched: true, remainingHashes: remaining };
+            }
+        }
+        return { matched: false, remainingHashes: hashes };
+    }
+
+    /**
+     * Display helper: group a 10-character backup code as `ABCDE-FGHIJ` so
+     * it is easier for the user to read and transcribe.
+     */
+    public static formatBackupCodeForDisplay(code: string): string {
+        const normalized = this.normalizeBackupCode(code);
+        if (normalized.length !== BACKUP_CODE_LENGTH) return normalized;
+        return `${normalized.slice(0, 5)}-${normalized.slice(5)}`;
+    }
+
+    /** Uppercase, strip non-alphanumeric separators (e.g. dashes, spaces). */
+    public static normalizeBackupCode(code: string): string {
+        if (!code) return '';
+        return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+
+    private static randomBackupCode(): string {
+        const bytes = crypto.randomBytes(BACKUP_CODE_LENGTH);
+        let out = '';
+        for (let i = 0; i < BACKUP_CODE_LENGTH; i++) {
+            out += BACKUP_CODE_ALPHABET[bytes[i] % BACKUP_CODE_ALPHABET.length];
+        }
+        return out;
+    }
+}

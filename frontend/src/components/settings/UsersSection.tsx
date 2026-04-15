@@ -15,7 +15,7 @@ import { useAuth, type UserRole } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from '@/components/PaidGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
-import { RefreshCw, Trash2, Plus, Pencil } from 'lucide-react';
+import { RefreshCw, Trash2, Plus, Pencil, ShieldOff } from 'lucide-react';
 
 interface UserItem {
     id: number;
@@ -23,6 +23,7 @@ interface UserItem {
     role: UserRole;
     auth_provider: string;
     created_at: number;
+    mfaEnabled?: boolean;
 }
 
 interface RoleAssignmentItem {
@@ -126,6 +127,22 @@ export function UsersSection() {
             toast.error(msg);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleResetMfa = async (userId: number, username: string) => {
+        try {
+            const res = await apiFetch(`/users/${userId}/mfa/reset`, { method: 'POST', localOnly: true });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || err?.message || 'Failed to reset two-factor authentication.');
+                return;
+            }
+            toast.success(`Two-factor authentication reset for ${username}.`);
+            fetchUsers();
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Something went wrong.';
+            toast.error(msg);
         }
     };
 
@@ -427,6 +444,27 @@ export function UsersSection() {
                                                     <Button variant="ghost" size="sm" onClick={() => startEdit(u)}>
                                                         <Pencil className="w-3.5 h-3.5" strokeWidth={1.5} />
                                                     </Button>
+                                                    {u.mfaEnabled && (
+                                                        <AlertDialog>
+                                                            <AlertDialogTrigger asChild>
+                                                                <Button variant="ghost" size="sm" title="Reset 2FA">
+                                                                    <ShieldOff className="w-3.5 h-3.5 text-warning" strokeWidth={1.5} />
+                                                                </Button>
+                                                            </AlertDialogTrigger>
+                                                            <AlertDialogContent>
+                                                                <AlertDialogHeader>
+                                                                    <AlertDialogTitle>Reset two-factor authentication for "{u.username}"?</AlertDialogTitle>
+                                                                    <AlertDialogDescription>
+                                                                        This removes the user's authenticator enrolment and backup codes. They will sign in with just their password on their next login and can re-enrol from their account settings. Use this when a user has lost access to their authenticator.
+                                                                    </AlertDialogDescription>
+                                                                </AlertDialogHeader>
+                                                                <AlertDialogFooter>
+                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction onClick={() => handleResetMfa(u.id, u.username)}>Reset 2FA</AlertDialogAction>
+                                                                </AlertDialogFooter>
+                                                            </AlertDialogContent>
+                                                        </AlertDialog>
+                                                    )}
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>
                                                             <Button variant="ghost" size="sm" disabled={isSelf}>

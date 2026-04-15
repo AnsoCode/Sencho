@@ -8,9 +8,27 @@
  *   E2E_USERNAME=admin E2E_PASSWORD=mypassword npx playwright test
  */
 import { Page, expect } from '@playwright/test';
+import { authenticator } from 'otplib';
+import { HashAlgorithms } from '@otplib/core';
+
+// Match backend configuration so generated codes are accepted.
+authenticator.options = {
+  digits: 6,
+  step: 30,
+  algorithm: HashAlgorithms.SHA1,
+  window: 1,
+};
 
 export const TEST_USERNAME = process.env.E2E_USERNAME ?? 'admin';
 export const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'password123';
+
+/**
+ * Generate a current TOTP code for the given base32 secret. Used by the MFA
+ * E2E tests to drive the login challenge without a real authenticator app.
+ */
+export function totpNow(secret: string): string {
+  return authenticator.generate(secret.replace(/\s+/g, ''));
+}
 
 /** Selector for the dashboard - only present in EditorLayout, not on login/setup pages */
 const DASHBOARD_INDICATOR = 'img[alt="Sencho Logo"]';

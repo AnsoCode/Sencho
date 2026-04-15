@@ -1,0 +1,58 @@
+---
+title: Managing Two-Factor Authentication
+description: Reset a user's 2FA, configure per-user SSO enforcement, and recover from lockouts.
+---
+
+This guide is for administrators. For general 2FA usage, see [Two-Factor Authentication](/features/two-factor-authentication).
+
+## Reset a user's 2FA
+
+A user who has lost their authenticator app and all backup codes cannot sign in on their own. Any administrator can reset the affected account from the Settings UI.
+
+1. Open **Settings → Users**
+2. Find the user in the list. Users with 2FA enabled show a shield icon in the action column
+3. Click the shield icon and confirm the reset
+
+<Frame>
+  <img src="/images/two-factor-auth/admin-reset.png" alt="Administrator resetting a user's 2FA from the Users settings" />
+</Frame>
+
+After the reset:
+
+- The user can sign in with their password only, no second factor is required
+- Their existing sessions are invalidated, so any stale browser tabs have to sign in again
+- The action is recorded in the audit log with the administrator's username
+
+Instruct the user to enrol again from **Settings → Account & Security** as soon as they are back in. The account is unprotected until they do.
+
+## Emergency recovery from the command line
+
+If every administrator has lost access to 2FA and no one can sign in through the UI, reset the admin account directly from the host running Sencho.
+
+From a shell on that host:
+
+```bash
+docker compose exec sencho node dist/cli/resetMfa.js <username>
+```
+
+Replace `<username>` with the admin's account name. On success the command prints a confirmation line and exits 0. Sign in with the password, then re-enrol immediately.
+
+The command respects the container's `DATA_DIR`, so it always acts on the same SQLite database the application uses. It writes an audit log entry attributed to `cli` so the action is auditable after the fact.
+
+## Per-user SSO enforcement
+
+When SSO (LDAP or OIDC) is configured, users with 2FA enabled sign in through SSO without a second factor by default. SSO is already an authenticated flow, and requiring a TOTP on top is extra friction that most teams do not need.
+
+Each user can opt into stricter behaviour by flipping **Require 2FA even when signing in via SSO** on their own Account & Security screen. There is no admin-wide override, every user decides for themselves.
+
+If your organisation needs to force 2FA for every SSO sign-in for every user, raise this with the Sencho team, it is not exposed as a global policy today.
+
+## What a reset changes in the database
+
+For completeness, a reset does the following to the target user:
+
+- Clears the stored TOTP secret and all remaining backup codes
+- Rotates the user's session version, which invalidates any outstanding session cookies
+- Leaves the account otherwise unchanged, the username, password hash, role, and audit history are preserved
+
+Nothing about the user's SSO bindings changes. If the user was signing in with SSO plus 2FA, they simply resume SSO-only sign-in after the reset.

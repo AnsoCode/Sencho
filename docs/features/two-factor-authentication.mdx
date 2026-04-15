@@ -1,0 +1,120 @@
+---
+title: Two-Factor Authentication
+description: Protect your Sencho account with a time-based one-time password (TOTP) and single-use backup codes.
+---
+
+Two-factor authentication (2FA) adds a second step to sign-in. After your password is accepted, Sencho asks for a six-digit code from your authenticator app. Someone who steals your password still cannot sign in without that code.
+
+2FA is available on all Sencho tiers, including Community.
+
+## How it works
+
+1. You enrol once by scanning a QR code with an authenticator app (or typing a secret by hand)
+2. The app generates a fresh six-digit code every 30 seconds
+3. On every sign-in, Sencho asks for the current code after your password passes
+4. You also save ten single-use backup codes for the days when your phone is not available
+
+<Frame>
+  <img src="/images/two-factor-auth/challenge.png" alt="Sign-in challenge screen asking for the six-digit code" />
+</Frame>
+
+## Enrol
+
+Open **Settings → Account & Security** and click **Set up 2FA**. Sencho walks you through three steps.
+
+### Step 1 – Scan the QR code
+
+Scan the QR code with an authenticator app such as **1Password**, **Bitwarden**, **Google Authenticator**, **Authy**, or **Microsoft Authenticator**.
+
+<Frame>
+  <img src="/images/two-factor-auth/enroll-qr.png" alt="Enrolment dialog showing the QR code" />
+</Frame>
+
+If your app cannot scan or you would rather type the secret into a password manager, click **Can't scan? Show secret key** and copy the base32 string. Paste it into the app's manual-entry field.
+
+### Step 2 – Confirm
+
+Enter the six-digit code your app is currently showing. This proves the app is paired correctly before Sencho turns 2FA on.
+
+<Frame>
+  <img src="/images/two-factor-auth/enroll-confirm.png" alt="Enrolment confirmation step asking for the six-digit code" />
+</Frame>
+
+### Step 3 – Save your backup codes
+
+Sencho shows ten single-use backup codes. Each code can sign you in once without the authenticator app. **Save them somewhere safe before closing this dialog**, they are not shown again.
+
+<Frame>
+  <img src="/images/two-factor-auth/enroll-backup-codes.png" alt="Ten backup codes shown after enrolment" />
+</Frame>
+
+Copy them to a password manager or download them as a text file. Common places users store them:
+
+- Their primary password manager as a secure note on the Sencho entry
+- An encrypted document on a separate device
+- Printed and stored with other emergency recovery material
+
+## Sign in with 2FA
+
+After entering your password, Sencho shows the 2FA challenge screen.
+
+1. Open your authenticator app, find the Sencho entry, read the six-digit code
+2. Type it into the **Verification code** field
+3. Click **Verify and sign in**
+
+If your phone is unavailable, click **Use a backup code instead**, enter one of the codes you saved during enrolment, and click **Verify and sign in**. That code is now used up.
+
+## Regenerate backup codes
+
+If you think your backup codes have been exposed, or you have used most of them, regenerate them from **Settings → Account & Security → Regenerate backup codes**. Sencho asks for a current code, then issues a fresh set of ten and invalidates the old set immediately.
+
+<Frame>
+  <img src="/images/two-factor-auth/account-card-enabled.png" alt="Account card showing 2FA enabled with regenerate and disable actions" />
+</Frame>
+
+## Disable 2FA
+
+From the same Account & Security section, click **Disable 2FA**. Sencho asks you to confirm with a current authenticator code (or a backup code) so that no one else can disable protection without your phone. Once disabled, only your password protects the account.
+
+## Signing in with SSO
+
+If Sencho is configured with LDAP or an OIDC provider (Google, GitHub, Okta), the SSO flow signs you in without the second factor by default. Your identity provider has already authenticated you.
+
+If you want Sencho to ask for a TOTP code even after a successful SSO sign-in, flip the **Require 2FA even when signing in via SSO** switch on the Account & Security card. The switch only appears when at least one SSO provider is enabled.
+
+<Frame>
+  <img src="/images/two-factor-auth/sso-enforce.png" alt="Toggle that requires 2FA even when signing in via SSO" />
+</Frame>
+
+## Troubleshooting
+
+### "Code invalid" even though the code is current
+
+The most common cause is clock drift between your phone and the Sencho server. Authenticator apps compute codes from the current Unix time, and even a 30 second skew breaks verification.
+
+- On iOS, open **Settings → General → Date & Time** and enable **Set Automatically**
+- On Android, open **Settings → System → Date & time** and enable **Automatic date & time**
+- In Google Authenticator, open the menu → **Settings → Time correction for codes → Sync now**
+- In Authy, open **Settings → My account → Sync device time**
+
+If your server runs in a container, make sure its host clock is synced with NTP.
+
+### Wrong account selected in the authenticator
+
+Authenticator apps let you store many accounts. If you have more than one Sencho instance, or a Sencho entry and a different service that looks similar, pick the correct one. The issuer label Sencho uses is simply `Sencho`.
+
+### The QR code will not scan
+
+Click **Can't scan? Show secret key** during enrolment, copy the base32 string, and paste it into the authenticator app's manual-entry screen. The secret is identical, the QR code is just a convenience.
+
+### Lost phone and no backup codes left
+
+Contact an administrator. An admin can reset your 2FA from the Users section in **Settings → Users**. See the [admin guide](/operations/two-factor-admin) for the steps. If you are the only admin and have lost access, the administrator can also reset 2FA from the command line on the host running Sencho.
+
+### SSO sign-in is unexpectedly asking for a code
+
+The **Require 2FA even when signing in via SSO** toggle is on for your account. Open **Settings → Account & Security** and flip it off if SSO alone is enough for your threat model.
+
+### Enrolment did not activate after confirmation
+
+The browser may have dropped the JSON response. Retry the confirmation step and watch for an error toast. If confirmation continues to fail, cancel the dialog, ensure your clock is synced, and start enrolment again.

@@ -4,6 +4,7 @@ import { LicenseProvider } from './context/LicenseContext';
 import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import EditorLayout from './components/EditorLayout';
+import { MfaChallenge } from './components/MfaChallenge';
 
 function AppContent() {
   const { appStatus, isAuthenticated, needsSetup, completeSetup } = useAuth();
@@ -18,6 +19,10 @@ function AppContent() {
 
   if (needsSetup) {
     return <Setup onComplete={completeSetup} />;
+  }
+
+  if (appStatus === 'mfaChallenge') {
+    return <MfaChallenge />;
   }
 
   if (!isAuthenticated) {

@@ -1,0 +1,480 @@
+/**
+ * Tests for Multi-Factor Authentication (TOTP + backup codes):
+ *   - Enrolment flow (start + confirm) and rejection of wrong OTPs
+ *   - Login flow: password -> mfa_pending cookie -> /login/mfa -> session cookie
+ *   - Replay prevention: same (user, code, window) refused twice
+ *   - Backup code single-use semantics and remaining count
+ *   - Lockout after repeated failures
+ *   - Partial-auth session: mfa_pending token rejected on non-MFA routes
+ *   - Admin reset endpoint
+ *   - SSO bypass toggle
+ *   - CLI reset helper (direct import, no subprocess)
+ */
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import { authenticator } from 'otplib';
+import { HashAlgorithms } from '@otplib/core';
+import {
+  setupTestDb,
+  cleanupTestDb,
+  seedMfaUser,
+  TEST_USERNAME,
+  TEST_PASSWORD,
+  TEST_JWT_SECRET,
+} from './helpers/setupTestDb';
+
+// Match the server-side otplib configuration so test-generated OTPs are
+// accepted by the verify path.
+authenticator.options = {
+  digits: 6,
+  step: 30,
+  algorithm: HashAlgorithms.SHA1,
+  window: 1,
+};
+
+let tmpDir: string;
+let app: import('express').Express;
+let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
+let MfaService: typeof import('../services/MfaService').MfaService;
+
+function adminToken(): string {
+  const db = DatabaseService.getInstance();
+  const user = db.getUserByUsername(TEST_USERNAME)!;
+  return jwt.sign(
+    { username: TEST_USERNAME, role: 'admin', tv: user.token_version },
+    TEST_JWT_SECRET,
+    { expiresIn: '1m' },
+  );
+}
+
+function cookieArray(headers: request.Response['headers']): string[] {
+  const raw = headers['set-cookie'] as unknown;
+  if (!raw) return [];
+  return Array.isArray(raw) ? (raw as string[]) : [raw as string];
+}
+
+function parseCookie(headers: request.Response['headers'], name: string): string | null {
+  for (const c of cookieArray(headers)) {
+    if (c.startsWith(`${name}=`)) {
+      const value = c.split(';')[0].split('=').slice(1).join('=');
+      // express-server `clearCookie` sends an empty value with an expired date
+      return value || null;
+    }
+  }
+  return null;
+}
+
+function findCookie(headers: request.Response['headers'], name: string): string | undefined {
+  return cookieArray(headers).find((c) => c.startsWith(`${name}=`));
+}
+
+beforeAll(async () => {
+  tmpDir = await setupTestDb();
+  ({ DatabaseService } = await import('../services/DatabaseService'));
+  ({ MfaService } = await import('../services/MfaService'));
+
+  // Mock LicenseService to return paid/admiral so the admin routes pass gates
+  const { LicenseService } = await import('../services/LicenseService');
+  vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
+  vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('admiral');
+  vi.spyOn(LicenseService.getInstance(), 'getSeatLimits').mockReturnValue({ maxAdmins: null, maxViewers: null });
+
+  ({ app } = await import('../index'));
+});
+
+afterAll(() => {
+  vi.restoreAllMocks();
+  cleanupTestDb(tmpDir);
+});
+
+// ─── MfaService unit-ish tests ────────────────────────────────────────────────
+
+describe('MfaService', () => {
+  it('verifyTotp accepts a freshly generated code', () => {
+    const secret = MfaService.generateSecret();
+    const code = authenticator.generate(secret);
+    expect(MfaService.verifyTotp(secret, code)).toBe(true);
+  });
+
+  it('verifyTotp rejects garbage', () => {
+    const secret = MfaService.generateSecret();
+    expect(MfaService.verifyTotp(secret, '000000')).toBe(false);
+    expect(MfaService.verifyTotp(secret, 'abcdef')).toBe(false);
+    expect(MfaService.verifyTotp(secret, '')).toBe(false);
+  });
+
+  it('generateBackupCodes returns 10 uppercase-alnum codes', () => {
+    const codes = MfaService.generateBackupCodes();
+    expect(codes).toHaveLength(10);
+    for (const c of codes) {
+      expect(c).toMatch(/^[A-Z0-9]{10}$/);
+    }
+  });
+
+  it('verifyBackupCode matches and returns remaining set with the matched hash removed', async () => {
+    const codes = MfaService.generateBackupCodes();
+    const hashes = await MfaService.hashBackupCodes(codes);
+    const result = await MfaService.verifyBackupCode(hashes, codes[3]);
+    expect(result.matched).toBe(true);
+    expect(result.remainingHashes).toHaveLength(hashes.length - 1);
+    expect(result.remainingHashes).not.toContain(hashes[3]);
+  });
+
+  it('verifyBackupCode on non-match returns original hashes', async () => {
+    const codes = MfaService.generateBackupCodes();
+    const hashes = await MfaService.hashBackupCodes(codes);
+    const result = await MfaService.verifyBackupCode(hashes, 'NOTACODE99');
+    expect(result.matched).toBe(false);
+    expect(result.remainingHashes).toBe(hashes);
+  });
+
+  it('normalizeBackupCode strips spaces/dashes and uppercases', () => {
+    expect(MfaService.normalizeBackupCode('abcde-fghij')).toBe('ABCDEFGHIJ');
+    expect(MfaService.normalizeBackupCode('abcde fghij')).toBe('ABCDEFGHIJ');
+  });
+});
+
+// ─── Login flow ───────────────────────────────────────────────────────────────
+
+describe('POST /api/auth/login with MFA-enabled user', () => {
+  const username = 'mfauser-login';
+  const password = 'mfapassword123';
+
+  it('returns mfaRequired and sets the partial-auth cookie only', async () => {
+    await seedMfaUser(username, password);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ username, password });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.mfaRequired).toBe(true);
+
+    expect(parseCookie(res.headers, 'sencho_mfa_pending')).toBeTruthy();
+    // No full session cookie yet.
+    expect(parseCookie(res.headers, 'sencho_token')).toBeFalsy();
+  });
+
+  it('/auth/status reports mfaPending=true for a valid pending cookie', async () => {
+    const login = await request(app).post('/api/auth/login').send({ username, password });
+    const pendingCookie = findCookie(login.headers, 'sencho_mfa_pending')!;
+
+    const status = await request(app).get('/api/auth/status').set('Cookie', pendingCookie);
+    expect(status.status).toBe(200);
+    expect(status.body.mfaPending).toBe(true);
+  });
+});
+
+// ─── MFA verify endpoint ──────────────────────────────────────────────────────
+
+describe('POST /api/auth/login/mfa', () => {
+  const username = 'mfauser-verify';
+  const password = 'mfapassword123';
+  let secret = '';
+  let backupCodes: string[] = [];
+
+  beforeAll(async () => {
+    ({ secret, backupCodes } = await seedMfaUser(username, password));
+  });
+
+  async function startChallenge() {
+    const res = await request(app).post('/api/auth/login').send({ username, password });
+    return findCookie(res.headers, 'sencho_mfa_pending')!;
+  }
+
+  it('401 when no pending cookie is present', async () => {
+    const res = await request(app).post('/api/auth/login/mfa').send({ code: '123456' });
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a valid TOTP, clears pending cookie, issues session', async () => {
+    const pendingCookie = await startChallenge();
+    const code = authenticator.generate(secret);
+
+    const res = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pendingCookie)
+      .send({ code });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    // Session cookie is issued.
+    expect(findCookie(res.headers, 'sencho_token')).toBeDefined();
+    // Pending cookie is cleared (empty value or Expires in the past).
+    const cleared = findCookie(res.headers, 'sencho_mfa_pending');
+    expect(cleared).toBeDefined();
+    expect(cleared!).toMatch(/sencho_mfa_pending=;/);
+  });
+
+  it('rejects a replayed TOTP within the same window', async () => {
+    // Fresh user so previous test state does not pollute the replay table.
+    const u = 'mfauser-replay';
+    const p = 'mfapassword123';
+    const { secret: s } = await seedMfaUser(u, p);
+
+    const login = await request(app).post('/api/auth/login').send({ username: u, password: p });
+    const pending = findCookie(login.headers, 'sencho_mfa_pending')!;
+    const code = authenticator.generate(s);
+
+    const ok = await request(app).post('/api/auth/login/mfa').set('Cookie', pending).send({ code });
+    expect(ok.status).toBe(200);
+
+    // Second login, same code, still within this 30s window
+    const login2 = await request(app).post('/api/auth/login').send({ username: u, password: p });
+    const pending2 = findCookie(login2.headers, 'sencho_mfa_pending')!;
+    const replay = await request(app).post('/api/auth/login/mfa').set('Cookie', pending2).send({ code });
+    expect(replay.status).toBe(401);
+    expect(replay.body.code).toBe('OTP_REPLAY');
+  });
+
+  it('rejects an obviously wrong TOTP', async () => {
+    const pending = await startChallenge();
+    const res = await request(app).post('/api/auth/login/mfa').set('Cookie', pending).send({ code: '000000' });
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a backup code and invalidates it on a second submission', async () => {
+    const u = 'mfauser-backup';
+    const p = 'mfapassword123';
+    const { backupCodes: codes } = await seedMfaUser(u, p);
+    const chosen = codes[0];
+
+    // First use: ok
+    const login1 = await request(app).post('/api/auth/login').send({ username: u, password: p });
+    const pending1 = findCookie(login1.headers, 'sencho_mfa_pending')!;
+    const first = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pending1)
+      .send({ code: chosen, isBackupCode: true });
+    expect(first.status).toBe(200);
+
+    // Second use of the same code: rejected
+    const login2 = await request(app).post('/api/auth/login').send({ username: u, password: p });
+    const pending2 = findCookie(login2.headers, 'sencho_mfa_pending')!;
+    const second = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pending2)
+      .send({ code: chosen, isBackupCode: true });
+    expect(second.status).toBe(401);
+
+    // Remaining backup count decreased by exactly 1
+    const remaining = backupCodes.length;
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername(u)!;
+    const mfa = db.getUserMfa(user.id)!;
+    const hashes = mfa.backup_codes_json ? (JSON.parse(mfa.backup_codes_json) as string[]) : [];
+    expect(hashes.length).toBe(remaining - 1);
+  });
+
+  it('locks the user after MFA_MAX_FAILED (5) wrong codes and returns 423', async () => {
+    const u = 'mfauser-lock';
+    const p = 'mfapassword123';
+    await seedMfaUser(u, p);
+
+    const login = await request(app).post('/api/auth/login').send({ username: u, password: p });
+    const pending = findCookie(login.headers, 'sencho_mfa_pending')!;
+
+    let lastStatus = 0;
+    for (let i = 0; i < 5; i++) {
+      const r = await request(app)
+        .post('/api/auth/login/mfa')
+        .set('Cookie', pending)
+        .send({ code: '000000' });
+      lastStatus = r.status;
+    }
+    expect(lastStatus).toBe(423);
+
+    // Any further attempt still 423
+    const blocked = await request(app)
+      .post('/api/auth/login/mfa')
+      .set('Cookie', pending)
+      .send({ code: '111111' });
+    expect(blocked.status).toBe(423);
+  });
+});
+
+// ─── Partial-auth session guard ───────────────────────────────────────────────
+
+describe('authMiddleware partial-auth guard', () => {
+  it('rejects mfa_pending token on a non-MFA route with 403 MFA_PENDING', async () => {
+    const pendingToken = jwt.sign(
+      { scope: 'mfa_pending', user_id: 42, username: 'whoever' },
+      TEST_JWT_SECRET,
+      { expiresIn: '5m' },
+    );
+    const res = await request(app)
+      .get('/api/stacks')
+      .set('Authorization', `Bearer ${pendingToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('MFA_PENDING');
+  });
+});
+
+// ─── Enrol / confirm / disable ────────────────────────────────────────────────
+
+describe('MFA enrol + confirm', () => {
+  it('full enrol -> confirm activates MFA and returns 10 backup codes', async () => {
+    // Create a dedicated user so we do not toggle MFA on the admin.
+    const start = await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ username: 'enroller', password: 'enrolpass123', role: 'viewer' });
+    expect(start.status).toBe(201);
+
+    const userId = start.body.id as number;
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername('enroller')!;
+    const userToken = jwt.sign(
+      { username: 'enroller', role: 'viewer', tv: user.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+
+    const startRes = await request(app)
+      .post('/api/auth/mfa/enroll/start')
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(startRes.status).toBe(200);
+    expect(typeof startRes.body.otpauthUri).toBe('string');
+    expect(typeof startRes.body.secret).toBe('string');
+
+    // Reject wrong OTP
+    const wrong = await request(app)
+      .post('/api/auth/mfa/enroll/confirm')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ code: '000000' });
+    expect(wrong.status).toBe(401);
+
+    const code = authenticator.generate(startRes.body.secret as string);
+    const confirm = await request(app)
+      .post('/api/auth/mfa/enroll/confirm')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ code });
+    expect(confirm.status).toBe(200);
+    expect(Array.isArray(confirm.body.backupCodes)).toBe(true);
+    expect(confirm.body.backupCodes).toHaveLength(10);
+
+    const mfa = db.getUserMfa(userId);
+    expect(mfa?.enabled).toBe(1);
+  });
+
+  it('rejects enroll/start when already enrolled', async () => {
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername('enroller')!;
+    const token = jwt.sign(
+      { username: 'enroller', role: 'viewer', tv: user.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+    const res = await request(app)
+      .post('/api/auth/mfa/enroll/start')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(409);
+  });
+
+  it('disable without a valid code returns 401 and MFA stays enabled', async () => {
+    const db = DatabaseService.getInstance();
+    const user = db.getUserByUsername('enroller')!;
+    const token = jwt.sign(
+      { username: 'enroller', role: 'viewer', tv: user.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+    const res = await request(app)
+      .post('/api/auth/mfa/disable')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: '000000' });
+    expect(res.status).toBe(401);
+    expect(db.getUserMfa(user.id)?.enabled).toBe(1);
+  });
+});
+
+// ─── Admin reset ──────────────────────────────────────────────────────────────
+
+describe('POST /api/users/:id/mfa/reset', () => {
+  it('non-admin caller gets 403', async () => {
+    // Create a viewer and seed MFA for someone else
+    const db = DatabaseService.getInstance();
+    const { userId: victimId } = await seedMfaUser('victim', 'victimpass123');
+    await request(app)
+      .post('/api/users')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ username: 'nonadmin', password: 'nonadminpass123', role: 'viewer' });
+    const nonAdmin = db.getUserByUsername('nonadmin')!;
+    const nonAdminToken = jwt.sign(
+      { username: 'nonadmin', role: 'viewer', tv: nonAdmin.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+    const res = await request(app)
+      .post(`/api/users/${victimId}/mfa/reset`)
+      .set('Authorization', `Bearer ${nonAdminToken}`);
+    expect(res.status).toBe(403);
+    expect(db.getUserMfa(victimId)?.enabled).toBe(1);
+  });
+
+  it('admin clears the target MFA and bumps their token_version', async () => {
+    const db = DatabaseService.getInstance();
+    const { userId } = await seedMfaUser('victim2', 'victim2pass123');
+    const before = db.getUser(userId)!.token_version;
+    const res = await request(app)
+      .post(`/api/users/${userId}/mfa/reset`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+    expect(res.status).toBe(200);
+    expect(db.getUserMfa(userId)).toBeUndefined();
+    expect(db.getUser(userId)!.token_version).toBeGreaterThan(before);
+  });
+});
+
+// ─── SSO bypass toggle ────────────────────────────────────────────────────────
+
+describe('PUT /api/auth/mfa/sso-bypass', () => {
+  it('persists the toggle on an enrolled user', async () => {
+    const db = DatabaseService.getInstance();
+    const { userId } = await seedMfaUser('ssouser', 'ssouserpass123');
+    const user = db.getUserById(userId)!;
+    const token = jwt.sign(
+      { username: user.username, role: user.role, tv: user.token_version },
+      TEST_JWT_SECRET,
+      { expiresIn: '1m' },
+    );
+
+    const enable = await request(app)
+      .put('/api/auth/mfa/sso-bypass')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ enforce: true });
+    expect(enable.status).toBe(200);
+    expect(db.getUserMfa(userId)?.sso_enforce_mfa).toBe(1);
+
+    const disable = await request(app)
+      .put('/api/auth/mfa/sso-bypass')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ enforce: false });
+    expect(disable.status).toBe(200);
+    expect(db.getUserMfa(userId)?.sso_enforce_mfa).toBe(0);
+  });
+});
+
+// ─── CLI reset helper ─────────────────────────────────────────────────────────
+
+describe('resetMfaForUser CLI helper', () => {
+  it('clears MFA and bumps token_version for the target user', async () => {
+    const { resetMfaForUser } = await import('../cli/resetMfa');
+    const db = DatabaseService.getInstance();
+    const { userId } = await seedMfaUser('cliuser', 'cliuserpass123');
+    const before = db.getUser(userId)!.token_version;
+
+    const result = await resetMfaForUser('cliuser');
+    expect(result.ok).toBe(true);
+    expect(db.getUserMfa(userId)).toBeUndefined();
+    expect(db.getUser(userId)!.token_version).toBeGreaterThan(before);
+  });
+
+  it('returns ok:false for an unknown username', async () => {
+    const { resetMfaForUser } = await import('../cli/resetMfa');
+    const result = await resetMfaForUser('definitely-not-a-user');
+    expect(result.ok).toBe(false);
+  });
+});
