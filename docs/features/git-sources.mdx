@@ -153,6 +153,10 @@ The in-browser editor and the Git Source panel both write to the same files, so 
   <Accordion title="Network timeout">
     The clone did not finish in time. Check that the Sencho host can reach the repository host (proxies, firewalls, DNS) and try again.
   </Accordion>
+
+  <Accordion title="Applied but deploy failed">
+    The incoming compose file was written to disk successfully, but the subsequent `docker compose up -d` did not complete. The toast message includes the underlying reason (for example, an image pull failure or a port conflict). The stack is already on the new content, so you can retry the deploy directly from the editor's **Deploy** button without re-pulling. Fix the root cause first (image availability, host resources, network config) and redeploy.
+  </Accordion>
 </AccordionGroup>
 
 <Note>
