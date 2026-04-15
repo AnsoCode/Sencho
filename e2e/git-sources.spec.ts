@@ -310,5 +310,72 @@ test.describe('Create stack from Git', () => {
     }, CREATE_FROM_GIT_STACK);
     expect(contentStatus.status).toBe(200);
     expect(contentStatus.body).toMatch(/services:/);
+    // Backend contract: commitSha is returned at full length so the frontend
+    // can build the short-SHA suffix for the success toast. Guard it here so
+    // the toast copy can never drift without a test catching it.
+    expect(result.body?.commitSha).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test('UI flow: success toast includes the short commit SHA', async ({ page }) => {
+    // Pre-flight check: if the upstream is unreachable from this runner, the
+    // UI flow will also fail. Probe the API with a throwaway name first so we
+    // skip cleanly instead of hanging on a dialog that never resolves.
+    const probeName = `${CREATE_FROM_GIT_STACK}-probe`;
+    const probe = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/from-git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          stack_name: name,
+          repo_url: 'https://github.com/docker/awesome-compose.git',
+          branch: 'master',
+          compose_path: 'nginx-golang/compose.yaml',
+          auth_type: 'none',
+          deploy_now: false,
+        }),
+      });
+      return { status: res.status };
+    }, probeName);
+
+    // Always tear down the probe, whether it succeeded or not.
+    await page.evaluate(async (name) => {
+      await fetch(`/api/stacks/${name}/git-source`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+      await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+    }, probeName);
+
+    if (probe.status >= 400) {
+      test.skip(true, `Upstream unreachable (status ${probe.status}); skipping UI toast test`);
+      return;
+    }
+
+    const uiName = `${CREATE_FROM_GIT_STACK}-ui`;
+    // Ensure no leftover row from a prior failing run.
+    await page.evaluate(async (name) => {
+      await fetch(`/api/stacks/${name}/git-source`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+      await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+    }, uiName);
+
+    try {
+      await openCreateStackDialog(page);
+      await page.getByRole('dialog').getByRole('tab', { name: /From Git/i }).click();
+
+      await page.locator('#create-git-stack-name').fill(uiName);
+      await page.locator('#git-source-repo').fill('https://github.com/docker/awesome-compose.git');
+      await page.locator('#git-source-branch').fill('master');
+      await page.locator('#git-source-path').fill('nginx-golang/compose.yaml');
+
+      await page.getByRole('dialog').getByRole('button', { name: /Create from Git/i }).click();
+
+      // The toast copy is "Stack created from Git @ <short sha>." — match the
+      // @-delimited 7-char hex suffix so any drift in wording still passes as
+      // long as the SHA is surfaced.
+      await expect(page.getByText(/@ [0-9a-f]{7}/).first()).toBeVisible({ timeout: 20_000 });
+    } finally {
+      await page.evaluate(async (name) => {
+        await fetch(`/api/stacks/${name}/git-source`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+        await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+      }, uiName);
+    }
   });
 });
