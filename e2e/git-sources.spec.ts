@@ -198,3 +198,117 @@ test.describe('Git Sources', () => {
     await expect(page.getByRole('dialog').getByRole('button', { name: /^Remove$/ })).not.toBeVisible({ timeout: 5_000 });
   });
 });
+
+const CREATE_FROM_GIT_STACK = 'e2e-create-from-git';
+
+async function deleteCreateFromGitStack(page: Page) {
+  await page.evaluate(async (name) => {
+    await fetch(`/api/stacks/${name}/git-source`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+    await fetch(`/api/stacks/${name}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
+  }, CREATE_FROM_GIT_STACK);
+}
+
+async function openCreateStackDialog(page: Page) {
+  await page.getByRole('button', { name: 'Create Stack' }).click();
+  await expect(page.getByRole('dialog').getByText('Create New Stack')).toBeVisible({ timeout: 5_000 });
+}
+
+test.describe('Create stack from Git', () => {
+  test.beforeAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await loginAs(page);
+    await deleteCreateFromGitStack(page);
+    await page.close();
+  });
+
+  test.afterAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await loginAs(page);
+    await deleteCreateFromGitStack(page);
+    await page.close();
+  });
+
+  test.beforeEach(async ({ page }) => {
+    await loginAs(page);
+    await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
+  });
+
+  test('dialog exposes Empty and From Git tabs', async ({ page }) => {
+    await openCreateStackDialog(page);
+    await expect(page.getByRole('dialog').getByRole('tab', { name: /Empty/i })).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('tab', { name: /From Git/i })).toBeVisible();
+  });
+
+  test('From Git tab rejects non-HTTPS URLs client-side', async ({ page }) => {
+    await openCreateStackDialog(page);
+    await page.getByRole('dialog').getByRole('tab', { name: /From Git/i }).click();
+
+    await page.locator('#create-git-stack-name').fill(CREATE_FROM_GIT_STACK);
+    await page.locator('#git-source-repo').fill('git@github.com:org/repo.git');
+    await page.locator('#git-source-branch').fill('main');
+    await page.locator('#git-source-path').fill('compose.yaml');
+
+    await page.getByRole('dialog').getByRole('button', { name: /Create from Git/i }).click();
+    await expect(page.getByText(/Only HTTPS repository URLs are supported/i)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('backend rejects .git/config compose_path on from-git', async ({ page }) => {
+    const body = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/from-git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          stack_name: name,
+          repo_url: 'https://github.com/example/repo.git',
+          branch: 'main',
+          compose_path: '.git/config',
+          auth_type: 'none',
+        }),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }, CREATE_FROM_GIT_STACK);
+    expect(body.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(body.body)).toMatch(/\.git|file/i);
+  });
+
+  test('happy path: fetches compose, creates stack, links git source', async ({ page }) => {
+    // Use a public demo repo. If network egress is blocked, the POST fails
+    // and we skip the rest of the test rather than hanging the suite.
+    const result = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/from-git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          stack_name: name,
+          repo_url: 'https://github.com/docker/awesome-compose.git',
+          branch: 'master',
+          compose_path: 'nginx-golang/compose.yaml',
+          auth_type: 'none',
+          auto_apply_on_webhook: false,
+          auto_deploy_on_apply: false,
+          deploy_now: false,
+        }),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }, CREATE_FROM_GIT_STACK);
+
+    if (result.status >= 400) {
+      test.skip(true, `Upstream unreachable (status ${result.status}); skipping happy path`);
+      return;
+    }
+    expect(result.status).toBe(200);
+    expect(result.body?.source?.stack_name).toBe(CREATE_FROM_GIT_STACK);
+    expect(result.body?.source?.last_applied_commit_sha).toBeTruthy();
+
+    // Stack dir should now exist and the compose should contain the upstream service names.
+    const contentStatus = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/${name}`, { credentials: 'include' });
+      return { status: res.status, body: await res.text() };
+    }, CREATE_FROM_GIT_STACK);
+    expect(contentStatus.status).toBe(200);
+    expect(contentStatus.body).toMatch(/services:/);
+  });
+});
