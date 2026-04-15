@@ -15,7 +15,7 @@ import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 import type { SenchoSettingsChangedDetail } from '@/lib/events';
 import {
     Shield, Activity, Bell, Code, Server, Package,
-    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, GitBranch,
+    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, Route,
 } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -389,7 +389,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         />
                         <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
                         {!isRemote && isAdmin && (
-                            <NavButton section="notification-routing" icon={<GitBranch className="w-4 h-4 mr-2" />} label="Routing" locked={!isAdmiral} />
+                            <NavButton section="notification-routing" icon={<Route className="w-4 h-4 mr-2" />} label="Routing" locked={!isAdmiral} />
                         )}
                         {!isRemote && (
                             <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPaid} />

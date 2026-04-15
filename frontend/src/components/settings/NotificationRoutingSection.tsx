@@ -31,7 +31,7 @@ import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from '@/components/AdmiralGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
 import { TierBadge } from '@/components/TierBadge';
-import { Plus, Trash2, Pencil, RefreshCw, Zap, X, GitBranch } from 'lucide-react';
+import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
 
 interface NotificationRoute {
     id: number;
@@ -355,7 +355,7 @@ export function NotificationRoutingSection() {
 
                 {!loading && routes.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <GitBranch className="w-10 h-10 text-muted-foreground/50 mb-3" strokeWidth={1.5} />
+                        <Route className="w-10 h-10 text-muted-foreground/50 mb-3" strokeWidth={1.5} />
                         <p className="text-sm text-muted-foreground">No routing rules configured.</p>
                         <p className="text-xs text-muted-foreground mt-1">
                             Alerts will use your global notification channels. Add a route to direct specific stack alerts to dedicated channels.
@@ -370,7 +370,7 @@ export function NotificationRoutingSection() {
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
-                                <GitBranch className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                                <Route className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
                                 <span className="font-medium text-sm truncate">{route.name}</span>
                                 <Badge variant="outline" className="text-[10px] shrink-0">
                                     {CHANNEL_LABELS[route.channel_type]}
