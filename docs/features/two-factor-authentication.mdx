@@ -60,13 +60,33 @@ After entering your password, Sencho shows the 2FA challenge screen.
 
 1. Open your authenticator app, find the Sencho entry, read the six-digit code
 2. Type it into the **Verification code** field
-3. Click **Verify and sign in**
+3. Sencho submits automatically once you enter the sixth digit. No click required.
+
+<Note>
+If you prefer the explicit route, the **Verify and sign in** button still works. The auto-submit only applies to the six-digit TOTP field; backup codes always require a click to confirm.
+</Note>
 
 If your phone is unavailable, click **Use a backup code instead**, enter one of the codes you saved during enrolment, and click **Verify and sign in**. That code is now used up.
+
+### Backup code entry tips
+
+Backup codes are shown grouped as `ABCDE-FGHIJ` to make them easier to read. When signing in, you can enter them any of these ways:
+
+- Paste the code exactly as shown: `ABCDE-FGHIJ`
+- Paste without the dash: `ABCDEFGHIJ`
+- Paste with extra whitespace or lowercase letters; Sencho normalises the input before sending it to the server
+
+Only letters and digits are significant; dashes, spaces, and case are ignored.
 
 ## Regenerate backup codes
 
 If you think your backup codes have been exposed, or you have used most of them, regenerate them from **Settings → Account & Security → Regenerate backup codes**. Sencho asks for a current code, then issues a fresh set of ten and invalidates the old set immediately.
+
+The Account & Security card nudges you about low code counts so you notice before you are locked out:
+
+- **3 or more codes remaining:** a muted count under the status message.
+- **1 or 2 codes remaining:** the count turns warning-coloured with an alert icon, inviting you to regenerate a fresh set.
+- **0 codes remaining:** a dedicated warning card appears with a **Regenerate now** button. At this point, losing your authenticator app means recovery needs an administrator, so regenerate before that happens.
 
 <Frame>
   <img src="/images/two-factor-auth/account-card-enabled.png" alt="Account card showing 2FA enabled with regenerate and disable actions" />
@@ -110,6 +130,14 @@ Click **Can't scan? Show secret key** during enrolment, copy the base32 string, 
 ### Lost phone and no backup codes left
 
 Contact an administrator. An admin can reset your 2FA from the Users section in **Settings → Users**. See the [admin guide](/operations/two-factor-admin) for the steps. If you are the only admin and have lost access, the administrator can also reset 2FA from the command line on the host running Sencho.
+
+### Lost your backup codes
+
+If you still have your authenticator app, sign in as normal and regenerate the codes from **Settings → Account & Security → Regenerate backup codes**. The previous set stops working immediately. If you no longer have the authenticator app either, follow the "Lost phone and no backup codes left" entry above and ask an administrator to reset 2FA.
+
+### Ran out of backup codes
+
+Each backup code can be used once. As soon as you sign back in with an authenticator code, regenerate a new set from **Settings → Account & Security**. Without codes, losing your phone means recovery requires an administrator.
 
 ### SSO sign-in is unexpectedly asking for a code
 

@@ -39,6 +39,10 @@ Replace `<username>` with the admin's account name. On success the command print
 
 The command respects the container's `DATA_DIR`, so it always acts on the same SQLite database the application uses. It writes an audit log entry attributed to `cli` so the action is auditable after the fact.
 
+<Note>
+Turning on **Developer Mode** in **Settings → Developer** surfaces additional authentication diagnostics in the backend logs. These are helpful when investigating a 2FA support ticket, and can be turned off again once the issue is resolved.
+</Note>
+
 ## Per-user SSO enforcement
 
 When SSO (LDAP or OIDC) is configured, users with 2FA enabled sign in through SSO without a second factor by default. SSO is already an authenticated flow, and requiring a TOTP on top is extra friction that most teams do not need.
