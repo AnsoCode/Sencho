@@ -446,3 +446,110 @@ describe('GitSourceService per-stack mutex', () => {
         expect(order.indexOf('beta:end')).toBeLessThan(order.indexOf('alpha:end'));
     });
 });
+
+describe('GitSourceService.fetchFromGit (.git metadata guard)', () => {
+    const svc = () => GitSourceService.getInstance();
+
+    it('rejects compose paths that target the .git directory', async () => {
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: '.git/config',
+        })).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+        expect(mockGitClone).not.toHaveBeenCalled();
+    });
+
+    it('rejects nested .git paths', async () => {
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'subdir/.git/HEAD',
+        })).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    });
+
+    it('rejects env paths that target the .git directory', async () => {
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            envPath: '.git/config',
+        })).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+    });
+
+    it('allows paths that merely contain the substring "git"', async () => {
+        mockSuccessfulClone({ composePath: 'gitops.yaml' });
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'gitops.yaml',
+        })).resolves.toBeDefined();
+    });
+});
+
+describe('GitSourceService.pull', () => {
+    it('rejects when no Git source is configured for the stack', async () => {
+        const svc = GitSourceService.getInstance();
+        await expect(svc.pull('does-not-exist')).rejects.toMatchObject({ code: 'GIT_ERROR' });
+    });
+});
+
+describe('GitSourceService.apply', () => {
+    async function seedPending(stackName: string, composeContent: string, commitSha: string) {
+        mockSuccessfulClone({ compose: composeContent, sha: commitSha });
+        const svc = GitSourceService.getInstance();
+        await svc.upsert({
+            stackName,
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            syncEnv: false,
+            envPath: null,
+            authType: 'none',
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+        await svc.pull(stackName);
+        return svc;
+    }
+
+    it('throws when pending has been cleared between pull and apply', async () => {
+        const svc = await seedPending('apply-cleared', 'services:\n  x:\n    image: alpine\n', 'aaaa111aaaa111aaaa111aaaa111aaaa111aaaa1');
+        DatabaseService.getInstance().clearGitSourcePending('apply-cleared');
+        await expect(svc.apply('apply-cleared', 'aaaa111aaaa111aaaa111aaaa111aaaa111aaaa1'))
+            .rejects.toMatchObject({ code: 'GIT_ERROR', message: expect.stringMatching(/no pending pull/i) });
+    });
+
+    it('throws when the commit sha does not match the pending sha', async () => {
+        const svc = await seedPending('apply-mismatch', 'services:\n  x:\n    image: alpine\n', 'bbbb222bbbb222bbbb222bbbb222bbbb222bbbb2');
+        await expect(svc.apply('apply-mismatch', 'deadbeef1234567890deadbeef1234567890dead'))
+            .rejects.toMatchObject({ code: 'GIT_ERROR', message: expect.stringMatching(/pending commit has changed/i) });
+    });
+
+    it('returns deployError when the deploy step fails after writing to disk', async () => {
+        const sha = 'cccc333cccc333cccc333cccc333cccc333cccc3';
+        const svc = await seedPending('apply-deploy-fail', 'services:\n  x:\n    image: alpine\n', sha);
+
+        // Stub validation (docker compose config is expensive and not needed here)
+        const validateSpy = vi.spyOn(svc, 'validateCompose').mockResolvedValue({ ok: true });
+        // Stub file write (FileSystemService expects a real stack dir)
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const saveSpy = vi.spyOn(FileSystemService.prototype, 'saveStackContent').mockResolvedValue();
+
+        // Deploy will fail organically (docker CLI unavailable in the test env).
+        // We only assert the return SHAPE: apply must not throw, deployError must
+        // carry the failure detail so the UI can surface "applied but not deployed".
+        const result = await svc.apply('apply-deploy-fail', sha, { deploy: true });
+        expect(result.applied).toBe(true);
+        expect(result.deployed).toBe(false);
+        expect(result.deployError).toBeTruthy();
+
+        // Disk write happened; DB was marked applied even though deploy failed.
+        expect(saveSpy).toHaveBeenCalled();
+        const row = DatabaseService.getInstance().getGitSource('apply-deploy-fail');
+        expect(row?.last_applied_commit_sha).toBe(sha);
+        expect(row?.pending_commit_sha).toBeNull();
+
+        validateSpy.mockRestore();
+        saveSpy.mockRestore();
+    });
+});

@@ -3717,10 +3717,13 @@ function sendGitSourceError(res: Response, err: unknown): void {
   res.status(500).json({ error: 'Git source operation failed' });
 }
 
-app.get('/api/git-sources', async (_req: Request, res: Response) => {
+app.get('/api/git-sources', async (req: Request, res: Response) => {
   try {
-    const sources = GitSourceService.getInstance().list();
-    res.json(sources);
+    const all = GitSourceService.getInstance().list();
+    // Filter to the subset of stacks the caller can read. Keeps scoped
+    // Admiral roles from discovering git config for stacks outside their grant.
+    const visible = all.filter(src => checkPermission(req, 'stack:read', 'stack', src.stack_name));
+    res.json(visible);
   } catch (error) {
     sendGitSourceError(res, error);
   }
@@ -3731,6 +3734,7 @@ app.get('/api/stacks/:stackName/git-source', async (req: Request, res: Response)
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:read', 'stack', stackName)) return;
   try {
     const source = GitSourceService.getInstance().get(stackName);
     if (!source) return res.status(404).json({ error: 'No Git source configured for this stack' });
@@ -3742,10 +3746,10 @@ app.get('/api/stacks/:stackName/git-source', async (req: Request, res: Response)
 
 app.put('/api/stacks/:stackName/git-source', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
     const {
       repo_url,
@@ -3771,8 +3775,35 @@ app.put('/api/stacks/:stackName/git-source', async (req: Request, res: Response)
     if (auth_type !== 'none' && auth_type !== 'token') {
       return res.status(400).json({ error: 'auth_type must be "none" or "token"' });
     }
-    if (!/^https?:\/\//i.test(repo_url)) {
+    if (!/^https:\/\//i.test(repo_url)) {
       return res.status(400).json({ error: 'Only HTTPS repository URLs are supported' });
+    }
+    // Bound each field so a caller cannot flood the service with huge
+    // payloads. These limits are generous compared to anything a real Git
+    // provider would produce.
+    if (repo_url.length > 2048) {
+      return res.status(400).json({ error: 'repo_url is too long' });
+    }
+    if (branch.length > 256) {
+      return res.status(400).json({ error: 'branch is too long' });
+    }
+    if (compose_path.length > 1024) {
+      return res.status(400).json({ error: 'compose_path is too long' });
+    }
+    if (typeof env_path === 'string' && env_path.length > 1024) {
+      return res.status(400).json({ error: 'env_path is too long' });
+    }
+    if (typeof token === 'string' && token.length > 8192) {
+      return res.status(400).json({ error: 'token is too long' });
+    }
+
+    // Confirm the stack actually exists on the active node. Without this
+    // guard, a caller can stash a git-source row for a name that does not
+    // exist yet and have it auto-link when a stack with that name is
+    // later created.
+    const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
+    if (!stacks.includes(stackName)) {
+      return res.status(404).json({ error: 'Stack not found' });
     }
 
     const syncEnv = Boolean(sync_env);
@@ -3804,10 +3835,10 @@ app.put('/api/stacks/:stackName/git-source', async (req: Request, res: Response)
 
 app.delete('/api/stacks/:stackName/git-source', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
     GitSourceService.getInstance().delete(stackName);
     console.log(`[GitSource] Removed git source for ${stackName}`);
@@ -3819,10 +3850,10 @@ app.delete('/api/stacks/:stackName/git-source', async (req: Request, res: Respon
 
 app.post('/api/stacks/:stackName/git-source/pull', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
     const result = await GitSourceService.getInstance().pull(stackName);
     res.json(result);
@@ -3833,10 +3864,10 @@ app.post('/api/stacks/:stackName/git-source/pull', async (req: Request, res: Res
 
 app.post('/api/stacks/:stackName/git-source/apply', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
     const { commitSha, deploy } = req.body ?? {};
     if (typeof commitSha !== 'string' || !commitSha.trim()) {
@@ -3848,7 +3879,14 @@ app.post('/api/stacks/:stackName/git-source/apply', async (req: Request, res: Re
       { deploy: typeof deploy === 'boolean' ? deploy : undefined }
     );
     invalidateNodeCaches(req.nodeId);
-    console.log(`[GitSource] Applied commit ${commitSha.trim().slice(0, 7)} to ${stackName}${result.deployed ? ' (deployed)' : ''}`);
+    const shortSha = commitSha.trim().slice(0, 7);
+    if (result.deployed) {
+      console.log(`[GitSource] Applied commit ${shortSha} to ${stackName} (deployed)`);
+    } else if (result.deployError) {
+      console.warn(`[GitSource] Applied commit ${shortSha} to ${stackName}, deploy failed: ${result.deployError}`);
+    } else {
+      console.log(`[GitSource] Applied commit ${shortSha} to ${stackName}`);
+    }
     res.json(result);
   } catch (error) {
     sendGitSourceError(res, error);
@@ -3857,10 +3895,10 @@ app.post('/api/stacks/:stackName/git-source/apply', async (req: Request, res: Re
 
 app.post('/api/stacks/:stackName/git-source/dismiss-pending', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   try {
     GitSourceService.getInstance().dismissPending(stackName);
     res.json({ success: true });
@@ -3907,15 +3945,23 @@ app.delete('/api/stacks/:stackName', async (req: Request, res: Response) => {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }
 
-    // Stage 2: Obliterate the files
-    await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
+    // Stage 2: Obliterate the files. Capture failure so Stage 3 still runs.
+    let fsErr: unknown = null;
+    try {
+      await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
+    } catch (err) {
+      fsErr = err;
+      console.error(`[Stacks] File deletion failed for ${stackName}, continuing with DB cleanup:`, err);
+    }
 
-    // Prevent stale update badges for deleted stacks
+    // Stage 3: DB cleanup. Runs unconditionally because an orphan git_source
+    // row would silently auto-link to a future stack with the same name, and
+    // stale scoped role assignments / update badges confuse the dashboard.
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
-    // Clean up any scoped role assignments referencing this stack
     DatabaseService.getInstance().deleteRoleAssignmentsByResource('stack', stackName);
-    // Remove any linked Git source so it does not resurface on a future stack with the same name
     DatabaseService.getInstance().deleteGitSource(stackName);
+
+    if (fsErr) throw fsErr;
 
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Stack deleted: ${stackName}`);
