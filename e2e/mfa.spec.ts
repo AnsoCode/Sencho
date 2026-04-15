@@ -147,10 +147,12 @@ test.describe.serial('Two-factor authentication', () => {
     await expect(page.locator('.text-destructive')).toBeVisible();
     expect(await isDashboard(page)).toBe(false);
 
-    // Recover using a fresh TOTP so subsequent tests can proceed.
+    // Recover using a fresh backup code. Using a TOTP here races the
+    // 30-second window against the one test #2 consumed, which the server
+    // (correctly) rejects as a replay when the boundary falls the wrong
+    // way. Backup codes are single-use and sidestep that blacklist.
     await page.locator('#mfa-code').clear();
-    await page.getByRole('button', { name: /Use your authenticator app instead/i }).click();
-    await page.locator('#mfa-code').fill(totpNow(secret));
+    await page.locator('#mfa-code').fill(backupCodes[1]);
     await page.getByRole('button', { name: /Verify and sign in/i }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
   });
