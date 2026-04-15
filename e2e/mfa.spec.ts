@@ -158,11 +158,23 @@ test.describe.serial('Two-factor authentication', () => {
   });
 
   test('disable 2FA with a valid code removes the challenge on next login', async ({ page }) => {
-    await loginAs(page, TEST_USERNAME, TEST_PASSWORD);
-    await openAccountSettings(page);
+    // loginAs does not understand the MFA challenge screen, so drive the
+    // login manually. Use a backup code for both the challenge and the
+    // disable step so we do not race the TOTP replay blacklist against
+    // codes consumed by earlier tests in this serial block.
+    await page.goto('/');
+    await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
+    await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
+    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
+    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
+    await page.locator('#mfa-code').fill(backupCodes[2]);
+    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
 
+    await openAccountSettings(page);
     await page.getByRole('button', { name: /Disable 2FA/i }).click();
-    await page.locator('#mfa-disable-code').fill(totpNow(secret));
+    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
+    await page.locator('#mfa-disable-code').fill(backupCodes[3]);
     await page.getByRole('button', { name: /^Disable$/ }).click();
 
     // Card flips back to the "Set up 2FA" call to action.
