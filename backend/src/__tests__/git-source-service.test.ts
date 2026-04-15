@@ -298,9 +298,50 @@ describe('GitSourceService error mapping', () => {
         composePath: 'compose.yaml',
     };
 
-    it('maps 401/auth errors to AUTH_FAILED', async () => {
-        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP 401 Unauthorized'), { code: 'HttpError' }));
-        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+    it('maps 401 with supplied token to AUTH_FAILED', async () => {
+        // A 401 only means "your token is wrong" when the caller actually sent one.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 401 Unauthorized'), {
+            code: 'HttpError',
+            data: { statusCode: 401 },
+        }));
+        await expect(svc().fetchFromGit({ ...fetchParams, token: 'ghp_some_token_value' }))
+            .rejects.toMatchObject({ code: 'AUTH_FAILED' });
+    });
+
+    it('maps 401 without a token to REPO_NOT_FOUND with a private-repo hint', async () => {
+        // GitHub returns 404 for genuinely missing public repos but 401/403 can
+        // also reach us for private repos that the caller did not authenticate
+        // to. Without a supplied token, "check your token" is misleading, so we
+        // surface it as "not found or private" and suggest adding a PAT.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 401 Unauthorized'), {
+            code: 'HttpError',
+            data: { statusCode: 401 },
+        }));
+        await expect(svc().fetchFromGit(fetchParams))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/private/i) });
+    });
+
+    it('maps 404 HttpError to REPO_NOT_FOUND (not AUTH_FAILED)', async () => {
+        // Regression: isomorphic-git throws HttpError for every non-2xx, so a
+        // 404 on info/refs was previously misclassified as auth failure.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 404 Not Found'), {
+            code: 'HttpError',
+            data: { statusCode: 404 },
+        }));
+        await expect(svc().fetchFromGit(fetchParams))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/private/i) });
+    });
+
+    it('maps 404 with a supplied token to REPO_NOT_FOUND with a token-scope hint', async () => {
+        // GitHub returns 404 for both "missing repo" and "token lacks access",
+        // so when the caller did supply a token we point them at URL + scopes
+        // instead of "add a PAT" (which they already did).
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 404 Not Found'), {
+            code: 'HttpError',
+            data: { statusCode: 404 },
+        }));
+        await expect(svc().fetchFromGit({ ...fetchParams, token: 'ghp_some_token_value' }))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/token has read access/i) });
     });
 
     it('maps 404/not-found errors to REPO_NOT_FOUND', async () => {

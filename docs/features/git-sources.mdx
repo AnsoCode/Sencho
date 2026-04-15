@@ -144,11 +144,14 @@ The in-browser editor and the Git Source panel both write to the same files, so 
 
 <AccordionGroup>
   <Accordion title="Repository not found or not accessible">
-    Verify the URL is reachable from the Sencho host and ends with `.git`. For private repos, confirm the token is present and has read access. If you rotated the token, open the panel and paste the new value.
+    Verify the URL is reachable from the Sencho host and ends with `.git`. GitHub returns a "not found" response for both genuinely missing repos and private repos you cannot read, so Sencho tailors the hint based on what you provided:
+
+    - **No token configured**: the repo might be private. Switch **Authentication** to **Personal Access Token** and paste a token with read access.
+    - **Token configured**: double-check the URL is correct and the token has read access to this specific repo. GitHub fine-grained PATs need **Contents: Read** on the target repo; classic PATs need the `repo` scope.
   </Accordion>
 
   <Accordion title="Authentication failed">
-    Your token is missing, expired, or lacks read access to the repository. Generate a new token and replace the value in the **Token** field.
+    You supplied a token and the git host rejected it outright. The token is missing, expired, or lacks read access. Generate a new token and replace the value in the **Token** field. Sencho reports this as a form error, not a Sencho login problem, so you stay signed in.
   </Accordion>
 
   <Accordion title="Branch not found">

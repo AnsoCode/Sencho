@@ -419,7 +419,7 @@ export class GitSourceService {
                     timeout,
                 ]);
             } catch (e) {
-                throw this.mapGitError(e as Error);
+                throw this.mapGitError(e as Error, Boolean(token));
             } finally {
                 if (timer) clearTimeout(timer);
             }
@@ -506,13 +506,43 @@ export class GitSourceService {
         }
     }
 
-    private mapGitError(err: Error): GitSourceError {
+    private mapGitError(err: Error, hasToken: boolean): GitSourceError {
         const raw = scrubCredentials(err.message || String(err));
         const code = (err as Error & { code?: string }).code;
+        // isomorphic-git's HttpError exposes the numeric status on .data; inspect
+        // it directly so a 404 is not misclassified as auth failure. GitHub hides
+        // private-repo existence by returning 404 to unauthenticated requests, so
+        // we also treat 401/403 without a supplied token as "not found or private"
+        // to guide the user to add a token rather than "check your token" when
+        // they never provided one.
+        const statusCode = (err as Error & { data?: { statusCode?: number } }).data?.statusCode;
 
-        // isomorphic-git error codes
-        if (code === 'HttpError' || /401|403|authentication/i.test(raw)) {
-            return new GitSourceError('AUTH_FAILED', 'Repository authentication failed. Check your token.');
+        // GitHub returns 404 for both "repo genuinely missing" and "private repo
+        // the caller cannot see". We cannot distinguish the two without a second
+        // probe, so tailor the hint by whether credentials were supplied:
+        //   - no token: suggest adding one for private repos
+        //   - token present: suggest checking the URL and token scopes, since a
+        //     valid token against a missing or wrong-scoped repo also lands here
+        if (statusCode === 404) {
+            if (hasToken) {
+                return new GitSourceError('REPO_NOT_FOUND', 'Repository not found. Verify the URL and that your token has read access to this repo.');
+            }
+            return new GitSourceError('REPO_NOT_FOUND', 'Repository not found, or it is private. Add a Personal Access Token if the repo is private.');
+        }
+        if (statusCode === 401 || statusCode === 403) {
+            if (hasToken) {
+                return new GitSourceError('AUTH_FAILED', 'Repository authentication failed. Check your token.');
+            }
+            return new GitSourceError('REPO_NOT_FOUND', 'Repository not found, or it is private. Add a Personal Access Token if the repo is private.');
+        }
+
+        // Fallbacks for errors without a numeric status attached (e.g. git CLI
+        // output, DNS/lib errors, or future isomorphic-git transports that do
+        // not populate err.data.statusCode). Kept as defense-in-depth.
+        if (/401|403|authentication/i.test(raw)) {
+            return hasToken
+                ? new GitSourceError('AUTH_FAILED', 'Repository authentication failed. Check your token.')
+                : new GitSourceError('REPO_NOT_FOUND', 'Repository not found, or it is private. Add a Personal Access Token if the repo is private.');
         }
         if (code === 'NotFoundError' || /404|not found|could not resolve/i.test(raw)) {
             return new GitSourceError('REPO_NOT_FOUND', 'Repository not found or not accessible.');
@@ -522,6 +552,10 @@ export class GitSourceService {
         }
         if (code === 'ECONNABORTED' || /timeout|timed out|ETIMEDOUT|ENOTFOUND|ECONNREFUSED/i.test(raw)) {
             return new GitSourceError('NETWORK_TIMEOUT', 'Network timeout or host unreachable.');
+        }
+        // Last-resort: an HttpError with a status we did not specifically handle.
+        if (code === 'HttpError') {
+            return new GitSourceError('GIT_ERROR', `Unexpected HTTP response from git host${statusCode ? ` (${statusCode})` : ''}.`);
         }
         return new GitSourceError('GIT_ERROR', raw);
     }
