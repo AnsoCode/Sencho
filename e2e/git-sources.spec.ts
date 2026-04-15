@@ -92,6 +92,70 @@ test.describe('Git Sources', () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 
+  test('PUT against a non-existent stack returns 404', async ({ page }) => {
+    const status = await page.evaluate(async () => {
+      const res = await fetch(`/api/stacks/nonexistent-ghost-stack/git-source`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          repo_url: 'https://github.com/example/repo.git',
+          branch: 'main',
+          compose_path: 'compose.yaml',
+          sync_env: false,
+          auth_type: 'none',
+          auto_apply_on_webhook: false,
+          auto_deploy_on_apply: false,
+        }),
+      });
+      return res.status;
+    });
+    expect(status).toBe(404);
+  });
+
+  test('backend rejects http:// URLs on PUT with 400', async ({ page }) => {
+    const status = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/${name}/git-source`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          repo_url: 'http://github.com/example/repo.git',
+          branch: 'main',
+          compose_path: 'compose.yaml',
+          sync_env: false,
+          auth_type: 'none',
+          auto_apply_on_webhook: false,
+          auto_deploy_on_apply: false,
+        }),
+      });
+      return res.status;
+    }, TEST_STACK);
+    expect(status).toBe(400);
+  });
+
+  test('backend rejects .git/config as compose_path', async ({ page }) => {
+    const body = await page.evaluate(async (name) => {
+      const res = await fetch(`/api/stacks/${name}/git-source`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          repo_url: 'https://github.com/example/repo.git',
+          branch: 'main',
+          compose_path: '.git/config',
+          sync_env: false,
+          auth_type: 'none',
+          auto_apply_on_webhook: false,
+          auto_deploy_on_apply: false,
+        }),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }, TEST_STACK);
+    expect(body.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(body.body)).toMatch(/\.git|file/i);
+  });
+
   test('configure, view pending-empty state, and remove via AlertDialog', async ({ page }) => {
     // Seed a git source directly via API so we can exercise the remove-confirm
     // flow without depending on a reachable upstream.
