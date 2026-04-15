@@ -1398,8 +1398,9 @@ export class DatabaseService {
         ).run(userId, code, window, Date.now());
     }
 
-    public purgeOldMfaCodes(olderThanMs: number): void {
-        this.db.prepare('DELETE FROM mfa_used_tokens WHERE used_at < ?').run(olderThanMs);
+    public purgeOldMfaCodes(olderThanMs: number): number {
+        const result = this.db.prepare('DELETE FROM mfa_used_tokens WHERE used_at < ?').run(olderThanMs);
+        return result.changes;
     }
 
     // --- Role Assignments ---
