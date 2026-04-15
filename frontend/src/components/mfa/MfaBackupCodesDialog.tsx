@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Copy, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 
 interface MfaBackupCodesDialogProps {
   open: boolean;
@@ -21,35 +22,60 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const submittedRef = useRef(false);
 
   const resetState = () => {
     setStep('confirm');
     setCode('');
     setError('');
     setBackupCodes([]);
+    submittedRef.current = false;
   };
 
-  const handleConfirm = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitRegenerate = async (valueToSubmit: string) => {
     setError('');
     setLoading(true);
     try {
       const res = await apiFetch('/auth/mfa/backup-codes/regenerate', {
         method: 'POST',
         localOnly: true,
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: valueToSubmit }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error || 'Could not regenerate backup codes');
+        setCode('');
+        submittedRef.current = false;
         return;
       }
       setBackupCodes(data.backupCodes || []);
       setStep('show');
     } catch (err) {
       setError((err as Error)?.message || 'Could not regenerate backup codes');
+      submittedRef.current = false;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading || code.length !== TOTP_LENGTH) return;
+    submittedRef.current = true;
+    void submitRegenerate(code);
+  };
+
+  const handleCodeChange = (raw: string) => {
+    const normalized = normalizeTotpInput(raw);
+    setCode(normalized);
+    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (
+      normalized.length === TOTP_LENGTH &&
+      !loading &&
+      !submittedRef.current
+    ) {
+      submittedRef.current = true;
+      requestAnimationFrame(() => { void submitRegenerate(normalized); });
     }
   };
 
@@ -119,9 +145,9 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
                 autoComplete="one-time-code"
                 autoFocus
                 required
-                maxLength={6}
+                maxLength={TOTP_LENGTH}
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => handleCodeChange(e.target.value)}
                 className="font-mono tabular-nums tracking-widest text-center"
                 placeholder="123456"
               />
@@ -129,7 +155,7 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
             {error && <div className="text-sm text-destructive">{error}</div>}
             <DialogFooter className="gap-2 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>Cancel</Button>
-              <Button type="submit" disabled={loading || code.length !== 6}>
+              <Button type="submit" disabled={loading || code.length !== TOTP_LENGTH}>
                 {loading ? 'Working...' : 'Regenerate'}
               </Button>
             </DialogFooter>
