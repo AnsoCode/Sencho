@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { AlertTriangle, GitBranch, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -51,9 +51,9 @@ export function GitSourceDiffDialog({
   const envAvailable = syncEnv && pull?.incomingEnv !== null;
   const effectiveTab = envAvailable ? diffTab : 'compose';
 
-  const shortSha = useMemo(() => (pull?.commitSha ? pull.commitSha.slice(0, 7) : ''), [pull?.commitSha]);
-
   if (!pull) return null;
+
+  const shortSha = pull.commitSha.slice(0, 7);
 
   const apply = async () => {
     await onApply(pull.commitSha, deployAfter);
