@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0](https://github.com/AnsoCode/Sencho/compare/v0.51.0...v0.52.0) (2026-04-15)
+
+
+### Added
+
+* **mfa:** UX hardening — auto-submit, paste tolerance, low-codes warning, dev-mode diagnostics ([#620](https://github.com/AnsoCode/Sencho/issues/620)) ([4722028](https://github.com/AnsoCode/Sencho/commit/4722028904463dcd4019b2a9cf17a531f3b9da04))
+
 ## [0.51.0](https://github.com/AnsoCode/Sencho/compare/v0.50.0...v0.51.0) (2026-04-15)
 
 
