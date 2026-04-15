@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.0](https://github.com/AnsoCode/Sencho/compare/v0.48.1...v0.49.0) (2026-04-15)
+
+
+### Added
+
+* **git-sources:** create a stack from a Git repository ([#606](https://github.com/AnsoCode/Sencho/issues/606)) ([3955267](https://github.com/AnsoCode/Sencho/commit/3955267bbe5eac816f8e80a9e6a41dbcefdd75b0))
+
 ## [0.48.1](https://github.com/AnsoCode/Sencho/compare/v0.48.0...v0.48.1) (2026-04-15)
 
 
