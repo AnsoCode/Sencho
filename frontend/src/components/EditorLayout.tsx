@@ -13,7 +13,7 @@ import { CapabilityGate } from './CapabilityGate';
 import ResourcesView from './ResourcesView';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
@@ -1370,13 +1370,23 @@ export default function EditorLayout() {
         }
         throw new Error(err?.error || 'Failed to create stack from Git.');
       }
-      const data: { deployed?: boolean; deployError?: string } = await response.json();
+      const data: {
+        deployed?: boolean;
+        deployError?: string;
+        commitSha?: string;
+        warnings?: string[];
+      } = await response.json();
+      const shortSha = typeof data.commitSha === 'string' ? data.commitSha.slice(0, 7) : '';
+      const shaSuffix = shortSha ? ` @ ${shortSha}` : '';
       if (gitDeployNow && data.deployError) {
-        toast.warning(`Stack created, but deploy failed: ${data.deployError}`);
+        toast.warning(`Stack created${shaSuffix}, but deploy failed: ${data.deployError}`);
       } else if (gitDeployNow && data.deployed) {
-        toast.success('Stack created and deployed from Git.');
+        toast.success(`Stack created and deployed from Git${shaSuffix}.`);
       } else {
-        toast.success('Stack created from Git.');
+        toast.success(`Stack created from Git${shaSuffix}.`);
+      }
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        toast.warning(data.warnings.join(' '));
       }
       setCreateDialogOpen(false);
       resetCreateFromGitForm();
@@ -1533,6 +1543,9 @@ export default function EditorLayout() {
             <DialogContent className="max-w-xl w-[95vw] p-0 gap-0">
               <DialogHeader className="px-6 pt-6 pb-3">
                 <DialogTitle>Create New Stack</DialogTitle>
+                <DialogDescription className="sr-only">
+                  Create a new stack, either empty or cloned from a Git repository.
+                </DialogDescription>
               </DialogHeader>
 
               <div className="px-6 pb-2">

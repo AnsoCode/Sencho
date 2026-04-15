@@ -5,6 +5,20 @@ import { cn } from '@/lib/utils';
 
 export type ApplyMode = 'review' | 'auto-write' | 'auto-deploy';
 
+/**
+ * Mirror of the backend's env-path default (see `/api/stacks/from-git` and
+ * the git-source PUT handler): if the user ticks "Sync .env" without
+ * specifying an explicit path, the service reads `<dirname>/.env`
+ * alongside the compose file. Surfacing this in the form saves the user
+ * a round-trip to figure out which directory the `.env` will come from.
+ */
+function computeDefaultEnvPath(composePath: string): string {
+  const normalized = composePath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  const slash = normalized.lastIndexOf('/');
+  if (slash === -1) return '.env';
+  return `${normalized.slice(0, slash)}/.env`;
+}
+
 export interface GitSourceFieldsState {
   repoUrl: string;
   branch: string;
@@ -130,16 +144,27 @@ export function GitSourceFields({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="git-source-sync-env"
-          checked={syncEnv}
-          onCheckedChange={(c) => onSyncEnvChange(c === true)}
-          disabled={disabled}
-        />
-        <Label htmlFor="git-source-sync-env" className="text-xs cursor-pointer">
-          Also sync sibling <span className="font-mono">.env</span> file
-        </Label>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="git-source-sync-env"
+            checked={syncEnv}
+            onCheckedChange={(c) => onSyncEnvChange(c === true)}
+            disabled={disabled}
+          />
+          <Label htmlFor="git-source-sync-env" className="text-xs cursor-pointer">
+            Also sync sibling <span className="font-mono">.env</span> file
+          </Label>
+        </div>
+        {syncEnv && composePath.trim() !== '' && (
+          <p className="text-[11px] text-stat-subtitle pl-6">
+            Will read{' '}
+            <span className="font-mono">
+              {computeDefaultEnvPath(composePath)}
+            </span>{' '}
+            from the repository.
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">

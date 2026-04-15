@@ -78,9 +78,13 @@ function mockSuccessfulClone(options: {
     mockGitClone.mockImplementation(async (args: { dir: string }) => {
         const { promises: fsp } = await import('fs');
         const path = await import('path');
-        await fsp.writeFile(path.join(args.dir, composePath), compose, 'utf-8');
+        const composeAbs = path.join(args.dir, composePath);
+        await fsp.mkdir(path.dirname(composeAbs), { recursive: true });
+        await fsp.writeFile(composeAbs, compose, 'utf-8');
         if (env !== null && envPath) {
-            await fsp.writeFile(path.join(args.dir, envPath), env, 'utf-8');
+            const envAbs = path.join(args.dir, envPath);
+            await fsp.mkdir(path.dirname(envAbs), { recursive: true });
+            await fsp.writeFile(envAbs, env, 'utf-8');
         }
     });
     mockGitLog.mockResolvedValue([{ oid: sha }]);
@@ -294,9 +298,50 @@ describe('GitSourceService error mapping', () => {
         composePath: 'compose.yaml',
     };
 
-    it('maps 401/auth errors to AUTH_FAILED', async () => {
-        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP 401 Unauthorized'), { code: 'HttpError' }));
-        await expect(svc().fetchFromGit(fetchParams)).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+    it('maps 401 with supplied token to AUTH_FAILED', async () => {
+        // A 401 only means "your token is wrong" when the caller actually sent one.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 401 Unauthorized'), {
+            code: 'HttpError',
+            data: { statusCode: 401 },
+        }));
+        await expect(svc().fetchFromGit({ ...fetchParams, token: 'ghp_some_token_value' }))
+            .rejects.toMatchObject({ code: 'AUTH_FAILED' });
+    });
+
+    it('maps 401 without a token to REPO_NOT_FOUND with a private-repo hint', async () => {
+        // GitHub returns 404 for genuinely missing public repos but 401/403 can
+        // also reach us for private repos that the caller did not authenticate
+        // to. Without a supplied token, "check your token" is misleading, so we
+        // surface it as "not found or private" and suggest adding a PAT.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 401 Unauthorized'), {
+            code: 'HttpError',
+            data: { statusCode: 401 },
+        }));
+        await expect(svc().fetchFromGit(fetchParams))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/private/i) });
+    });
+
+    it('maps 404 HttpError to REPO_NOT_FOUND (not AUTH_FAILED)', async () => {
+        // Regression: isomorphic-git throws HttpError for every non-2xx, so a
+        // 404 on info/refs was previously misclassified as auth failure.
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 404 Not Found'), {
+            code: 'HttpError',
+            data: { statusCode: 404 },
+        }));
+        await expect(svc().fetchFromGit(fetchParams))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/private/i) });
+    });
+
+    it('maps 404 with a supplied token to REPO_NOT_FOUND with a token-scope hint', async () => {
+        // GitHub returns 404 for both "missing repo" and "token lacks access",
+        // so when the caller did supply a token we point them at URL + scopes
+        // instead of "add a PAT" (which they already did).
+        mockGitClone.mockRejectedValueOnce(Object.assign(new Error('HTTP Error: 404 Not Found'), {
+            code: 'HttpError',
+            data: { statusCode: 404 },
+        }));
+        await expect(svc().fetchFromGit({ ...fetchParams, token: 'ghp_some_token_value' }))
+            .rejects.toMatchObject({ code: 'REPO_NOT_FOUND', message: expect.stringMatching(/token has read access/i) });
     });
 
     it('maps 404/not-found errors to REPO_NOT_FOUND', async () => {
@@ -486,6 +531,74 @@ describe('GitSourceService.fetchFromGit (.git metadata guard)', () => {
     });
 });
 
+describe('GitSourceService.fetchFromGit (LFS + submodule detection)', () => {
+    const svc = () => GitSourceService.getInstance();
+    // Real pointer files start with this exact header (git-lfs spec v1).
+    const LFS_POINTER = 'version https://git-lfs.github.com/spec/v1\noid sha256:abc123\nsize 1024\n';
+
+    it('rejects an LFS-pointer compose file with a GIT_ERROR mentioning LFS', async () => {
+        mockSuccessfulClone({ compose: LFS_POINTER });
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+        })).rejects.toMatchObject({
+            code: 'GIT_ERROR',
+            message: expect.stringMatching(/LFS/i),
+        });
+    });
+
+    it('rejects an LFS-pointer env file with a GIT_ERROR mentioning LFS', async () => {
+        mockSuccessfulClone({
+            compose: 'services:\n  web:\n    image: nginx\n',
+            env: LFS_POINTER,
+            envPath: '.env',
+        });
+        await expect(svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+            envPath: '.env',
+        })).rejects.toMatchObject({
+            code: 'GIT_ERROR',
+            message: expect.stringMatching(/LFS/i),
+        });
+    });
+
+    it('returns a submodule warning when .gitmodules is present', async () => {
+        mockGitClone.mockImplementation(async (args: { dir: string }) => {
+            const { promises: fsp } = await import('fs');
+            const p = await import('path');
+            await fsp.writeFile(p.join(args.dir, 'compose.yaml'), 'services:\n  web:\n    image: nginx\n', 'utf-8');
+            await fsp.writeFile(
+                p.join(args.dir, '.gitmodules'),
+                '[submodule "vendor"]\n\tpath = vendor\n\turl = https://github.com/example/vendor.git\n',
+                'utf-8',
+            );
+        });
+        mockGitLog.mockResolvedValue([{ oid: 'abc1234567890abc1234567890abc1234567890a' }]);
+
+        const result = await svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+        });
+        expect(result.warnings).toEqual(
+            expect.arrayContaining([expect.stringMatching(/submodules/i)]),
+        );
+    });
+
+    it('returns no warnings when .gitmodules is absent', async () => {
+        mockSuccessfulClone();
+        const result = await svc().fetchFromGit({
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'compose.yaml',
+        });
+        expect(result.warnings).toEqual([]);
+    });
+});
+
 describe('GitSourceService.pull', () => {
     it('rejects when no Git source is configured for the stack', async () => {
         const svc = GitSourceService.getInstance();
@@ -534,6 +647,44 @@ describe('GitSourceService.createStackFromGit', () => {
         expect(onDisk).toContain('image: nginx');
 
         await cleanupStackDir('create-happy');
+    });
+
+    it('resolves a nested compose_path and nested env_path into the stack dir', async () => {
+        const sha = 'deadbeef1234567890deadbeef1234567890abcd';
+        mockSuccessfulClone({
+            compose: 'services:\n  web:\n    image: nginx\n',
+            env: 'FOO=nested\n',
+            composePath: 'apps/web/compose.yaml',
+            envPath: 'apps/web/.env',
+            sha,
+        });
+        const svc = GitSourceService.getInstance();
+
+        const result = await svc.createStackFromGit({
+            stackName: 'create-nested',
+            repoUrl: 'https://github.com/example/repo.git',
+            branch: 'main',
+            composePath: 'apps/web/compose.yaml',
+            syncEnv: true,
+            envPath: 'apps/web/.env',
+            authType: 'none',
+            token: null,
+            autoApplyOnWebhook: false,
+            autoDeployOnApply: false,
+        });
+
+        expect(result.envWritten).toBe(true);
+        expect(result.source.compose_path).toBe('apps/web/compose.yaml');
+        expect(result.source.env_path).toBe('apps/web/.env');
+
+        const { FileSystemService } = await import('../services/FileSystemService');
+        const env = await FileSystemService.getInstance().getEnvContent('create-nested');
+        expect(env).toBe('FOO=nested\n');
+
+        const row = DatabaseService.getInstance().getGitSource('create-nested');
+        expect(row?.env_path).toBe('apps/web/.env');
+
+        await cleanupStackDir('create-nested');
     });
 
     it('writes the env file when sync_env is enabled', async () => {
