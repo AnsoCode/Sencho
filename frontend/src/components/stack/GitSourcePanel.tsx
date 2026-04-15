@@ -112,6 +112,9 @@ export function GitSourcePanel({
         setAuthType('none');
         setToken('');
         setApplyModeOverride(null);
+      } else if (res.status === 403) {
+        setSource(null);
+        toast.error('You do not have permission to view this stack\'s Git source.');
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.error || 'Failed to load Git source.');
@@ -134,7 +137,7 @@ export function GitSourcePanel({
       toast.error('Repository URL, branch, and compose path are required.');
       return;
     }
-    if (!/^https?:\/\//i.test(repoUrl.trim())) {
+    if (!/^https:\/\//i.test(repoUrl.trim())) {
       toast.error('Only HTTPS repository URLs are supported.');
       return;
     }
@@ -235,8 +238,12 @@ export function GitSourcePanel({
         body: JSON.stringify({ commitSha, deploy }),
       });
       if (res.ok) {
-        const data: { applied: boolean; deployed: boolean } = await res.json();
-        toast.success(data.deployed ? 'Applied and deployed.' : 'Applied successfully.');
+        const data: { applied: boolean; deployed: boolean; deployError?: string } = await res.json();
+        if (data.deployError) {
+          toast.warning(`Applied, but deploy failed: ${data.deployError}`);
+        } else {
+          toast.success(data.deployed ? 'Applied and deployed.' : 'Applied successfully.');
+        }
         setDiffOpen(false);
         setPull(null);
         await load();
@@ -323,7 +330,7 @@ export function GitSourcePanel({
               ) : (
                 <>
                   {source?.pending_commit_sha && (
-                    <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 py-2 text-xs">
+                    <div className="flex items-start gap-2 rounded-md border border-brand/30 bg-brand/5 px-3 py-2 text-xs shadow-card-bevel">
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-brand" strokeWidth={1.5} />
                       <div className="flex-1">
                         <p className="font-medium">Pending update</p>
@@ -450,7 +457,7 @@ export function GitSourcePanel({
                   </div>
 
                   {source && (
-                    <div className="rounded-md border border-glass-border bg-muted/30 px-3 py-2 text-[11px] text-stat-subtitle space-y-0.5">
+                    <div className="rounded-md border border-glass-border bg-muted/30 px-3 py-2 text-[11px] text-stat-subtitle space-y-0.5 shadow-card-bevel">
                       <div className="flex justify-between gap-2">
                         <span>Last applied commit</span>
                         <span className="font-mono tabular-nums">

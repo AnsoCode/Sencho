@@ -10,6 +10,7 @@ import { CryptoService } from './CryptoService';
 import { DatabaseService, type StackGitSource, type GitSourceAuthType } from './DatabaseService';
 import { FileSystemService } from './FileSystemService';
 import { ComposeService } from './ComposeService';
+import { isDebugEnabled } from '../utils/debug';
 
 /**
  * GitSourceService - fetch compose files from a Git repository and apply
@@ -115,6 +116,35 @@ function scrubCredentials(message: string): string {
         .replace(/(authorization[:=]\s*)[^\s,;]+/gi, '$1***')
         .replace(/(token[:=]\s*)[^\s,;]+/gi, '$1***')
         .replace(/(password[:=]\s*)[^\s,;]+/gi, '$1***');
+}
+
+/**
+ * Extract just the hostname for log lines so we never echo a full
+ * repo URL that could contain an inline credential. Falls back to
+ * `unknown` for malformed URLs.
+ */
+function repoHost(url: string): string {
+    try {
+        return new URL(url).host || 'unknown';
+    } catch {
+        return 'unknown';
+    }
+}
+
+/**
+ * Reject any relative path that resolves into the `.git` metadata
+ * directory. The path-traversal check in `fetchFromGit` already bounds
+ * paths to the clone dir, but without this guard a caller could still
+ * target `.git/config` (remote URL, potentially mis-configured inline
+ * credentials) via a path that stays inside the clone. Matches on any
+ * `.git` segment, case-insensitive, so `.GIT/config` is also rejected.
+ */
+function assertNotGitMeta(relPath: string, fieldName: string): void {
+    const normalized = relPath.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+    const segments = normalized.split('/').filter(Boolean);
+    if (segments.some(seg => seg === '.git')) {
+        throw new GitSourceError('FILE_NOT_FOUND', `${fieldName} cannot target the .git metadata directory.`);
+    }
 }
 
 // ─── Temp dir helpers ────────────────────────────────────────────────────────
@@ -276,7 +306,22 @@ export class GitSourceService {
     public async fetchFromGit(params: FetchParams): Promise<FetchResult> {
         const { repoUrl, branch, composePath, envPath, token } = params;
         const timeoutMs = params.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+
+        // Reject any compose/env target that resolves inside the `.git`
+        // metadata directory BEFORE we spin up a clone. This blocks a
+        // caller from reading `.git/config` (which leaks the remote URL
+        // and any mis-configured inline credentials) via the fetch path.
+        assertNotGitMeta(composePath, 'compose_path');
+        if (envPath) assertNotGitMeta(envPath, 'env_path');
+
         const dir = await createTempDir();
+        const startedAt = Date.now();
+        const diag = isDebugEnabled();
+        if (diag) {
+            console.log(
+                `[GitSource:diag] fetch start host=${repoHost(repoUrl)} branch=${branch} compose=${composePath} envSync=${envPath ? 'true' : 'false'} timeoutMs=${timeoutMs}`
+            );
+        }
 
         // isomorphic-git's onAuth callback hands credentials to the HTTP
         // layer without them touching the URL string, which keeps tokens
@@ -358,7 +403,20 @@ export class GitSourceService {
                 }
             }
 
+            if (diag) {
+                console.log(
+                    `[GitSource:diag] fetch ok host=${repoHost(repoUrl)} branch=${branch} sha=${commitSha.slice(0, 7)} env=${envContent !== null ? 'present' : 'absent'} elapsedMs=${Date.now() - startedAt}`
+                );
+            }
             return { composeContent, envContent, commitSha };
+        } catch (err) {
+            if (diag) {
+                const msg = err instanceof GitSourceError ? `${err.code}: ${err.message}` : (err as Error).message;
+                console.log(
+                    `[GitSource:diag] fetch fail host=${repoHost(repoUrl)} branch=${branch} elapsedMs=${Date.now() - startedAt} err=${scrubCredentials(msg)}`
+                );
+            }
+            throw err;
         } finally {
             await removeTempDir(dir);
         }
@@ -481,53 +539,83 @@ export class GitSourceService {
     // ─── Pull / apply ────────────────────────────────────────────────────────
 
     public async pull(stackName: string): Promise<PullResult> {
-        const db = DatabaseService.getInstance();
-        const src = db.getGitSource(stackName);
-        if (!src) throw new GitSourceError('GIT_ERROR', 'No Git source configured for this stack.');
+        // Guarded by the same per-stack mutex as apply(). Without this, a
+        // concurrent delete-source + pull can land a pending row on a
+        // stack whose config row has just been removed; the DELETE clears
+        // the row but the subsequent setGitSourcePending re-inserts via
+        // UPDATE failing silently (no row), and a later upsert would
+        // inherit stale pending columns on read.
+        return this.withStackLock(stackName, async () => {
+            const db = DatabaseService.getInstance();
+            const src = db.getGitSource(stackName);
+            if (!src) throw new GitSourceError('GIT_ERROR', 'No Git source configured for this stack.');
 
-        const token = src.encrypted_token ? this.crypto.decrypt(src.encrypted_token) : null;
-        const fetched = await this.fetchFromGit({
-            repoUrl: src.repo_url,
-            branch: src.branch,
-            composePath: src.compose_path,
-            envPath: src.sync_env ? src.env_path : null,
-            token,
+            const diag = isDebugEnabled();
+            if (diag) {
+                console.log(`[GitSource:diag] pull start stack=${stackName} branch=${src.branch} host=${repoHost(src.repo_url)}`);
+            }
+
+            const token = src.encrypted_token ? this.crypto.decrypt(src.encrypted_token) : null;
+            const fetched = await this.fetchFromGit({
+                repoUrl: src.repo_url,
+                branch: src.branch,
+                composePath: src.compose_path,
+                envPath: src.sync_env ? src.env_path : null,
+                token,
+            });
+
+            const validation = await this.validateCompose(fetched.composeContent, fetched.envContent);
+            const disk = await this.readDiskContent(stackName, src.sync_env);
+            const currentHash = this.hashContent(disk.compose, disk.env);
+            const hasLocalChanges = src.last_applied_content_hash !== null
+                && src.last_applied_content_hash !== currentHash;
+
+            // Store pending so a subsequent apply doesn't re-fetch. Compose files
+            // routinely contain secrets inlined as env interpolations or passwords,
+            // so encrypt the pending buffers at rest.
+            db.setGitSourcePending(
+                stackName,
+                fetched.commitSha,
+                this.crypto.encrypt(fetched.composeContent),
+                fetched.envContent !== null ? this.crypto.encrypt(fetched.envContent) : null,
+            );
+
+            console.log(`[GitSource] Pending update ready for ${stackName} at ${fetched.commitSha.slice(0, 7)} (validation=${validation.ok ? 'ok' : 'fail'}, localEdits=${hasLocalChanges})`);
+            if (diag) {
+                console.log(`[GitSource:diag] pull done stack=${stackName} sha=${fetched.commitSha.slice(0, 7)} validation=${validation.ok} localEdits=${hasLocalChanges}`);
+            }
+
+            return {
+                commitSha: fetched.commitSha,
+                incomingCompose: fetched.composeContent,
+                incomingEnv: fetched.envContent,
+                currentCompose: disk.compose,
+                currentEnv: disk.env,
+                validation,
+                hasLocalChanges,
+            };
         });
-
-        const validation = await this.validateCompose(fetched.composeContent, fetched.envContent);
-        const disk = await this.readDiskContent(stackName, src.sync_env);
-        const currentHash = this.hashContent(disk.compose, disk.env);
-        const hasLocalChanges = src.last_applied_content_hash !== null
-            && src.last_applied_content_hash !== currentHash;
-
-        // Store pending so a subsequent apply doesn't re-fetch. Compose files
-        // routinely contain secrets inlined as env interpolations or passwords,
-        // so encrypt the pending buffers at rest.
-        db.setGitSourcePending(
-            stackName,
-            fetched.commitSha,
-            this.crypto.encrypt(fetched.composeContent),
-            fetched.envContent !== null ? this.crypto.encrypt(fetched.envContent) : null,
-        );
-
-        return {
-            commitSha: fetched.commitSha,
-            incomingCompose: fetched.composeContent,
-            incomingEnv: fetched.envContent,
-            currentCompose: disk.compose,
-            currentEnv: disk.env,
-            validation,
-            hasLocalChanges,
-        };
     }
 
     /**
      * Apply a pending pull. Idempotent under the per-stack mutex: if two
      * clients hit /apply concurrently, the second one sees cleared pending
      * columns and gets a clean error rather than double-writing.
+     *
+     * Deploy failure policy: once the compose file has been written to
+     * disk, we never throw. Instead we return `deployed: false,
+     * deployError: <message>` so the UI can clearly show "applied, but
+     * deploy failed" and the caller can retry the deploy without having
+     * to re-pull. Throwing here would leave the user with a changed disk
+     * file and a confusing "apply failed" error message.
      */
-    public async apply(stackName: string, commitSha: string, opts: { deploy?: boolean } = {}): Promise<{ applied: boolean; deployed: boolean }> {
+    public async apply(
+        stackName: string,
+        commitSha: string,
+        opts: { deploy?: boolean } = {},
+    ): Promise<{ applied: boolean; deployed: boolean; deployError?: string }> {
         return this.withStackLock(stackName, async () => {
+            const diag = isDebugEnabled();
             const db = DatabaseService.getInstance();
             const src = db.getGitSource(stackName);
             if (!src) throw new GitSourceError('GIT_ERROR', 'No Git source configured for this stack.');
@@ -536,6 +624,7 @@ export class GitSourceService {
                 throw new GitSourceError('GIT_ERROR', 'No pending pull to apply. Fetch the source again.');
             }
             if (src.pending_commit_sha !== commitSha) {
+                if (diag) console.log(`[GitSource:diag] apply sha mismatch stack=${stackName} expected=${commitSha.slice(0, 7)} pending=${src.pending_commit_sha.slice(0, 7)}`);
                 throw new GitSourceError('GIT_ERROR', 'Pending commit has changed since this pull was fetched. Please review the latest diff.');
             }
 
@@ -549,6 +638,7 @@ export class GitSourceService {
             // Re-validate before writing.
             const validation = await this.validateCompose(composeContent, envContent);
             if (!validation.ok) {
+                if (diag) console.log(`[GitSource:diag] apply validation fail stack=${stackName}`);
                 throw new GitSourceError('GIT_ERROR', `Compose validation failed: ${validation.error}`);
             }
 
@@ -562,15 +652,23 @@ export class GitSourceService {
             db.markGitSourceApplied(stackName, commitSha, hash);
 
             const shouldDeploy = opts.deploy ?? src.auto_deploy_on_apply;
+            if (diag) console.log(`[GitSource:diag] apply wrote stack=${stackName} sha=${commitSha.slice(0, 7)} deploy=${shouldDeploy}`);
+
             if (shouldDeploy) {
                 try {
                     await ComposeService.getInstance().deployStack(stackName);
+                    console.log(`[GitSource] Applied and deployed ${stackName} at ${commitSha.slice(0, 7)}`);
                     return { applied: true, deployed: true };
                 } catch (e) {
-                    console.error(`[GitSourceService] Auto-deploy failed for ${stackName}:`, (e as Error).message);
-                    throw new GitSourceError('GIT_ERROR', `Applied file but deploy failed: ${(e as Error).message}`);
+                    // File is on disk, DB is marked applied. Returning the
+                    // error separately lets the UI flag it as a partial
+                    // success rather than rolling back the disk.
+                    const scrubbed = scrubCredentials((e as Error).message || String(e));
+                    console.error(`[GitSource] Auto-deploy failed for ${stackName}: ${scrubbed}`);
+                    return { applied: true, deployed: false, deployError: scrubbed };
                 }
             }
+            console.log(`[GitSource] Applied ${stackName} at ${commitSha.slice(0, 7)}`);
             return { applied: true, deployed: false };
         });
     }
@@ -586,6 +684,7 @@ export class GitSourceService {
      * record in webhook_executions. Enforces the per-source debounce.
      */
     public async handleWebhookPull(stackName: string): Promise<{ status: 'success' | 'skipped' | 'error'; message: string }> {
+        const diag = isDebugEnabled();
         const db = DatabaseService.getInstance();
         const src = db.getGitSource(stackName);
         if (!src) {
@@ -594,6 +693,7 @@ export class GitSourceService {
 
         const now = Date.now();
         if (src.last_debounce_at !== null && (now - src.last_debounce_at) < WEBHOOK_DEBOUNCE_MS) {
+            if (diag) console.log(`[GitSource:diag] webhook debounced stack=${stackName} age=${now - src.last_debounce_at}ms`);
             return { status: 'skipped', message: 'Rate limited (debounced).' };
         }
 
@@ -608,10 +708,17 @@ export class GitSourceService {
             }
 
             if (!src.auto_apply_on_webhook) {
+                if (diag) console.log(`[GitSource:diag] webhook pending-only stack=${stackName} sha=${pullResult.commitSha.slice(0, 7)}`);
                 return { status: 'success', message: `Pending update ready at ${pullResult.commitSha.slice(0, 7)}.` };
             }
 
             const applied = await this.apply(stackName, pullResult.commitSha, { deploy: src.auto_deploy_on_apply });
+            if (applied.deployError) {
+                // Apply wrote to disk but deploy failed. Surface it so the
+                // webhook_executions row records a degraded outcome instead
+                // of a clean success.
+                return { status: 'error', message: `Applied commit ${pullResult.commitSha.slice(0, 7)} but deploy failed: ${applied.deployError}` };
+            }
             const suffix = applied.deployed ? ' and deployed' : '';
             return { status: 'success', message: `Applied commit ${pullResult.commitSha.slice(0, 7)}${suffix}.` };
         } catch (e) {
