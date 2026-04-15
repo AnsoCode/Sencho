@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0](https://github.com/AnsoCode/Sencho/compare/v0.50.0...v0.51.0) (2026-04-15)
+
+
+### Added
+
+* **auth:** add TOTP two-factor authentication with backup codes ([#615](https://github.com/AnsoCode/Sencho/issues/615)) ([7d78c9f](https://github.com/AnsoCode/Sencho/commit/7d78c9fe22a2f42941397b980a46248402741598))
+
 ## [0.50.0](https://github.com/AnsoCode/Sencho/compare/v0.49.0...v0.50.0) (2026-04-15)
 
 
