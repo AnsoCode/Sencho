@@ -94,7 +94,7 @@ export interface WebhookExecution {
     executed_at: number;
 }
 
-export type AuthProvider = 'local' | 'ldap' | 'oidc_google' | 'oidc_github' | 'oidc_okta';
+export type AuthProvider = 'local' | 'ldap' | 'oidc_google' | 'oidc_github' | 'oidc_okta' | 'oidc_custom';
 
 export type UserRole = 'admin' | 'viewer' | 'deployer' | 'node-admin' | 'auditor';
 export type ResourceType = 'stack' | 'node';

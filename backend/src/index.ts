@@ -923,7 +923,7 @@ app.post('/api/auth/sso/ldap', authRateLimiter, async (req: Request, res: Respon
 app.get('/api/auth/sso/oidc/:provider/authorize', ssoRateLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const provider = String(req.params.provider);
-    const validProviders = ['oidc_google', 'oidc_github', 'oidc_okta'];
+    const validProviders = ['oidc_google', 'oidc_github', 'oidc_okta', 'oidc_custom'];
     if (!validProviders.includes(provider)) {
       res.status(400).json({ error: 'Invalid SSO provider' });
       return;
@@ -5654,7 +5654,7 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
   }
 });
 
-// --- SSO Config Routes (admin + Admiral, local-only) ---
+// --- SSO Config Routes (admin, local-only) ---
 
 app.get('/api/sso/config', (req: Request, res: Response): void => {
   if (req.apiTokenScope) {
@@ -5662,7 +5662,6 @@ app.get('/api/sso/config', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const configs = DatabaseService.getInstance().getSSOConfigs();
     const result = configs.map(c => {
@@ -5685,7 +5684,6 @@ app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const config = SSOService.getInstance().getProviderConfig(String(req.params.provider));
     if (!config) {
@@ -5709,10 +5707,9 @@ app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const provider = String(req.params.provider);
-    const validProviders = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta'];
+    const validProviders = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta', 'oidc_custom'];
     if (!validProviders.includes(provider)) {
       res.status(400).json({ error: 'Invalid SSO provider' });
       return;
@@ -5727,7 +5724,7 @@ app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
         if (!config.ldapSearchBase?.trim()) missing.push('Search Base');
       } else {
         if (!config.oidcClientId?.trim()) missing.push('Client ID');
-        if (provider === 'oidc_okta' && !config.oidcIssuerUrl?.trim()) missing.push('Issuer URL');
+        if ((provider === 'oidc_okta' || provider === 'oidc_custom') && !config.oidcIssuerUrl?.trim()) missing.push('Issuer URL');
       }
       if (missing.length > 0) {
         res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
@@ -5750,7 +5747,6 @@ app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const deletedProvider = String(req.params.provider);
     SSOService.getInstance().deleteProviderConfig(deletedProvider);
@@ -5768,7 +5764,6 @@ app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): 
     return;
   }
   if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
   try {
     const provider = String(req.params.provider);
     if (provider === 'ldap') {

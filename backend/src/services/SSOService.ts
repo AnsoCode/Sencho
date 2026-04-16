@@ -43,6 +43,10 @@ export interface SSOProviderConfig {
     oidcAdminClaim?: string;
     oidcAdminClaimValue?: string;
     oidcDefaultRole?: 'admin' | 'viewer';
+    // Custom OIDC claim mapping
+    oidcIdClaim?: string;
+    oidcUsernameClaim?: string;
+    oidcEmailClaim?: string;
 }
 
 export interface SSOAuthResult {
@@ -61,6 +65,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
     oidc_google: 'Google',
     oidc_github: 'GitHub',
     oidc_okta: 'Okta',
+    oidc_custom: 'Custom OIDC',
 };
 
 const WELL_KNOWN_ISSUERS: Record<string, string> = {
@@ -85,6 +90,7 @@ export class SSOService {
         this.seedOidcFromEnv('oidc_google', 'SSO_OIDC_GOOGLE');
         this.seedOidcFromEnv('oidc_github', 'SSO_OIDC_GITHUB');
         this.seedOidcFromEnv('oidc_okta', 'SSO_OIDC_OKTA');
+        this.seedOidcFromEnv('oidc_custom', 'SSO_OIDC_CUSTOM');
     }
 
     private seedLdapFromEnv(): void {
@@ -123,7 +129,7 @@ export class SSOService {
         const config: SSOProviderConfig = {
             provider,
             enabled: true,
-            displayName: PROVIDER_DISPLAY_NAMES[provider] || provider,
+            displayName: process.env[`${envPrefix}_DISPLAY_NAME`] || PROVIDER_DISPLAY_NAMES[provider] || provider,
             oidcIssuerUrl: process.env[`${envPrefix}_ISSUER_URL`] || WELL_KNOWN_ISSUERS[provider] || '',
             oidcClientId: process.env[`${envPrefix}_CLIENT_ID`] || '',
             oidcClientSecret: process.env[`${envPrefix}_CLIENT_SECRET`] || '',
@@ -131,6 +137,9 @@ export class SSOService {
             oidcAdminClaim: process.env.SSO_OIDC_ADMIN_CLAIM || 'groups',
             oidcAdminClaimValue: process.env.SSO_OIDC_ADMIN_CLAIM_VALUE || 'sencho-admins',
             oidcDefaultRole: (process.env.SSO_DEFAULT_ROLE as 'admin' | 'viewer') || 'viewer',
+            oidcIdClaim: process.env[`${envPrefix}_ID_CLAIM`] || undefined,
+            oidcUsernameClaim: process.env[`${envPrefix}_USERNAME_CLAIM`] || undefined,
+            oidcEmailClaim: process.env[`${envPrefix}_EMAIL_CLAIM`] || undefined,
         };
 
         const configForStorage = { ...config };
@@ -416,13 +425,20 @@ export class SSOService {
                 }
             }
 
-            const sub = String(userInfo.sub || userInfo.id || '');
+            // Use configurable claim names for custom providers, with standard OIDC fallbacks
+            const idClaimName = config.oidcIdClaim || 'sub';
+            const usernameClaimName = config.oidcUsernameClaim || 'preferred_username';
+            const emailClaimName = config.oidcEmailClaim || 'email';
+
+            const sub = String(userInfo[idClaimName] ?? userInfo.sub ?? userInfo.id ?? '');
             if (!sub) {
                 return { success: false, error: 'Could not determine user identity from provider' };
             }
 
-            const email = String(userInfo.email || '');
-            const name = String(userInfo.name || userInfo.preferred_username || userInfo.login || email.split('@')[0] || `sso_${sub.substring(0, 8)}`);
+            const email = String(userInfo[emailClaimName] ?? userInfo.email ?? '');
+            const name = String(
+                userInfo[usernameClaimName] ?? userInfo.name ?? userInfo.preferred_username ?? userInfo.login ?? email.split('@')[0] ?? `sso_${sub.substring(0, 8)}`
+            );
             const role = this.resolveRoleFromOidc(userInfo, config);
             if (isDebugEnabled()) console.debug('[SSO:debug] OIDC userInfo resolved', { provider, sub, email: email || '(none)', name, role });
 

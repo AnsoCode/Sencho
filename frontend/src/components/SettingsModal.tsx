@@ -366,7 +366,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                             <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" locked={!isPaid} />
                         )}
                         {!isRemote && isAdmin && (
-                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" locked={!isAdmiral} />
+                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" />
                         )}
                         {!isRemote && isAdmin && (
                             <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" locked={!isAdmiral} />

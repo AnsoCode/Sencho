@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { KeyRound } from 'lucide-react';
 
 interface SSOProvider {
   provider: string;
@@ -34,6 +35,8 @@ function getProviderIcon(provider: string) {
           <path d="M12 0C5.389 0 0 5.389 0 12s5.389 12 12 12 12-5.389 12-12S18.611 0 12 0zm0 18c-3.314 0-6-2.686-6-6s2.686-6 6-6 6 2.686 6 6-2.686 6-6 6z" />
         </svg>
       );
+    case 'oidc_custom':
+      return <KeyRound className="w-4 h-4 mr-2" />;
     default:
       return null;
   }

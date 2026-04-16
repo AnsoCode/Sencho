@@ -50,13 +50,13 @@ describe('SSO Config Endpoints (Protected)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/sso/config returns 403 without Admiral', async () => {
+  it('GET /api/sso/config returns 200 with admin token (no Admiral required)', async () => {
     const res = await supertest(app)
       .get('/api/sso/config')
       .set('Authorization', `Bearer ${adminToken}`);
-    // Without an Admiral license, this should be 403
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    // SSO config is now available to all tiers, only admin role required
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
   it('PUT /api/sso/config/:provider returns 401 without auth', async () => {
@@ -82,6 +82,12 @@ describe('SSO OIDC Authorize', () => {
   it('GET /api/auth/sso/oidc/oidc_google/authorize redirects to error when not configured', async () => {
     const res = await supertest(app).get('/api/auth/sso/oidc/oidc_google/authorize');
     // Should redirect to /?sso_error=...
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('sso_error');
+  });
+
+  it('GET /api/auth/sso/oidc/oidc_custom/authorize redirects to error when not configured', async () => {
+    const res = await supertest(app).get('/api/auth/sso/oidc/oidc_custom/authorize');
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('sso_error');
   });
@@ -190,6 +196,22 @@ describe('SSO User Provisioning', () => {
     // Should have a suffixed username
     expect(user.username).toBe('collision_ldap');
     expect(user.auth_provider).toBe('ldap');
+  });
+
+  it('provisionUser works with oidc_custom provider', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const sso = SSOService.getInstance();
+    const user = sso.provisionUser({
+      authProvider: 'oidc_custom',
+      providerId: 'custom-sub-789',
+      preferredUsername: 'customuser',
+      email: 'custom@example.com',
+      role: 'viewer',
+    });
+    expect(user.auth_provider).toBe('oidc_custom');
+    expect(user.provider_id).toBe('custom-sub-789');
+    expect(user.email).toBe('custom@example.com');
+    expect(user.username).toBe('customuser');
   });
 
   it('SSO users cannot log in via local password endpoint', async () => {
@@ -387,25 +409,12 @@ describe('LDAP Filter Escaping', () => {
 });
 
 describe('SSO Config Validation on PUT', () => {
-  // We need an Admiral-licensed admin token for these tests.
-  // Mock getTier/getVariant so requireAdmiral passes.
-  let admiralToken: string;
-
-  beforeAll(async () => {
-    const { LicenseService } = await import('../services/LicenseService');
-    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
-    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('admiral');
-    admiralToken = jwt.sign({ username: 'testadmin', role: 'admin' }, TEST_JWT_SECRET, { expiresIn: '1h' });
-  });
-
-  afterAll(() => {
-    vi.restoreAllMocks();
-  });
+  // SSO config routes require admin role but no longer require Admiral tier
 
   it('rejects enabled LDAP config without Server URL', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/ldap')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: true, ldapSearchBase: 'ou=users,dc=example' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('Server URL');
@@ -414,7 +423,7 @@ describe('SSO Config Validation on PUT', () => {
   it('rejects enabled LDAP config without Search Base', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/ldap')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: true, ldapUrl: 'ldap://localhost:389' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('Search Base');
@@ -423,7 +432,7 @@ describe('SSO Config Validation on PUT', () => {
   it('rejects enabled OIDC config without Client ID', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/oidc_google')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: true });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('Client ID');
@@ -432,16 +441,34 @@ describe('SSO Config Validation on PUT', () => {
   it('rejects enabled Okta config without Issuer URL', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/oidc_okta')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: true, oidcClientId: 'test-client-id' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('Issuer URL');
   });
 
+  it('rejects enabled Custom OIDC config without Issuer URL', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/oidc_custom')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enabled: true, oidcClientId: 'test-client-id' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Issuer URL');
+  });
+
+  it('accepts oidc_custom as a valid provider', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/oidc_custom')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enabled: false });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
   it('allows saving disabled config without required fields', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/ldap')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: false });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -450,9 +477,32 @@ describe('SSO Config Validation on PUT', () => {
   it('rejects invalid provider name', async () => {
     const res = await supertest(app)
       .put('/api/sso/config/invalid_provider')
-      .set('Authorization', `Bearer ${admiralToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ enabled: true });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('Invalid SSO provider');
+  });
+});
+
+describe('SSO Claim Mapping', () => {
+  it('resolveRoleFromOidc respects custom admin claim name', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const sso = SSOService.getInstance();
+    // Access private method for testing
+    const resolve = (sso as unknown as {
+      resolveRoleFromOidc: (userInfo: Record<string, unknown>, config: { oidcAdminClaim?: string; oidcAdminClaimValue?: string; oidcDefaultRole?: string }) => string;
+    }).resolveRoleFromOidc.bind(sso);
+
+    // Standard claim name
+    expect(resolve({ groups: ['sencho-admins'] }, { oidcAdminClaim: 'groups', oidcAdminClaimValue: 'sencho-admins' })).toBe('admin');
+
+    // Custom claim name
+    expect(resolve({ roles: 'admin-role' }, { oidcAdminClaim: 'roles', oidcAdminClaimValue: 'admin-role' })).toBe('admin');
+
+    // Claim missing, falls back to default
+    expect(resolve({}, { oidcAdminClaim: 'roles', oidcAdminClaimValue: 'admin-role', oidcDefaultRole: 'viewer' })).toBe('viewer');
+
+    // Claim present but no match
+    expect(resolve({ roles: 'user-role' }, { oidcAdminClaim: 'roles', oidcAdminClaimValue: 'admin-role', oidcDefaultRole: 'viewer' })).toBe('viewer');
   });
 });
