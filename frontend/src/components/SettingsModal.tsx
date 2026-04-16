@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogTitle,
     DialogDescription,
@@ -14,7 +15,7 @@ import { apiFetch } from '@/lib/api';
 import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 import type { SenchoSettingsChangedDetail } from '@/lib/events';
 import {
-    Shield, Activity, Bell, Code, Server, Package,
+    Shield, Activity, Bell, Code, Server, Package, X,
     Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, Route,
 } from 'lucide-react';
 import { NodeManager } from './NodeManager';
@@ -337,7 +338,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="sm:max-w-[900px] h-[min(650px,85vh)] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
+            <DialogContent showClose={false} className="sm:max-w-[900px] h-[min(780px,90vh)] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
                 <VisuallyHidden><DialogTitle>Settings Hub</DialogTitle></VisuallyHidden>
                 <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
 
@@ -366,7 +367,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                             <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" locked={!isPaid} />
                         )}
                         {!isRemote && isAdmin && (
-                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" locked={!isAdmiral} />
+                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" />
                         )}
                         {!isRemote && isAdmin && (
                             <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" locked={!isAdmiral} />
@@ -421,11 +422,19 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                 </div>
 
                 {/* Main Content Area */}
-                <ScrollArea viewportRef={contentViewportRef} className="flex-1">
-                    <div className="p-6 flex flex-col gap-6">
-                        {renderSection()}
+                <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex justify-end shrink-0 px-3 pt-3">
+                        <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                            <X className="h-4 w-4" strokeWidth={1.5} />
+                            <span className="sr-only">Close</span>
+                        </DialogClose>
                     </div>
-                </ScrollArea>
+                    <ScrollArea viewportRef={contentViewportRef} className="flex-1">
+                        <div className="px-6 pb-6 flex flex-col gap-6">
+                            {renderSection()}
+                        </div>
+                    </ScrollArea>
+                </div>
             </DialogContent>
         </Dialog>
     );

@@ -7,9 +7,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
-import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
-import { TierBadge } from './TierBadge';
 import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const ROLE_OPTIONS = [
@@ -38,6 +36,10 @@ interface SSOProviderConfig {
     oidcAdminClaim?: string;
     oidcAdminClaimValue?: string;
     oidcDefaultRole?: string;
+    // Custom OIDC claim mapping
+    oidcIdClaim?: string;
+    oidcUsernameClaim?: string;
+    oidcEmailClaim?: string;
 }
 
 const PROVIDERS = [
@@ -45,6 +47,7 @@ const PROVIDERS = [
     { id: 'oidc_google', label: 'Google', type: 'oidc' as const },
     { id: 'oidc_github', label: 'GitHub', type: 'oidc' as const },
     { id: 'oidc_okta', label: 'Okta', type: 'oidc' as const },
+    { id: 'oidc_custom', label: 'Custom OIDC', type: 'oidc' as const },
 ];
 
 function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
@@ -227,14 +230,32 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                         </>
                     ) : (
                         <>
-                            {providerId === 'oidc_okta' && (
+                            {providerId === 'oidc_custom' && (
+                                <div className="grid gap-2">
+                                    <Label className="text-xs text-muted-foreground">Display Name</Label>
+                                    <Input
+                                        placeholder="My Identity Provider"
+                                        value={config.displayName || ''}
+                                        onChange={e => update('displayName', e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Name shown on the login button (e.g., "Corporate SSO").
+                                    </p>
+                                </div>
+                            )}
+                            {(providerId === 'oidc_okta' || providerId === 'oidc_custom') && (
                                 <div className="grid gap-2">
                                     <Label className="text-xs text-muted-foreground">Issuer URL</Label>
                                     <Input
-                                        placeholder="https://dev-123456.okta.com"
+                                        placeholder={providerId === 'oidc_okta' ? 'https://dev-123456.okta.com' : 'https://auth.example.com/realms/myrealm'}
                                         value={config.oidcIssuerUrl || ''}
                                         onChange={e => update('oidcIssuerUrl', e.target.value)}
                                     />
+                                    {providerId === 'oidc_custom' && (
+                                        <p className="text-xs text-muted-foreground">
+                                            Base URL of the OIDC discovery endpoint (without <code className="bg-muted px-1 rounded">/.well-known/openid-configuration</code>).
+                                        </p>
+                                    )}
                                 </div>
                             )}
                             <div className="grid grid-cols-2 gap-3">
@@ -274,7 +295,7 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                     />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-3 items-start">
                                 <div className="grid gap-2">
                                     <Label className="text-xs text-muted-foreground">Scopes</Label>
                                     <Input
@@ -296,6 +317,39 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                     />
                                 </div>
                             </div>
+                            {providerId === 'oidc_custom' && (
+                                <>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="grid gap-2">
+                                            <Label className="text-xs text-muted-foreground">User ID Claim</Label>
+                                            <Input
+                                                placeholder="sub"
+                                                value={config.oidcIdClaim || ''}
+                                                onChange={e => update('oidcIdClaim', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label className="text-xs text-muted-foreground">Username Claim</Label>
+                                            <Input
+                                                placeholder="preferred_username"
+                                                value={config.oidcUsernameClaim || ''}
+                                                onChange={e => update('oidcUsernameClaim', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label className="text-xs text-muted-foreground">Email Claim</Label>
+                                            <Input
+                                                placeholder="email"
+                                                value={config.oidcEmailClaim || ''}
+                                                onChange={e => update('oidcEmailClaim', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Map claims from your provider's token to Sencho user fields. Leave blank for standard OIDC defaults.
+                                    </p>
+                                </>
+                            )}
                         </>
                     )}
 
@@ -341,13 +395,12 @@ export function SSOSection() {
     const getConfig = (provider: string) => configs.find(c => c.provider === provider) || null;
 
     return (
-        <AdmiralGate featureName="SSO Authentication">
           <CapabilityGate capability="sso" featureName="SSO Authentication">
             <div className="space-y-6">
                 <div>
                     <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
                         <Shield className="w-5 h-5" />
-                        SSO Authentication <TierBadge />
+                        SSO Authentication
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">
                         Connect your identity provider so team members can sign in with their existing credentials.
@@ -374,6 +427,5 @@ export function SSOSection() {
                 </div>
             </div>
           </CapabilityGate>
-        </AdmiralGate>
     );
 }

@@ -1,13 +1,9 @@
 ---
 title: SSO & LDAP Authentication
-description: Authenticate with your existing identity provider - LDAP, Google, GitHub, or Okta.
+description: Authenticate with your existing identity provider, including LDAP, Google, GitHub, Okta, and any spec-compliant OIDC provider.
 ---
 
-<Note>
-  SSO requires a Sencho **Admiral** license. Skipper and Community Edition do not include this feature.
-</Note>
-
-Sencho Admiral lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication - it does not replace it.
+Sencho lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication; it does not replace it. SSO is available in all Sencho editions, including Community.
 
 ## Supported providers
 
@@ -17,6 +13,7 @@ Sencho Admiral lets your team sign in using existing identity providers instead 
 | **Google** | OpenID Connect | Google Workspace or personal Google accounts |
 | **GitHub** | OAuth 2.0 | GitHub personal accounts and GitHub orgs |
 | **Okta** | OpenID Connect | Any Okta org or Okta-compatible IdP |
+| **Custom OIDC** | OpenID Connect | Any spec-compliant OIDC provider: Keycloak, Authentik, Authelia, Zitadel, KanIDM, Pocket ID, and more |
 
 ## How it works
 
@@ -25,9 +22,9 @@ Sencho Admiral lets your team sign in using existing identity providers instead 
 1. User enters their directory username and password on the Sencho login page
 2. Sencho binds to LDAP with a service account, searches for the user, then verifies their password
 3. If this is their first login, a Sencho account is automatically created
-4. Sencho issues a JWT and the user is logged in - identical to a password login
+4. Sencho issues a JWT and the user is logged in, identical to a password login
 
-### OIDC / OAuth flow (Google, GitHub, Okta)
+### OIDC / OAuth flow (Google, GitHub, Okta, Custom OIDC)
 
 1. User clicks the provider button on the login page (e.g., "Sign in with Google")
 2. Browser redirects to the identity provider for authentication
@@ -43,8 +40,8 @@ All OIDC flows use **PKCE** (Proof Key for Code Exchange) and a **state paramete
 When a user logs in via SSO for the first time, Sencho automatically creates a local account:
 
 - **Username** is derived from their identity provider profile (display name, email prefix, or login handle)
-- **Role** is assigned based on [role mapping](#role-mapping) - defaults to Viewer if no mapping matches
-- **Password** is set to an unusable placeholder - SSO users cannot log in with a password
+- **Role** is assigned based on [role mapping](#role-mapping); defaults to Viewer if no mapping matches
+- **Password** is set to an unusable placeholder. SSO users cannot log in with a password
 - **Seat limits** from your license apply. If admin seats are full, the user is downgraded to Viewer. If all seats are full, login is denied with a clear error message.
 
 On subsequent logins, the existing account is reused. The user's **email** and **role** are synced from the identity provider on every login. If a user is added to your admin group, they will be promoted to Admin on their next login. If removed, they will be demoted to their default role. Seat limits are respected: if admin seats are full, the promotion is deferred until a seat opens up.
@@ -76,12 +73,12 @@ If the user's ID token contains a `groups` claim with the value `sencho-admins`,
 
 SSO can be configured two ways:
 
-1. **Settings UI** - Go to **Settings → SSO** in the Sencho dashboard. Enable providers, enter credentials, and test connections from the UI. Changes take effect immediately without restarting.
+1. **Settings UI** - Go to **Settings > SSO** in the Sencho dashboard. Enable providers, enter credentials, and test connections from the UI. Changes take effect immediately without restarting.
 2. **Environment variables** - Set `SSO_*` variables in your Docker Compose file. These seed the database on first boot. After that, the database configuration is authoritative.
 
 ### Via Settings UI
 
-Admins can manage SSO providers in **Settings → SSO**. Each provider is displayed as a collapsible card with:
+Admins can manage SSO providers in **Settings > SSO**. Each provider is displayed as a collapsible card with:
 
 - An **enable/disable** toggle and an **Active** badge when enabled
 - Provider-specific configuration fields (expand the card to configure)
@@ -90,7 +87,7 @@ Admins can manage SSO providers in **Settings → SSO**. Each provider is displa
 - A **Remove** button to delete an existing provider configuration
 
 <Frame>
-  <img src="/images/sso/sso-settings.png" alt="SSO settings panel showing all four identity providers" />
+  <img src="/images/sso/sso-settings.png" alt="SSO settings panel showing all five identity providers" />
 </Frame>
 
 Expand a provider card to configure it. The LDAP configuration form includes:
@@ -114,7 +111,7 @@ OIDC providers (Google, GitHub, Okta) share a common configuration form:
 
 | Field | Description |
 |-------|-------------|
-| **Issuer URL** | (Okta only) Your Okta issuer URL |
+| **Issuer URL** | (Okta and Custom OIDC) Your provider's OIDC issuer URL |
 | **Client ID** | OAuth client ID from your identity provider |
 | **Client Secret** | OAuth client secret |
 | **Admin Claim** | JWT claim name inspected for role mapping (e.g., `groups`) |
@@ -124,6 +121,24 @@ OIDC providers (Google, GitHub, Okta) share a common configuration form:
 
 <Frame>
   <img src="/images/sso/sso-settings-oidc.png" alt="Google OIDC configuration form with client ID, client secret, and role claim mapping" />
+</Frame>
+
+### Custom OIDC configuration
+
+The **Custom OIDC** provider has additional fields beyond the standard OIDC configuration:
+
+| Field | Description |
+|-------|-------------|
+| **Display Name** | Label shown on the login button (e.g., "Corporate SSO") |
+| **Issuer URL** | Base URL of the OIDC discovery endpoint (without `/.well-known/openid-configuration`) |
+| **User ID Claim** | Claim name for the unique user identifier (default: `sub`) |
+| **Username Claim** | Claim name for the display name (default: `preferred_username`) |
+| **Email Claim** | Claim name for the email address (default: `email`) |
+
+The claim mapping fields let you tell Sencho which token claims correspond to user identity fields. Most spec-compliant providers use the standard claim names, so you can leave these blank unless your provider uses non-standard names.
+
+<Frame>
+  <img src="/images/sso/sso-settings-custom-oidc.png" alt="Custom OIDC configuration form with discovery URL, claim mapping, and role settings" />
 </Frame>
 
 ### Via environment variables
@@ -172,6 +187,20 @@ Environment variables are useful for initial deployment or infrastructure-as-cod
 | `SSO_OIDC_OKTA_CLIENT_ID` | - | Okta application client ID |
 | `SSO_OIDC_OKTA_CLIENT_SECRET` | - | Okta client secret (encrypted at rest) |
 
+### Custom OIDC
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSO_OIDC_CUSTOM_ENABLED` | `false` | Enable the custom OIDC provider |
+| `SSO_OIDC_CUSTOM_DISPLAY_NAME` | `oidc_custom` | Label shown on the login button |
+| `SSO_OIDC_CUSTOM_ISSUER_URL` | - | OIDC issuer URL (the base of the discovery endpoint) |
+| `SSO_OIDC_CUSTOM_CLIENT_ID` | - | OAuth client ID from your identity provider |
+| `SSO_OIDC_CUSTOM_CLIENT_SECRET` | - | OAuth client secret (encrypted at rest) |
+| `SSO_OIDC_CUSTOM_SCOPES` | `openid email profile` | Space-separated OAuth scopes |
+| `SSO_OIDC_CUSTOM_ID_CLAIM` | `sub` | Token claim for the unique user identifier |
+| `SSO_OIDC_CUSTOM_USERNAME_CLAIM` | `preferred_username` | Token claim for the display name |
+| `SSO_OIDC_CUSTOM_EMAIL_CLAIM` | `email` | Token claim for the email address |
+
 ### General
 
 | Variable | Default | Description |
@@ -187,9 +216,55 @@ Environment variables are useful for initial deployment or infrastructure-as-cod
   If Sencho is behind a reverse proxy (nginx, Traefik, Caddy), you **must** set `SSO_CALLBACK_URL` to your external URL. Otherwise, OAuth callbacks will fail.
 </Warning>
 
-Set `SSO_CALLBACK_URL` to the URL users access Sencho from - for example, `https://sencho.example.com`. Sencho uses this to construct the OAuth redirect URI that your identity provider calls back to.
+Set `SSO_CALLBACK_URL` to the URL users access Sencho from, for example, `https://sencho.example.com`. Sencho uses this to construct the OAuth redirect URI that your identity provider calls back to.
 
 If not set, Sencho auto-detects the URL from the request's `Host` header and protocol, which works for direct access but fails behind proxies that rewrite the host.
+
+## Provider-specific setup examples
+
+### Keycloak
+
+1. Create a new client in your Keycloak realm (Client type: **OpenID Connect**)
+2. Set **Valid redirect URIs** to `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback`
+3. Enable **Client authentication** (confidential access type) and copy the client secret from the Credentials tab
+4. The Issuer URL is your realm URL: `https://keycloak.example.com/realms/myrealm`
+5. Keycloak uses standard claim names by default, so you can leave claim mapping blank
+
+### Authentik
+
+1. Create a new OAuth2/OpenID Provider in Authentik
+2. Set the redirect URI to `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback`
+3. Copy the Client ID and Client Secret
+4. The Issuer URL is `https://authentik.example.com/application/o/<slug>/`
+5. Default claims work. For group-based admin mapping, configure a `groups` scope in Authentik
+
+### Authelia
+
+1. Add an OpenID Connect client to your Authelia configuration
+2. Set `redirect_uris` to include `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback`
+3. The Issuer URL is your Authelia domain: `https://auth.example.com`
+4. Authelia uses standard OIDC claims
+
+### Zitadel
+
+1. Create a new Web application in your Zitadel project
+2. Add `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback` as a redirect URI
+3. The Issuer URL is your Zitadel instance URL: `https://zitadel.example.com`
+4. Copy the Client ID and Client Secret from the application settings
+
+### KanIDM
+
+1. Create a new OAuth2 client in KanIDM
+2. Set the redirect URI and copy the client credentials
+3. The Issuer URL is your KanIDM domain: `https://kanidm.example.com/oauth2/openid/<client_id>`
+4. KanIDM may use `name` instead of `preferred_username` for the username claim. Set **Username Claim** to `name` if usernames are not being mapped correctly.
+
+### Pocket ID
+
+1. Create a new OIDC client in Pocket ID
+2. Set the callback URL to `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback`
+3. The Issuer URL is your Pocket ID instance URL
+4. Copy the Client ID and Secret from the client configuration
 
 ## Security
 
@@ -197,9 +272,52 @@ If not set, Sencho auto-detects the URL from the request's `Host` header and pro
 - **State parameter** - A cryptographic random value protects against CSRF attacks on the OAuth callback
 - **Encrypted secrets** - LDAP bind passwords and OIDC client secrets are encrypted at rest
 - **No local password** - SSO users are created with an unusable password hash. They cannot bypass SSO by using the password login form
-- **Admin-only configuration** - Only Admiral administrators can enable or configure SSO providers
+- **Admin-only configuration** - Only administrators can enable or configure SSO providers
 
-For common SSO issues (LDAP connection errors, OAuth callback mismatches, SSO buttons not appearing), see the [Troubleshooting](/operations/troubleshooting#ldap-connection-refused) page.
+## Troubleshooting
+
+### Discovery URL errors
+
+If the **Test Connection** button returns an error like "Discovery failed" or a network timeout:
+
+- Verify the Issuer URL is reachable from the Sencho container (not just your browser)
+- Confirm the URL does not include `/.well-known/openid-configuration`, just the base issuer URL
+- For providers behind a corporate firewall, ensure the Sencho container's DNS can resolve the hostname
+- Check that HTTPS certificates are valid. Self-signed certificates may require additional container configuration
+
+### Issuer mismatch
+
+If login fails with an issuer validation error, the `issuer` value in the provider's discovery document does not match what Sencho expects. This commonly happens when:
+
+- The Issuer URL has a trailing slash mismatch (e.g., `https://auth.example.com` vs `https://auth.example.com/`)
+- The provider is accessed via a different hostname than it advertises in its discovery document
+
+Fix: set the Issuer URL to exactly match the `issuer` field returned by your provider's `/.well-known/openid-configuration` endpoint.
+
+### Claim mapping not working
+
+If users are created with incorrect usernames or missing emails:
+
+- Enable debug mode (`DEBUG=true` environment variable) to see the raw claims Sencho receives from the provider
+- Check your provider's documentation for which claims it includes in the ID token and userinfo response
+- Verify that the scopes you configured include the necessary permissions (some providers require explicit `profile` or `email` scopes)
+- Set the appropriate claim names in the Custom OIDC claim mapping fields
+
+### Redirect URI mismatch
+
+If the provider returns an "invalid redirect URI" error during login:
+
+- The callback URL configured in your identity provider must exactly match: `https://sencho.example.com/api/auth/sso/oidc/oidc_custom/callback`
+- If Sencho is behind a reverse proxy, set `SSO_CALLBACK_URL` to your external URL
+- Some providers are strict about trailing slashes and HTTP vs HTTPS
+
+### SSO buttons not appearing on login page
+
+- Verify the provider is **enabled** (toggle on) in Settings > SSO
+- Check that the provider configuration was saved successfully
+- The login page fetches enabled providers on load. Hard refresh the page if changes were just made.
+
+For common SSO issues (LDAP connection errors, OAuth callback mismatches), see the [Troubleshooting](/operations/troubleshooting#ldap-connection-refused) page.
 
 ## Combining SSO with two-factor authentication
 

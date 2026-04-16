@@ -87,7 +87,7 @@ export function MultiSelectCombobox({
         disabled={disabled}
         onClick={() => { if (!disabled) setOpen(!open) }}
         className={cn(
-          "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md border border-input bg-transparent px-2.5 text-xs shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors",
+          "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md border border-glass-border bg-input px-2.5 text-xs shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
           selected.size > 0 ? "text-foreground" : "text-muted-foreground",
           open && "ring-1 ring-ring border-ring"
         )}
@@ -97,7 +97,7 @@ export function MultiSelectCombobox({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-[calc(100%+4px)] z-50 min-w-[180px] rounded-md border border-glass-border bg-popover text-popover-foreground shadow-md backdrop-blur-[10px] backdrop-saturate-[1.15] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
+        <div className="absolute left-0 top-full -mt-px z-50 min-w-[180px] rounded-md border border-glass-border bg-popover text-popover-foreground shadow-md backdrop-blur-[10px] backdrop-saturate-[1.15] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
           {options.length > 5 && (
             <div className="p-1.5 border-b border-glass-border">
               <input
