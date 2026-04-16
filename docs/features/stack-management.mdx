@@ -20,6 +20,72 @@ Click **Create Stack** in the left sidebar. Enter a name and click **Create**.
 
 Sencho creates a new directory inside `COMPOSE_DIR` with a blank `compose.yaml` file. You'll land in the editor automatically.
 
+## Convert from a docker run command
+
+If you have a `docker run` command handy (from a README, a forum post, or your shell history), Sencho can turn it into a ready-to-deploy `compose.yaml` without hand translation.
+
+Open the **Create New Stack** dialog and switch to the **From Docker Run** tab.
+
+<Frame>
+  <img src="/images/stack-management/convert-tab-empty.png" alt="Create stack dialog on the From Docker Run tab" />
+</Frame>
+
+### How to use it
+
+1. Enter a **Stack Name**. Same rules as the Empty tab (lowercase, hyphens, unique).
+2. Paste your full command into **Paste your docker run command**. The whole command should be on one logical line; line continuations with `\` are fine.
+3. Click **Convert**. Sencho parses the command and shows the resulting compose YAML in a read-only preview below.
+4. Review the YAML. If it looks right, click **Create Stack**. Sencho creates the stack directory and writes the converted YAML into `compose.yaml`.
+5. The editor opens on the new stack. Click **Start** to deploy it.
+
+<Frame>
+  <img src="/images/stack-management/convert-tab-result.png" alt="Converted compose YAML preview before creating the stack" />
+</Frame>
+
+<Frame>
+  <img src="/images/stack-management/convert-stack-created.png" alt="Newly created stack loaded in the editor after conversion" />
+</Frame>
+
+### Supported flags
+
+The converter handles the flags you reach for most often:
+
+| Flag | Purpose |
+|------|---------|
+| `-d` / `--detach` | Detached mode (implied by compose) |
+| `--name` | Container name |
+| `-p` / `--publish` | Port mappings (`host:container`) |
+| `-v` / `--volume` | Volumes and bind mounts |
+| `-e` / `--env` | Environment variables |
+| `--env-file` | Env file reference |
+| `--restart` | Restart policy (`no`, `always`, `unless-stopped`, `on-failure`) |
+| `--network` | Attach to a named network |
+| `--label` | Container labels |
+| `--user` | Run as a specific user |
+| `--workdir` | Set the working directory |
+| `--entrypoint` | Override the entrypoint |
+| `--cap-add` / `--cap-drop` | Linux capabilities |
+| `--privileged` | Privileged mode |
+| `--read-only` | Read-only root filesystem |
+| `--tmpfs` | Temporary filesystem mount |
+
+The image tag is taken from the final positional argument (for example `nginx:alpine`). Any trailing command arguments are preserved as the service `command`.
+
+### Troubleshooting
+
+<Frame>
+  <img src="/images/stack-management/convert-tab-error.png" alt="Error toast shown when the converter cannot parse the input" />
+</Frame>
+
+If the converter cannot produce a usable compose file, the request fails with a clear error toast. Common causes:
+
+- **Not a docker run command.** The input must begin with `docker run` and include an image reference. Free-form text, `docker compose` commands, and shell pipelines are rejected.
+- **Unrecognized flag.** The parser supports the flags listed above. Rare flags (such as `--userns`, `--ipc`, custom runtime options) may not be recognized. Remove the flag, convert the rest, and add it back by hand in the editor.
+- **Quoting issues.** Multi-line commands with embedded quotes sometimes confuse the parser. Paste the command as a single line with escaped quotes, or simplify the command first.
+- **Command is too long.** The endpoint accepts commands up to 8192 characters. Longer inputs are rejected; trim anything you do not need and convert in pieces.
+
+When a flag is not supported, paste the output you do get into the **Empty** tab as a starting point and fill in the rest by editing `compose.yaml` directly.
+
 ## The stack list
 
 All discovered stacks appear in the left sidebar. Each shows a color-coded status indicator:
