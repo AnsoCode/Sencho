@@ -1,0 +1,247 @@
+---
+title: Security Architecture
+description: How Sencho protects your infrastructure with layered authentication, encryption, access control, and audit logging.
+---
+
+Sencho applies defense-in-depth across authentication, authorization, encryption, and auditing. All security features ship with sensible defaults and work out of the box on a fresh install.
+
+## The authentication stack
+
+Every self-hosted instance includes the full security stack, with advanced features unlocked by tier.
+
+<CardGroup cols={2}>
+
+<Card title="Password authentication" icon="lock-keyhole">
+  Cryptographically hashed credentials with an enforced minimum-length policy aligned to NIST SP 800-63B.
+</Card>
+
+<Card title="Single sign-on" icon="right-to-bracket" href="/features/sso">
+  LDAP/Active Directory, Google, GitHub, Okta, and any spec-compliant OIDC provider, all protected by PKCE and state parameters.
+</Card>
+
+<Card title="Two-factor authentication" icon="shield-check" href="/features/two-factor-authentication">
+  TOTP-based second factor with single-use backup codes, replay prevention, and automatic lockout after repeated failures.
+</Card>
+
+<Card title="Session management" icon="cookie">
+  httpOnly, Secure, SameSite=strict cookies with immediate invalidation on password or role changes.
+</Card>
+
+<Card title="API tokens" icon="key" href="/features/api-tokens">
+  Scoped tokens for CI/CD with three permission levels, hashed storage, and configurable expiry.
+</Card>
+
+<Card title="Role-based access control" icon="users" href="/features/rbac">
+  Five roles with a granular permission matrix and optional per-resource scoped assignments.
+</Card>
+
+<Card title="Audit logging" icon="clipboard-list" href="/features/audit-log">
+  Every mutating API request logged with user, IP, method, and status. Searchable, filterable, and exportable.
+</Card>
+
+<Card title="Encryption at rest" icon="lock">
+  AES-256-GCM encryption for all sensitive values, with the key stored separately from the database.
+</Card>
+
+<Card title="Rate limiting" icon="gauge">
+  Per-user and per-IP rate limiting across authentication endpoints and the global API surface.
+</Card>
+
+<Card title="Node-to-node authentication" icon="network-wired" href="/features/multi-node">
+  Long-lived JWT bearer tokens, encrypted at rest, injected automatically during proxied requests.
+</Card>
+
+</CardGroup>
+
+## Tier availability
+
+Every Sencho instance includes the foundational security stack. Advanced access-control and compliance features are available on paid tiers.
+
+| Feature | Community | Skipper | Admiral |
+|---------|:---------:|:-------:|:-------:|
+| Password authentication | ✓ | ✓ | ✓ |
+| SSO (LDAP, Google, GitHub, Okta, Custom OIDC) | ✓ | ✓ | ✓ |
+| Two-factor authentication (TOTP + backup codes) | ✓ | ✓ | ✓ |
+| Session management (httpOnly, Secure, SameSite) | ✓ | ✓ | ✓ |
+| Encryption at rest (AES-256-GCM) | ✓ | ✓ | ✓ |
+| Rate limiting (auth + API) | ✓ | ✓ | ✓ |
+| Node-to-node authentication | ✓ | ✓ | ✓ |
+| Multi-user with RBAC (Admin, Viewer) | | ✓ | ✓ |
+| Advanced RBAC (Deployer, Node Admin, Auditor) | | | ✓ |
+| Scoped permissions (per-stack, per-node) | | | ✓ |
+| API tokens (scoped, expiring) | | | ✓ |
+| Audit log with export | | | ✓ |
+
+## Password authentication
+
+Sencho enforces a minimum 8-character password policy aligned with [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html). Passwords are cryptographically hashed before storage. On first launch, you create the initial admin account through a setup wizard; additional users can be created from **Settings > Users** on paid tiers.
+
+Changing your password immediately invalidates all other active sessions, so a compromised session cannot survive a password reset.
+
+## Single sign-on
+
+Sencho supports five identity providers: **LDAP/Active Directory**, **Google**, **GitHub**, **Okta**, and any **Custom OIDC** provider (Keycloak, Authentik, Authelia, Zitadel, KanIDM, Pocket ID, and others). SSO is available on every tier, including Community.
+
+All OIDC flows use PKCE (Proof Key for Code Exchange) and a cryptographic state parameter to prevent authorization code interception and cross-site request forgery. SSO credentials (client secrets and LDAP bind passwords) are encrypted at rest with AES-256-GCM.
+
+When a user signs in via SSO for the first time, Sencho automatically provisions a local account with the role mapped from your identity provider's claims. SSO users cannot fall back to password authentication; their access is governed entirely by the identity provider.
+
+<Frame>
+  <img src="/images/sso/sso-settings.png" alt="SSO settings showing all five identity provider cards" />
+</Frame>
+
+For configuration details, see [SSO & LDAP Authentication](/features/sso) or the [SSO Quickstart](/getting-started/sso-quickstart).
+
+## Two-factor authentication
+
+Two-factor authentication adds a TOTP challenge after password verification. Users enroll by scanning a QR code with any standard authenticator app (1Password, Bitwarden, Google Authenticator, Authy, Microsoft Authenticator) and receive ten single-use backup codes.
+
+Security controls include:
+
+- **Lockout**: Five consecutive failed attempts trigger a 15-minute lockout
+- **Replay prevention**: The same code cannot be reused within its 30-second validity window
+- **Backup codes**: Each code is individually hashed and consumed on use; once all ten are spent, you must regenerate from **Settings > Account & Security**
+- **SSO enforcement**: Users who sign in via SSO can optionally require 2FA on every SSO login
+
+<Frame>
+  <img src="/images/two-factor-auth/challenge.png" alt="Two-factor authentication challenge screen" />
+</Frame>
+
+For enrollment steps and admin recovery, see [Two-Factor Authentication](/features/two-factor-authentication) and [2FA Admin Operations](/operations/two-factor-admin).
+
+## Session management
+
+Sencho delivers sessions as JWT cookies with the following protections:
+
+| Property | Value |
+|----------|-------|
+| **httpOnly** | JavaScript cannot read the cookie |
+| **Secure** | Cookie is only sent over HTTPS (or behind a TLS-terminating proxy) |
+| **SameSite** | Strict, preventing cross-site submission |
+| **Lifetime** | 24 hours from issuance |
+
+Sessions are invalidated immediately when any of the following occur: password change, role change, account deletion, or an admin MFA reset. The current session survives its own triggering event (e.g., you stay logged in after changing your own password), but all other sessions for that account are terminated.
+
+During the MFA challenge, a separate short-lived session (5-minute window) restricts the user to the verification endpoint only. If the window expires, the user must re-authenticate from scratch.
+
+## API tokens
+
+API tokens provide scoped, long-lived access for CI/CD pipelines and automation scripts. Three permission levels control what a token can do:
+
+| Scope | Allowed operations |
+|-------|--------------------|
+| **Read Only** | GET requests only |
+| **Deploy Only** | Everything in Read Only, plus deploy, down, restart, stop, start, and update |
+| **Full Admin** | All API operations |
+
+Regardless of scope, tokens are universally blocked from sensitive operations: password management, user administration, SSO configuration, node management, license management, token management, registry credentials, and console access.
+
+Tokens are cryptographically hashed before storage; the raw value is shown exactly once at creation. Each token tracks its last-used timestamp for auditing. You can configure expiry at 30, 60, 90, or 365 days, or leave it open-ended. A maximum of 25 active tokens are allowed per user.
+
+<Frame>
+  <img src="/images/api-tokens/api-tokens-overview.png" alt="API tokens management showing active tokens with scope badges" />
+</Frame>
+
+For setup and usage, see [API Tokens](/features/api-tokens). Admiral tier.
+
+## Role-based access control
+
+Sencho defines five roles with increasing levels of access. Admin and Viewer are available on Skipper; Deployer, Node Admin, and Auditor require Admiral.
+
+### Permission matrix
+
+| Action | Admin | Node Admin | Deployer | Auditor | Viewer |
+|--------|:-----:|:----------:|:--------:|:-------:|:------:|
+| View stacks, logs, stats | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Deploy / restart / stop / start | ✓ | ✓ | ✓ | | |
+| Edit compose and `.env` files | ✓ | ✓ | | | |
+| Create and delete stacks | ✓ | ✓ | | | |
+| View nodes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Add / edit / delete nodes | ✓ | ✓ | | | |
+| Audit log | ✓ | | | ✓ | |
+| System settings | ✓ | | | | |
+| User management | ✓ | | | | |
+| License management | ✓ | | | | |
+| Webhooks | ✓ | | | | |
+| API tokens | ✓ | | | | |
+| Host console | ✓ | | | | |
+
+On Admiral, you can create **scoped assignments** that grant a user elevated permissions on specific stacks or nodes without giving them broad access. For example, a Viewer can be promoted to Deployer on a single production stack.
+
+Account limits are enforced by tier: Community supports one admin, Skipper supports one admin and three viewers, and Admiral supports unlimited accounts.
+
+For user management and scoped permissions, see [RBAC & User Management](/features/rbac).
+
+## Audit logging
+
+Every POST, PUT, DELETE, and PATCH request to the API is recorded in the audit log with the acting username, IP address, HTTP method, response status, and an auto-generated summary. GET requests are excluded to keep the log focused on mutations.
+
+The audit log is searchable by keyword (actions, paths, usernames) and filterable by HTTP method and date range. Results can be exported as CSV or JSON (up to 10,000 entries per export). Retention defaults to 90 days and is configurable from 1 to 365 days in **Settings > Data Retention**.
+
+The **Auditor** role provides read-only access to the audit log without any other administrative privileges, making it suitable for compliance reviewers who should not have access to system settings.
+
+<Frame>
+  <img src="/images/audit-log/audit-log-overview.png" alt="Audit log table showing recent actions with method badges and status codes" />
+</Frame>
+
+For details, see [Audit Log](/features/audit-log). Admiral tier.
+
+## Encryption at rest
+
+Sencho encrypts all sensitive values with AES-256-GCM before writing them to the database. Encrypted fields include:
+
+- TOTP secrets (two-factor authentication)
+- OIDC client secrets and LDAP bind passwords (SSO providers)
+- Git source access tokens
+- Remote node API tokens
+
+The encryption key is generated automatically on first startup (32 random bytes) and stored in a dedicated file with 0600 permissions (owner-only read/write). If the file permissions are found to be too permissive at startup, Sencho corrects them automatically.
+
+The key file and the database are stored separately. Exposure of the database file alone does not reveal encrypted values.
+
+## Rate limiting
+
+Sencho applies tiered rate limiting to prevent credential stuffing and API abuse.
+
+| Surface | Budget | Window |
+|---------|--------|--------|
+| Login and setup endpoints | Strict per-IP limit | 15 minutes |
+| SSO endpoints | Moderate per-IP limit | 15 minutes |
+| Global API | Per-user (authenticated) or per-IP (unauthenticated) | 1 minute |
+
+Authenticated requests are keyed by user identity rather than IP address. This prevents users behind a shared NAT or VPN from pooling into a single budget. High-frequency polling endpoints (health checks, container stats) are exempt from the global limit but subject to their own ceiling.
+
+## Node-to-node authentication
+
+In a multi-node deployment, the gateway Sencho instance authenticates to remote nodes using long-lived JWT bearer tokens with a default one-year expiry. The token is encrypted at rest on the gateway and injected into proxied requests automatically. The browser never handles or sees the node token.
+
+When a request arrives at a remote node, it is verified using the remote instance's own signing key. License tier information is forwarded via headers so that tier-gated features are enforced consistently across the fleet.
+
+For multi-node setup, see [Multi-Node Management](/features/multi-node).
+
+## Supply chain security
+
+Sencho Docker images are signed with [Sigstore cosign](https://www.sigstore.dev/) and include SBOM (Software Bill of Materials) and SLSA provenance attestations. Dependency versions are pinned in the Dockerfile for reproducible builds.
+
+For verification instructions, see [Verifying Images](/reference/verifying-images). For CVE remediation history, see [Security Advisories](/reference/security-advisories).
+
+## Production hardening checklist
+
+<Note>
+  These steps are recommended for production deployments. Sencho works securely out of the box, but the following actions strengthen your security posture.
+</Note>
+
+1. **Place Sencho behind a TLS reverse proxy** (nginx, Traefik, Caddy) so that session cookies are transmitted over HTTPS only. See [Self-Hosting](/operations/self-hosting).
+2. **Enable at least one SSO provider** to centralize identity management and reduce password sprawl. See [SSO & LDAP Authentication](/features/sso).
+3. **Enroll all admin accounts in 2FA** to protect against credential theft. See [Two-Factor Authentication](/features/two-factor-authentication).
+4. **Use scoped API tokens** instead of sharing admin credentials with CI/CD pipelines. See [API Tokens](/features/api-tokens).
+5. **Set `FRONTEND_URL`** to restrict CORS to your domain. See [Configuration](/getting-started/configuration).
+6. **Verify Docker image signatures** before deploying to confirm the image has not been tampered with. See [Verifying Images](/reference/verifying-images).
+7. **Review the audit log regularly** or assign a dedicated Auditor-role user for ongoing compliance monitoring. See [Audit Log](/features/audit-log).
+8. **Keep Sencho updated** to receive security patches and dependency upgrades. See [Upgrade](/operations/upgrade).
+
+## Reporting a vulnerability
+
+If you discover a security vulnerability in Sencho, please report it privately via [security@sencho.io](mailto:security@sencho.io) or through [GitHub private vulnerability reporting](https://github.com/AnsoCode/Sencho/security/advisories/new). Do not open a public issue for security vulnerabilities.
+
+See the full [Security Policy](https://github.com/AnsoCode/Sencho/blob/main/SECURITY.md) for response times and disclosure guidelines.

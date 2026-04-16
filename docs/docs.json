@@ -125,6 +125,7 @@
           {
             "group": "Reference",
             "pages": [
+              "security",
               "features/node-compatibility",
               "reference/settings",
               "reference/verifying-images",
