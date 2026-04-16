@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Search, Rocket, Loader2, Info, ExternalLink, Star } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, Rocket, Loader2, Info, ExternalLink, Star, ShieldCheck } from "lucide-react";
 import { toast } from "@/components/ui/toast-store";
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
@@ -78,9 +79,17 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [newEnvKey, setNewEnvKey] = useState('');
     const [portsInUse, setPortsInUse] = useState<Record<string, PortInUseInfo>>({});
     const [newEnvVal, setNewEnvVal] = useState('');
+    const [autoScan, setAutoScan] = useState(true);
+    const [trivyAvailable, setTrivyAvailable] = useState(false);
 
     useEffect(() => {
         fetchTemplates();
+        apiFetch('/security/trivy-status')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) setTrivyAvailable(!!d.available); })
+            .catch((err) => {
+                console.error('Failed to fetch Trivy status:', err);
+            });
     }, []);
 
     const fetchTemplates = async () => {
@@ -215,7 +224,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                 body: JSON.stringify({
                     stackName: stackName.trim(),
                     template: modifiedTemplate,
-                    envVars: finalEnvVars
+                    envVars: finalEnvVars,
+                    skip_scan: !autoScan
                 })
             });
             const data = await res.json();
@@ -546,7 +556,23 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                             </ScrollArea>
 
                             <SheetFooter className="pt-4 mt-auto border-t sm:justify-start">
-                                <div className="flex flex-col w-full gap-2">
+                                <div className="flex flex-col w-full gap-3">
+                                    {trivyAvailable && (
+                                        <div className="flex items-center gap-2">
+                                            <Checkbox
+                                                id="auto-scan"
+                                                checked={autoScan}
+                                                onCheckedChange={(checked) => setAutoScan(!!checked)}
+                                            />
+                                            <Label
+                                                htmlFor="auto-scan"
+                                                className="text-sm text-muted-foreground cursor-pointer flex items-center gap-1.5"
+                                            >
+                                                <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                Scan images for vulnerabilities after deploy
+                                            </Label>
+                                        </div>
+                                    )}
                                     <Button
                                         onClick={handleDeploy}
                                         disabled={isDeploying || !stackName.trim() || !can('stack:create')}

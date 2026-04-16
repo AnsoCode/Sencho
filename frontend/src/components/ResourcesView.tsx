@@ -18,6 +18,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2 } from 'lucide-react';
+import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
+import { useTrivyStatus } from '@/hooks/useTrivyStatus';
+import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
+import type { ScanSummary, VulnSeverity } from '@/types/security';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
@@ -273,6 +277,73 @@ function ManagedBadge({ status, managedBy }: {
     return null;
 }
 
+// ── Severity Badge ─────────────────────────────────────────────────────────────
+
+const SEVERITY_BADGE_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
+    CRITICAL: 'border-destructive/25 bg-destructive/8 text-destructive',
+    HIGH: 'border-warning/25 bg-warning/8 text-warning',
+    MEDIUM: 'border-info/25 bg-info/8 text-info',
+    LOW: 'border-border bg-muted/30 text-muted-foreground',
+    UNKNOWN: 'border-border bg-muted/20 text-muted-foreground',
+    CLEAN: 'border-success/25 bg-success/8 text-success',
+};
+
+const SEVERITY_DOT_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
+    CRITICAL: 'bg-destructive',
+    HIGH: 'bg-warning',
+    MEDIUM: 'bg-info',
+    LOW: 'bg-muted-foreground/60',
+    UNKNOWN: 'bg-muted-foreground/40',
+    CLEAN: 'bg-success',
+};
+
+function SeverityBadge({ summary, onClick }: { summary: ScanSummary; onClick: () => void }) {
+    const key: VulnSeverity | 'CLEAN' = summary.highest_severity ?? 'CLEAN';
+    const label = key === 'CLEAN' ? 'Clean' : key;
+    const scanAge = Math.round((Date.now() - summary.scanned_at) / 60000);
+    const relative = scanAge < 1 ? 'just now' : scanAge < 60 ? `${scanAge}m ago` : scanAge < 1440 ? `${Math.round(scanAge / 60)}h ago` : `${Math.round(scanAge / 1440)}d ago`;
+
+    return (
+        <CursorProvider>
+            <CursorContainer className="inline-flex">
+                <button
+                    type="button"
+                    onClick={onClick}
+                    className={cn(
+                        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium cursor-pointer hover:brightness-110 transition',
+                        SEVERITY_BADGE_CLASSES[key],
+                    )}
+                >
+                    <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', SEVERITY_DOT_CLASSES[key])} />
+                    {label}
+                </button>
+            </CursorContainer>
+            <Cursor>
+                <div className="h-2 w-2 rounded-full bg-brand" />
+            </Cursor>
+            <CursorFollow side="bottom" align="end" sideOffset={8}>
+                <div className="bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] border border-card-border shadow-md rounded-md px-3 py-2">
+                    <div className="font-mono tabular-nums text-xs space-y-1">
+                        <div className="text-stat-subtitle uppercase tracking-wide">Last scanned</div>
+                        <div className="text-stat-value">{relative}</div>
+                        {summary.total > 0 && (
+                            <div className="flex gap-3 mt-1">
+                                {summary.critical > 0 && <span className="text-destructive">{summary.critical}C</span>}
+                                {summary.high > 0 && <span className="text-warning">{summary.high}H</span>}
+                                {summary.medium > 0 && <span className="text-info">{summary.medium}M</span>}
+                                {summary.low > 0 && <span className="text-muted-foreground">{summary.low}L</span>}
+                            </div>
+                        )}
+                        {summary.total === 0 && (
+                            <div className="text-success">No vulnerabilities</div>
+                        )}
+                    </div>
+                </div>
+            </CursorFollow>
+        </CursorProvider>
+    );
+}
+
 // ── Quick Clean Prune Button ───────────────────────────────────────────────────
 
 interface PruneButtonProps {
@@ -380,13 +451,20 @@ export default function ResourcesView() {
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
     const [bulkPurgeConfirm, setBulkPurgeConfirm] = useState(false);
 
+    // Vulnerability scanning state
+    const trivy = useTrivyStatus();
+    const [scanSummaries, setScanSummaries] = useState<Record<string, ScanSummary>>({});
+    const [scanningImageRef, setScanningImageRef] = useState<string | null>(null);
+    const [inspectScanId, setInspectScanId] = useState<number | null>(null);
+
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [usageRes, resourcesRes, orphansRes] = await Promise.all([
+            const [usageRes, resourcesRes, orphansRes, summariesRes] = await Promise.all([
                 apiFetch('/system/docker-df'),
                 apiFetch('/system/resources'),
                 apiFetch('/system/orphans'),
+                apiFetch('/security/image-summaries').catch(() => null),
             ]);
 
             if (usageRes.ok) setUsage(await usageRes.json());
@@ -399,6 +477,10 @@ export default function ResourcesView() {
             if (orphansRes.ok) {
                 setOrphans(await orphansRes.json());
                 setSelectedOrphans([]);
+            }
+            if (summariesRes && summariesRes.ok) {
+                const data = await summariesRes.json();
+                setScanSummaries(data ?? {});
             }
         } catch (err) {
             console.error('Failed to fetch data', err);
@@ -491,6 +573,48 @@ export default function ResourcesView() {
         } finally {
             toast.dismiss(loadingId);
             setIsActioning(false);
+        }
+    };
+
+    const handleScanImage = async (imageRef: string, force = false) => {
+        setScanningImageRef(imageRef);
+        const loadingId = toast.loading(`Scanning ${imageRef}...`);
+        try {
+            const res = await apiFetch('/security/scan', {
+                method: 'POST',
+                body: JSON.stringify({ imageRef, force }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Failed to start scan');
+            const scanId = data.scanId as number;
+
+            const deadline = Date.now() + 5 * 60 * 1000;
+            while (Date.now() < deadline) {
+                await new Promise(r => setTimeout(r, 3000));
+                const poll = await apiFetch(`/security/scans/${scanId}`);
+                if (!poll.ok) continue;
+                const poll_data = await poll.json();
+                if (poll_data.status !== 'in_progress') {
+                    if (poll_data.status === 'failed') {
+                        throw new Error(poll_data.error || 'Scan failed');
+                    }
+                    toast.success(`Scan complete: ${poll_data.total_vulnerabilities} vulnerabilities found`);
+                    setInspectScanId(scanId);
+                    const summariesRes = await apiFetch('/security/image-summaries');
+                    if (summariesRes.ok) {
+                        const summaries = await summariesRes.json();
+                        setScanSummaries(summaries ?? {});
+                    }
+                    return;
+                }
+            }
+            throw new Error('Scan timed out');
+        } catch (error) {
+            const err = error as { message?: string };
+            toast.error(err?.message || 'Scan failed');
+        } finally {
+            toast.dismiss(loadingId);
+            setScanningImageRef(null);
         }
     };
 
@@ -720,12 +844,36 @@ export default function ResourcesView() {
                                                         {img.Containers > 0 ? "In Use" : "Unused"}
                                                     </Badge>
                                                     <ManagedBadge status={img.managedStatus} managedBy={img.managedBy} />
+                                                    {(() => {
+                                                        const tag = img.RepoTags?.[0];
+                                                        const summary = tag ? scanSummaries[tag] : undefined;
+                                                        if (!summary) return null;
+                                                        return <SeverityBadge summary={summary} onClick={() => setInspectScanId(summary.scan_id)} />;
+                                                    })()}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
-                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                                </Button>}
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {trivy.available && isAdmin && img.RepoTags?.[0] && img.RepoTags[0] !== '<none>:<none>' && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                                                            disabled={scanningImageRef === img.RepoTags[0]}
+                                                            onClick={() => handleScanImage(img.RepoTags![0])}
+                                                            title="Scan for vulnerabilities"
+                                                        >
+                                                            {scanningImageRef === img.RepoTags[0] ? (
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
+                                                            ) : (
+                                                                <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                            )}
+                                                        </Button>
+                                                    )}
+                                                    {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
+                                                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                    </Button>}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -1306,6 +1454,13 @@ export default function ResourcesView() {
                   </ScrollArea>
                 </SheetContent>
             </Sheet>
+
+            <VulnerabilityScanSheet
+                scanId={inspectScanId}
+                onClose={() => setInspectScanId(null)}
+                onRescan={(imageRef) => { setInspectScanId(null); handleScanImage(imageRef, true); }}
+                canGenerateSbom={isPaid}
+            />
         </div>
     );
 }

@@ -212,7 +212,7 @@ export interface ScheduledTask {
     target_type: 'stack' | 'fleet' | 'system';
     target_id: string | null;
     node_id: number | null;
-    action: 'restart' | 'snapshot' | 'prune' | 'update';
+    action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan';
     cron_expression: string;
     enabled: number;
     created_by: string;
@@ -262,6 +262,72 @@ export interface NotificationRoute {
     enabled: boolean;
     created_at: number;
     updated_at: number;
+}
+
+export type VulnSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+export type VulnScanStatus = 'in_progress' | 'completed' | 'failed';
+export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy';
+
+export interface VulnerabilityScan {
+    id: number;
+    node_id: number;
+    image_ref: string;
+    image_digest: string | null;
+    scanned_at: number;
+    total_vulnerabilities: number;
+    critical_count: number;
+    high_count: number;
+    medium_count: number;
+    low_count: number;
+    unknown_count: number;
+    fixable_count: number;
+    highest_severity: VulnSeverity | null;
+    os_info: string | null;
+    trivy_version: string | null;
+    scan_duration_ms: number | null;
+    triggered_by: VulnScanTrigger;
+    status: VulnScanStatus;
+    error: string | null;
+    stack_context: string | null;
+}
+
+export interface VulnerabilityDetail {
+    id: number;
+    scan_id: number;
+    vulnerability_id: string;
+    pkg_name: string;
+    installed_version: string;
+    fixed_version: string | null;
+    severity: VulnSeverity;
+    title: string | null;
+    description: string | null;
+    primary_url: string | null;
+}
+
+export interface ScanPolicy {
+    id: number;
+    name: string;
+    node_id: number | null;
+    stack_pattern: string | null;
+    max_severity: VulnSeverity;
+    block_on_deploy: number;
+    enabled: number;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface ScanSummary {
+    image_ref: string;
+    highest_severity: VulnSeverity | null;
+    total: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    unknown: number;
+    fixable: number;
+    scanned_at: number;
+    scan_id: number;
 }
 
 export class DatabaseService {
@@ -489,6 +555,62 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task ON scheduled_task_runs(task_id);
       CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status ON scheduled_task_runs(status);
       CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
+
+      CREATE TABLE IF NOT EXISTS vulnerability_scans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id INTEGER NOT NULL,
+        image_ref TEXT NOT NULL,
+        image_digest TEXT,
+        scanned_at INTEGER NOT NULL,
+        total_vulnerabilities INTEGER NOT NULL DEFAULT 0,
+        critical_count INTEGER NOT NULL DEFAULT 0,
+        high_count INTEGER NOT NULL DEFAULT 0,
+        medium_count INTEGER NOT NULL DEFAULT 0,
+        low_count INTEGER NOT NULL DEFAULT 0,
+        unknown_count INTEGER NOT NULL DEFAULT 0,
+        fixable_count INTEGER NOT NULL DEFAULT 0,
+        highest_severity TEXT,
+        os_info TEXT,
+        trivy_version TEXT,
+        scan_duration_ms INTEGER,
+        triggered_by TEXT NOT NULL DEFAULT 'manual',
+        status TEXT NOT NULL DEFAULT 'completed',
+        error TEXT,
+        stack_context TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_vuln_scans_node_image ON vulnerability_scans(node_id, image_ref);
+      CREATE INDEX IF NOT EXISTS idx_vuln_scans_digest ON vulnerability_scans(image_digest);
+      CREATE INDEX IF NOT EXISTS idx_vuln_scans_scanned_at ON vulnerability_scans(scanned_at);
+
+      CREATE TABLE IF NOT EXISTS vulnerability_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scan_id INTEGER NOT NULL,
+        vulnerability_id TEXT NOT NULL,
+        pkg_name TEXT NOT NULL,
+        installed_version TEXT NOT NULL,
+        fixed_version TEXT,
+        severity TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
+        primary_url TEXT,
+        FOREIGN KEY(scan_id) REFERENCES vulnerability_scans(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_vuln_details_scan ON vulnerability_details(scan_id);
+      CREATE INDEX IF NOT EXISTS idx_vuln_details_severity ON vulnerability_details(severity);
+
+      CREATE TABLE IF NOT EXISTS scan_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        node_id INTEGER,
+        stack_pattern TEXT,
+        max_severity TEXT NOT NULL DEFAULT 'CRITICAL',
+        block_on_deploy INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS stack_labels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1900,6 +2022,350 @@ export class DatabaseService {
     public cleanupOldTaskRuns(retentionDays = 30): void {
         const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
         this.db.prepare('DELETE FROM scheduled_task_runs WHERE started_at < ?').run(cutoff);
+    }
+
+    // --- Vulnerability Scans ---
+
+    public createVulnerabilityScan(
+        scan: Omit<VulnerabilityScan, 'id'>,
+    ): number {
+        const stmt = this.db.prepare(
+            `INSERT INTO vulnerability_scans (
+                node_id, image_ref, image_digest, scanned_at,
+                total_vulnerabilities, critical_count, high_count, medium_count,
+                low_count, unknown_count, fixable_count, highest_severity,
+                os_info, trivy_version, scan_duration_ms, triggered_by, status,
+                error, stack_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const result = stmt.run(
+            scan.node_id,
+            scan.image_ref,
+            scan.image_digest,
+            scan.scanned_at,
+            scan.total_vulnerabilities,
+            scan.critical_count,
+            scan.high_count,
+            scan.medium_count,
+            scan.low_count,
+            scan.unknown_count,
+            scan.fixable_count,
+            scan.highest_severity,
+            scan.os_info,
+            scan.trivy_version,
+            scan.scan_duration_ms,
+            scan.triggered_by,
+            scan.status,
+            scan.error,
+            scan.stack_context,
+        );
+        return result.lastInsertRowid as number;
+    }
+
+    public updateVulnerabilityScan(
+        id: number,
+        updates: Partial<Omit<VulnerabilityScan, 'id'>>,
+    ): void {
+        const ALLOWED_COLUMNS = new Set([
+            'node_id', 'image_ref', 'image_digest', 'scanned_at',
+            'total_vulnerabilities', 'critical_count', 'high_count',
+            'medium_count', 'low_count', 'unknown_count', 'fixable_count',
+            'highest_severity', 'os_info', 'trivy_version', 'scan_duration_ms',
+            'triggered_by', 'status', 'error', 'stack_context',
+        ]);
+        const fields: string[] = [];
+        const values: unknown[] = [];
+        for (const [key, value] of Object.entries(updates)) {
+            if (!ALLOWED_COLUMNS.has(key)) continue;
+            fields.push(`${key} = ?`);
+            values.push(value);
+        }
+        if (fields.length === 0) return;
+        values.push(id);
+        this.db
+            .prepare(`UPDATE vulnerability_scans SET ${fields.join(', ')} WHERE id = ?`)
+            .run(...(values as never[]));
+    }
+
+    public getVulnerabilityScan(id: number): VulnerabilityScan | null {
+        return (
+            (this.db
+                .prepare('SELECT * FROM vulnerability_scans WHERE id = ?')
+                .get(id) as VulnerabilityScan | undefined) ?? null
+        );
+    }
+
+    public getVulnerabilityScans(
+        nodeId: number,
+        opts: { imageRef?: string; limit?: number; offset?: number } = {},
+    ): { items: VulnerabilityScan[]; total: number } {
+        const limit = Math.max(1, Math.min(opts.limit ?? 50, 500));
+        const offset = Math.max(0, opts.offset ?? 0);
+        const where = ['node_id = ?'];
+        const params: unknown[] = [nodeId];
+        if (opts.imageRef) {
+            where.push('image_ref = ?');
+            params.push(opts.imageRef);
+        }
+        const whereSql = where.join(' AND ');
+        const total = (
+            this.db
+                .prepare(`SELECT COUNT(*) as cnt FROM vulnerability_scans WHERE ${whereSql}`)
+                .get(...(params as never[])) as { cnt: number }
+        ).cnt;
+        const items = this.db
+            .prepare(
+                `SELECT * FROM vulnerability_scans WHERE ${whereSql} ORDER BY scanned_at DESC LIMIT ? OFFSET ?`,
+            )
+            .all(...(params as never[]), limit, offset) as VulnerabilityScan[];
+        return { items, total };
+    }
+
+    public getLatestScanForImage(
+        nodeId: number,
+        imageRef: string,
+    ): VulnerabilityScan | null {
+        return (
+            (this.db
+                .prepare(
+                    'SELECT * FROM vulnerability_scans WHERE node_id = ? AND image_ref = ? ORDER BY scanned_at DESC LIMIT 1',
+                )
+                .get(nodeId, imageRef) as VulnerabilityScan | undefined) ?? null
+        );
+    }
+
+    public getLatestScanByDigest(digest: string): VulnerabilityScan | null {
+        if (!digest) return null;
+        return (
+            (this.db
+                .prepare(
+                    "SELECT * FROM vulnerability_scans WHERE image_digest = ? AND status = 'completed' ORDER BY scanned_at DESC LIMIT 1",
+                )
+                .get(digest) as VulnerabilityScan | undefined) ?? null
+        );
+    }
+
+    public deleteOldScans(olderThanMs: number): number {
+        const cutoff = Date.now() - olderThanMs;
+        const result = this.db
+            .prepare('DELETE FROM vulnerability_scans WHERE scanned_at < ?')
+            .run(cutoff);
+        return result.changes;
+    }
+
+    public isImageBeingScanned(nodeId: number, imageRef: string): boolean {
+        const row = this.db
+            .prepare(
+                "SELECT id FROM vulnerability_scans WHERE node_id = ? AND image_ref = ? AND status = 'in_progress' LIMIT 1",
+            )
+            .get(nodeId, imageRef);
+        return !!row;
+    }
+
+    public insertVulnerabilityDetails(
+        scanId: number,
+        details: Array<Omit<VulnerabilityDetail, 'id' | 'scan_id'>>,
+    ): void {
+        if (details.length === 0) return;
+        const stmt = this.db.prepare(
+            `INSERT INTO vulnerability_details (
+                scan_id, vulnerability_id, pkg_name, installed_version,
+                fixed_version, severity, title, description, primary_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const txn = this.db.transaction((rows: typeof details) => {
+            for (const d of rows) {
+                stmt.run(
+                    scanId,
+                    d.vulnerability_id,
+                    d.pkg_name,
+                    d.installed_version,
+                    d.fixed_version,
+                    d.severity,
+                    d.title,
+                    d.description,
+                    d.primary_url,
+                );
+            }
+        });
+        txn(details);
+    }
+
+    public getVulnerabilityDetails(
+        scanId: number,
+        opts: { severity?: VulnSeverity; limit?: number; offset?: number } = {},
+    ): { items: VulnerabilityDetail[]; total: number } {
+        const limit = Math.max(1, Math.min(opts.limit ?? 100, 1000));
+        const offset = Math.max(0, opts.offset ?? 0);
+        const where = ['scan_id = ?'];
+        const params: unknown[] = [scanId];
+        if (opts.severity) {
+            where.push('severity = ?');
+            params.push(opts.severity);
+        }
+        const whereSql = where.join(' AND ');
+        const total = (
+            this.db
+                .prepare(`SELECT COUNT(*) as cnt FROM vulnerability_details WHERE ${whereSql}`)
+                .get(...(params as never[])) as { cnt: number }
+        ).cnt;
+        const severityOrder = `CASE severity
+            WHEN 'CRITICAL' THEN 0
+            WHEN 'HIGH' THEN 1
+            WHEN 'MEDIUM' THEN 2
+            WHEN 'LOW' THEN 3
+            ELSE 4 END`;
+        const items = this.db
+            .prepare(
+                `SELECT * FROM vulnerability_details WHERE ${whereSql} ORDER BY ${severityOrder}, pkg_name LIMIT ? OFFSET ?`,
+            )
+            .all(...(params as never[]), limit, offset) as VulnerabilityDetail[];
+        return { items, total };
+    }
+
+    public getImageScanSummaries(nodeId: number): Record<string, ScanSummary> {
+        const rows = this.db
+            .prepare(
+                `SELECT vs.image_ref, vs.id as scan_id, vs.highest_severity, vs.total_vulnerabilities,
+                    vs.critical_count, vs.high_count, vs.medium_count, vs.low_count,
+                    vs.unknown_count, vs.fixable_count, vs.scanned_at
+                 FROM vulnerability_scans vs
+                 INNER JOIN (
+                   SELECT image_ref, MAX(scanned_at) AS max_scanned
+                   FROM vulnerability_scans
+                   WHERE node_id = ? AND status = 'completed'
+                   GROUP BY image_ref
+                 ) latest ON latest.image_ref = vs.image_ref AND latest.max_scanned = vs.scanned_at
+                 WHERE vs.node_id = ? AND vs.status = 'completed'`,
+            )
+            .all(nodeId, nodeId) as Array<{
+                image_ref: string;
+                scan_id: number;
+                highest_severity: VulnSeverity | null;
+                total_vulnerabilities: number;
+                critical_count: number;
+                high_count: number;
+                medium_count: number;
+                low_count: number;
+                unknown_count: number;
+                fixable_count: number;
+                scanned_at: number;
+            }>;
+        const out: Record<string, ScanSummary> = {};
+        for (const r of rows) {
+            out[r.image_ref] = {
+                image_ref: r.image_ref,
+                highest_severity: r.highest_severity,
+                total: r.total_vulnerabilities,
+                critical: r.critical_count,
+                high: r.high_count,
+                medium: r.medium_count,
+                low: r.low_count,
+                unknown: r.unknown_count,
+                fixable: r.fixable_count,
+                scanned_at: r.scanned_at,
+                scan_id: r.scan_id,
+            };
+        }
+        return out;
+    }
+
+    // --- Scan Policies ---
+
+    public getScanPolicies(): ScanPolicy[] {
+        return this.db
+            .prepare('SELECT * FROM scan_policies ORDER BY created_at DESC')
+            .all() as ScanPolicy[];
+    }
+
+    public getScanPolicy(id: number): ScanPolicy | null {
+        return (
+            (this.db
+                .prepare('SELECT * FROM scan_policies WHERE id = ?')
+                .get(id) as ScanPolicy | undefined) ?? null
+        );
+    }
+
+    public createScanPolicy(
+        policy: Omit<ScanPolicy, 'id' | 'created_at' | 'updated_at'>,
+    ): ScanPolicy {
+        const now = Date.now();
+        const result = this.db
+            .prepare(
+                `INSERT INTO scan_policies (name, node_id, stack_pattern, max_severity, block_on_deploy, enabled, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+                policy.name,
+                policy.node_id,
+                policy.stack_pattern,
+                policy.max_severity,
+                policy.block_on_deploy,
+                policy.enabled,
+                now,
+                now,
+            );
+        return { ...policy, id: result.lastInsertRowid as number, created_at: now, updated_at: now };
+    }
+
+    public updateScanPolicy(
+        id: number,
+        updates: Partial<Omit<ScanPolicy, 'id' | 'created_at' | 'updated_at'>>,
+    ): ScanPolicy | null {
+        const existing = this.getScanPolicy(id);
+        if (!existing) return null;
+        const ALLOWED_COLUMNS = new Set([
+            'name', 'node_id', 'stack_pattern', 'max_severity',
+            'block_on_deploy', 'enabled',
+        ]);
+        const fields: string[] = [];
+        const values: unknown[] = [];
+        for (const [key, value] of Object.entries(updates)) {
+            if (!ALLOWED_COLUMNS.has(key)) continue;
+            fields.push(`${key} = ?`);
+            values.push(value);
+        }
+        if (fields.length === 0) return existing;
+        fields.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+        this.db
+            .prepare(`UPDATE scan_policies SET ${fields.join(', ')} WHERE id = ?`)
+            .run(...(values as never[]));
+        return this.getScanPolicy(id);
+    }
+
+    public deleteScanPolicy(id: number): void {
+        this.db.prepare('DELETE FROM scan_policies WHERE id = ?').run(id);
+    }
+
+    public getMatchingPolicy(
+        nodeId: number,
+        stackName: string | null,
+    ): ScanPolicy | null {
+        const policies = this.db
+            .prepare(
+                'SELECT * FROM scan_policies WHERE enabled = 1 AND (node_id IS NULL OR node_id = ?)',
+            )
+            .all(nodeId) as ScanPolicy[];
+        const matchesStack = (pattern: string | null): boolean => {
+            if (!pattern) return true;
+            if (!stackName) return false;
+            const regex = new RegExp(
+                '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
+            );
+            return regex.test(stackName);
+        };
+        const scoped = policies.filter((p) => matchesStack(p.stack_pattern));
+        if (scoped.length === 0) return null;
+        scoped.sort((a, b) => {
+            if (a.node_id && !b.node_id) return -1;
+            if (!a.node_id && b.node_id) return 1;
+            if (a.stack_pattern && !b.stack_pattern) return -1;
+            if (!a.stack_pattern && b.stack_pattern) return 1;
+            return 0;
+        });
+        return scoped[0];
     }
 
     // --- Stack Labels ---

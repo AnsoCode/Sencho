@@ -4,6 +4,7 @@ export { UsersSection } from './UsersSection';
 export { SystemSection } from './SystemSection';
 export { NotificationsSection } from './NotificationsSection';
 export { WebhooksSection } from './WebhooksSection';
+export { SecuritySection } from './SecuritySection';
 export { DeveloperSection } from './DeveloperSection';
 export { AppStoreSection } from './AppStoreSection';
 export { SupportSection } from './SupportSection';

@@ -69,6 +69,7 @@ import { getErrorMessage } from './utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
+import TrivyService, { SbomFormat } from './services/TrivyService';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
@@ -1578,11 +1579,77 @@ function isSqliteUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE';
 }
 
-// Tier gate for scheduled tasks: 'update' action requires Skipper+, everything else requires Admiral.
+// Tier gate for scheduled tasks: 'update' and 'scan' actions require Skipper+, everything else requires Admiral.
 const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
-  if (action === 'update') return requirePaid(req, res);
+  if (action === 'update' || action === 'scan') return requirePaid(req, res);
   return requireAdmiral(req, res);
 };
+
+async function triggerPostDeployScan(
+  stackName: string,
+  nodeId: number,
+): Promise<void> {
+  const svc = TrivyService.getInstance();
+  if (!svc.isTrivyAvailable()) return;
+  try {
+    const docker = DockerController.getInstance(nodeId).getDocker();
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { label: [`com.docker.compose.project=${stackName}`] },
+    });
+    const imageRefs = new Set<string>();
+    for (const c of containers as Array<{ Image?: string }>) {
+      if (c.Image && !c.Image.startsWith('sha256:')) imageRefs.add(c.Image);
+    }
+    if (imageRefs.size === 0) return;
+
+    const db = DatabaseService.getInstance();
+    const policy = db.getMatchingPolicy(nodeId, stackName);
+    const severityRank = (s: string | null | undefined): number => {
+      switch ((s ?? '').toUpperCase()) {
+        case 'CRITICAL': return 4;
+        case 'HIGH': return 3;
+        case 'MEDIUM': return 2;
+        case 'LOW': return 1;
+        default: return 0;
+      }
+    };
+
+    for (const imageRef of imageRefs) {
+      try {
+        const digest = await svc.getImageDigest(imageRef, nodeId);
+        if (digest) {
+          const cached = db.getLatestScanByDigest(digest);
+          if (cached && Date.now() - cached.scanned_at < 24 * 60 * 60 * 1000) continue;
+        }
+        const scan = await svc.runScanAndPersist(imageRef, nodeId, 'deploy', stackName);
+
+        if (scan.critical_count > 0 || scan.high_count > 0) {
+          NotificationService.getInstance().dispatchAlert(
+            scan.critical_count > 0 ? 'error' : 'warning',
+            `Vulnerability scan for ${imageRef}: ${scan.critical_count} critical, ${scan.high_count} high`,
+            stackName,
+          );
+        }
+
+        if (
+          policy &&
+          severityRank(scan.highest_severity) >= severityRank(policy.max_severity)
+        ) {
+          NotificationService.getInstance().dispatchAlert(
+            policy.block_on_deploy ? 'error' : 'warning',
+            `Policy "${policy.name}" triggered for ${imageRef}: ${scan.highest_severity} exceeds ${policy.max_severity}`,
+            stackName,
+          );
+        }
+      } catch (err) {
+        console.error(`[Security] Post-deploy scan failed for ${imageRef}:`, (err as Error).message);
+      }
+    }
+  } catch (err) {
+    console.error(`[Security] triggerPostDeployScan error for ${stackName}:`, (err as Error).message);
+  }
+}
 
 // --- Scoped RBAC Permission Engine (Admiral) ---
 
@@ -4474,6 +4541,11 @@ app.post('/api/stacks/:stackName/git-source/apply', async (req: Request, res: Re
       console.log(`[GitSource] Applied commit ${shortSha} to ${stackName}`);
     }
     res.json(result);
+    if (result.deployed) {
+      triggerPostDeployScan(stackName, req.nodeId).catch(err =>
+        console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+      );
+    }
   } catch (error) {
     sendGitSourceError(res, error);
   }
@@ -4641,6 +4713,11 @@ app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
       deployed,
       deployError,
     });
+    if (deployed) {
+      triggerPostDeployScan(stack_name, req.nodeId).catch(err =>
+        console.error(`[Security] Post-deploy scan failed for ${stack_name}:`, err),
+      );
+    }
   } catch (error) {
     if (fromGitDiag) {
       const code = error instanceof GitSourceError ? error.code : 'UNKNOWN';
@@ -4791,6 +4868,9 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
     console.log(`[Stacks] Deploy completed: ${stackName}`);
     if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
     res.json({ message: 'Deployed successfully' });
+    triggerPostDeployScan(stackName, req.nodeId).catch(err =>
+      console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+    );
   } catch (error: unknown) {
     console.error(`[Stacks] Deploy failed: ${stackName}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
@@ -4910,6 +4990,9 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     console.log(`[Stacks] Update completed: ${stackName}`);
     if (debug) console.debug(`[Stacks:debug] Update finished in ${Date.now() - t0}ms`);
     res.json({ status: 'Update completed' });
+    triggerPostDeployScan(stackName, req.nodeId).catch(err =>
+      console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+    );
   } catch (error) {
     console.error(`[Stacks] Update failed: ${stackName}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
@@ -6033,8 +6116,8 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     if (!['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type. Must be stack, fleet, or system.' }); return;
     }
-    if (!['restart', 'snapshot', 'prune', 'update'].includes(action)) {
-      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, prune, or update.' }); return;
+    if (!['restart', 'snapshot', 'prune', 'update', 'scan'].includes(action)) {
+      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, prune, update, or scan.' }); return;
     }
     // Tier gate based on action type
     if (!requireScheduledTaskTier(action, req, res)) return;
@@ -6050,6 +6133,9 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     }
     if (action === 'prune' && target_type !== 'system') {
       res.status(400).json({ error: 'Prune action requires target_type "system".' }); return;
+    }
+    if (action === 'scan' && target_type !== 'system') {
+      res.status(400).json({ error: 'Scan action requires target_type "system".' }); return;
     }
     if (target_type === 'stack' && (!target_id || !node_id)) {
       res.status(400).json({ error: 'Stack operations require target_id and node_id.' }); return;
@@ -6151,7 +6237,7 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     if (target_type && !['stack', 'fleet', 'system'].includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type' }); return;
     }
-    if (action && !['restart', 'snapshot', 'prune', 'update'].includes(action)) {
+    if (action && !['restart', 'snapshot', 'prune', 'update', 'scan'].includes(action)) {
       res.status(400).json({ error: 'Invalid action' }); return;
     }
 
@@ -6168,6 +6254,9 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
     if (finalAction === 'prune' && finalTargetType !== 'system') {
       res.status(400).json({ error: 'Prune action requires target_type "system".' }); return;
+    }
+    if (finalAction === 'scan' && finalTargetType !== 'system') {
+      res.status(400).json({ error: 'Scan action requires target_type "system".' }); return;
     }
 
     // Validate prune targets
@@ -6847,7 +6936,7 @@ app.post('/api/templates/refresh-cache', authMiddleware, (req: Request, res: Res
 app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const { stackName, template, envVars } = req.body;
+    const { stackName, template, envVars, skip_scan } = req.body;
 
     if (!stackName || !template) {
       return res.status(400).json({ error: 'stackName and template are required' });
@@ -6906,6 +6995,11 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
       invalidateNodeCaches(req.nodeId);
       console.log(`[Templates] Deploy completed: ${stackName}`);
       res.json({ success: true, message: 'Template deployed successfully' });
+      if (!skip_scan) {
+        triggerPostDeployScan(stackName, req.nodeId).catch(err =>
+          console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+        );
+      }
     } catch (deployError: unknown) {
       const rawError = getErrorMessage(deployError, String(deployError));
       console.error(`[Templates] Deploy failed: ${stackName} -`, rawError);
@@ -7149,6 +7243,299 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
     console.error('[AutoUpdate] Execute error:', msg);
     res.status(500).json({ error: msg });
   }
+});
+
+// =========================
+// Vulnerability Scanning Routes
+// =========================
+
+app.get('/api/security/trivy-status', authMiddleware, (_req: Request, res: Response) => {
+  const svc = TrivyService.getInstance();
+  res.json({ available: svc.isTrivyAvailable(), version: svc.getVersion() });
+});
+
+app.post('/api/security/scan', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (!svc.isTrivyAvailable()) {
+    res.status(503).json({ error: 'Trivy is not available on this host' });
+    return;
+  }
+  const imageRef = typeof req.body?.imageRef === 'string' ? req.body.imageRef.trim() : '';
+  if (!imageRef) {
+    res.status(400).json({ error: 'imageRef is required' });
+    return;
+  }
+  const stackContext = typeof req.body?.stackName === 'string' ? req.body.stackName : null;
+  const force = req.body?.force === true;
+  const nodeId = req.nodeId;
+  if (svc.isScanning(nodeId, imageRef)) {
+    res.status(409).json({ error: 'Already scanning this image' });
+    return;
+  }
+  const db = DatabaseService.getInstance();
+  const scanId = db.createVulnerabilityScan({
+    node_id: nodeId,
+    image_ref: imageRef,
+    image_digest: null,
+    scanned_at: Date.now(),
+    total_vulnerabilities: 0,
+    critical_count: 0,
+    high_count: 0,
+    medium_count: 0,
+    low_count: 0,
+    unknown_count: 0,
+    fixable_count: 0,
+    highest_severity: null,
+    os_info: null,
+    trivy_version: svc.getVersion(),
+    scan_duration_ms: null,
+    triggered_by: 'manual',
+    status: 'in_progress',
+    error: null,
+    stack_context: stackContext,
+  });
+  res.status(202).json({ scanId });
+
+  const startedAt = Date.now();
+  (async () => {
+    try {
+      const result = await svc.scanImage(imageRef, nodeId, { useCache: !force });
+      db.updateVulnerabilityScan(scanId, {
+        image_digest: result.imageDigest,
+        scanned_at: result.scannedAt,
+        total_vulnerabilities: result.totalVulnerabilities,
+        critical_count: result.criticalCount,
+        high_count: result.highCount,
+        medium_count: result.mediumCount,
+        low_count: result.lowCount,
+        unknown_count: result.unknownCount,
+        fixable_count: result.fixableCount,
+        highest_severity: result.highestSeverity,
+        os_info: result.metadata.os,
+        trivy_version: result.metadata.trivyVersion,
+        scan_duration_ms: result.metadata.scanDurationMs,
+        status: 'completed',
+      });
+      db.insertVulnerabilityDetails(
+        scanId,
+        result.vulnerabilities.map((v) => ({
+          vulnerability_id: v.vulnerabilityId,
+          pkg_name: v.pkgName,
+          installed_version: v.installedVersion,
+          fixed_version: v.fixedVersion,
+          severity: v.severity,
+          title: v.title || null,
+          description: v.description || null,
+          primary_url: v.primaryUrl,
+        })),
+      );
+    } catch (err) {
+      const msg = (err as Error).message || 'Scan failed';
+      console.error(`[Security] Scan failed for ${imageRef}:`, msg);
+      db.updateVulnerabilityScan(scanId, {
+        status: 'failed',
+        error: msg,
+        scan_duration_ms: Date.now() - startedAt,
+      });
+    }
+  })();
+});
+
+app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const imageRef = typeof req.query.imageRef === 'string' ? req.query.imageRef : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+    const result = DatabaseService.getInstance().getVulnerabilityScans(req.nodeId, {
+      imageRef,
+      limit,
+      offset,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('[Security] Failed to list scans:', error);
+    res.status(500).json({ error: 'Failed to list scans' });
+  }
+});
+
+app.get('/api/security/scans/:scanId', authMiddleware, (req: Request, res: Response): void => {
+  const scanId = Number(req.params.scanId);
+  if (!Number.isFinite(scanId)) {
+    res.status(400).json({ error: 'Invalid scan id' }); return;
+  }
+  const scan = DatabaseService.getInstance().getVulnerabilityScan(scanId);
+  if (!scan || scan.node_id !== req.nodeId) {
+    res.status(404).json({ error: 'Scan not found' }); return;
+  }
+  res.json(scan);
+});
+
+app.get(
+  '/api/security/scans/:scanId/vulnerabilities',
+  authMiddleware,
+  (req: Request, res: Response): void => {
+    const scanId = Number(req.params.scanId);
+    if (!Number.isFinite(scanId)) {
+      res.status(400).json({ error: 'Invalid scan id' }); return;
+    }
+    const db = DatabaseService.getInstance();
+    const scan = db.getVulnerabilityScan(scanId);
+    if (!scan || scan.node_id !== req.nodeId) {
+      res.status(404).json({ error: 'Scan not found' }); return;
+    }
+    const severity = typeof req.query.severity === 'string'
+      ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
+      : undefined;
+    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
+    if (severity && !validSeverities.has(severity)) {
+      res.status(400).json({ error: 'Invalid severity filter' }); return;
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+    const result = db.getVulnerabilityDetails(scanId, { severity, limit, offset });
+    res.json(result);
+  },
+);
+
+app.get('/api/security/image-summaries', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const summaries = DatabaseService.getInstance().getImageScanSummaries(req.nodeId);
+    res.json(summaries);
+  } catch (error) {
+    console.error('[Security] Failed to fetch image summaries:', error);
+    res.status(500).json({ error: 'Failed to fetch image summaries' });
+  }
+});
+
+app.post('/api/security/sbom', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (!svc.isTrivyAvailable()) {
+    res.status(503).json({ error: 'Trivy is not available on this host' }); return;
+  }
+  const imageRef = typeof req.body?.imageRef === 'string' ? req.body.imageRef.trim() : '';
+  const formatRaw = typeof req.body?.format === 'string' ? req.body.format : 'spdx-json';
+  if (!imageRef) {
+    res.status(400).json({ error: 'imageRef is required' }); return;
+  }
+  if (formatRaw !== 'spdx-json' && formatRaw !== 'cyclonedx') {
+    res.status(400).json({ error: 'format must be spdx-json or cyclonedx' }); return;
+  }
+  try {
+    const sbom = await svc.generateSBOM(imageRef, formatRaw as SbomFormat);
+    const safeName = imageRef.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const ext = formatRaw === 'spdx-json' ? 'spdx.json' : 'cdx.json';
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.${ext}"`);
+    res.send(sbom);
+  } catch (error) {
+    console.error('[Security] SBOM generation failed:', error);
+    res.status(500).json({ error: (error as Error).message || 'Failed to generate SBOM' });
+  }
+});
+
+app.get('/api/security/policies', authMiddleware, (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  res.json(DatabaseService.getInstance().getScanPolicies());
+});
+
+app.post('/api/security/policies', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const { name, node_id, stack_pattern, max_severity, block_on_deploy, enabled } = req.body ?? {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    res.status(400).json({ error: 'Policy name is required' }); return;
+  }
+  const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+  if (!validSeverities.has(max_severity)) {
+    res.status(400).json({ error: 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW' }); return;
+  }
+  try {
+    const policy = DatabaseService.getInstance().createScanPolicy({
+      name: name.trim(),
+      node_id: node_id != null ? Number(node_id) : null,
+      stack_pattern: stack_pattern ? String(stack_pattern) : null,
+      max_severity,
+      block_on_deploy: block_on_deploy ? 1 : 0,
+      enabled: enabled === false ? 0 : 1,
+    });
+    res.status(201).json(policy);
+  } catch (error) {
+    console.error('[Security] Failed to create policy:', error);
+    res.status(500).json({ error: 'Failed to create policy' });
+  }
+});
+
+app.put('/api/security/policies/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'Invalid policy id' }); return;
+  }
+  const body = req.body ?? {};
+  const updates: Record<string, unknown> = {};
+  if (body.name !== undefined) updates.name = String(body.name).trim();
+  if (body.node_id !== undefined) updates.node_id = body.node_id != null ? Number(body.node_id) : null;
+  if (body.stack_pattern !== undefined) updates.stack_pattern = body.stack_pattern ? String(body.stack_pattern) : null;
+  if (body.max_severity !== undefined) {
+    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+    if (!validSeverities.has(body.max_severity)) {
+      res.status(400).json({ error: 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW' }); return;
+    }
+    updates.max_severity = body.max_severity;
+  }
+  if (body.block_on_deploy !== undefined) updates.block_on_deploy = body.block_on_deploy ? 1 : 0;
+  if (body.enabled !== undefined) updates.enabled = body.enabled ? 1 : 0;
+  const policy = DatabaseService.getInstance().updateScanPolicy(id, updates);
+  if (!policy) {
+    res.status(404).json({ error: 'Policy not found' }); return;
+  }
+  res.json(policy);
+});
+
+app.delete('/api/security/policies/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'Invalid policy id' }); return;
+  }
+  DatabaseService.getInstance().deleteScanPolicy(id);
+  res.json({ success: true });
+});
+
+app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  const scanId1 = Number(req.query.scanId1);
+  const scanId2 = Number(req.query.scanId2);
+  if (!Number.isFinite(scanId1) || !Number.isFinite(scanId2)) {
+    res.status(400).json({ error: 'scanId1 and scanId2 are required' }); return;
+  }
+  const db = DatabaseService.getInstance();
+  const a = db.getVulnerabilityScan(scanId1);
+  const b = db.getVulnerabilityScan(scanId2);
+  if (!a || !b || a.node_id !== req.nodeId || b.node_id !== req.nodeId) {
+    res.status(404).json({ error: 'One or both scans not found' }); return;
+  }
+  const aVulns = db.getVulnerabilityDetails(scanId1, { limit: 1000 }).items;
+  const bVulns = db.getVulnerabilityDetails(scanId2, { limit: 1000 }).items;
+  const keyOf = (v: { vulnerability_id: string; pkg_name: string }) =>
+    `${v.vulnerability_id}::${v.pkg_name}`;
+  const aMap = new Map(aVulns.map((v) => [keyOf(v), v]));
+  const bMap = new Map(bVulns.map((v) => [keyOf(v), v]));
+  const added = bVulns.filter((v) => !aMap.has(keyOf(v)));
+  const removed = aVulns.filter((v) => !bMap.has(keyOf(v)));
+  const unchanged = aVulns.filter((v) => bMap.has(keyOf(v)));
+  res.json({
+    scanA: { id: a.id, scanned_at: a.scanned_at, image_ref: a.image_ref },
+    scanB: { id: b.id, scanned_at: b.scanned_at, image_ref: b.image_ref },
+    added,
+    removed,
+    unchanged: unchanged.map((v) => ({ vulnerability_id: v.vulnerability_id, pkg_name: v.pkg_name, severity: v.severity })),
+  });
 });
 
 // =========================

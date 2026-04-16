@@ -23,6 +23,7 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 | **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack |
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
 | **System Prune** | The default node | Prunes selected resources, optionally filtered by Docker label |
+| **Vulnerability Scan** | All images on a specific node | Runs Trivy against every image on the target node and records the results. Requires Trivy to be installed — see [Installing Trivy](/operations/trivy-setup). Available on Skipper and Admiral. |
 
 ## Creating a Scheduled Task
 
