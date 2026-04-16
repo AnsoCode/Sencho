@@ -858,6 +858,20 @@ const ssoRateLimiter = rateLimit({
   message: { error: 'Too many SSO attempts. Please try again later.' },
 });
 
+/** Derive the OAuth callback base URL from SSO_CALLBACK_URL or the request Host header, with injection validation. */
+function getSSOBaseUrl(req: Request, res: Response): string | null {
+  const host = req.get('host') || '';
+  if (!process.env.SSO_CALLBACK_URL && /[\s<>\r\n]/.test(host)) {
+    console.error('[SSO] Rejected suspicious Host header');
+    res.redirect('/?sso_error=Invalid+request');
+    return null;
+  }
+  if (!process.env.SSO_CALLBACK_URL && isDebugEnabled()) {
+    console.debug('[SSO:debug] SSO_CALLBACK_URL not set; using Host header for callback URL:', host);
+  }
+  return process.env.SSO_CALLBACK_URL || `${req.protocol}://${host}`;
+}
+
 // List enabled SSO providers (for login page)
 app.get('/api/auth/sso/providers', (_req: Request, res: Response): void => {
   try {
@@ -929,7 +943,8 @@ app.get('/api/auth/sso/oidc/:provider/authorize', ssoRateLimiter, async (req: Re
       return;
     }
 
-    const baseUrl = process.env.SSO_CALLBACK_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = getSSOBaseUrl(req, res);
+    if (!baseUrl) return;
     const callbackUrl = `${baseUrl}/api/auth/sso/oidc/${provider}/callback`;
 
     const { url, state, codeVerifier } = await SSOService.getInstance().getOIDCAuthorizationUrl(provider, callbackUrl);
@@ -995,7 +1010,8 @@ app.get('/api/auth/sso/oidc/:provider/callback', ssoRateLimiter, async (req: Req
       return;
     }
 
-    const baseUrl = process.env.SSO_CALLBACK_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = getSSOBaseUrl(req, res);
+    if (!baseUrl) return;
     const callbackUrl = `${baseUrl}/api/auth/sso/oidc/${provider}/callback`;
 
     const result = await SSOService.getInstance().handleOIDCCallback(
