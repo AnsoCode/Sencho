@@ -115,6 +115,7 @@
               "features/audit-log",
               "features/api-tokens",
               "features/private-registries",
+              "features/vulnerability-scanning",
               "features/auto-update-policies",
               "features/scheduled-operations",
               "features/sso",
@@ -140,6 +141,7 @@
               "operations/backup",
               "operations/upgrade",
               "operations/self-hosting",
+              "operations/trivy-setup",
               "operations/two-factor-admin"
             ]
           }

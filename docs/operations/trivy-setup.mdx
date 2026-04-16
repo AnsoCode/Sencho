@@ -1,0 +1,185 @@
+---
+title: Installing Trivy
+description: Install and mount the Trivy CLI so Sencho can scan container images for vulnerabilities.
+---
+
+Sencho's [Vulnerability Scanning](/features/vulnerability-scanning) feature uses the [Trivy](https://trivy.dev) CLI. Trivy is not bundled with the Sencho Docker image; operators provide it via a bind mount or a custom image so Sencho can find it on `PATH`. Once Trivy is available, the scanning UI appears automatically.
+
+## Why Trivy is not bundled
+
+Trivy's vulnerability database updates multiple times per day and is around 100 MB. Bundling Trivy would force every Sencho instance to carry an out-of-date database in its image, then re-download on first scan. By keeping Trivy external, you can:
+
+- Pick the Trivy version you want and upgrade it on your own schedule
+- Persist the Trivy cache (the vulnerability DB) across Sencho container restarts
+- Pre-seed an air-gapped cache for environments without internet access
+
+## Installing Trivy on the host
+
+### Linux (Debian / Ubuntu)
+
+```bash
+sudo apt-get install wget gnupg
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+echo "deb https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+sudo apt-get update
+sudo apt-get install trivy
+```
+
+### Linux (RHEL / Fedora)
+
+```bash
+sudo rpm --import https://aquasecurity.github.io/trivy-repo/rpm/public.key
+echo "[trivy]
+name=Trivy repository
+baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/\$basearch/
+gpgcheck=1
+enabled=1" | sudo tee /etc/yum.repos.d/trivy.repo
+sudo dnf install trivy
+```
+
+### macOS
+
+```bash
+brew install trivy
+```
+
+### Verify the install
+
+```bash
+trivy --version
+```
+
+The command should print a `Version: X.Y.Z` line. Note the path that `which trivy` (or `where trivy` on Windows) returns; you will mount that path into the Sencho container.
+
+## Making Trivy available to Sencho
+
+Sencho runs inside a container and looks for `trivy` on its own `PATH`. There are two approaches:
+
+### Option 1: Bind mount the host binary
+
+Mount the host's Trivy binary into the Sencho container. This is the simplest option when Sencho and Trivy share the same CPU architecture.
+
+```yaml
+services:
+  sencho:
+    image: sencho/sencho:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sencho-data:/app/data
+      - /opt/compose:/opt/compose
+      - /usr/local/bin/trivy:/usr/local/bin/trivy:ro
+      - trivy-cache:/root/.cache/trivy
+    environment:
+      - COMPOSE_DIR=/opt/compose
+      - TRIVY_CACHE_DIR=/root/.cache/trivy
+
+volumes:
+  trivy-cache:
+```
+
+The `trivy-cache` volume persists the vulnerability database across Sencho container restarts so Trivy does not re-download it every time.
+
+Adjust the first path if `which trivy` on the host prints something other than `/usr/local/bin/trivy` (for example `/usr/bin/trivy` on some distributions).
+
+### Option 2: Build a custom Sencho image
+
+If the host's Trivy binary is not ABI-compatible with the Sencho container (for example because you are running macOS host binaries or a different glibc version), install Trivy inside the image instead:
+
+```dockerfile
+FROM sencho/sencho:latest
+
+RUN apk add --no-cache curl ca-certificates \
+ && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+    | sh -s -- -b /usr/local/bin
+
+ENV TRIVY_CACHE_DIR=/root/.cache/trivy
+```
+
+Build and run:
+
+```bash
+docker build -t sencho-with-trivy .
+docker compose up -d
+```
+
+## Persisting the vulnerability database
+
+Trivy downloads a ~100 MB vulnerability database on first run and refreshes it every six hours. Without a persistent cache, every Sencho restart re-downloads the database, wasting bandwidth and adding 10–30 seconds to the first scan.
+
+Set `TRIVY_CACHE_DIR` to a directory inside a named or bind-mounted volume (see Option 1 above). The directory must be writable by the Sencho process.
+
+## Air-gapped environments
+
+Trivy supports offline use through pre-built database bundles.
+
+1. On a networked machine, download the latest DB bundle:
+
+   ```bash
+   trivy image --download-db-only
+   cp -r ~/.cache/trivy /path/to/portable/cache
+   ```
+
+2. Transfer the cache directory to the air-gapped host.
+
+3. Mount it into the Sencho container at `TRIVY_CACHE_DIR`:
+
+   ```yaml
+   volumes:
+     - /path/to/portable/cache:/root/.cache/trivy:ro
+   environment:
+     - TRIVY_CACHE_DIR=/root/.cache/trivy
+   ```
+
+4. Set `TRIVY_SKIP_DB_UPDATE=true` to prevent Trivy from attempting a refresh:
+
+   ```yaml
+   environment:
+     - TRIVY_CACHE_DIR=/root/.cache/trivy
+     - TRIVY_SKIP_DB_UPDATE=true
+   ```
+
+Plan to refresh the bundle on a schedule (weekly is typical) so CVE data stays current.
+
+## Verifying Sencho detects Trivy
+
+After restarting Sencho with the mount in place:
+
+1. Open the **Resources** tab.
+2. Look at the **Images** panel. If Trivy is detected, a shield icon appears in the Actions column next to the delete icon on every row.
+3. You can also check **Settings → Support** for an explicit Trivy availability status.
+
+If the shield icon is missing, see the troubleshooting section below.
+
+## Troubleshooting
+
+### Sencho does not detect Trivy
+
+Sencho runs `trivy --version` on startup and caches the result. If you added the mount after Sencho started, restart the container so the check runs again.
+
+Verify the binary is visible from inside the container:
+
+```bash
+docker exec sencho trivy --version
+```
+
+If the command returns "not found", the mount path inside the container is wrong. The binary must be on `PATH`. Both `/usr/local/bin/trivy` and `/usr/bin/trivy` work.
+
+### Binary exists but reports an exec format error
+
+This means the host binary is not ABI-compatible with the Sencho image. Use Option 2 (custom image) instead; the `install.sh` script pulls the right architecture-specific build.
+
+### Scans take a long time on first run
+
+The first scan after a Trivy install downloads the vulnerability database. Expect 10–30 seconds of additional latency. Subsequent scans are near-instant once the cache is warm and `TRIVY_CACHE_DIR` is persisted.
+
+### Private registry images fail to scan
+
+Trivy scans the locally-cached image layers. If Sencho can pull the image but a scan fails, pull the image to the host first (a deploy will do this) and retry the scan.
+
+### Permission denied writing to the Trivy cache
+
+`TRIVY_CACHE_DIR` must be writable by the Sencho process. If you mounted the directory from the host with restrictive permissions, either loosen them (`chmod -R a+w /path/to/cache`) or use a named Docker volume which inherits the container user's permissions.
+
+### Trivy version is reported as "unknown"
+
+Sencho reads the version from `trivy --version` output. Very old Trivy releases (< 0.35) use a different output format. Upgrade to a recent version.

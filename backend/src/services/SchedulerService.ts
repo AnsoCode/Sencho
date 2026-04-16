@@ -12,6 +12,7 @@ import { getErrorMessage } from '../utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles } from '../utils/snapshot-capture';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
+import TrivyService from './TrivyService';
 
 export class SchedulerService {
     private static instance: SchedulerService;
@@ -82,9 +83,10 @@ export class SchedulerService {
 
             // Clean up old runs periodically (piggyback on tick)
             db.cleanupOldTaskRuns(30);
+            db.deleteOldScans(90 * 24 * 60 * 60 * 1000);
 
             for (const task of dueTasks) {
-                if (!isAdmiral && task.action !== 'update') {
+                if (!isAdmiral && task.action !== 'update' && task.action !== 'scan') {
                     if (isDebugEnabled()) console.log(`[SchedulerService] Task ${task.id} skipped: action "${task.action}" requires Admiral tier`);
                     continue;
                 }
@@ -158,6 +160,9 @@ export class SchedulerService {
                     break;
                 case 'update':
                     output = await this.executeUpdate(task);
+                    break;
+                case 'scan':
+                    output = await this.executeScan(task);
                     break;
             }
 
@@ -497,5 +502,24 @@ export class SchedulerService {
         );
 
         return `Stack "${stackName}": updated (${updatedImages.join(', ')}).`;
+    }
+
+    private async executeScan(task: ScheduledTask): Promise<string> {
+        const trivy = TrivyService.getInstance();
+        if (!trivy.isTrivyAvailable()) {
+            throw new Error('Trivy binary is not available on this node');
+        }
+
+        const nodeId = task.node_id ?? NodeRegistry.getInstance().getDefaultNodeId();
+        if (task.node_id == null && isDebugEnabled()) {
+            console.log(`[SchedulerService:debug] Scan task ${task.id}: no node_id specified, using default node ${nodeId}`);
+        }
+
+        const summary = await trivy.scanAllNodeImages(nodeId, 'scheduled');
+
+        const parts: string[] = [`Scanned ${summary.scanned} image(s)`];
+        if (summary.skipped > 0) parts.push(`${summary.skipped} skipped (cached)`);
+        if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+        return parts.join('; ');
     }
 }

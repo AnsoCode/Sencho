@@ -33,6 +33,7 @@ export const CAPABILITIES = [
   'users',
   'registries',
   'self-update',
+  'vulnerability-scanning',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

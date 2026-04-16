@@ -103,6 +103,10 @@ Create point-in-time snapshots of every compose file and environment file across
 
 Store credentials for private Docker registries: Docker Hub organizations, GHCR, AWS ECR, and self-hosted registries. Sencho injects them automatically during deploy and pull operations. ECR short-lived tokens are refreshed on every operation. Admiral only. [Learn more →](/features/private-registries)
 
+## Vulnerability scanning
+
+Scan container images for known CVEs with [Trivy](https://trivy.dev). On-demand scanning and severity badges are available on every tier; scheduled scans, scan policies that gate deploys, SBOM generation, and scan history are available on Skipper and Admiral. [Learn more →](/features/vulnerability-scanning)
+
 ## Audit log
 
 Track every mutating action across your Sencho instance with a searchable audit trail. See who deployed, stopped, deleted, or changed settings, with timestamps, user attribution, and node context. Admiral only. [Learn more →](/features/audit-log)

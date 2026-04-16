@@ -37,6 +37,7 @@ export type SectionId =
     | 'system'
     | 'notifications'
     | 'webhooks'
+    | 'security'
     | 'developer'
     | 'nodes'
     | 'appstore'

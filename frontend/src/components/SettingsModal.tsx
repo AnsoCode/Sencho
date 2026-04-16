@@ -16,7 +16,7 @@ import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 import type { SenchoSettingsChangedDetail } from '@/lib/events';
 import {
     Shield, Activity, Bell, Code, Server, Package, X,
-    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, Route,
+    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, Route, ShieldCheck,
 } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
@@ -33,6 +33,7 @@ import {
     NotificationsSection,
     NotificationRoutingSection,
     WebhooksSection,
+    SecuritySection,
     DeveloperSection,
     AppStoreSection,
     SupportSection,
@@ -44,7 +45,8 @@ import type { PatchableSettings, SectionId } from './settings';
 
 const GLOBAL_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
     'account', 'license', 'users', 'sso', 'api-tokens', 'registries',
-    'labels', 'notifications', 'notification-routing', 'webhooks', 'nodes', 'appstore',
+    'labels', 'notifications', 'notification-routing', 'webhooks', 'security',
+    'nodes', 'appstore',
 ]);
 
 interface SettingsModalProps {
@@ -305,6 +307,8 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                 return <NotificationRoutingSection />;
             case 'webhooks':
                 return <WebhooksSection isPaid={isPaid} />;
+            case 'security':
+                return <SecuritySection isPaid={isPaid} />;
             case 'developer':
                 return (
                     <DeveloperSection
@@ -394,6 +398,9 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         )}
                         {!isRemote && (
                             <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPaid} />
+                        )}
+                        {!isRemote && isAdmin && (
+                            <NavButton section="security" icon={<ShieldCheck className="w-4 h-4 mr-2" />} label="Security" locked={!isPaid} />
                         )}
                         <NavButton
                             section="developer"
