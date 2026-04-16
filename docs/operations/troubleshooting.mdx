@@ -561,3 +561,20 @@ docker logs -f sencho
 ```
 
 The backend logs all route errors and service failures to stdout. This is the first place to look when the UI shows an error with no useful message.
+
+---
+
+## "Could not parse command" when converting docker run
+
+**Symptom:** The **From Docker Run** tab in the Create Stack dialog returns an error toast saying the command could not be parsed.
+
+**Cause:** The input is not a well-formed `docker run` command, or it uses a flag the converter does not recognize.
+
+**Fix:**
+
+- Make sure the command starts with `docker run` and ends with an image reference (e.g. `nginx:alpine`).
+- Check the [list of supported flags](/features/stack-management#supported-flags). Rare flags (such as `--userns` or custom runtime options) are not recognized. Remove the flag before converting and add it back manually in the editor afterwards.
+- Collapse multi-line commands into a single line. Mixed quoting across `\`-continued lines is a common source of parse errors.
+- Commands longer than 8192 characters are rejected. Trim anything non-essential and run the converter on the reduced command.
+
+When only part of a command is supported, convert what you can, paste the resulting YAML into the **Empty** tab as a starting point, and hand-edit the rest in `compose.yaml`.
