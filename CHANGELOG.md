@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.0](https://github.com/AnsoCode/Sencho/compare/v0.52.0...v0.53.0) (2026-04-16)
+
+
+### Added
+
+* docker run to compose converter ([#623](https://github.com/AnsoCode/Sencho/issues/623)) ([b2f341b](https://github.com/AnsoCode/Sencho/commit/b2f341b43d5fd2da408ef25635d3f1b38c5e7d58))
+
 ## [0.52.0](https://github.com/AnsoCode/Sencho/compare/v0.51.0...v0.52.0) (2026-04-15)
 
 
