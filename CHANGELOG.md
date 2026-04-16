@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.54.0](https://github.com/AnsoCode/Sencho/compare/v0.53.0...v0.54.0) (2026-04-16)
+
+
+### Added
+
+* add Custom OIDC provider and move SSO to Community tier ([#626](https://github.com/AnsoCode/Sencho/issues/626)) ([7c6df0a](https://github.com/AnsoCode/Sencho/commit/7c6df0aa5d0d15d62b7da8692bcc7815cf1bd685))
+
 ## [0.53.0](https://github.com/AnsoCode/Sencho/compare/v0.52.0...v0.53.0) (2026-04-16)
 
 
