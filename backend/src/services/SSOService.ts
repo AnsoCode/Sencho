@@ -91,6 +91,15 @@ export class SSOService {
         this.seedOidcFromEnv('oidc_github', 'SSO_OIDC_GITHUB');
         this.seedOidcFromEnv('oidc_okta', 'SSO_OIDC_OKTA');
         this.seedOidcFromEnv('oidc_custom', 'SSO_OIDC_CUSTOM');
+
+        // Warn if OIDC providers are enabled but SSO_CALLBACK_URL is not set
+        if (!process.env.SSO_CALLBACK_URL) {
+            const enabled = DatabaseService.getInstance().getEnabledSSOConfigs();
+            const hasOidc = enabled.some(c => c.provider !== 'ldap');
+            if (hasOidc) {
+                console.warn('[SSO] SSO_CALLBACK_URL is not set. OAuth callback URLs will be derived from the request Host header. Set SSO_CALLBACK_URL to your external URL for deployments behind a reverse proxy.');
+            }
+        }
     }
 
     private seedLdapFromEnv(): void {
@@ -430,6 +439,18 @@ export class SSOService {
             const usernameClaimName = config.oidcUsernameClaim || 'preferred_username';
             const emailClaimName = config.oidcEmailClaim || 'email';
 
+            if (isDebugEnabled()) {
+                if (config.oidcIdClaim && !(config.oidcIdClaim in userInfo)) {
+                    console.debug(`[SSO:debug] Custom ID claim '${config.oidcIdClaim}' not found in token; falling back to 'sub'`);
+                }
+                if (config.oidcUsernameClaim && !(config.oidcUsernameClaim in userInfo)) {
+                    console.debug(`[SSO:debug] Custom username claim '${config.oidcUsernameClaim}' not found in token; falling back to standard claims`);
+                }
+                if (config.oidcEmailClaim && !(config.oidcEmailClaim in userInfo)) {
+                    console.debug(`[SSO:debug] Custom email claim '${config.oidcEmailClaim}' not found in token; falling back to 'email'`);
+                }
+            }
+
             const sub = String(userInfo[idClaimName] ?? userInfo.sub ?? userInfo.id ?? '');
             if (!sub) {
                 return { success: false, error: 'Could not determine user identity from provider' };
@@ -559,6 +580,10 @@ export class SSOService {
 
             // Update email if changed
             if (params.email && params.email !== existing.email) {
+                if (debug) console.debug('[SSO:debug] Email changed on re-login', {
+                    userId: existing.id, username: existing.username,
+                    oldEmail: existing.email || '(none)', newEmail: params.email,
+                });
                 updates.email = params.email;
             }
 
@@ -568,8 +593,11 @@ export class SSOService {
                     const seatLimits = LicenseService.getInstance().getSeatLimits();
                     if (seatLimits.maxAdmins === null || db.getAdminCount() < seatLimits.maxAdmins) {
                         updates.role = params.role;
+                    } else if (debug) {
+                        console.debug('[SSO:debug] Admin seat limit reached; keeping current role for existing user', {
+                            userId: existing.id, username: existing.username,
+                        });
                     }
-                    // If admin seats full, keep current role rather than upgrading
                 } else {
                     // Always allow demotion (e.g., removed from admin group)
                     updates.role = params.role;

@@ -386,7 +386,7 @@ export function SSOSection() {
         try {
             const res = await apiFetch('/sso/config');
             if (res.ok) setConfigs(await res.json());
-        } catch { /* ignore - AdmiralGate will handle non-pro */ }
+        } catch { /* ignore fetch errors */ }
     };
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
