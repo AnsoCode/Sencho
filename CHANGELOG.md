@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.0](https://github.com/AnsoCode/Sencho/compare/v0.54.1...v0.55.0) (2026-04-16)
+
+
+### Added
+
+* **images:** Trivy-powered vulnerability scanning ([#635](https://github.com/AnsoCode/Sencho/issues/635)) ([c9cd699](https://github.com/AnsoCode/Sencho/commit/c9cd6990d2aa898e93de256bdf6e6a0e3461b2be))
+
 ## [0.54.1](https://github.com/AnsoCode/Sencho/compare/v0.54.0...v0.54.1) (2026-04-16)
 
 
