@@ -192,7 +192,7 @@ Environment variables are useful for initial deployment or infrastructure-as-cod
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SSO_OIDC_CUSTOM_ENABLED` | `false` | Enable the custom OIDC provider |
-| `SSO_OIDC_CUSTOM_DISPLAY_NAME` | `oidc_custom` | Label shown on the login button |
+| `SSO_OIDC_CUSTOM_DISPLAY_NAME` | `Custom OIDC` | Label shown on the login button |
 | `SSO_OIDC_CUSTOM_ISSUER_URL` | - | OIDC issuer URL (the base of the discovery endpoint) |
 | `SSO_OIDC_CUSTOM_CLIENT_ID` | - | OAuth client ID from your identity provider |
 | `SSO_OIDC_CUSTOM_CLIENT_SECRET` | - | OAuth client secret (encrypted at rest) |
@@ -298,7 +298,7 @@ Fix: set the Issuer URL to exactly match the `issuer` field returned by your pro
 
 If users are created with incorrect usernames or missing emails:
 
-- Enable debug mode (`DEBUG=true` environment variable) to see the raw claims Sencho receives from the provider
+- Enable **Developer Mode** (Settings > Developer Mode toggle) to see the raw claims Sencho receives from the provider in the server logs
 - Check your provider's documentation for which claims it includes in the ID token and userinfo response
 - Verify that the scopes you configured include the necessary permissions (some providers require explicit `profile` or `email` scopes)
 - Set the appropriate claim names in the Custom OIDC claim mapping fields

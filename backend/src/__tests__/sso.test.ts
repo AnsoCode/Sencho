@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { setupTestDb, cleanupTestDb, TEST_JWT_SECRET } from './helpers/setupTestDb';
 import supertest from 'supertest';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import type { Express } from 'express';
 
 let tmpDir: string;
@@ -504,5 +505,121 @@ describe('SSO Claim Mapping', () => {
 
     // Claim present but no match
     expect(resolve({ roles: 'user-role' }, { oidcAdminClaim: 'roles', oidcAdminClaimValue: 'admin-role', oidcDefaultRole: 'viewer' })).toBe('viewer');
+  });
+
+  it('resolveRoleFromOidc handles edge cases', async () => {
+    const { SSOService } = await import('../services/SSOService');
+    const sso = SSOService.getInstance();
+    const resolve = (sso as unknown as {
+      resolveRoleFromOidc: (userInfo: Record<string, unknown>, config: { oidcAdminClaim?: string; oidcAdminClaimValue?: string; oidcDefaultRole?: string }) => string;
+    }).resolveRoleFromOidc.bind(sso);
+
+    // Empty oidcAdminClaimValue falls back to default 'sencho-admins' via || operator,
+    // so a matching claim still resolves to admin
+    expect(resolve({ groups: ['sencho-admins'] }, { oidcAdminClaim: 'groups', oidcAdminClaimValue: '', oidcDefaultRole: 'viewer' })).toBe('admin');
+
+    // Claim exists but is an empty array (no match possible)
+    expect(resolve({ groups: [] }, { oidcAdminClaim: 'groups', oidcAdminClaimValue: 'sencho-admins', oidcDefaultRole: 'viewer' })).toBe('viewer');
+
+    // Claim exists but is an empty string (no match)
+    expect(resolve({ groups: '' }, { oidcAdminClaim: 'groups', oidcAdminClaimValue: 'sencho-admins', oidcDefaultRole: 'viewer' })).toBe('viewer');
+
+    // Claim value is a number (should be coerced to string for comparison)
+    expect(resolve({ role_id: 42 }, { oidcAdminClaim: 'role_id', oidcAdminClaimValue: '42', oidcDefaultRole: 'viewer' })).toBe('admin');
+  });
+});
+
+describe('SSO Config - Role Enforcement', () => {
+  let viewerToken: string;
+
+  beforeAll(async () => {
+    // Create a viewer user in the DB so the auth middleware can resolve it
+    const { DatabaseService } = await import('../services/DatabaseService');
+    const db = DatabaseService.getInstance();
+    if (!db.getUserByUsername('sso_test_viewer')) {
+      db.addUser({ username: 'sso_test_viewer', password_hash: '$2b$10$fake', role: 'viewer' });
+    }
+    viewerToken = jwt.sign({ username: 'sso_test_viewer', role: 'viewer' }, TEST_JWT_SECRET, { expiresIn: '1h' });
+  });
+
+  it('GET /api/sso/config returns 403 for viewer role', async () => {
+    const res = await supertest(app)
+      .get('/api/sso/config')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('PUT /api/sso/config/:provider returns 403 for viewer role', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/ldap')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .send({ enabled: false });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+
+  it('DELETE /api/sso/config/:provider returns 403 for viewer role', async () => {
+    const res = await supertest(app).delete('/api/sso/config/ldap').set('Authorization', `Bearer ${viewerToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('ADMIN_REQUIRED');
+  });
+});
+
+describe('SSO Config - API Token Denied', () => {
+  let apiRawToken: string;
+
+  beforeAll(async () => {
+    const { DatabaseService } = await import('../services/DatabaseService');
+    const db = DatabaseService.getInstance();
+    apiRawToken = jwt.sign({ scope: 'api_token', jti: crypto.randomUUID() }, TEST_JWT_SECRET, { expiresIn: '1h' });
+    const tokenHash = crypto.createHash('sha256').update(apiRawToken).digest('hex');
+    const admin = db.getUserByUsername('testadmin');
+    db.addApiToken({ token_hash: tokenHash, name: `sso-scope-${Date.now()}`, scope: 'full-admin', user_id: admin!.id, created_at: Date.now(), expires_at: null });
+  });
+
+  it('GET /api/sso/config returns 403 SCOPE_DENIED for API token', async () => {
+    const res = await supertest(app)
+      .get('/api/sso/config')
+      .set('Authorization', `Bearer ${apiRawToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('SCOPE_DENIED');
+  });
+
+  it('PUT /api/sso/config/:provider returns 403 SCOPE_DENIED for API token', async () => {
+    const res = await supertest(app)
+      .put('/api/sso/config/ldap')
+      .set('Authorization', `Bearer ${apiRawToken}`)
+      .send({ enabled: false });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('SCOPE_DENIED');
+  });
+});
+
+describe('SSO Test Connection - Custom OIDC', () => {
+  it('POST /api/sso/config/oidc_custom/test returns failure when not configured', async () => {
+    const res = await supertest(app)
+      .post('/api/sso/config/oidc_custom/test')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBeDefined();
+  });
+});
+
+describe('SSO OIDC Callback - Additional Error Handling', () => {
+  it('handles error param without error_description', async () => {
+    const res = await supertest(app)
+      .get('/api/auth/sso/oidc/oidc_google/callback?error=server_error');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('sso_error');
+    expect(res.headers.location).toContain('server_error');
+  });
+
+  it('handles error with description for oidc_custom provider', async () => {
+    const res = await supertest(app)
+      .get('/api/auth/sso/oidc/oidc_custom/callback?error=consent_required&error_description=User+must+consent');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('User');
   });
 });
