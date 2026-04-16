@@ -150,6 +150,10 @@ After restarting Sencho with the mount in place:
 
 If the shield icon is missing, see the troubleshooting section below.
 
+### Runtime detection
+
+Sencho re-runs the `trivy --version` check every ten minutes from the background scheduler. You can install Trivy on a running host and scanning will light up on its own within that window. If the binary becomes unavailable at runtime, the UI hides itself in the same way.
+
 ## Troubleshooting
 
 ### Sencho does not detect Trivy

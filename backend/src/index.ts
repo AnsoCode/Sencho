@@ -69,7 +69,9 @@ import { getErrorMessage } from './utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
-import TrivyService, { SbomFormat } from './services/TrivyService';
+import TrivyService, { SbomFormat, DIGEST_CACHE_TTL_MS } from './services/TrivyService';
+import { severityRank } from './utils/severity';
+import { validateImageRef } from './utils/image-ref';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
@@ -1605,22 +1607,13 @@ async function triggerPostDeployScan(
 
     const db = DatabaseService.getInstance();
     const policy = db.getMatchingPolicy(nodeId, stackName);
-    const severityRank = (s: string | null | undefined): number => {
-      switch ((s ?? '').toUpperCase()) {
-        case 'CRITICAL': return 4;
-        case 'HIGH': return 3;
-        case 'MEDIUM': return 2;
-        case 'LOW': return 1;
-        default: return 0;
-      }
-    };
 
     for (const imageRef of imageRefs) {
       try {
         const digest = await svc.getImageDigest(imageRef, nodeId);
         if (digest) {
           const cached = db.getLatestScanByDigest(digest);
-          if (cached && Date.now() - cached.scanned_at < 24 * 60 * 60 * 1000) continue;
+          if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) continue;
         }
         const scan = await svc.runScanAndPersist(imageRef, nodeId, 'deploy', stackName);
 
@@ -1643,7 +1636,13 @@ async function triggerPostDeployScan(
           );
         }
       } catch (err) {
-        console.error(`[Security] Post-deploy scan failed for ${imageRef}:`, (err as Error).message);
+        const message = (err as Error).message;
+        console.error(`[Security] Post-deploy scan failed for ${imageRef}:`, message);
+        NotificationService.getInstance().dispatchAlert(
+          'warning',
+          `Post-deploy scan failed for ${imageRef} (${stackName}): ${message}`,
+          stackName,
+        );
       }
     }
   } catch (err) {
@@ -7261,11 +7260,16 @@ app.post('/api/security/scan', authMiddleware, (req: Request, res: Response): vo
     res.status(503).json({ error: 'Trivy is not available on this host' });
     return;
   }
-  const imageRef = typeof req.body?.imageRef === 'string' ? req.body.imageRef.trim() : '';
-  if (!imageRef) {
+  const rawImageRef = typeof req.body?.imageRef === 'string' ? req.body.imageRef.trim() : '';
+  if (!rawImageRef) {
     res.status(400).json({ error: 'imageRef is required' });
     return;
   }
+  if (!validateImageRef(rawImageRef)) {
+    res.status(400).json({ error: 'Invalid imageRef format' });
+    return;
+  }
+  const imageRef = rawImageRef;
   const stackContext = typeof req.body?.stackName === 'string' ? req.body.stackName : null;
   const force = req.body?.force === true;
   const nodeId = req.nodeId;
@@ -7273,73 +7277,12 @@ app.post('/api/security/scan', authMiddleware, (req: Request, res: Response): vo
     res.status(409).json({ error: 'Already scanning this image' });
     return;
   }
-  const db = DatabaseService.getInstance();
-  const scanId = db.createVulnerabilityScan({
-    node_id: nodeId,
-    image_ref: imageRef,
-    image_digest: null,
-    scanned_at: Date.now(),
-    total_vulnerabilities: 0,
-    critical_count: 0,
-    high_count: 0,
-    medium_count: 0,
-    low_count: 0,
-    unknown_count: 0,
-    fixable_count: 0,
-    highest_severity: null,
-    os_info: null,
-    trivy_version: svc.getVersion(),
-    scan_duration_ms: null,
-    triggered_by: 'manual',
-    status: 'in_progress',
-    error: null,
-    stack_context: stackContext,
-  });
+  const scanId = svc.beginScan(imageRef, nodeId, 'manual', stackContext);
   res.status(202).json({ scanId });
 
-  const startedAt = Date.now();
-  (async () => {
-    try {
-      const result = await svc.scanImage(imageRef, nodeId, { useCache: !force });
-      db.updateVulnerabilityScan(scanId, {
-        image_digest: result.imageDigest,
-        scanned_at: result.scannedAt,
-        total_vulnerabilities: result.totalVulnerabilities,
-        critical_count: result.criticalCount,
-        high_count: result.highCount,
-        medium_count: result.mediumCount,
-        low_count: result.lowCount,
-        unknown_count: result.unknownCount,
-        fixable_count: result.fixableCount,
-        highest_severity: result.highestSeverity,
-        os_info: result.metadata.os,
-        trivy_version: result.metadata.trivyVersion,
-        scan_duration_ms: result.metadata.scanDurationMs,
-        status: 'completed',
-      });
-      db.insertVulnerabilityDetails(
-        scanId,
-        result.vulnerabilities.map((v) => ({
-          vulnerability_id: v.vulnerabilityId,
-          pkg_name: v.pkgName,
-          installed_version: v.installedVersion,
-          fixed_version: v.fixedVersion,
-          severity: v.severity,
-          title: v.title || null,
-          description: v.description || null,
-          primary_url: v.primaryUrl,
-        })),
-      );
-    } catch (err) {
-      const msg = (err as Error).message || 'Scan failed';
-      console.error(`[Security] Scan failed for ${imageRef}:`, msg);
-      db.updateVulnerabilityScan(scanId, {
-        status: 'failed',
-        error: msg,
-        scan_duration_ms: Date.now() - startedAt,
-      });
-    }
-  })();
+  svc.finishScan(scanId, imageRef, nodeId, { useCache: !force }).catch((err) => {
+    console.error(`[Security] Scan failed for ${imageRef}:`, (err as Error).message);
+  });
 });
 
 app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => {
@@ -7419,6 +7362,9 @@ app.post('/api/security/sbom', authMiddleware, async (req: Request, res: Respons
   const formatRaw = typeof req.body?.format === 'string' ? req.body.format : 'spdx-json';
   if (!imageRef) {
     res.status(400).json({ error: 'imageRef is required' }); return;
+  }
+  if (!validateImageRef(imageRef)) {
+    res.status(400).json({ error: 'Invalid imageRef format' }); return;
   }
   if (formatRaw !== 'spdx-json' && formatRaw !== 'cyclonedx') {
     res.status(400).json({ error: 'format must be spdx-json or cyclonedx' }); return;
@@ -7838,6 +7784,11 @@ async function startServer() {
 
   // Start Docker Event Stream (causal crash/OOM/health detection per local node)
   await DockerEventManager.getInstance().start();
+
+  // Detect Trivy binary so the vulnerability-scanning capability reflects
+  // reality before any request hits and so the first scan does not pay
+  // detection latency.
+  await TrivyService.getInstance().initialize();
 
   // Start Background Image Update Checker
   ImageUpdateService.getInstance().start();
