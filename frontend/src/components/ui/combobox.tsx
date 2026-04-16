@@ -99,7 +99,7 @@ export function Combobox({
           disabled={disabled}
           onClick={() => { if (!disabled) setOpen(true) }}
           className={cn(
-            "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-glass-border bg-input px-3 py-2 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
             !value && "text-muted-foreground"
           )}
         >
@@ -112,7 +112,7 @@ export function Combobox({
 
       {/* Options list — absolutely positioned overlay */}
       {open && (
-        <div className="absolute left-0 top-[calc(100%+4px)] z-50 w-full rounded-md border border-glass-border bg-popover text-popover-foreground shadow-md backdrop-blur-[10px] backdrop-saturate-[1.15] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
+        <div className="absolute left-0 top-full -mt-px z-50 w-full rounded-md border border-glass-border bg-popover text-popover-foreground shadow-md backdrop-blur-[10px] backdrop-saturate-[1.15] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
           <div className="max-h-[200px] overflow-y-auto overflow-x-hidden p-1">
             {filtered.length === 0 ? (
               <div className="py-4 text-center text-sm text-muted-foreground">

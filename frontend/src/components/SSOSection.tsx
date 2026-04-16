@@ -295,7 +295,7 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                     />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-3 items-start">
                                 <div className="grid gap-2">
                                     <Label className="text-xs text-muted-foreground">Scopes</Label>
                                     <Input
