@@ -300,8 +300,21 @@ const SEVERITY_DOT_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
 function SeverityBadge({ summary, onClick }: { summary: ScanSummary; onClick: () => void }) {
     const key: VulnSeverity | 'CLEAN' = summary.highest_severity ?? 'CLEAN';
     const label = key === 'CLEAN' ? 'Clean' : key;
-    const scanAge = Math.round((Date.now() - summary.scanned_at) / 60000);
-    const relative = scanAge < 1 ? 'just now' : scanAge < 60 ? `${scanAge}m ago` : scanAge < 1440 ? `${Math.round(scanAge / 60)}h ago` : `${Math.round(scanAge / 1440)}d ago`;
+    const [relative, setRelative] = useState<string>('');
+    useEffect(() => {
+        const compute = () => {
+            const scanAge = Math.round((Date.now() - summary.scanned_at) / 60000);
+            setRelative(
+                scanAge < 1 ? 'just now'
+                    : scanAge < 60 ? `${scanAge}m ago`
+                    : scanAge < 1440 ? `${Math.round(scanAge / 60)}h ago`
+                    : `${Math.round(scanAge / 1440)}d ago`,
+            );
+        };
+        compute();
+        const id = setInterval(compute, 60000);
+        return () => clearInterval(id);
+    }, [summary.scanned_at]);
 
     return (
         <CursorProvider>
