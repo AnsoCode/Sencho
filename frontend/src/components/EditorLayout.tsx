@@ -21,7 +21,7 @@ import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highli
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -131,9 +131,14 @@ export default function EditorLayout() {
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createMode, setCreateMode] = useState<'empty' | 'git'>('empty');
+  const [createMode, setCreateMode] = useState<'empty' | 'git' | 'docker-run'>('empty');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newStackName, setNewStackName] = useState('');
+  // "From Docker Run" tab state
+  const [dockerRunInput, setDockerRunInput] = useState('');
+  const [convertedYaml, setConvertedYaml] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [creatingFromDockerRun, setCreatingFromDockerRun] = useState(false);
   // "From Git" tab state
   const [gitRepoUrl, setGitRepoUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('main');
@@ -1401,6 +1406,115 @@ export default function EditorLayout() {
     }
   };
 
+  const resetCreateFromDockerRunForm = () => {
+    setDockerRunInput('');
+    setConvertedYaml(null);
+    setIsConverting(false);
+    setCreatingFromDockerRun(false);
+  };
+
+  const handleConvertDockerRun = async () => {
+    const command = dockerRunInput.trim();
+    if (!command) {
+      toast.error('Paste a docker run command first.');
+      return;
+    }
+    setIsConverting(true);
+    try {
+      const response = await apiFetch('/convert', {
+        method: 'POST',
+        body: JSON.stringify({ dockerRun: command }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || 'Could not parse command.');
+      }
+      if (typeof data?.yaml !== 'string' || data.yaml.length === 0) {
+        throw new Error('Converter returned an empty result.');
+      }
+      setConvertedYaml(data.yaml);
+      toast.success('Converted to compose YAML.');
+    } catch (error) {
+      setConvertedYaml(null);
+      const err = error as { message?: string; error?: string; data?: { error?: string } };
+      toast.error(
+        err?.message ||
+          err?.error ||
+          err?.data?.error ||
+          'Failed to convert docker run command.',
+      );
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleCreateStackFromDockerRun = async () => {
+    const stackName = newStackName.trim();
+    if (!stackName) {
+      toast.error('Stack name is required.');
+      return;
+    }
+    if (!convertedYaml) {
+      toast.error('Convert the command before creating the stack.');
+      return;
+    }
+    setCreatingFromDockerRun(true);
+    const loadingId = toast.loading('Creating stack from converted YAML...');
+    let createdStack = false;
+    try {
+      const createResponse = await apiFetch('/stacks', {
+        method: 'POST',
+        body: JSON.stringify({ stackName }),
+      });
+      if (!createResponse.ok) {
+        if (createResponse.status === 409) {
+          throw new Error('Stack already exists.');
+        }
+        if (createResponse.status === 400) {
+          throw new Error('Invalid stack name (use alphanumeric characters and hyphens only).');
+        }
+        throw new Error('Failed to create stack.');
+      }
+      createdStack = true;
+
+      const saveResponse = await apiFetch(`/stacks/${encodeURIComponent(stackName)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content: convertedYaml }),
+      });
+      if (!saveResponse.ok) {
+        // Roll back the empty stack we just created so we don't leave an orphan.
+        await apiFetch(`/stacks/${encodeURIComponent(stackName)}`, { method: 'DELETE' }).catch((cleanupError) => {
+          console.error('Failed to roll back orphan stack after save failure:', cleanupError);
+        });
+        createdStack = false;
+        throw new Error('Could not save the converted YAML. Please try again.');
+      }
+
+      toast.success(`Stack "${stackName}" created from docker run.`);
+      setCreateDialogOpen(false);
+      resetCreateFromDockerRunForm();
+      setNewStackName('');
+      await refreshStacks();
+      await loadFile(stackName);
+    } catch (error) {
+      console.error('Failed to create stack from docker run:', error);
+      const err = error as { message?: string; error?: string; data?: { error?: string } };
+      toast.error(
+        err?.message ||
+          err?.error ||
+          err?.data?.error ||
+          'Failed to create stack from docker run.',
+      );
+      // If we bailed before the createdStack flag got reset, surface that the stack still exists.
+      if (createdStack) {
+        await refreshStacks().catch(() => undefined);
+      }
+    } finally {
+      toast.dismiss(loadingId);
+      setCreatingFromDockerRun(false);
+    }
+  };
+
   const openBashModal = (containerId: string, containerName: string) => {
     setSelectedContainer({ id: containerId, name: containerName });
     setBashModalOpen(true);
@@ -1532,6 +1646,7 @@ export default function EditorLayout() {
             if (!o) {
               setCreateMode('empty');
               resetCreateFromGitForm();
+              resetCreateFromDockerRunForm();
             }
           }}>
             <DialogTrigger asChild>
@@ -1544,12 +1659,12 @@ export default function EditorLayout() {
               <DialogHeader className="px-6 pt-6 pb-3">
                 <DialogTitle>Create New Stack</DialogTitle>
                 <DialogDescription className="sr-only">
-                  Create a new stack, either empty or cloned from a Git repository.
+                  Create a new stack: empty, cloned from a Git repository, or converted from a docker run command.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="px-6 pb-2">
-                <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git')}>
+                <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git' | 'docker-run')}>
                   <TabsList>
                     <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
                       <TabsHighlightItem value="empty">
@@ -1564,12 +1679,18 @@ export default function EditorLayout() {
                           From Git
                         </TabsTrigger>
                       </TabsHighlightItem>
+                      <TabsHighlightItem value="docker-run">
+                        <TabsTrigger value="docker-run">
+                          <FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                          From Docker Run
+                        </TabsTrigger>
+                      </TabsHighlightItem>
                     </TabsHighlight>
                   </TabsList>
                 </Tabs>
               </div>
 
-              {createMode === 'empty' ? (
+              {createMode === 'empty' && (
                 <>
                   <div className="px-6 py-4 space-y-2">
                     <Label htmlFor="create-stack-name">Stack Name</Label>
@@ -1584,7 +1705,8 @@ export default function EditorLayout() {
                     <Button onClick={handleCreateStack}>Create</Button>
                   </DialogFooter>
                 </>
-              ) : (
+              )}
+              {createMode === 'git' && (
                 <>
                   <ScrollArea className="max-h-[70vh]">
                     <div className="px-6 py-4 space-y-5">
@@ -1638,6 +1760,77 @@ export default function EditorLayout() {
                         <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
                       ) : (
                         <><GitBranch className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create from Git</>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
+              {createMode === 'docker-run' && (
+                <>
+                  <ScrollArea className="max-h-[70vh]">
+                    <div className="px-6 py-4 space-y-5">
+                      <div className="space-y-2">
+                        <Label htmlFor="create-dr-stack-name">Stack Name</Label>
+                        <Input
+                          id="create-dr-stack-name"
+                          placeholder="Stack name (e.g., myapp)"
+                          value={newStackName}
+                          onChange={(e) => setNewStackName(e.target.value)}
+                          disabled={creatingFromDockerRun}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="create-dr-command">Paste your docker run command</Label>
+                        <textarea
+                          id="create-dr-command"
+                          spellCheck={false}
+                          className="flex w-full rounded-md border border-glass-border bg-input px-3 py-2 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
+                          placeholder="docker run -d --name nginx -p 8080:80 nginx:latest"
+                          value={dockerRunInput}
+                          onChange={(e) => {
+                            setDockerRunInput(e.target.value);
+                            // The preview only reflects the previous command; clear it when
+                            // the input changes so the user can't create a stack from stale YAML.
+                            if (convertedYaml !== null) setConvertedYaml(null);
+                          }}
+                          disabled={creatingFromDockerRun}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleConvertDockerRun}
+                            disabled={isConverting || creatingFromDockerRun || !dockerRunInput.trim()}
+                          >
+                            {isConverting ? (
+                              <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />Converting</>
+                            ) : (
+                              <><FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />Convert</>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                      {convertedYaml !== null && (
+                        <div className="space-y-2">
+                          <Label>compose.yaml preview</Label>
+                          <ScrollArea className="max-h-[240px] rounded-md border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
+                            <pre className="px-3 py-2 text-xs font-mono whitespace-pre leading-relaxed">
+                              {convertedYaml}
+                            </pre>
+                          </ScrollArea>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                  <DialogFooter className="px-6 py-4 border-t border-glass-border">
+                    <Button
+                      onClick={handleCreateStackFromDockerRun}
+                      disabled={creatingFromDockerRun || !convertedYaml || !newStackName.trim()}
+                    >
+                      {creatingFromDockerRun ? (
+                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
+                      ) : (
+                        <><Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create Stack</>
                       )}
                     </Button>
                   </DialogFooter>
