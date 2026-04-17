@@ -28,6 +28,7 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { FleetSyncService } from './services/FleetSyncService';
 import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
@@ -1570,6 +1571,16 @@ const requireAdmin = (req: Request, res: Response): boolean => {
   return true;
 };
 
+// Only accept calls from a sibling Sencho using its node_proxy Bearer token.
+// Browser sessions, API tokens, and console tokens are all rejected.
+const requireNodeProxy = (req: Request, res: Response): boolean => {
+  if (req.user?.username !== 'node-proxy') {
+    res.status(403).json({ error: 'Node proxy authentication required.', code: 'NODE_PROXY_REQUIRED' });
+    return false;
+  }
+  return true;
+};
+
 const requireBody = (req: Request, res: Response): boolean => {
   if (!req.body || typeof req.body !== 'object') {
     res.status(400).json({ error: 'Request body is required' });
@@ -1607,7 +1618,7 @@ async function triggerPostDeployScan(
     if (imageRefs.size === 0) return;
 
     const db = DatabaseService.getInstance();
-    const policy = db.getMatchingPolicy(nodeId, stackName);
+    const policy = db.getMatchingPolicy(nodeId, stackName, FleetSyncService.getSelfIdentity());
 
     for (const imageRef of imageRefs) {
       try {
@@ -1955,6 +1966,75 @@ interface FleetNodeOverview {
   } | null;
   stacks: string[] | null;
 }
+
+// Fleet role: tells the frontend whether this Sencho is the control or a replica.
+// The control serves read+write for security rules. Replicas are read-only and managed upstream.
+app.get('/api/fleet/role', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ role: FleetSyncService.getRole() });
+});
+
+const MAX_SYNC_ROWS = 5000;
+const VALID_SEVERITY = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+const isIntFlag = (v: unknown): v is 0 | 1 => v === 0 || v === 1;
+
+function validateScanPolicyRow(row: unknown): string | null {
+  if (!row || typeof row !== 'object') return 'row must be an object';
+  const r = row as Record<string, unknown>;
+  if (typeof r.name !== 'string' || r.name.length === 0 || r.name.length > 200) return 'name must be a non-empty string';
+  if (typeof r.max_severity !== 'string' || !VALID_SEVERITY.has(r.max_severity)) return 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW';
+  if (r.stack_pattern !== null && typeof r.stack_pattern !== 'string') return 'stack_pattern must be a string or null';
+  if (typeof r.stack_pattern === 'string' && r.stack_pattern.length > 200) return 'stack_pattern is too long';
+  if (typeof r.node_identity !== 'string') return 'node_identity must be a string';
+  if (r.node_identity.length > 500) return 'node_identity is too long';
+  if (!isIntFlag(r.block_on_deploy)) return 'block_on_deploy must be 0 or 1';
+  if (!isIntFlag(r.enabled)) return 'enabled must be 0 or 1';
+  return null;
+}
+
+// Fleet sync: receive a full replacement of a replicated resource from the control.
+// Only scan_policies are supported today; future resources (CVE suppressions) will plug in here.
+// Restricted to node_proxy Bearer tokens so only a sibling Sencho can push.
+app.post('/api/fleet/sync/:resource', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireNodeProxy(req, res)) return;
+  const resource = req.params.resource;
+  if (resource !== 'scan_policies') {
+    res.status(400).json({ error: `Unsupported sync resource: ${resource}` });
+    return;
+  }
+  const body = req.body ?? {};
+  const rows = Array.isArray(body.rows) ? body.rows : null;
+  const targetIdentity = typeof body.targetIdentity === 'string' ? body.targetIdentity : '';
+  if (!rows) {
+    res.status(400).json({ error: 'rows array is required' });
+    return;
+  }
+  if (rows.length > MAX_SYNC_ROWS) {
+    res.status(413).json({ error: `Too many rows (max ${MAX_SYNC_ROWS})` });
+    return;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const err = validateScanPolicyRow(rows[i]);
+    if (err) {
+      res.status(400).json({ error: `Invalid row at index ${i}: ${err}` });
+      return;
+    }
+  }
+  try {
+    FleetSyncService.getInstance().applyIncomingSync(resource, rows, targetIdentity);
+    res.json({ success: true, applied: rows.length });
+  } catch (error) {
+    console.error('[FleetSync] Failed to apply incoming sync:', error);
+    res.status(500).json({ error: 'Failed to apply sync' });
+  }
+});
+
+// Fleet sync status: surfaces per-node replication results so operators can spot stale replicas.
+app.get('/api/fleet/sync-status', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  res.json(DatabaseService.getInstance().getFleetSyncStatuses());
+});
 
 app.get('/api/fleet/overview', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -7495,6 +7575,10 @@ app.get('/api/security/policies', authMiddleware, (req: Request, res: Response):
 app.post('/api/security/policies', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'Security policies are managed from the control node.' });
+    return;
+  }
   const { name, node_id, stack_pattern, max_severity, block_on_deploy, enabled } = req.body ?? {};
   if (!name || typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Policy name is required' }); return;
@@ -7504,14 +7588,18 @@ app.post('/api/security/policies', authMiddleware, (req: Request, res: Response)
     res.status(400).json({ error: 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW' }); return;
   }
   try {
+    const resolvedNodeId = node_id != null ? Number(node_id) : null;
     const policy = DatabaseService.getInstance().createScanPolicy({
       name: name.trim(),
-      node_id: node_id != null ? Number(node_id) : null,
+      node_id: resolvedNodeId,
+      node_identity: FleetSyncService.resolveIdentityForNodeId(resolvedNodeId),
       stack_pattern: stack_pattern ? String(stack_pattern) : null,
       max_severity,
       block_on_deploy: block_on_deploy ? 1 : 0,
       enabled: enabled === false ? 0 : 1,
+      replicated_from_control: 0,
     });
+    FleetSyncService.getInstance().pushResourceAsync('scan_policies');
     res.status(201).json(policy);
   } catch (error) {
     console.error('[Security] Failed to create policy:', error);
@@ -7522,6 +7610,10 @@ app.post('/api/security/policies', authMiddleware, (req: Request, res: Response)
 app.put('/api/security/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'Security policies are managed from the control node.' });
+    return;
+  }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
@@ -7529,7 +7621,11 @@ app.put('/api/security/policies/:id', authMiddleware, (req: Request, res: Respon
   const body = req.body ?? {};
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) updates.name = String(body.name).trim();
-  if (body.node_id !== undefined) updates.node_id = body.node_id != null ? Number(body.node_id) : null;
+  if (body.node_id !== undefined) {
+    const resolvedNodeId = body.node_id != null ? Number(body.node_id) : null;
+    updates.node_id = resolvedNodeId;
+    updates.node_identity = FleetSyncService.resolveIdentityForNodeId(resolvedNodeId);
+  }
   if (body.stack_pattern !== undefined) updates.stack_pattern = body.stack_pattern ? String(body.stack_pattern) : null;
   if (body.max_severity !== undefined) {
     const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
@@ -7544,17 +7640,23 @@ app.put('/api/security/policies/:id', authMiddleware, (req: Request, res: Respon
   if (!policy) {
     res.status(404).json({ error: 'Policy not found' }); return;
   }
+  FleetSyncService.getInstance().pushResourceAsync('scan_policies');
   res.json(policy);
 });
 
 app.delete('/api/security/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'Security policies are managed from the control node.' });
+    return;
+  }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
   }
   DatabaseService.getInstance().deleteScanPolicy(id);
+  FleetSyncService.getInstance().pushResourceAsync('scan_policies');
   res.json({ success: true });
 });
 

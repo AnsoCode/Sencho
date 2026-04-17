@@ -73,13 +73,17 @@ export interface ScanPolicy {
   id: number;
   name: string;
   node_id: number | null;
+  node_identity: string;
   stack_pattern: string | null;
   max_severity: VulnSeverity;
   block_on_deploy: number;
   enabled: number;
+  replicated_from_control: number;
   created_at: number;
   updated_at: number;
 }
+
+export type FleetRole = 'control' | 'replica';
 
 export interface ScanCompareVulnerability {
   vulnerability_id: string;

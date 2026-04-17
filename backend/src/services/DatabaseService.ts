@@ -308,12 +308,22 @@ export interface ScanPolicy {
     id: number;
     name: string;
     node_id: number | null;
+    node_identity: string;
     stack_pattern: string | null;
     max_severity: VulnSeverity;
     block_on_deploy: number;
     enabled: number;
+    replicated_from_control: number;
     created_at: number;
     updated_at: number;
+}
+
+export interface FleetSyncStatus {
+    node_id: number;
+    resource: string;
+    last_success_at: number | null;
+    last_failure_at: number | null;
+    last_error: string | null;
 }
 
 export interface ScanSummary {
@@ -352,6 +362,7 @@ export class DatabaseService {
         this.migrateRegistries();
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
+        this.migrateScanPolicyFleetColumns();
     }
 
     public static getInstance(): DatabaseService {
@@ -611,6 +622,15 @@ export class DatabaseService {
         enabled INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS fleet_sync_status (
+        node_id INTEGER NOT NULL,
+        resource TEXT NOT NULL,
+        last_success_at INTEGER,
+        last_failure_at INTEGER,
+        last_error TEXT,
+        PRIMARY KEY (node_id, resource)
       );
 
       CREATE TABLE IF NOT EXISTS stack_labels (
@@ -876,6 +896,18 @@ export class DatabaseService {
         `);
         // Track external dispatch errors on notification records
         try { this.db.prepare('ALTER TABLE notification_history ADD COLUMN dispatch_error TEXT').run(); } catch { /* already exists */ }
+    }
+
+    private migrateScanPolicyFleetColumns(): void {
+        const tryAddColumn = (table: string, col: string, def: string) => {
+            try {
+                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+            } catch {
+                /* column already present */
+            }
+        };
+        tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
+        tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
     }
 
     // --- Agents ---
@@ -2309,20 +2341,29 @@ export class DatabaseService {
         const now = Date.now();
         const result = this.db
             .prepare(
-                `INSERT INTO scan_policies (name, node_id, stack_pattern, max_severity, block_on_deploy, enabled, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO scan_policies (name, node_id, node_identity, stack_pattern, max_severity, block_on_deploy, enabled, replicated_from_control, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
                 policy.name,
                 policy.node_id,
+                policy.node_identity ?? '',
                 policy.stack_pattern,
                 policy.max_severity,
                 policy.block_on_deploy,
                 policy.enabled,
+                policy.replicated_from_control ?? 0,
                 now,
                 now,
             );
-        return { ...policy, id: result.lastInsertRowid as number, created_at: now, updated_at: now };
+        return {
+            ...policy,
+            node_identity: policy.node_identity ?? '',
+            replicated_from_control: policy.replicated_from_control ?? 0,
+            id: result.lastInsertRowid as number,
+            created_at: now,
+            updated_at: now,
+        };
     }
 
     public updateScanPolicy(
@@ -2332,8 +2373,8 @@ export class DatabaseService {
         const existing = this.getScanPolicy(id);
         if (!existing) return null;
         const ALLOWED_COLUMNS = new Set([
-            'name', 'node_id', 'stack_pattern', 'max_severity',
-            'block_on_deploy', 'enabled',
+            'name', 'node_id', 'node_identity', 'stack_pattern', 'max_severity',
+            'block_on_deploy', 'enabled', 'replicated_from_control',
         ]);
         const fields: string[] = [];
         const values: unknown[] = [];
@@ -2356,9 +2397,41 @@ export class DatabaseService {
         this.db.prepare('DELETE FROM scan_policies WHERE id = ?').run(id);
     }
 
+    /**
+     * Replace all policies that were replicated from a control node with the
+     * provided rows in a single transaction. Local-only policies (created on
+     * this instance directly) are left untouched.
+     */
+    public replaceReplicatedScanPolicies(rows: ScanPolicy[]): void {
+        const now = Date.now();
+        const deleteStmt = this.db.prepare('DELETE FROM scan_policies WHERE replicated_from_control = 1');
+        const insertStmt = this.db.prepare(
+            `INSERT INTO scan_policies (name, node_id, node_identity, stack_pattern, max_severity, block_on_deploy, enabled, replicated_from_control, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        );
+        const txn = this.db.transaction((policies: ScanPolicy[]) => {
+            deleteStmt.run();
+            for (const p of policies) {
+                insertStmt.run(
+                    p.name,
+                    null,
+                    p.node_identity ?? '',
+                    p.stack_pattern,
+                    p.max_severity,
+                    p.block_on_deploy,
+                    p.enabled,
+                    p.created_at ?? now,
+                    p.updated_at ?? now,
+                );
+            }
+        });
+        txn(rows);
+    }
+
     public getMatchingPolicy(
         nodeId: number,
         stackName: string | null,
+        selfIdentity: string,
     ): ScanPolicy | null {
         const policies = this.db
             .prepare(
@@ -2373,16 +2446,73 @@ export class DatabaseService {
             );
             return regex.test(stackName);
         };
-        const scoped = policies.filter((p) => matchesStack(p.stack_pattern));
+        const matchesIdentity = (p: ScanPolicy): boolean => {
+            // Locally created policies (never replicated) apply based on node_id logic already filtered.
+            if (p.replicated_from_control === 0) return true;
+            // Replicated policies without a specific identity are fleet-wide.
+            if (!p.node_identity) return true;
+            // Identity-scoped replicated policies only apply to their target instance.
+            return p.node_identity === selfIdentity;
+        };
+        const scoped = policies.filter((p) => matchesStack(p.stack_pattern) && matchesIdentity(p));
         if (scoped.length === 0) return null;
+        const isNodeScoped = (p: ScanPolicy): boolean => Boolean(p.node_id) || Boolean(p.node_identity);
         scoped.sort((a, b) => {
-            if (a.node_id && !b.node_id) return -1;
-            if (!a.node_id && b.node_id) return 1;
+            const aNode = isNodeScoped(a);
+            const bNode = isNodeScoped(b);
+            if (aNode && !bNode) return -1;
+            if (!aNode && bNode) return 1;
             if (a.stack_pattern && !b.stack_pattern) return -1;
             if (!a.stack_pattern && b.stack_pattern) return 1;
             return 0;
         });
         return scoped[0];
+    }
+
+    // --- Fleet Sync Status ---
+
+    public getFleetSyncStatuses(): FleetSyncStatus[] {
+        return this.db
+            .prepare('SELECT * FROM fleet_sync_status ORDER BY node_id, resource')
+            .all() as FleetSyncStatus[];
+    }
+
+    public recordFleetSyncSuccess(nodeId: number, resource: string): void {
+        const now = Date.now();
+        this.db
+            .prepare(
+                `INSERT INTO fleet_sync_status (node_id, resource, last_success_at, last_failure_at, last_error)
+                 VALUES (?, ?, ?, NULL, NULL)
+                 ON CONFLICT(node_id, resource) DO UPDATE SET
+                   last_success_at = excluded.last_success_at,
+                   last_error = NULL`,
+            )
+            .run(nodeId, resource, now);
+    }
+
+    public recordFleetSyncFailure(nodeId: number, resource: string, error: string): void {
+        const now = Date.now();
+        this.db
+            .prepare(
+                `INSERT INTO fleet_sync_status (node_id, resource, last_failure_at, last_error)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(node_id, resource) DO UPDATE SET
+                   last_failure_at = excluded.last_failure_at,
+                   last_error = excluded.last_error`,
+            )
+            .run(nodeId, resource, now, error);
+    }
+
+    public getFailedSyncTargets(resource: string, maxAgeMs: number): FleetSyncStatus[] {
+        const cutoff = Date.now() - maxAgeMs;
+        return this.db
+            .prepare(
+                `SELECT * FROM fleet_sync_status
+                 WHERE resource = ?
+                   AND (last_failure_at IS NOT NULL AND last_failure_at > ?)
+                   AND (last_success_at IS NULL OR last_success_at < last_failure_at)`,
+            )
+            .all(resource, cutoff) as FleetSyncStatus[];
     }
 
     // --- Stack Labels ---

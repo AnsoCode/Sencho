@@ -103,6 +103,7 @@
               "features/host-console",
               "features/multi-node",
               "features/fleet-view",
+              "features/fleet-sync",
               "features/remote-updates",
               "features/stack-labels",
               "features/alerts-notifications",
