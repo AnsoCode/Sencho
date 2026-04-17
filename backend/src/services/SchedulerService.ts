@@ -13,11 +13,18 @@ import { captureLocalNodeFiles, captureRemoteNodeFiles } from '../utils/snapshot
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 import TrivyService from './TrivyService';
+import TrivyInstaller from './TrivyInstaller';
+
+const TRIVY_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const TRIVY_UPDATE_CHECK_STARTUP_DELAY_MS = 5 * 60 * 1000;
 
 export class SchedulerService {
     private static instance: SchedulerService;
     private intervalId: ReturnType<typeof setInterval> | null = null;
+    private trivyUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
+    private trivyUpdateStartupTimer: ReturnType<typeof setTimeout> | null = null;
     private isProcessing = false;
+    private isCheckingTrivyUpdate = false;
     private runningTasks = new Set<number>();
 
     private constructor() {}
@@ -34,6 +41,8 @@ export class SchedulerService {
         this.cleanupStaleRuns();
         this.intervalId = setInterval(() => this.tick(), 60_000);
         setTimeout(() => this.tick(), 10_000);
+        this.trivyUpdateStartupTimer = setTimeout(() => this.runTrivyUpdateCheck(), TRIVY_UPDATE_CHECK_STARTUP_DELAY_MS);
+        this.trivyUpdateIntervalId = setInterval(() => this.runTrivyUpdateCheck(), TRIVY_UPDATE_CHECK_INTERVAL_MS);
         console.log('[SchedulerService] Started');
     }
 
@@ -42,7 +51,59 @@ export class SchedulerService {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
+        if (this.trivyUpdateIntervalId) {
+            clearInterval(this.trivyUpdateIntervalId);
+            this.trivyUpdateIntervalId = null;
+        }
+        if (this.trivyUpdateStartupTimer) {
+            clearTimeout(this.trivyUpdateStartupTimer);
+            this.trivyUpdateStartupTimer = null;
+        }
         console.log('[SchedulerService] Stopped');
+    }
+
+    private async runTrivyUpdateCheck(): Promise<void> {
+        if (this.isCheckingTrivyUpdate) return;
+        this.isCheckingTrivyUpdate = true;
+        try {
+            const trivy = TrivyService.getInstance();
+            if (!trivy.isTrivyAvailable() || trivy.getSource() !== 'managed') return;
+            const db = DatabaseService.getInstance();
+            const settings = db.getGlobalSettings();
+            const autoUpdate = settings.trivy_auto_update === '1';
+            const installer = TrivyInstaller.getInstance();
+            if (installer.isBusy()) return;
+            const check = await installer.checkForUpdate(trivy.getVersion(), 'managed');
+            if (!check.updateAvailable) return;
+
+            if (autoUpdate) {
+                const previous = trivy.getVersion() ?? 'unknown';
+                console.log(`[SchedulerService] Auto-updating Trivy from ${previous} to ${check.latest}`);
+                try {
+                    await installer.update();
+                    await trivy.detectTrivy();
+                    NotificationService.getInstance().dispatchAlert(
+                        'info',
+                        `Trivy updated from v${previous} to v${check.latest}`,
+                    );
+                    db.updateGlobalSetting('trivy_last_notified_version', check.latest);
+                } catch (err) {
+                    console.error('[SchedulerService] Trivy auto-update failed:', getErrorMessage(err, 'unknown error'));
+                }
+            } else {
+                const lastNotified = settings.trivy_last_notified_version || '';
+                if (lastNotified === check.latest) return;
+                NotificationService.getInstance().dispatchAlert(
+                    'info',
+                    `Trivy update available: v${check.latest} (currently v${check.current ?? 'unknown'})`,
+                );
+                db.updateGlobalSetting('trivy_last_notified_version', check.latest);
+            }
+        } catch (err) {
+            console.warn('[SchedulerService] Trivy update check failed:', getErrorMessage(err, 'unknown error'));
+        } finally {
+            this.isCheckingTrivyUpdate = false;
+        }
     }
 
     private cleanupStaleRuns(): void {

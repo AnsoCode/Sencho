@@ -465,7 +465,7 @@ export default function ResourcesView() {
     const [bulkPurgeConfirm, setBulkPurgeConfirm] = useState(false);
 
     // Vulnerability scanning state
-    const trivy = useTrivyStatus();
+    const { status: trivy } = useTrivyStatus();
     const [scanSummaries, setScanSummaries] = useState<Record<string, ScanSummary>>({});
     const [scanningImageRef, setScanningImageRef] = useState<string | null>(null);
     const [inspectScanId, setInspectScanId] = useState<number | null>(null);

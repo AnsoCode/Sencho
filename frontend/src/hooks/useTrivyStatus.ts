@@ -1,28 +1,68 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
-import type { TrivyStatus } from '@/types/security';
+import type { TrivyStatus, TrivyUpdateCheck } from '@/types/security';
 
-export function useTrivyStatus(): TrivyStatus {
-  const [status, setStatus] = useState<TrivyStatus>({ available: false, version: null });
+const INITIAL_STATUS: TrivyStatus = {
+  available: false,
+  version: null,
+  source: 'none',
+  autoUpdate: false,
+  busy: false,
+};
 
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch('/security/trivy-status')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled || !d) return;
-        setStatus({
-          available: !!d.available,
-          version: typeof d.version === 'string' ? d.version : null,
-        });
-      })
-      .catch((err) => {
-        console.error('Failed to fetch Trivy status:', err);
+export interface UseTrivyStatusResult {
+  status: TrivyStatus;
+  updateCheck: TrivyUpdateCheck | null;
+  refresh: () => Promise<void>;
+  refreshUpdateCheck: () => Promise<void>;
+}
+
+export function useTrivyStatus(): UseTrivyStatusResult {
+  const [status, setStatus] = useState<TrivyStatus>(INITIAL_STATUS);
+  const [updateCheck, setUpdateCheck] = useState<TrivyUpdateCheck | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await apiFetch('/security/trivy-status');
+      if (!r.ok) return;
+      const d = await r.json();
+      setStatus({
+        available: !!d.available,
+        version: typeof d.version === 'string' ? d.version : null,
+        source: d.source === 'managed' || d.source === 'host' ? d.source : 'none',
+        autoUpdate: !!d.autoUpdate,
+        busy: !!d.busy,
       });
-    return () => {
-      cancelled = true;
-    };
+    } catch (err) {
+      console.error('Failed to fetch Trivy status:', err);
+    }
   }, []);
 
-  return status;
+  const refreshUpdateCheck = useCallback(async () => {
+    try {
+      const r = await apiFetch('/security/trivy-update-check');
+      if (!r.ok) {
+        setUpdateCheck(null);
+        return;
+      }
+      const d = (await r.json()) as TrivyUpdateCheck;
+      setUpdateCheck(d);
+    } catch {
+      setUpdateCheck(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (status.source === 'managed') {
+      void refreshUpdateCheck();
+    } else {
+      setUpdateCheck(null);
+    }
+  }, [status.source, refreshUpdateCheck]);
+
+  return { status, updateCheck, refresh, refreshUpdateCheck };
 }

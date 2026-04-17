@@ -2,9 +2,21 @@ export type VulnSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
 export type VulnScanStatus = 'in_progress' | 'completed' | 'failed';
 export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy';
 
+export type TrivySource = 'managed' | 'host' | 'none';
+
 export interface TrivyStatus {
   available: boolean;
   version: string | null;
+  source: TrivySource;
+  autoUpdate: boolean;
+  busy: boolean;
+}
+
+export interface TrivyUpdateCheck {
+  current: string | null;
+  latest: string;
+  updateAvailable: boolean;
+  source: TrivySource;
 }
 
 export interface VulnerabilityScan {

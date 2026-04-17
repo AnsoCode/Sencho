@@ -86,6 +86,10 @@ export function disableCapability(c: Capability): void {
   disabledCapabilities.add(c);
 }
 
+export function enableCapability(c: Capability): void {
+  disabledCapabilities.delete(c);
+}
+
 /** Returns capabilities this instance actually supports at runtime. */
 export function getActiveCapabilities(): readonly string[] {
   if (disabledCapabilities.size === 0) return CAPABILITIES;

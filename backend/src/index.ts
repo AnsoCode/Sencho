@@ -70,6 +70,7 @@ import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from 
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
 import TrivyService, { SbomFormat } from './services/TrivyService';
+import TrivyInstaller from './services/TrivyInstaller';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
@@ -7249,9 +7250,113 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
 // Vulnerability Scanning Routes
 // =========================
 
+const trivyInstallLimiter = rateLimit({
+  ...rateLimitBase,
+  windowMs: 10 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 5 : 50,
+  keyGenerator: rateLimitKeyGenerator,
+  message: { error: 'Too many install requests. Try again later.' },
+});
+
 app.get('/api/security/trivy-status', authMiddleware, (_req: Request, res: Response) => {
   const svc = TrivyService.getInstance();
-  res.json({ available: svc.isTrivyAvailable(), version: svc.getVersion() });
+  const installer = TrivyInstaller.getInstance();
+  const settings = DatabaseService.getInstance().getGlobalSettings();
+  res.json({
+    available: svc.isTrivyAvailable(),
+    version: svc.getVersion(),
+    source: svc.getSource(),
+    autoUpdate: settings.trivy_auto_update === '1',
+    busy: installer.isBusy(),
+  });
+});
+
+app.post('/api/security/trivy-install', trivyInstallLimiter, authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (svc.getSource() === 'host') {
+    res.status(409).json({ error: 'Trivy is already installed on the host PATH. Remove the host binary before managing it from Sencho.' });
+    return;
+  }
+  if (svc.getSource() === 'managed') {
+    res.status(409).json({ error: 'Trivy is already installed. Use the update endpoint instead.' });
+    return;
+  }
+  try {
+    const { version } = await TrivyInstaller.getInstance().install();
+    await svc.detectTrivy();
+    res.json({ version, source: svc.getSource(), available: svc.isTrivyAvailable() });
+  } catch (err) {
+    const msg = getErrorMessage(err, 'Install failed');
+    console.error('[Security] Trivy install failed:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.delete('/api/security/trivy-install', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (svc.getSource() !== 'managed') {
+    res.status(409).json({ error: 'No managed Trivy install to remove' });
+    return;
+  }
+  try {
+    await TrivyInstaller.getInstance().uninstall();
+    await svc.detectTrivy();
+    res.json({ available: svc.isTrivyAvailable(), source: svc.getSource() });
+  } catch (err) {
+    const msg = getErrorMessage(err, 'Uninstall failed');
+    console.error('[Security] Trivy uninstall failed:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/security/trivy-update-check', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (svc.getSource() !== 'managed') {
+    res.status(409).json({ error: 'Update checks only apply to managed installs' });
+    return;
+  }
+  try {
+    const result = await TrivyInstaller.getInstance().checkForUpdate(svc.getVersion(), svc.getSource());
+    res.json(result);
+  } catch (err) {
+    const msg = getErrorMessage(err, 'Update check failed');
+    console.error('[Security] Trivy update check failed:', msg);
+    res.status(502).json({ error: msg });
+  }
+});
+
+app.post('/api/security/trivy-update', trivyInstallLimiter, authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (svc.getSource() !== 'managed') {
+    res.status(409).json({ error: 'Update only applies to managed installs' });
+    return;
+  }
+  try {
+    const { version } = await TrivyInstaller.getInstance().update();
+    await svc.detectTrivy();
+    res.json({ version, source: svc.getSource(), available: svc.isTrivyAvailable() });
+  } catch (err) {
+    const msg = getErrorMessage(err, 'Update failed');
+    console.error('[Security] Trivy update failed:', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.put('/api/security/trivy-auto-update', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmiral(req, res)) return;
+  const enabled = req.body?.enabled === true;
+  try {
+    DatabaseService.getInstance().updateGlobalSetting('trivy_auto_update', enabled ? '1' : '0');
+    res.json({ autoUpdate: enabled });
+  } catch (err) {
+    const msg = getErrorMessage(err, 'Failed to update setting');
+    console.error('[Security] Trivy auto-update toggle failed:', msg);
+    res.status(500).json({ error: msg });
+  }
 });
 
 app.post('/api/security/scan', authMiddleware, (req: Request, res: Response): void => {
