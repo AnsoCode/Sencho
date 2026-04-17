@@ -192,17 +192,21 @@ export function SecurityHistoryView() {
               />
             </div>
             {needsPagination && (
-              <div className="flex items-center gap-1 ml-auto">
+              <div className="flex items-center gap-1 ml-auto" aria-live="polite">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6"
                   onClick={() => setPage(Math.max(0, safePage - 1))}
                   disabled={safePage === 0}
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
                 </Button>
-                <span className="text-xs font-mono tabular-nums text-stat-subtitle min-w-[3rem] text-center">
+                <span
+                  className="text-xs font-mono tabular-nums text-stat-subtitle min-w-[3rem] text-center"
+                  aria-label={`Page ${safePage + 1} of ${totalPages}`}
+                >
                   {safePage + 1} / {totalPages}
                 </span>
                 <Button
@@ -211,6 +215,7 @@ export function SecurityHistoryView() {
                   className="h-6 w-6"
                   onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
                   disabled={safePage >= totalPages - 1}
+                  aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
                 </Button>

@@ -721,6 +721,7 @@ export default function ResourcesView() {
                             }));
                         }}
                         title="View completed vulnerability scans and compare them"
+                        aria-label="Open scan history"
                     >
                         <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
                         Scan history
