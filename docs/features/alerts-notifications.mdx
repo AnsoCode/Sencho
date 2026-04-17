@@ -160,6 +160,15 @@ When the periodic image check (every 6 hours) detects that a stack has new upstr
 
 Both notification types use the same channel routing as alerts: if notification routes are configured for a stack, those channels receive the message; otherwise, global notification channels are used as a fallback.
 
+## Scheduled scan completion
+
+Recurring [vulnerability scans](/features/vulnerability-scanning) dispatch a notification whenever a run finishes so you do not have to check the task history manually.
+
+- **Info** when every image scanned successfully.
+- **Warning** when one or more images failed to scan during the run.
+
+The message includes the scheduled task name and a summary of how many images were scanned, cached, and failed. Failures are typically transient (registry timeouts, missing credentials) and do not stop the rest of the run from completing.
+
 ## Container crash detection
 
 Sencho watches every container on each of your nodes in real time and notifies you when something exits unexpectedly. Detection is causal: Sencho distinguishes crashes from intentional stops, so stopping a stack, restarting it, or running `docker compose down` will not produce a false crash alert.
