@@ -3,17 +3,54 @@ title: Installing Trivy
 description: Install and mount the Trivy CLI so Sencho can scan container images for vulnerabilities.
 ---
 
-Sencho's [Vulnerability Scanning](/features/vulnerability-scanning) feature uses the [Trivy](https://trivy.dev) CLI. Trivy is not bundled with the Sencho Docker image; operators provide it via a bind mount or a custom image so Sencho can find it on `PATH`. Once Trivy is available, the scanning UI appears automatically.
+Sencho's [Vulnerability Scanning](/features/vulnerability-scanning) feature uses the [Trivy](https://trivy.dev) CLI. Trivy is not bundled with the Sencho Docker image. You have three ways to provide it, in order of convenience:
+
+1. **One-click install from Settings → Security** (recommended).
+2. Bind mount a host Trivy binary into the container.
+3. Build a custom Sencho image with Trivy baked in.
+
+Once Trivy is available through any of these options, the scanning UI appears automatically.
 
 ## Why Trivy is not bundled
 
-Trivy's vulnerability database updates multiple times per day and is around 100 MB. Bundling Trivy would force every Sencho instance to carry an out-of-date database in its image, then re-download on first scan. By keeping Trivy external, you can:
+Trivy's vulnerability database updates multiple times per day and is around 100 MB. Bundling Trivy would force every Sencho instance to carry an out-of-date database in its image, then re-download on first scan. Keeping Trivy external lets you:
 
-- Pick the Trivy version you want and upgrade it on your own schedule
-- Persist the Trivy cache (the vulnerability DB) across Sencho container restarts
-- Pre-seed an air-gapped cache for environments without internet access
+- Pick the Trivy version you want and upgrade it on your own schedule.
+- Persist the Trivy cache (the vulnerability DB) across Sencho container restarts.
+- Pre-seed an air-gapped cache for environments without internet access.
 
-## Installing Trivy on the host
+## Option 1: One-click install (recommended)
+
+Sencho can install and manage Trivy for you without any extra bind mounts or environment variables.
+
+1. Go to **Settings → Security**.
+2. Under **Vulnerability Scanner**, click **Install Trivy**.
+3. Wait for the status to flip to **Installed (managed)**. The version appears next to the badge.
+
+<Frame>
+  <img src="/images/vulnerability-scanning/trivy-settings-card.png" alt="Vulnerability Scanner card in Settings, Security section, with Install Trivy button" />
+</Frame>
+
+Behind the scenes:
+
+- The Trivy binary is downloaded into Sencho's existing data volume at `/app/data/bin/trivy`. No host filesystem changes.
+- The vulnerability database cache defaults to `/app/data/trivy-cache` so it persists across container restarts.
+- Downloads are verified against the official Trivy checksum file before the binary is put in place.
+- The installed version survives Sencho image upgrades because it lives on the mounted data volume.
+
+### Updating the managed install
+
+When a newer Trivy release is available, Settings → Security shows an **Update available** badge next to the version. Click **Update** to pull the latest release.
+
+To update automatically instead, toggle **Auto-update Trivy** on. Sencho checks for new releases once a day and installs them in the background. You'll get an in-app notification each time a new version is installed, or when an update is available and auto-update is off.
+
+The install, update, and uninstall buttons are Admiral-only. Skipper and Community instances see the scanner status, but install actions require an Admiral license.
+
+### Removing the managed install
+
+Click **Uninstall** next to the status badge. Sencho removes the binary from `/app/data/bin/trivy`. The vulnerability database cache at `/app/data/trivy-cache` is left in place in case you reinstall later; delete it manually if you want to reclaim the disk space.
+
+## Option 2: Installing Trivy on the host
 
 ### Linux (Debian / Ubuntu)
 
@@ -51,11 +88,11 @@ trivy --version
 
 The command should print a `Version: X.Y.Z` line. Note the path that `which trivy` (or `where trivy` on Windows) returns; you will mount that path into the Sencho container.
 
-## Making Trivy available to Sencho
+## Making a host-installed Trivy available to Sencho
 
-Sencho runs inside a container and looks for `trivy` on its own `PATH`. There are two approaches:
+If you already installed Trivy on the host (Option 2) and prefer to manage it externally, Sencho runs inside a container and looks for `trivy` on its own `PATH`. There are two ways to expose it:
 
-### Option 1: Bind mount the host binary
+### Bind mount the host binary
 
 Mount the host's Trivy binary into the Sencho container. This is the simplest option when Sencho and Trivy share the same CPU architecture.
 
@@ -81,7 +118,7 @@ The `trivy-cache` volume persists the vulnerability database across Sencho conta
 
 Adjust the first path if `which trivy` on the host prints something other than `/usr/local/bin/trivy` (for example `/usr/bin/trivy` on some distributions).
 
-### Option 2: Build a custom Sencho image
+### Option 3: Build a custom Sencho image
 
 If the host's Trivy binary is not ABI-compatible with the Sencho container (for example because you are running macOS host binaries or a different glibc version), install Trivy inside the image instead:
 
@@ -104,9 +141,11 @@ docker compose up -d
 
 ## Persisting the vulnerability database
 
-Trivy downloads a ~100 MB vulnerability database on first run and refreshes it every six hours. Without a persistent cache, every Sencho restart re-downloads the database, wasting bandwidth and adding 10–30 seconds to the first scan.
+Trivy downloads a ~100 MB vulnerability database on first run and refreshes it every six hours. Without a persistent cache, every Sencho restart re-downloads the database, wasting bandwidth and adding 10 to 30 seconds to the first scan.
 
-Set `TRIVY_CACHE_DIR` to a directory inside a named or bind-mounted volume (see Option 1 above). The directory must be writable by the Sencho process.
+The managed install (Option 1) writes its cache to `/app/data/trivy-cache` inside Sencho's data volume automatically, so no extra configuration is needed.
+
+For Options 2 and 3, set `TRIVY_CACHE_DIR` to a directory inside a named or bind-mounted volume. The directory must be writable by the Sencho process.
 
 ## Air-gapped environments
 
@@ -142,13 +181,10 @@ Plan to refresh the bundle on a schedule (weekly is typical) so CVE data stays c
 
 ## Verifying Sencho detects Trivy
 
-After restarting Sencho with the mount in place:
+1. Open **Settings → Security**. The **Vulnerability Scanner** card shows the current status and version.
+2. Open the **Resources** tab. If Trivy is detected, a shield icon appears in the Actions column of the **Images** panel next to the delete icon on every row.
 
-1. Open the **Resources** tab.
-2. Look at the **Images** panel. If Trivy is detected, a shield icon appears in the Actions column next to the delete icon on every row.
-3. You can also check **Settings → Support** for an explicit Trivy availability status.
-
-If the shield icon is missing, see the troubleshooting section below.
+If the scanner shows as not installed after using Option 2 or 3, see the troubleshooting section below.
 
 ### Runtime detection
 
@@ -170,11 +206,17 @@ If the command returns "not found", the mount path inside the container is wrong
 
 ### Binary exists but reports an exec format error
 
-This means the host binary is not ABI-compatible with the Sencho image. Use Option 2 (custom image) instead; the `install.sh` script pulls the right architecture-specific build.
+This means the host binary is not ABI-compatible with the Sencho image. Use the one-click install (Option 1) or a custom image (Option 3); both pull the right architecture-specific build.
 
 ### Scans take a long time on first run
 
-The first scan after a Trivy install downloads the vulnerability database. Expect 10–30 seconds of additional latency. Subsequent scans are near-instant once the cache is warm and `TRIVY_CACHE_DIR` is persisted.
+The first scan after a Trivy install downloads the vulnerability database. Expect 10 to 30 seconds of additional latency. Subsequent scans are near-instant once the cache is warm and `TRIVY_CACHE_DIR` is persisted.
+
+### Install button is disabled
+
+The install, update, and uninstall buttons require an Admiral license. If you hold a Skipper or Community license, the card shows current status only; use Option 2 or 3 to add Trivy manually.
+
+The install button is also hidden when a host-installed Trivy is already detected on `PATH`. Remove the host binary (or drop the bind mount) to switch to the managed install.
 
 ### Private registry images fail to scan
 

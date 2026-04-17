@@ -28,8 +28,10 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
 import { TierBadge } from '@/components/TierBadge';
-import { ShieldCheck, Plus, Trash2, Pencil } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2 } from 'lucide-react';
 import type { ScanPolicy, VulnSeverity } from '@/types/security';
+import { useLicense } from '@/context/LicenseContext';
+import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 
 const SEVERITY_OPTIONS: Array<{ value: VulnSeverity; label: string }> = [
   { value: 'CRITICAL', label: 'Critical' },
@@ -54,6 +56,24 @@ const EMPTY_FORM: PolicyFormState = {
   enabled: true,
 };
 
+const TRIVY_SOURCE_BADGES: Record<'managed' | 'host' | 'none', { label: string; variant: 'outline' | 'secondary' }> = {
+  managed: { label: 'Installed (managed)', variant: 'outline' },
+  host: { label: 'Installed (host)', variant: 'outline' },
+  none: { label: 'Not installed', variant: 'secondary' },
+};
+
+const TRIVY_SOURCE_DESCRIPTIONS: Record<'managed' | 'host' | 'none', string | null> = {
+  managed: null,
+  host: 'Managed externally via the host binary. Install and updates are handled outside Sencho.',
+  none: "Install Trivy into Sencho's data volume to enable image vulnerability scanning. No host mounts required.",
+};
+
+const TRIVY_OP_LABELS: Record<'install' | 'update' | 'uninstall', { loading: string; success: string }> = {
+  install: { loading: 'Installing Trivy...', success: 'Trivy installed' },
+  update: { loading: 'Updating Trivy...', success: 'Trivy updated' },
+  uninstall: { loading: 'Removing Trivy...', success: 'Trivy removed' },
+};
+
 export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   const [policies, setPolicies] = useState<ScanPolicy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +82,63 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   const [form, setForm] = useState<PolicyFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const { license } = useLicense();
+  const isAdmiral = isPaid && license?.variant === 'admiral';
+  const { status: trivy, updateCheck, refresh: refreshTrivy, refreshUpdateCheck } = useTrivyStatus();
+  const [trivyBusy, setTrivyBusy] = useState<null | 'install' | 'update' | 'uninstall' | 'auto-update'>(null);
+  const [uninstallConfirm, setUninstallConfirm] = useState(false);
+
+  const runTrivyOp = async (
+    op: 'install' | 'update' | 'uninstall',
+    path: string,
+    method: 'POST' | 'DELETE',
+  ) => {
+    const { loading, success } = TRIVY_OP_LABELS[op];
+    setTrivyBusy(op);
+    const toastId = toast.loading(loading);
+    try {
+      const res = await apiFetch(path, { method, localOnly: true });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Trivy ${op} failed`);
+      }
+      toast.success(success);
+      await Promise.all([refreshTrivy(), refreshUpdateCheck()]);
+    } catch (err) {
+      toast.error((err as Error)?.message || `Trivy ${op} failed`);
+    } finally {
+      toast.dismiss(toastId);
+      setTrivyBusy(null);
+    }
+  };
+
+  const handleInstallTrivy = () => runTrivyOp('install', '/security/trivy-install', 'POST');
+  const handleUpdateTrivy = () => runTrivyOp('update', '/security/trivy-update', 'POST');
+  const handleUninstallTrivy = async () => {
+    setUninstallConfirm(false);
+    await runTrivyOp('uninstall', '/security/trivy-install', 'DELETE');
+  };
+
+  const handleAutoUpdateToggle = async (enabled: boolean) => {
+    setTrivyBusy('auto-update');
+    try {
+      const res = await apiFetch('/security/trivy-auto-update', {
+        method: 'PUT',
+        localOnly: true,
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to update setting');
+      }
+      await refreshTrivy();
+    } catch (err) {
+      toast.error((err as Error)?.message || 'Failed to update setting');
+    } finally {
+      setTrivyBusy(null);
+    }
+  };
 
   const fetchPolicies = async () => {
     try {
@@ -192,6 +269,81 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
           <Plus className="w-4 h-4 mr-1.5" />
           Add Policy
         </Button>
+      </div>
+
+      <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <span className="font-medium text-sm">Vulnerability Scanner</span>
+            <Badge variant={TRIVY_SOURCE_BADGES[trivy.source].variant} className="text-[10px] shrink-0">
+              {TRIVY_SOURCE_BADGES[trivy.source].label}
+            </Badge>
+            {updateCheck?.updateAvailable && (
+              <Badge variant="secondary" className="text-[10px] shrink-0">
+                Update available to v{updateCheck.latest}
+              </Badge>
+            )}
+          </div>
+          {isAdmiral && (
+            <div className="flex items-center gap-2 shrink-0">
+              {trivy.source === 'none' && (
+                <Button size="sm" onClick={handleInstallTrivy} disabled={trivyBusy !== null}>
+                  {trivyBusy === 'install' ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                  )}
+                  Install Trivy
+                </Button>
+              )}
+              {trivy.source === 'managed' && updateCheck?.updateAvailable && (
+                <Button size="sm" variant="outline" onClick={handleUpdateTrivy} disabled={trivyBusy !== null}>
+                  {trivyBusy === 'update' ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                  )}
+                  Update
+                </Button>
+              )}
+              {trivy.source === 'managed' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
+                  onClick={() => setUninstallConfirm(true)}
+                  disabled={trivyBusy !== null}
+                >
+                  Uninstall
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {trivy.source === 'managed' && trivy.version && (
+          <div className="text-xs text-stat-subtitle font-mono">Version: v{trivy.version}</div>
+        )}
+        {TRIVY_SOURCE_DESCRIPTIONS[trivy.source] && (
+          <div className="text-xs text-stat-subtitle">{TRIVY_SOURCE_DESCRIPTIONS[trivy.source]}</div>
+        )}
+
+        {trivy.source === 'managed' && isAdmiral && (
+          <div className="flex items-center justify-between rounded-lg border border-glass-border px-3 py-2.5">
+            <div>
+              <Label className="text-sm">Auto-update Trivy</Label>
+              <p className="text-xs text-muted-foreground">
+                Check daily and install newer Trivy releases automatically.
+              </p>
+            </div>
+            <Switch
+              checked={trivy.autoUpdate}
+              onCheckedChange={handleAutoUpdateToggle}
+              disabled={trivyBusy !== null}
+            />
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -348,6 +500,27 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={uninstallConfirm} onOpenChange={setUninstallConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Trivy?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the managed Trivy binary. Vulnerability scanning will stop working until
+              Trivy is reinstalled or a host binary is provided.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUninstallTrivy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

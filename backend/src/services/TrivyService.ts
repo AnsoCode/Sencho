@@ -12,6 +12,8 @@ import {
 } from './DatabaseService';
 import { RegistryService } from './RegistryService';
 import { disableCapability, enableCapability } from './CapabilityRegistry';
+import TrivyInstaller, { type TrivySource } from './TrivyInstaller';
+import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 import { SEVERITY_ORDER } from '../utils/severity';
 
@@ -144,10 +146,12 @@ export function parseTrivyOutput(raw: string): {
 
 class TrivyService {
     private static instance: TrivyService;
-    private available = false;
     private version: string | null = null;
-    private detectionTimestamp = 0;
+    private binaryPath: string | null = null;
+    private source: TrivySource = 'none';
     private scanningImages: Set<string> = new Set();
+    private cacheDirEnsured: string | null = null;
+    private detectionTimestamp = 0;
 
     public static getInstance(): TrivyService {
         if (!TrivyService.instance) {
@@ -158,42 +162,66 @@ class TrivyService {
 
     async initialize(): Promise<void> {
         await this.detectTrivy();
-        if (!this.available) {
-            disableCapability('vulnerability-scanning');
-            console.log('[Trivy] Binary not found on PATH; vulnerability scanning disabled');
+        if (this.source === 'none') {
+            console.log('[Trivy] Binary not found; vulnerability scanning disabled');
         } else {
-            console.log(`[Trivy] Available (version ${this.version})`);
+            console.log(`[Trivy] Available (version ${this.version}, source ${this.source})`);
         }
     }
 
-    async detectTrivy(): Promise<{ available: boolean; version: string | null }> {
+    async detectTrivy(): Promise<{ available: boolean; version: string | null; source: TrivySource }> {
         const started = Date.now();
-        const wasAvailable = this.available;
+        const wasAvailable = this.source !== 'none';
+        const candidates: Array<{ path: string; source: TrivySource }> = [];
+        const managedPath = TrivyInstaller.getInstance().binaryPath();
         try {
-            const { stdout } = await execFileAsync('trivy', ['--version'], { timeout: 5000 });
-            const match = stdout.match(/Version:\s*([^\s\n]+)/i);
-            this.version = match ? match[1] : stdout.split('\n')[0]?.trim() || 'unknown';
-            this.available = true;
+            fs.accessSync(managedPath, fs.constants.X_OK);
+            candidates.push({ path: managedPath, source: 'managed' });
         } catch {
-            this.available = false;
+            /* not installed */
+        }
+        const envOverride = process.env.TRIVY_BIN;
+        if (envOverride) {
+            candidates.push({ path: envOverride, source: 'host' });
+        }
+        candidates.push({ path: 'trivy', source: 'host' });
+
+        let detected = false;
+        for (const candidate of candidates) {
+            try {
+                const { stdout } = await execFileAsync(candidate.path, ['--version'], { timeout: 5000 });
+                const match = stdout.match(/Version:\s*([^\s\n]+)/i);
+                this.version = match ? match[1] : stdout.split('\n')[0]?.trim() || 'unknown';
+                this.binaryPath = candidate.path;
+                this.source = candidate.source;
+                detected = true;
+                break;
+            } catch {
+                /* try next */
+            }
+        }
+        if (!detected) {
             this.version = null;
+            this.binaryPath = null;
+            this.source = 'none';
         }
         this.detectionTimestamp = Date.now();
+        const isAvailable = this.source !== 'none';
         diag(
-            `detectTrivy: available=${this.available} version=${this.version ?? 'null'} tookMs=${
+            `detectTrivy: available=${isAvailable} source=${this.source} version=${this.version ?? 'null'} tookMs=${
                 this.detectionTimestamp - started
             }`,
         );
-        if (this.available && !wasAvailable) {
+        if (isAvailable && !wasAvailable) {
             enableCapability('vulnerability-scanning');
             console.log(
-                `[Trivy] Binary detected on PATH; vulnerability scanning enabled (version ${this.version})`,
+                `[Trivy] Binary detected (source=${this.source}); vulnerability scanning enabled (version ${this.version})`,
             );
-        } else if (!this.available && wasAvailable) {
+        } else if (!isAvailable && wasAvailable) {
             disableCapability('vulnerability-scanning');
             console.warn('[Trivy] Binary no longer detected; vulnerability scanning disabled');
         }
-        return { available: this.available, version: this.version };
+        return { available: isAvailable, version: this.version, source: this.source };
     }
 
     getDetectionTimestamp(): number {
@@ -201,19 +229,38 @@ class TrivyService {
     }
 
     isTrivyAvailable(): boolean {
-        return this.available;
+        return this.source !== 'none';
     }
 
     getVersion(): string | null {
         return this.version;
     }
 
+    getSource(): TrivySource {
+        return this.source;
+    }
+
+    private ensureCacheDir(): string {
+        const cacheDir = process.env.TRIVY_CACHE_DIR || TrivyInstaller.getInstance().cacheDir();
+        if (this.cacheDirEnsured !== cacheDir) {
+            try {
+                fs.mkdirSync(cacheDir, { recursive: true });
+            } catch {
+                /* best-effort; Trivy will surface a clearer error on scan */
+            }
+            this.cacheDirEnsured = cacheDir;
+        }
+        return cacheDir;
+    }
+
     private async buildEnv(
         sendWarning?: (msg: string) => void,
     ): Promise<{ env: Record<string, string | undefined>; cleanup: () => void }> {
         const registries = DatabaseService.getInstance().getRegistries();
+        const cacheDir = this.ensureCacheDir();
         const baseEnv: Record<string, string | undefined> = {
             ...process.env,
+            TRIVY_CACHE_DIR: cacheDir,
             PATH:
                 process.env.PATH ||
                 '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
@@ -273,7 +320,8 @@ class TrivyService {
         nodeId: number,
         options: { useCache?: boolean; digest?: string | null } = {},
     ): Promise<TrivyScanResult> {
-        if (!this.available) {
+        const binary = this.binaryPath;
+        if (!binary) {
             throw new Error('Trivy is not available on this host');
         }
         const key = this.scanKey(nodeId, imageRef);
@@ -343,7 +391,7 @@ class TrivyService {
                     imageRef,
                 ];
                 const execStart = Date.now();
-                const { stdout } = await execFileAsync('trivy', args, {
+                const { stdout } = await execFileAsync(binary, args, {
                     env,
                     timeout: SCAN_TIMEOUT_MS,
                     maxBuffer: 64 * 1024 * 1024,
@@ -497,7 +545,7 @@ class TrivyService {
             );
             return stored;
         } catch (error) {
-            const msg = (error as Error).message || 'Scan failed';
+            const msg = getErrorMessage(error, 'Scan failed');
             db.updateVulnerabilityScan(scanId, {
                 status: 'failed',
                 error: msg,
@@ -523,7 +571,7 @@ class TrivyService {
         nodeId: number,
         triggeredBy: VulnScanTrigger = 'scheduled',
     ): Promise<{ scanned: number; skipped: number; failed: number }> {
-        if (!this.available) {
+        if (this.source === 'none') {
             throw new Error('Trivy is not available on this host');
         }
         const images = await DockerController.getInstance(nodeId).getImages();
@@ -552,7 +600,7 @@ class TrivyService {
                 scanned++;
             } catch (err) {
                 failed++;
-                console.warn(`[Trivy] Failed to scan ${ref}:`, (err as Error).message);
+                console.warn(`[Trivy] Failed to scan ${ref}:`, getErrorMessage(err, 'unknown error'));
             }
             await new Promise((r) => setTimeout(r, 300));
         }
@@ -560,13 +608,14 @@ class TrivyService {
     }
 
     async generateSBOM(imageRef: string, format: SbomFormat): Promise<string> {
-        if (!this.available) {
+        const binary = this.binaryPath;
+        if (!binary) {
             throw new Error('Trivy is not available on this host');
         }
         const { env, cleanup } = await this.buildEnv();
         try {
             const { stdout } = await execFileAsync(
-                'trivy',
+                binary,
                 ['image', '--format', format, '--quiet', '--no-progress', imageRef],
                 {
                     env,
