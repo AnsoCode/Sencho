@@ -582,6 +582,7 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_vuln_scans_node_image ON vulnerability_scans(node_id, image_ref);
       CREATE INDEX IF NOT EXISTS idx_vuln_scans_digest ON vulnerability_scans(image_digest);
       CREATE INDEX IF NOT EXISTS idx_vuln_scans_scanned_at ON vulnerability_scans(scanned_at);
+      CREATE INDEX IF NOT EXISTS idx_vuln_scans_status ON vulnerability_scans(status);
 
       CREATE TABLE IF NOT EXISTS vulnerability_details (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2150,6 +2151,20 @@ export class DatabaseService {
         const result = this.db
             .prepare('DELETE FROM vulnerability_scans WHERE scanned_at < ?')
             .run(cutoff);
+        return result.changes;
+    }
+
+    public markStaleScansAsFailed(olderThanMs: number): number {
+        const cutoff = Date.now() - olderThanMs;
+        const result = this.db
+            .prepare(
+                `UPDATE vulnerability_scans
+                 SET status = 'failed',
+                     error = 'Scan did not complete within expected time',
+                     scan_duration_ms = ? - scanned_at
+                 WHERE status = 'in_progress' AND scanned_at < ?`,
+            )
+            .run(Date.now(), cutoff);
         return result.changes;
     }
 

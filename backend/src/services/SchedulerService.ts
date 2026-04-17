@@ -14,11 +14,15 @@ import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 import TrivyService from './TrivyService';
 
+const TRIVY_REDETECT_INTERVAL_MS = 10 * 60 * 1000;
+const STALE_SCAN_THRESHOLD_MS = 15 * 60 * 1000;
+
 export class SchedulerService {
     private static instance: SchedulerService;
     private intervalId: ReturnType<typeof setInterval> | null = null;
     private isProcessing = false;
     private runningTasks = new Set<number>();
+    private lastTrivyRedetect = 0;
 
     private constructor() {}
 
@@ -56,6 +60,19 @@ export class SchedulerService {
         }
     }
 
+    private async maybeRedetectTrivy(): Promise<void> {
+        const now = Date.now();
+        if (now - this.lastTrivyRedetect < TRIVY_REDETECT_INTERVAL_MS) return;
+        this.lastTrivyRedetect = now;
+        try {
+            await TrivyService.getInstance().detectTrivy();
+        } catch (error) {
+            if (isDebugEnabled()) {
+                console.warn('[SchedulerService:debug] Trivy re-detect failed:', error);
+            }
+        }
+    }
+
     public calculateNextRun(cronExpression: string): number {
         const expr = CronExpressionParser.parse(cronExpression);
         return expr.next().toDate().getTime();
@@ -68,12 +85,27 @@ export class SchedulerService {
         }
         this.isProcessing = true;
         try {
+            const db = DatabaseService.getInstance();
+
+            // Vulnerability scanning is available on every tier, so the stale-scan sweep
+            // and Trivy re-detect run before the paid-tier gate below.
+            try {
+                const staleScans = db.markStaleScansAsFailed(STALE_SCAN_THRESHOLD_MS);
+                if (staleScans > 0) {
+                    console.log(
+                        `[SchedulerService] Marked ${staleScans} stale vulnerability scan(s) as failed`,
+                    );
+                }
+            } catch (error) {
+                console.error('[SchedulerService] Stale scan sweep failed:', error);
+            }
+            await this.maybeRedetectTrivy();
+
             const ls = LicenseService.getInstance();
             const isPaid = ls.getTier() === 'paid';
             const isAdmiral = isPaid && ls.getVariant() === 'admiral';
             if (!isPaid) return;
 
-            const db = DatabaseService.getInstance();
             const now = Date.now();
             const dueTasks = db.getDueScheduledTasks(now);
 

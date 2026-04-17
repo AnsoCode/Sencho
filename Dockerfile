@@ -91,6 +91,11 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 
 # Stage 4: Production runtime
 # Runs on the TARGET platform - no compilation happens here.
+#
+# Vulnerability scanning uses the external `trivy` CLI. It is not installed
+# in this image; operators who want the feature install Trivy on the host
+# and mount the binary into the container, or run a sidecar. See
+# docs/operations/trivy-setup.mdx for the supported integration paths.
 FROM node:22-alpine
 
 # Pin Docker CLI and Compose versions.

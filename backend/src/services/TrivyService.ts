@@ -11,14 +11,19 @@ import {
     VulnerabilityScan,
 } from './DatabaseService';
 import { RegistryService } from './RegistryService';
-import { disableCapability } from './CapabilityRegistry';
+import { disableCapability, enableCapability } from './CapabilityRegistry';
+import { isDebugEnabled } from '../utils/debug';
+import { SEVERITY_ORDER } from '../utils/severity';
 
 const execFileAsync = promisify(execFile);
 
-const SEVERITY_ORDER: VulnSeverity[] = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const SCAN_TIMEOUT_MS = 5 * 60 * 1000;
 const SBOM_TIMEOUT_MS = 3 * 60 * 1000;
-const DIGEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const DIGEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function diag(msg: string, ...args: unknown[]): void {
+    if (isDebugEnabled()) console.log(`[Trivy:diag] ${msg}`, ...args);
+}
 
 interface TrivyRawVulnerability {
     VulnerabilityID?: string;
@@ -94,6 +99,49 @@ function computeHighestSeverity(vulns: TrivyVulnerability[]): VulnSeverity | nul
     return highestIdx >= 0 ? SEVERITY_ORDER[highestIdx] : null;
 }
 
+export function parseTrivyOutput(raw: string): {
+    vulnerabilities: TrivyVulnerability[];
+    os: string | null;
+} {
+    let parsed: TrivyRawOutput;
+    try {
+        parsed = JSON.parse(raw) as TrivyRawOutput;
+    } catch (e) {
+        console.error('[Trivy] Failed to parse output; first 200 chars:', raw.slice(0, 200));
+        throw new Error('Malformed Trivy output: ' + (e as Error).message);
+    }
+    const seen = new Set<string>();
+    const vulnerabilities: TrivyVulnerability[] = [];
+    for (const result of parsed.Results ?? []) {
+        for (const v of result.Vulnerabilities ?? []) {
+            const id = v.VulnerabilityID ?? '';
+            const pkg = v.PkgName ?? '';
+            if (!id || !pkg) continue;
+            const key = `${id}::${pkg}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            vulnerabilities.push({
+                vulnerabilityId: id,
+                pkgName: pkg,
+                installedVersion: v.InstalledVersion ?? '',
+                fixedVersion: v.FixedVersion ? v.FixedVersion : null,
+                severity: normalizeSeverity(v.Severity),
+                title: v.Title ?? '',
+                description: v.Description ?? '',
+                primaryUrl: v.PrimaryURL ? v.PrimaryURL : null,
+            });
+        }
+    }
+    const osFamily = parsed.Metadata?.OS?.Family;
+    const osName = parsed.Metadata?.OS?.Name;
+    const osInfo = osFamily
+        ? osName
+            ? `${osFamily} ${osName}`
+            : osFamily
+        : null;
+    return { vulnerabilities, os: osInfo };
+}
+
 class TrivyService {
     private static instance: TrivyService;
     private available = false;
@@ -119,6 +167,8 @@ class TrivyService {
     }
 
     async detectTrivy(): Promise<{ available: boolean; version: string | null }> {
+        const started = Date.now();
+        const wasAvailable = this.available;
         try {
             const { stdout } = await execFileAsync('trivy', ['--version'], { timeout: 5000 });
             const match = stdout.match(/Version:\s*([^\s\n]+)/i);
@@ -129,7 +179,25 @@ class TrivyService {
             this.version = null;
         }
         this.detectionTimestamp = Date.now();
+        diag(
+            `detectTrivy: available=${this.available} version=${this.version ?? 'null'} tookMs=${
+                this.detectionTimestamp - started
+            }`,
+        );
+        if (this.available && !wasAvailable) {
+            enableCapability('vulnerability-scanning');
+            console.log(
+                `[Trivy] Binary detected on PATH; vulnerability scanning enabled (version ${this.version})`,
+            );
+        } else if (!this.available && wasAvailable) {
+            disableCapability('vulnerability-scanning');
+            console.warn('[Trivy] Binary no longer detected; vulnerability scanning disabled');
+        }
         return { available: this.available, version: this.version };
+    }
+
+    getDetectionTimestamp(): number {
+        return this.detectionTimestamp;
     }
 
     isTrivyAvailable(): boolean {
@@ -138,10 +206,6 @@ class TrivyService {
 
     getVersion(): string | null {
         return this.version;
-    }
-
-    invalidateDetection(): void {
-        this.detectionTimestamp = 0;
     }
 
     private async buildEnv(
@@ -204,49 +268,6 @@ class TrivyService {
         return this.scanningImages.has(this.scanKey(nodeId, imageRef));
     }
 
-    private parseTrivyOutput(raw: string): {
-        vulnerabilities: TrivyVulnerability[];
-        os: string | null;
-    } {
-        let parsed: TrivyRawOutput;
-        try {
-            parsed = JSON.parse(raw) as TrivyRawOutput;
-        } catch (e) {
-            console.error('[Trivy] Failed to parse output; first 200 chars:', raw.slice(0, 200));
-            throw new Error('Malformed Trivy output: ' + (e as Error).message);
-        }
-        const seen = new Set<string>();
-        const vulnerabilities: TrivyVulnerability[] = [];
-        for (const result of parsed.Results ?? []) {
-            for (const v of result.Vulnerabilities ?? []) {
-                const id = v.VulnerabilityID ?? '';
-                const pkg = v.PkgName ?? '';
-                if (!id || !pkg) continue;
-                const key = `${id}::${pkg}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                vulnerabilities.push({
-                    vulnerabilityId: id,
-                    pkgName: pkg,
-                    installedVersion: v.InstalledVersion ?? '',
-                    fixedVersion: v.FixedVersion ? v.FixedVersion : null,
-                    severity: normalizeSeverity(v.Severity),
-                    title: v.Title ?? '',
-                    description: v.Description ?? '',
-                    primaryUrl: v.PrimaryURL ? v.PrimaryURL : null,
-                });
-            }
-        }
-        const osFamily = parsed.Metadata?.OS?.Family;
-        const osName = parsed.Metadata?.OS?.Name;
-        const osInfo = osFamily
-            ? osName
-                ? `${osFamily} ${osName}`
-                : osFamily
-            : null;
-        return { vulnerabilities, os: osInfo };
-    }
-
     async scanImage(
         imageRef: string,
         nodeId: number,
@@ -261,13 +282,18 @@ class TrivyService {
         }
         this.scanningImages.add(key);
         const startedAt = Date.now();
+        diag(`scanImage: start nodeId=${nodeId} imageRef=${imageRef} useCache=${options.useCache !== false}`);
 
         try {
             const digest = options.digest ?? (await this.getImageDigest(imageRef, nodeId));
+            diag(`scanImage: digest=${digest ?? 'null'} for ${imageRef}`);
 
             if (options.useCache !== false && digest) {
                 const cached = DatabaseService.getInstance().getLatestScanByDigest(digest);
                 if (cached && startedAt - cached.scanned_at < DIGEST_CACHE_TTL_MS) {
+                    diag(
+                        `scanImage: cache hit for digest=${digest} scanId=${cached.id} ageMs=${startedAt - cached.scanned_at}`,
+                    );
                     const details =
                         DatabaseService.getInstance().getVulnerabilityDetails(cached.id, {
                             limit: 1000,
@@ -303,6 +329,7 @@ class TrivyService {
                 }
             }
 
+            diag(`scanImage: cache miss; invoking trivy for ${imageRef}`);
             const { env, cleanup } = await this.buildEnv();
             try {
                 const args = [
@@ -315,12 +342,19 @@ class TrivyService {
                     'vuln',
                     imageRef,
                 ];
+                const execStart = Date.now();
                 const { stdout } = await execFileAsync('trivy', args, {
                     env,
                     timeout: SCAN_TIMEOUT_MS,
                     maxBuffer: 64 * 1024 * 1024,
                 });
-                const { vulnerabilities, os: osInfo } = this.parseTrivyOutput(stdout);
+                diag(
+                    `scanImage: trivy exited after ${Date.now() - execStart}ms, output=${stdout.length} bytes`,
+                );
+                const { vulnerabilities, os: osInfo } = parseTrivyOutput(stdout);
+                diag(
+                    `scanImage: parsed ${vulnerabilities.length} unique vulns (os=${osInfo ?? 'unknown'})`,
+                );
 
                 let critical = 0,
                     high = 0,
@@ -375,14 +409,18 @@ class TrivyService {
         }
     }
 
-    async runScanAndPersist(
+    /**
+     * Create an `in_progress` scan row. The returned ID is immediately
+     * usable by clients that need a handle to poll; callers must pair
+     * this with `finishScan` to move the row to `completed` or `failed`.
+     */
+    beginScan(
         imageRef: string,
         nodeId: number,
         triggeredBy: VulnScanTrigger,
         stackContext: string | null = null,
-    ): Promise<VulnerabilityScan> {
+    ): number {
         const db = DatabaseService.getInstance();
-        const startedAt = Date.now();
         const scanId = db.createVulnerabilityScan({
             node_id: nodeId,
             image_ref: imageRef,
@@ -404,9 +442,25 @@ class TrivyService {
             error: null,
             stack_context: stackContext,
         });
+        diag(`beginScan: scanId=${scanId} imageRef=${imageRef} nodeId=${nodeId} trigger=${triggeredBy}`);
+        return scanId;
+    }
 
+    /**
+     * Execute the scan and persist results into a scan row already
+     * created by `beginScan`. Always flips the row to `completed` on
+     * success or `failed` on error.
+     */
+    async finishScan(
+        scanId: number,
+        imageRef: string,
+        nodeId: number,
+        opts: { useCache?: boolean } = {},
+    ): Promise<VulnerabilityScan> {
+        const db = DatabaseService.getInstance();
+        const startedAt = Date.now();
         try {
-            const result = await this.scanImage(imageRef, nodeId);
+            const result = await this.scanImage(imageRef, nodeId, { useCache: opts.useCache });
             db.updateVulnerabilityScan(scanId, {
                 image_digest: result.imageDigest,
                 scanned_at: result.scannedAt,
@@ -438,6 +492,9 @@ class TrivyService {
             );
             const stored = db.getVulnerabilityScan(scanId);
             if (!stored) throw new Error('Scan vanished after write');
+            diag(
+                `finishScan: scanId=${scanId} completed total=${result.totalVulnerabilities} highest=${result.highestSeverity ?? 'none'} durationMs=${result.metadata.scanDurationMs}`,
+            );
             return stored;
         } catch (error) {
             const msg = (error as Error).message || 'Scan failed';
@@ -446,8 +503,20 @@ class TrivyService {
                 error: msg,
                 scan_duration_ms: Date.now() - startedAt,
             });
+            diag(`finishScan: scanId=${scanId} failed: ${msg}`);
             throw error;
         }
+    }
+
+    async runScanAndPersist(
+        imageRef: string,
+        nodeId: number,
+        triggeredBy: VulnScanTrigger,
+        stackContext: string | null = null,
+        opts: { useCache?: boolean } = {},
+    ): Promise<VulnerabilityScan> {
+        const scanId = this.beginScan(imageRef, nodeId, triggeredBy, stackContext);
+        return this.finishScan(scanId, imageRef, nodeId, opts);
     }
 
     async scanAllNodeImages(
