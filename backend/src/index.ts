@@ -74,6 +74,7 @@ import TrivyService, { SbomFormat, DIGEST_CACHE_TTL_MS } from './services/TrivyS
 import TrivyInstaller from './services/TrivyInstaller';
 import { severityRank } from './utils/severity';
 import { validateImageRef } from './utils/image-ref';
+import { applySuppressions } from './utils/suppression-filter';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
@@ -1992,13 +1993,29 @@ function validateScanPolicyRow(row: unknown): string | null {
   return null;
 }
 
+const CVE_ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA-[\w-]{14,})$/;
+function validateCveSuppressionRow(row: unknown): string | null {
+  if (!row || typeof row !== 'object') return 'row must be an object';
+  const r = row as Record<string, unknown>;
+  if (typeof r.cve_id !== 'string' || !CVE_ID_RE.test(r.cve_id)) return 'cve_id must be a valid CVE or GHSA identifier';
+  if (r.pkg_name !== null && typeof r.pkg_name !== 'string') return 'pkg_name must be a string or null';
+  if (typeof r.pkg_name === 'string' && r.pkg_name.length > 200) return 'pkg_name is too long';
+  if (r.image_pattern !== null && typeof r.image_pattern !== 'string') return 'image_pattern must be a string or null';
+  if (typeof r.image_pattern === 'string' && r.image_pattern.length > 300) return 'image_pattern is too long';
+  if (typeof r.reason !== 'string') return 'reason must be a string';
+  if (r.reason.length > 2000) return 'reason is too long';
+  if (typeof r.created_by !== 'string' || r.created_by.length > 200) return 'created_by must be a string';
+  if (typeof r.created_at !== 'number') return 'created_at must be a number';
+  if (r.expires_at !== null && typeof r.expires_at !== 'number') return 'expires_at must be a number or null';
+  return null;
+}
+
 // Fleet sync: receive a full replacement of a replicated resource from the control.
-// Only scan_policies are supported today; future resources (CVE suppressions) will plug in here.
 // Restricted to node_proxy Bearer tokens so only a sibling Sencho can push.
 app.post('/api/fleet/sync/:resource', authMiddleware, (req: Request, res: Response): void => {
   if (!requireNodeProxy(req, res)) return;
   const resource = req.params.resource;
-  if (resource !== 'scan_policies') {
+  if (resource !== 'scan_policies' && resource !== 'cve_suppressions') {
     res.status(400).json({ error: `Unsupported sync resource: ${resource}` });
     return;
   }
@@ -2013,8 +2030,9 @@ app.post('/api/fleet/sync/:resource', authMiddleware, (req: Request, res: Respon
     res.status(413).json({ error: `Too many rows (max ${MAX_SYNC_ROWS})` });
     return;
   }
+  const validator = resource === 'scan_policies' ? validateScanPolicyRow : validateCveSuppressionRow;
   for (let i = 0; i < rows.length; i++) {
-    const err = validateScanPolicyRow(rows[i]);
+    const err = validator(rows[i]);
     if (err) {
       res.status(400).json({ error: `Invalid row at index ${i}: ${err}` });
       return;
@@ -7522,7 +7540,9 @@ app.get(
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const offset = req.query.offset ? Number(req.query.offset) : undefined;
     const result = db.getVulnerabilityDetails(scanId, { severity, limit, offset });
-    res.json(result);
+    const suppressions = db.getCveSuppressions();
+    const enriched = applySuppressions(result.items, scan.image_ref, suppressions);
+    res.json({ ...result, items: enriched });
   },
 );
 
@@ -7660,6 +7680,133 @@ app.delete('/api/security/policies/:id', authMiddleware, (req: Request, res: Res
   res.json({ success: true });
 });
 
+// CVE suppressions. Rules live on the control instance and replicate fleet-wide.
+// Reads are open to any authenticated user so operators on replicas can audit; writes
+// are admin-only and rejected on replicas.
+
+app.get('/api/security/suppressions', authMiddleware, (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  const now = Date.now();
+  const rows = DatabaseService.getInstance().getCveSuppressions().map((s) => ({
+    ...s,
+    active: s.expires_at === null || s.expires_at > now,
+  }));
+  res.json(rows);
+});
+
+app.post('/api/security/suppressions', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
+    return;
+  }
+  const body = req.body ?? {};
+  const cveId = typeof body.cve_id === 'string' ? body.cve_id.trim() : '';
+  if (!CVE_ID_RE.test(cveId)) {
+    res.status(400).json({ error: 'cve_id must look like CVE-YYYY-NNNN or GHSA-xxxx-xxxx-xxxx' });
+    return;
+  }
+  const pkgName = body.pkg_name == null || body.pkg_name === '' ? null : String(body.pkg_name).trim();
+  if (pkgName !== null && pkgName.length > 200) {
+    res.status(400).json({ error: 'pkg_name is too long' }); return;
+  }
+  const imagePattern = body.image_pattern == null || body.image_pattern === '' ? null : String(body.image_pattern).trim();
+  if (imagePattern !== null && imagePattern.length > 300) {
+    res.status(400).json({ error: 'image_pattern is too long' }); return;
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reason) {
+    res.status(400).json({ error: 'reason is required' }); return;
+  }
+  if (reason.length > 2000) {
+    res.status(400).json({ error: 'reason is too long' }); return;
+  }
+  const expiresAt = body.expires_at == null ? null : Number(body.expires_at);
+  if (expiresAt !== null && !Number.isFinite(expiresAt)) {
+    res.status(400).json({ error: 'expires_at must be a timestamp or null' }); return;
+  }
+  try {
+    const suppression = DatabaseService.getInstance().createCveSuppression({
+      cve_id: cveId,
+      pkg_name: pkgName,
+      image_pattern: imagePattern,
+      reason,
+      created_by: req.user?.username || 'unknown',
+      created_at: Date.now(),
+      expires_at: expiresAt,
+      replicated_from_control: 0,
+    });
+    FleetSyncService.getInstance().pushResourceAsync('cve_suppressions');
+    res.status(201).json(suppression);
+  } catch (error) {
+    const message = (error as Error).message || '';
+    if (message.includes('UNIQUE')) {
+      res.status(409).json({ error: 'A suppression already exists for this CVE, package, and image pattern.' });
+      return;
+    }
+    console.error('[Security] Failed to create suppression:', error);
+    res.status(500).json({ error: 'Failed to create suppression' });
+  }
+});
+
+app.put('/api/security/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'Invalid suppression id' }); return;
+  }
+  const body = req.body ?? {};
+  const updates: Partial<{ reason: string; image_pattern: string | null; expires_at: number | null }> = {};
+  if (body.reason !== undefined) {
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) { res.status(400).json({ error: 'reason is required' }); return; }
+    if (reason.length > 2000) { res.status(400).json({ error: 'reason is too long' }); return; }
+    updates.reason = reason;
+  }
+  if (body.image_pattern !== undefined) {
+    const pattern = body.image_pattern == null || body.image_pattern === '' ? null : String(body.image_pattern).trim();
+    if (pattern !== null && pattern.length > 300) {
+      res.status(400).json({ error: 'image_pattern is too long' }); return;
+    }
+    updates.image_pattern = pattern;
+  }
+  if (body.expires_at !== undefined) {
+    const expiresAt = body.expires_at == null ? null : Number(body.expires_at);
+    if (expiresAt !== null && !Number.isFinite(expiresAt)) {
+      res.status(400).json({ error: 'expires_at must be a timestamp or null' }); return;
+    }
+    updates.expires_at = expiresAt;
+  }
+  const suppression = DatabaseService.getInstance().updateCveSuppression(id, updates);
+  if (!suppression) {
+    res.status(404).json({ error: 'Suppression not found' }); return;
+  }
+  FleetSyncService.getInstance().pushResourceAsync('cve_suppressions');
+  res.json(suppression);
+});
+
+app.delete('/api/security/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  if (FleetSyncService.getRole() === 'replica') {
+    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: 'Invalid suppression id' }); return;
+  }
+  DatabaseService.getInstance().deleteCveSuppression(id);
+  FleetSyncService.getInstance().pushResourceAsync('cve_suppressions');
+  res.json({ success: true });
+});
+
 app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): void => {
   if (!requirePaid(req, res)) return;
   const scanId1 = Number(req.query.scanId1);
@@ -7679,15 +7826,19 @@ app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): 
     `${v.vulnerability_id}::${v.pkg_name}`;
   const aMap = new Map(aVulns.map((v) => [keyOf(v), v]));
   const bMap = new Map(bVulns.map((v) => [keyOf(v), v]));
-  const added = bVulns.filter((v) => !aMap.has(keyOf(v)));
-  const removed = aVulns.filter((v) => !bMap.has(keyOf(v)));
-  const unchanged = aVulns.filter((v) => bMap.has(keyOf(v)));
+  const addedRaw = bVulns.filter((v) => !aMap.has(keyOf(v)));
+  const removedRaw = aVulns.filter((v) => !bMap.has(keyOf(v)));
+  const unchangedRaw = aVulns.filter((v) => bMap.has(keyOf(v)));
+  const suppressions = db.getCveSuppressions();
+  const added = applySuppressions(addedRaw, b.image_ref, suppressions);
+  const removed = applySuppressions(removedRaw, a.image_ref, suppressions);
+  const unchanged = applySuppressions(unchangedRaw, b.image_ref, suppressions);
   res.json({
     scanA: { id: a.id, scanned_at: a.scanned_at, image_ref: a.image_ref },
     scanB: { id: b.id, scanned_at: b.scanned_at, image_ref: b.image_ref },
     added,
     removed,
-    unchanged: unchanged.map((v) => ({ vulnerability_id: v.vulnerability_id, pkg_name: v.pkg_name, severity: v.severity })),
+    unchanged,
   });
 });
 

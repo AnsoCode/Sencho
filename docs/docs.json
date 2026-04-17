@@ -117,6 +117,7 @@
               "features/api-tokens",
               "features/private-registries",
               "features/vulnerability-scanning",
+              "features/cve-suppressions",
               "features/auto-update-policies",
               "features/scheduled-operations",
               "features/sso",

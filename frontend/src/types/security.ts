@@ -53,6 +53,22 @@ export interface VulnerabilityDetail {
   title: string | null;
   description: string | null;
   primary_url: string | null;
+  suppressed?: boolean;
+  suppression_id?: number;
+  suppression_reason?: string;
+}
+
+export interface CveSuppression {
+  id: number;
+  cve_id: string;
+  pkg_name: string | null;
+  image_pattern: string | null;
+  reason: string;
+  created_by: string;
+  created_at: number;
+  expires_at: number | null;
+  replicated_from_control: number;
+  active: boolean;
 }
 
 export interface ScanSummary {
@@ -92,6 +108,9 @@ export interface ScanCompareVulnerability {
   installed_version?: string;
   fixed_version?: string | null;
   primary_url?: string | null;
+  suppressed?: boolean;
+  suppression_id?: number;
+  suppression_reason?: string;
 }
 
 export interface ScanCompareResult {
@@ -99,5 +118,5 @@ export interface ScanCompareResult {
   scanB: { id: number; scanned_at: number; image_ref: string };
   added: ScanCompareVulnerability[];
   removed: ScanCompareVulnerability[];
-  unchanged: Pick<ScanCompareVulnerability, 'vulnerability_id' | 'pkg_name' | 'severity'>[];
+  unchanged: ScanCompareVulnerability[];
 }

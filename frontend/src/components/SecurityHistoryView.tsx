@@ -28,6 +28,7 @@ import { ScanComparisonSheet } from './ScanComparisonSheet';
 import { SeverityChip } from './VulnerabilityScanSheet';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { useLicense } from '@/context/LicenseContext';
+import { useAuth } from '@/context/AuthContext';
 import { useNodes } from '@/context/NodeContext';
 import type { VulnerabilityScan } from '@/types/security';
 
@@ -56,6 +57,7 @@ function groupByImage(scans: VulnerabilityScan[]): GroupedScans[] {
 
 export function SecurityHistoryView() {
   const { isPaid } = useLicense();
+  const { isAdmin } = useAuth();
   const { activeNode } = useNodes();
   const [scans, setScans] = useState<VulnerabilityScan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -304,6 +306,7 @@ export function SecurityHistoryView() {
         onClose={() => setInspectScanId(null)}
         canGenerateSbom={isPaid}
         canCompare={false}
+        canManageSuppressions={isPaid && isAdmin}
       />
     </div>
   );

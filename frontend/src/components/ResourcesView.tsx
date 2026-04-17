@@ -1491,6 +1491,7 @@ export default function ResourcesView() {
                 onRescan={(imageRef) => { setInspectScanId(null); handleScanImage(imageRef, true); }}
                 canGenerateSbom={isPaid}
                 canCompare={isPaid}
+                canManageSuppressions={isPaid && isAdmin}
             />
         </div>
     );
