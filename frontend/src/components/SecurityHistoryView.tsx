@@ -1,0 +1,310 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  ChevronLeft,
+  ChevronRight,
+  GitCompare,
+  History,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
+import { cn } from '@/lib/utils';
+import { ScanComparisonSheet } from './ScanComparisonSheet';
+import { SeverityChip } from './VulnerabilityScanSheet';
+import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
+import { useLicense } from '@/context/LicenseContext';
+import { useNodes } from '@/context/NodeContext';
+import type { VulnerabilityScan } from '@/types/security';
+
+const PAGE_SIZE = 25;
+
+interface GroupedScans {
+  image_ref: string;
+  scans: VulnerabilityScan[];
+}
+
+function groupByImage(scans: VulnerabilityScan[]): GroupedScans[] {
+  const map = new Map<string, VulnerabilityScan[]>();
+  for (const s of scans) {
+    const list = map.get(s.image_ref) ?? [];
+    list.push(s);
+    map.set(s.image_ref, list);
+  }
+  const groups: GroupedScans[] = [];
+  for (const [image_ref, list] of map.entries()) {
+    list.sort((a, b) => b.scanned_at - a.scanned_at);
+    groups.push({ image_ref, scans: list });
+  }
+  groups.sort((a, b) => (b.scans[0]?.scanned_at ?? 0) - (a.scans[0]?.scanned_at ?? 0));
+  return groups;
+}
+
+export function SecurityHistoryView() {
+  const { isPaid } = useLicense();
+  const { activeNode } = useNodes();
+  const [scans, setScans] = useState<VulnerabilityScan[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<number[]>([]);
+  const [compareIds, setCompareIds] = useState<[number, number] | null>(null);
+  const [inspectScanId, setInspectScanId] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/security/scans?limit=200');
+      if (!res.ok) throw new Error('Failed to load scans');
+      const body = await res.json();
+      const items: VulnerabilityScan[] = Array.isArray(body?.items) ? body.items : [];
+      setScans(items.filter((s) => s.status === 'completed'));
+    } catch (err) {
+      toast.error((err as Error)?.message || 'Could not load scan history');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    setSelected([]);
+  }, [load, activeNode?.id]);
+
+  const filteredScans = useMemo(() => {
+    if (!search.trim()) return scans;
+    const q = search.toLowerCase();
+    return scans.filter((s) => s.image_ref.toLowerCase().includes(q));
+  }, [scans, search]);
+
+  const groups = useMemo(() => groupByImage(filteredScans), [filteredScans]);
+
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageGroups = groups.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const needsPagination = groups.length > PAGE_SIZE;
+
+  const toggleSelect = (scanId: number) => {
+    setSelected((prev) => {
+      if (prev.includes(scanId)) return prev.filter((x) => x !== scanId);
+      if (prev.length >= 2) return [prev[1], scanId];
+      return [...prev, scanId];
+    });
+  };
+
+  const compareSelected = () => {
+    if (selected.length !== 2) return;
+    const [aId, bId] = selected;
+    const a = scans.find((s) => s.id === aId);
+    const b = scans.find((s) => s.id === bId);
+    if (!a || !b) return;
+    const [older, newer] = a.scanned_at <= b.scanned_at ? [a, b] : [b, a];
+    setCompareIds([older.id, newer.id]);
+  };
+
+  const compareDisabled = selected.length !== 2;
+
+  return (
+    <div className="flex-1 flex flex-col gap-4 overflow-auto">
+      <Card className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History className="w-5 h-5" strokeWidth={1.5} />
+              <CardTitle>Scan History</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border"
+                onClick={compareSelected}
+                disabled={compareDisabled || !isPaid}
+                title={
+                  !isPaid
+                    ? 'Scan comparison requires Skipper or Admiral'
+                    : compareDisabled
+                      ? 'Select exactly two completed scans to compare'
+                      : 'Compare the two selected scans'
+                }
+              >
+                <GitCompare className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                Compare ({selected.length}/2)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border"
+                onClick={load}
+                disabled={loading}
+              >
+                <RefreshCw
+                  className={cn('w-4 h-4 mr-2', loading && 'animate-spin')}
+                  strokeWidth={1.5}
+                />
+                Refresh
+              </Button>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Completed vulnerability scans on this node, grouped by image. Select two to compare.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+              <Input
+                placeholder="Search by image..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                className="pl-8"
+              />
+            </div>
+            {needsPagination && (
+              <div className="flex items-center gap-1 ml-auto">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setPage(Math.max(0, safePage - 1))}
+                  disabled={safePage === 0}
+                >
+                  <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
+                </Button>
+                <span className="text-xs font-mono tabular-nums text-stat-subtitle min-w-[3rem] text-center">
+                  {safePage + 1} / {totalPages}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+                  disabled={safePage >= totalPages - 1}
+                >
+                  <ChevronRight className="w-4 h-4" strokeWidth={1.5} />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {groups.length === 0 && !loading ? (
+            <div className="flex flex-col items-center justify-center text-center py-16 gap-2">
+              <ShieldCheck className="w-8 h-8 text-muted-foreground" strokeWidth={1.5} />
+              <div className="text-sm text-muted-foreground">
+                {search
+                  ? 'No completed scans match your search.'
+                  : 'No scans have completed on this node yet.'}
+              </div>
+            </div>
+          ) : (
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-5 pr-2">
+                {pageGroups.map((group) => (
+                  <div key={group.image_ref}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="font-mono text-sm truncate" title={group.image_ref}>
+                        {group.image_ref}
+                      </span>
+                      <span className="text-xs text-stat-subtitle">
+                        {group.scans.length} scan{group.scans.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]" />
+                          <TableHead className="w-[180px]">Scanned</TableHead>
+                          <TableHead className="w-[120px]">Trigger</TableHead>
+                          <TableHead className="w-[120px]">Highest</TableHead>
+                          <TableHead className="w-[90px] text-right">Total</TableHead>
+                          <TableHead className="w-[90px] text-right">Fixable</TableHead>
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.scans.map((scan) => {
+                          const isSelected = selected.includes(scan.id);
+                          return (
+                            <TableRow
+                              key={scan.id}
+                              className={cn(isSelected && 'bg-accent/30')}
+                            >
+                              <TableCell>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelect(scan.id)}
+                                  aria-label={`Select scan ${scan.id}`}
+                                />
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {new Date(scan.scanned_at).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs capitalize">
+                                {scan.triggered_by}
+                              </TableCell>
+                              <TableCell>
+                                {scan.highest_severity ? (
+                                  <SeverityChip severity={scan.highest_severity} />
+                                ) : (
+                                  <span className="text-xs text-success font-mono">none</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-xs tabular-nums">
+                                {scan.total_vulnerabilities}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-xs tabular-nums text-success">
+                                {scan.fixable_count}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => setInspectScanId(scan.id)}
+                                >
+                                  Open
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      <ScanComparisonSheet
+        baselineScanId={compareIds?.[0] ?? null}
+        currentScanId={compareIds?.[1] ?? null}
+        onClose={() => setCompareIds(null)}
+      />
+
+      <VulnerabilityScanSheet
+        scanId={inspectScanId}
+        onClose={() => setInspectScanId(null)}
+        canGenerateSbom={isPaid}
+        canCompare={false}
+      />
+    </div>
+  );
+}

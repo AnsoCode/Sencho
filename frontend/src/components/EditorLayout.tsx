@@ -54,6 +54,7 @@ import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
 import ScheduledOperationsView from './ScheduledOperationsView';
 import AutoUpdatePoliciesView from './AutoUpdatePoliciesView';
+import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
@@ -201,7 +202,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'security-history'>('dashboard');
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2728,6 +2729,8 @@ export default function EditorLayout() {
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
               <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
             </CapabilityGate>
+          ) : activeView === 'security-history' ? (
+            <SecurityHistoryView />
           ) : (
             <HomeDashboard
               onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
