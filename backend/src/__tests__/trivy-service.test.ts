@@ -6,7 +6,7 @@
  * when the binary is not available.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import TrivyService from '../services/TrivyService';
+import TrivyService, { parseTrivyOutput } from '../services/TrivyService';
 
 describe('TrivyService', () => {
   let svc: TrivyService;
@@ -31,6 +31,12 @@ describe('TrivyService', () => {
       expect(result).toHaveProperty('version');
       expect(typeof result.available).toBe('boolean');
     });
+
+    it('records a detection timestamp after running', async () => {
+      const before = Date.now();
+      await svc.detectTrivy();
+      expect(svc.getDetectionTimestamp()).toBeGreaterThanOrEqual(before);
+    });
   });
 
   describe('scanImage', () => {
@@ -49,6 +55,101 @@ describe('TrivyService', () => {
   describe('isScanning guard', () => {
     it('reports false for images not currently being scanned', () => {
       expect(svc.isScanning(1, 'nginx:latest')).toBe(false);
+    });
+  });
+
+  describe('parseTrivyOutput', () => {
+    it('extracts OS metadata and deduplicates vulnerabilities across targets', () => {
+      const raw = JSON.stringify({
+        Metadata: { OS: { Family: 'alpine', Name: '3.19.0' } },
+        Results: [
+          {
+            Target: 'alpine:3.19 (alpine)',
+            Vulnerabilities: [
+              {
+                VulnerabilityID: 'CVE-2024-0001',
+                PkgName: 'openssl',
+                InstalledVersion: '3.0.0',
+                FixedVersion: '3.0.1',
+                Severity: 'HIGH',
+              },
+              {
+                VulnerabilityID: 'CVE-2024-0002',
+                PkgName: 'curl',
+                InstalledVersion: '8.0',
+                Severity: 'CRITICAL',
+              },
+            ],
+          },
+          {
+            Target: 'other-target',
+            Vulnerabilities: [
+              {
+                VulnerabilityID: 'CVE-2024-0001',
+                PkgName: 'openssl',
+                InstalledVersion: '3.0.0',
+                Severity: 'HIGH',
+              },
+            ],
+          },
+        ],
+      });
+      const parsed = parseTrivyOutput(raw);
+      expect(parsed.os).toBe('alpine 3.19.0');
+      expect(parsed.vulnerabilities.length).toBe(2);
+      const ids = parsed.vulnerabilities.map((v) => v.vulnerabilityId);
+      expect(ids).toContain('CVE-2024-0001');
+      expect(ids).toContain('CVE-2024-0002');
+    });
+
+    it('normalizes unknown severities to UNKNOWN', () => {
+      const raw = JSON.stringify({
+        Results: [
+          {
+            Vulnerabilities: [
+              {
+                VulnerabilityID: 'CVE-X',
+                PkgName: 'libx',
+                InstalledVersion: '1',
+                Severity: 'NEGLIGIBLE',
+              },
+            ],
+          },
+        ],
+      });
+      const parsed = parseTrivyOutput(raw);
+      expect(parsed.vulnerabilities[0].severity).toBe('UNKNOWN');
+    });
+
+    it('drops entries missing VulnerabilityID or PkgName', () => {
+      const raw = JSON.stringify({
+        Results: [
+          {
+            Vulnerabilities: [
+              { PkgName: 'x', Severity: 'HIGH' },
+              { VulnerabilityID: 'CVE-1', Severity: 'HIGH' },
+              { VulnerabilityID: 'CVE-2', PkgName: 'y', Severity: 'LOW' },
+            ],
+          },
+        ],
+      });
+      const parsed = parseTrivyOutput(raw);
+      expect(parsed.vulnerabilities.length).toBe(1);
+      expect(parsed.vulnerabilities[0].vulnerabilityId).toBe('CVE-2');
+    });
+
+    it('tolerates missing Metadata and empty Results', () => {
+      const parsed = parseTrivyOutput(JSON.stringify({ Results: [] }));
+      expect(parsed.os).toBeNull();
+      expect(parsed.vulnerabilities).toEqual([]);
+
+      const parsedEmpty = parseTrivyOutput(JSON.stringify({}));
+      expect(parsedEmpty.os).toBeNull();
+      expect(parsedEmpty.vulnerabilities).toEqual([]);
+    });
+
+    it('throws a helpful error on malformed JSON', () => {
+      expect(() => parseTrivyOutput('{not-json')).toThrow(/Malformed/i);
     });
   });
 });

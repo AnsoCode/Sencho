@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.55.1](https://github.com/AnsoCode/Sencho/compare/v0.55.0...v0.55.1) (2026-04-17)
+
+
+### Fixed
+
+* **security:** harden Trivy scan lifecycle, logging, and docs ([#639](https://github.com/AnsoCode/Sencho/issues/639)) ([dc8370f](https://github.com/AnsoCode/Sencho/commit/dc8370f5a4fc143fa8c60f094b51163d0bcdd25b))
+
 ## [0.55.0](https://github.com/AnsoCode/Sencho/compare/v0.54.1...v0.55.0) (2026-04-16)
 
 

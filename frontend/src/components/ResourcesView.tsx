@@ -623,8 +623,8 @@ export default function ResourcesView() {
             }
             throw new Error('Scan timed out');
         } catch (error) {
-            const err = error as { message?: string };
-            toast.error(err?.message || 'Scan failed');
+            const err = error as { message?: string; error?: string; data?: { error?: string } };
+            toast.error(err?.message || err?.error || err?.data?.error || 'Scan failed');
         } finally {
             toast.dismiss(loadingId);
             setScanningImageRef(null);
