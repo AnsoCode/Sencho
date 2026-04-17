@@ -357,6 +357,7 @@ export function NodeManager() {
         <div className="space-y-2">
           <Label htmlFor="node-mode">Mode</Label>
           <Combobox
+            id="node-mode"
             value={formData.mode}
             onValueChange={(val) => setFormData({ ...formData, mode: val as NodeMode, api_url: '', api_token: '' })}
             options={[

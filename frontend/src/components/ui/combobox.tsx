@@ -17,6 +17,7 @@ interface ComboboxProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  id?: string
 }
 
 export function Combobox({
@@ -28,6 +29,7 @@ export function Combobox({
   emptyText = "No results found.",
   disabled = false,
   className,
+  id,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
@@ -95,6 +97,7 @@ export function Combobox({
         <button
           type="button"
           role="combobox"
+          id={id}
           aria-expanded={false}
           disabled={disabled}
           onClick={() => { if (!disabled) setOpen(true) }}
