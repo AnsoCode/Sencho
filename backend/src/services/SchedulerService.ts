@@ -241,6 +241,7 @@ export class SchedulerService {
             if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} pre-checks passed, executing ${task.action}`);
             const actionStart = Date.now();
             let output = '';
+            let scanFailedCount = 0;
             switch (task.action) {
                 case 'restart':
                     output = await this.executeRestart(task);
@@ -254,9 +255,12 @@ export class SchedulerService {
                 case 'update':
                     output = await this.executeUpdate(task);
                     break;
-                case 'scan':
-                    output = await this.executeScan(task);
+                case 'scan': {
+                    const result = await this.executeScan(task);
+                    output = result.output;
+                    scanFailedCount = result.failed;
                     break;
+                }
             }
 
             if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} action completed in ${Date.now() - actionStart}ms`);
@@ -275,7 +279,13 @@ export class SchedulerService {
                 output,
             });
             console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
-            if (task.last_status === 'failure') {
+            if (task.action === 'scan') {
+                NotificationService.getInstance().dispatchAlert(
+                    scanFailedCount > 0 ? 'warning' : 'info',
+                    `Scheduled scan "${task.name}" completed: ${output}`,
+                    task.target_id ?? undefined
+                );
+            } else if (task.last_status === 'failure') {
                 NotificationService.getInstance().dispatchAlert(
                     'info',
                     `Scheduled task "${task.name}" (${task.action}) recovered successfully`,
@@ -597,7 +607,7 @@ export class SchedulerService {
         return `Stack "${stackName}": updated (${updatedImages.join(', ')}).`;
     }
 
-    private async executeScan(task: ScheduledTask): Promise<string> {
+    private async executeScan(task: ScheduledTask): Promise<{ output: string; failed: number }> {
         const trivy = TrivyService.getInstance();
         if (!trivy.isTrivyAvailable()) {
             throw new Error('Trivy binary is not available on this node');
@@ -613,6 +623,6 @@ export class SchedulerService {
         const parts: string[] = [`Scanned ${summary.scanned} image(s)`];
         if (summary.skipped > 0) parts.push(`${summary.skipped} skipped (cached)`);
         if (summary.failed > 0) parts.push(`${summary.failed} failed`);
-        return parts.join('; ');
+        return { output: parts.join('; '), failed: summary.failed };
     }
 }

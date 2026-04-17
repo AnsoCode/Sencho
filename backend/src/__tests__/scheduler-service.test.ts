@@ -18,6 +18,8 @@ const {
   mockCheckImage,
   mockDispatchAlert,
   mockGetProxyTarget,
+  mockIsTrivyAvailable,
+  mockScanAllNodeImages,
 } = vi.hoisted(() => ({
   mockGetDueScheduledTasks: vi.fn().mockReturnValue([]),
   mockCreateScheduledTaskRun: vi.fn().mockReturnValue(1),
@@ -44,6 +46,8 @@ const {
   mockCheckImage: vi.fn().mockResolvedValue({ hasUpdate: false }),
   mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
   mockGetProxyTarget: vi.fn().mockReturnValue(null),
+  mockIsTrivyAvailable: vi.fn().mockReturnValue(true),
+  mockScanAllNodeImages: vi.fn().mockResolvedValue({ scanned: 0, skipped: 0, failed: 0 }),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -125,6 +129,17 @@ vi.mock('../services/NodeRegistry', () => ({
       getDefaultNodeId: () => 1,
       getNode: mockGetNode,
       getProxyTarget: mockGetProxyTarget,
+    }),
+  },
+}));
+
+vi.mock('../services/TrivyService', () => ({
+  default: {
+    getInstance: () => ({
+      isTrivyAvailable: mockIsTrivyAvailable,
+      scanAllNodeImages: mockScanAllNodeImages,
+      getSource: () => 'managed',
+      detectTrivy: vi.fn().mockResolvedValue(undefined),
     }),
   },
 }));
@@ -741,6 +756,111 @@ describe('SchedulerService - error handling', () => {
     await svc.triggerTask(92);
 
     expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('recovered'), 'my-stack');
+  });
+});
+
+// ── Scheduled scan completion notifications ───────────────────────────
+
+describe('SchedulerService - scheduled scan notifications', () => {
+  function makeScanTask(overrides: Partial<any> = {}) {
+    return {
+      id: 200,
+      name: 'nightly-scan',
+      action: 'scan',
+      cron_expression: '0 2 * * *',
+      enabled: true,
+      target_id: null,
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+      ...overrides,
+    };
+  }
+
+  it('dispatches info-level notification when scan completes cleanly', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask());
+    mockScanAllNodeImages.mockResolvedValue({ scanned: 3, skipped: 1, failed: 0 });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(200);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('nightly-scan'),
+      undefined,
+    );
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('Scanned 3 image(s)'),
+      undefined,
+    );
+  });
+
+  it('dispatches warning-level notification when scan has failures', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 201, name: 'flaky-scan' }));
+    mockScanAllNodeImages.mockResolvedValue({ scanned: 5, skipped: 0, failed: 2 });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(201);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('2 failed'),
+      undefined,
+    );
+  });
+
+  it('passes target_id to dispatchAlert when set', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 202, target_id: 'web-stack' }));
+    mockScanAllNodeImages.mockResolvedValue({ scanned: 1, skipped: 0, failed: 0 });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(202);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('completed'),
+      'web-stack',
+    );
+  });
+
+  it('fires only the scan notification when previous run was failure (no duplicate recovery alert)', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({
+      id: 204,
+      name: 'recovered-scan',
+      last_status: 'failure', // Previous run failed
+    }));
+    mockScanAllNodeImages.mockResolvedValue({ scanned: 2, skipped: 0, failed: 0 });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(204);
+
+    expect(mockDispatchAlert).toHaveBeenCalledTimes(1);
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('recovered-scan'),
+      undefined,
+    );
+  });
+
+  it('does not dispatch a scan notification for non-scan actions', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 203,
+      name: 'restart-task',
+      action: 'restart',
+      cron_expression: '*/5 * * * *',
+      enabled: true,
+      target_id: 'my-stack',
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null, // No previous failure → no recovery notification
+    });
+    mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Service: 'web' }]);
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(203);
+
+    expect(mockDispatchAlert).not.toHaveBeenCalled();
   });
 });
 
