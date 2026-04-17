@@ -8008,6 +8008,21 @@ app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): 
   const added = applySuppressions(addedRaw, b.image_ref, suppressions);
   const removed = applySuppressions(removedRaw, a.image_ref, suppressions);
   const unchanged = applySuppressions(unchangedRaw, b.image_ref, suppressions);
+  if (isDebugEnabled()) {
+    console.log('[Compare:diag]', {
+      scanId1,
+      scanId2,
+      reqNodeId: req.nodeId,
+      tier: req.proxyTier ?? LicenseService.getInstance().getTier(),
+      aVulns: aVulns.length,
+      bVulns: bVulns.length,
+      added: added.length,
+      removed: removed.length,
+      unchanged: unchanged.length,
+      suppressions: suppressions.length,
+      truncated,
+    });
+  }
   res.json({
     scanA: {
       id: a.id,
