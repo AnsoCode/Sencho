@@ -28,6 +28,8 @@ import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
+import { PilotTunnelManager } from './services/PilotTunnelManager';
+import { encodeJsonFrame as encodePilotJsonFrame, PROTOCOL_VERSION as PILOT_PROTOCOL_VERSION, PilotCloseCode } from './pilot/protocol';
 import { FleetSyncService } from './services/FleetSyncService';
 import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
@@ -503,7 +505,11 @@ const authMiddleware = async (req: Request, res: Response, next: NextFunction): 
 
     // Node proxy tokens: Sencho-to-Sencho communication, not user sessions.
     // Handle before user resolution since proxy tokens have no username.
-    if (decoded.scope === 'node_proxy') {
+    // pilot_tunnel scope is the equivalent credential for pilot-agent-mode
+    // nodes; it arrives on requests the primary forwarded through a tunnel
+    // after the primary itself re-signed/trusted them. Same tier-header trust
+    // rules apply.
+    if (decoded.scope === 'node_proxy' || decoded.scope === 'pilot_tunnel') {
       req.user = { username: 'node-proxy', role: 'admin', userId: 0 };
 
       // Distributed License Enforcement: trust tier headers only from authenticated node proxy requests.
@@ -3600,6 +3606,11 @@ const server = http.createServer(app);
 // WebSocket server with authentication
 const wss = new WebSocketServer({ noServer: true });
 
+// Dedicated WS server for accepting inbound pilot-agent tunnels. Agents dial
+// /api/pilot/tunnel; the handshake verifies a pilot_enroll or pilot_tunnel
+// JWT, then hands the socket off to PilotTunnelManager.
+const pilotTunnelWss = new WebSocketServer({ noServer: true });
+
 let terminalWs: WebSocket | null = null;
 
 // Notification push - set of authenticated browser clients subscribed to real-time alerts
@@ -3614,8 +3625,110 @@ NotificationService.getInstance().setBroadcaster((notification) => {
   }
 });
 
+/**
+ * Handle a pilot-agent tunnel upgrade. Accepts either:
+ *   - pilot_enroll (15m, one-time): consume the enrollment row, mint a
+ *     long-lived pilot_tunnel token, send it back in a ctrl enroll_ack frame.
+ *   - pilot_tunnel (365d): accept the socket directly.
+ * In both cases, the accepted WebSocket is handed to PilotTunnelManager.
+ */
+async function handlePilotTunnelUpgrade(
+  req: import('http').IncomingMessage,
+  socket: import('stream').Duplex,
+  head: Buffer,
+): Promise<void> {
+  const reject = (status: number, message: string) => {
+    try { socket.write(`HTTP/1.1 ${status} ${message}\r\n\r\n`); } catch { /* ignore */ }
+    try { socket.destroy(); } catch { /* ignore */ }
+  };
+
+  const authHeader = req.headers['authorization'];
+  const header = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return reject(401, 'Unauthorized');
+
+  const db = DatabaseService.getInstance();
+  const jwtSecret = db.getGlobalSettings().auth_jwt_secret;
+  if (!jwtSecret) return reject(500, 'Internal Server Error');
+
+  let decoded: { scope?: string; nodeId?: number; enrollNonce?: string };
+  try {
+    decoded = jwt.verify(token, jwtSecret) as typeof decoded;
+  } catch {
+    return reject(401, 'Unauthorized');
+  }
+
+  if (decoded.scope !== 'pilot_enroll' && decoded.scope !== 'pilot_tunnel') {
+    return reject(403, 'Forbidden');
+  }
+  if (typeof decoded.nodeId !== 'number') return reject(400, 'Bad Request');
+
+  const node = db.getNode(decoded.nodeId);
+  if (!node || node.type !== 'remote' || node.mode !== 'pilot_agent') {
+    return reject(404, 'Not Found');
+  }
+
+  let mintedTunnelToken: string | null = null;
+  if (decoded.scope === 'pilot_enroll') {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const row = db.consumePilotEnrollment(tokenHash);
+    if (!row || row.node_id !== decoded.nodeId) {
+      return reject(401, 'Unauthorized');
+    }
+    mintedTunnelToken = jwt.sign(
+      { scope: 'pilot_tunnel', nodeId: decoded.nodeId },
+      jwtSecret,
+      { expiresIn: '365d' },
+    );
+  }
+
+  const agentVersionHeader = req.headers['x-sencho-agent-version'];
+  const agentVersion = Array.isArray(agentVersionHeader) ? agentVersionHeader[0] : agentVersionHeader;
+
+  pilotTunnelWss.handleUpgrade(req, socket, head, async (ws) => {
+    try {
+      ws.send(encodePilotJsonFrame({
+        t: 'hello',
+        version: PILOT_PROTOCOL_VERSION,
+        role: 'primary',
+      }));
+      if (mintedTunnelToken) {
+        ws.send(encodePilotJsonFrame({
+          t: 'ctrl',
+          op: 'enroll_ack',
+          payload: { token: mintedTunnelToken, nodeId: decoded.nodeId },
+        }));
+      }
+    } catch {
+      try { ws.close(1011, 'hello failed'); } catch { /* ignore */ }
+      return;
+    }
+
+    try {
+      await PilotTunnelManager.getInstance().registerTunnel(decoded.nodeId!, ws, agentVersion);
+    } catch (err) {
+      console.error('[Pilot] Failed to register tunnel:', (err as Error).message);
+      try { ws.close(1011, 'registration failed'); } catch { /* ignore */ }
+    }
+  });
+}
+
 // Handle WebSocket upgrade with JWT authentication
 server.on('upgrade', async (req, socket, head) => {
+  // Pilot-agent tunnel ingress: agents dial /api/pilot/tunnel and present
+  // either a short-lived pilot_enroll token (consumed once) or a long-lived
+  // pilot_tunnel token. Handled independently of user/session auth because
+  // these are machine credentials and carry no cookies.
+  try {
+    const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    if (reqUrl.pathname === '/api/pilot/tunnel') {
+      await handlePilotTunnelUpgrade(req, socket, head);
+      return;
+    }
+  } catch {
+    // URL parse error falls through to the normal flow, which will reject.
+  }
+
   // Parse cookies from the upgrade request
   const cookieHeader = req.headers.cookie || '';
   const cookies = Object.fromEntries(
@@ -8123,7 +8236,7 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
   }
   if (!requirePermission(req, res, 'node:manage')) return;
   try {
-    const { name, type, compose_dir, is_default, api_url, api_token } = req.body;
+    const { name, type, compose_dir, is_default, api_url, api_token, mode } = req.body;
 
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Node name is required' });
@@ -8131,9 +8244,12 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     if (!type || !['local', 'remote'].includes(type)) {
       return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
     }
-    if (type === 'remote') {
+
+    const resolvedMode: 'proxy' | 'pilot_agent' = type === 'remote' && mode === 'pilot_agent' ? 'pilot_agent' : 'proxy';
+
+    if (type === 'remote' && resolvedMode === 'proxy') {
       if (!api_url || typeof api_url !== 'string') {
-        return res.status(400).json({ error: 'API URL is required for remote nodes' });
+        return res.status(400).json({ error: 'API URL is required for proxy-mode remote nodes' });
       }
       const urlCheck = isValidRemoteUrl(api_url);
       if (!urlCheck.valid) {
@@ -8146,18 +8262,25 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
       type,
       compose_dir: compose_dir || '/app/compose',
       is_default: is_default || false,
-      api_url: api_url || '',
-      api_token: api_token || '',
+      api_url: resolvedMode === 'pilot_agent' ? '' : (api_url || ''),
+      api_token: resolvedMode === 'pilot_agent' ? '' : (api_token || ''),
+      mode: resolvedMode,
     });
 
     // Notify subscribers (e.g. DockerEventManager) so a new local node gets
     // its event stream spun up immediately, not on next restart.
     NodeRegistry.getInstance().notifyNodeAdded(id);
 
-    const isPlainHttp = type === 'remote' && api_url && api_url.startsWith('http://');
+    let enrollment: ReturnType<typeof mintPilotEnrollment> | null = null;
+    if (resolvedMode === 'pilot_agent') {
+      enrollment = mintPilotEnrollment(id, req);
+    }
+
+    const isPlainHttp = resolvedMode === 'proxy' && type === 'remote' && api_url && api_url.startsWith('http://');
     res.json({
       success: true,
       id,
+      ...(enrollment && { enrollment }),
       ...(isPlainHttp && {
         warning: 'This node uses plain HTTP. Use HTTPS or a VPN for connections over the public internet.'
       })
@@ -8168,6 +8291,77 @@ app.post('/api/nodes', async (req: Request, res: Response) => {
     }
     console.error('Failed to create node:', error);
     res.status(500).json({ error: error.message || 'Failed to create node' });
+  }
+});
+
+/**
+ * Mint a fresh 15-minute, single-use enrollment token for a pilot-mode node.
+ * Stores a sha256 hash in pilot_enrollments so the token itself is never
+ * recoverable from the DB. The returned `dockerRun` string is a copy-paste
+ * starter command the admin runs on the remote host.
+ */
+function mintPilotEnrollment(nodeId: number, req: Request): { token: string; expiresAt: number; dockerRun: string } {
+  const db = DatabaseService.getInstance();
+  const jwtSecret = db.getGlobalSettings().auth_jwt_secret;
+  if (!jwtSecret) throw new Error('JWT secret not configured');
+
+  const ttlSeconds = 15 * 60;
+  const expiresAt = Date.now() + ttlSeconds * 1000;
+  const enrollNonce = crypto.randomUUID();
+  const token = jwt.sign(
+    { scope: 'pilot_enroll', nodeId, enrollNonce },
+    jwtSecret,
+    { expiresIn: ttlSeconds },
+  );
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  db.createPilotEnrollment(nodeId, tokenHash, expiresAt);
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  const protocol = protoHeader || req.protocol || 'http';
+  const host = req.get('host') || 'localhost:3000';
+  const primaryUrl = `${protocol}://${host}`;
+
+  const dockerRun =
+    `docker run -d --restart=unless-stopped --name sencho-agent ` +
+    `-v /var/run/docker.sock:/var/run/docker.sock ` +
+    `-v sencho-agent-data:/app/data ` +
+    `-v /opt/docker/sencho:/app/compose ` +
+    `-e SENCHO_MODE=pilot ` +
+    `-e SENCHO_PRIMARY_URL=${primaryUrl} ` +
+    `-e SENCHO_ENROLL_TOKEN=${token} ` +
+    `saelix/sencho:latest`;
+
+  return { token, expiresAt, dockerRun };
+}
+
+// Regenerate an enrollment token for an existing pilot-mode node. Used when
+// the first token expired before the agent was started, or when the agent
+// container was lost and needs to re-enroll from scratch.
+app.post('/api/nodes/:id/pilot/enroll', async (req: Request, res: Response) => {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
+    return;
+  }
+  const nodeIdStr = req.params.id as string;
+  if (!requirePermission(req, res, 'node:manage', 'node', nodeIdStr)) return;
+  try {
+    const nodeId = parseInt(nodeIdStr, 10);
+    if (!Number.isFinite(nodeId)) {
+      return res.status(400).json({ error: 'Invalid node id' });
+    }
+    const node = DatabaseService.getInstance().getNode(nodeId);
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+    if (node.type !== 'remote' || node.mode !== 'pilot_agent') {
+      return res.status(400).json({ error: 'Enrollment only applies to pilot-agent nodes' });
+    }
+    // Close any existing tunnel so the re-enrolling agent cleanly replaces it.
+    PilotTunnelManager.getInstance().closeTunnel(nodeId, PilotCloseCode.EnrollmentRegenerated, 'enrollment regenerated');
+    const enrollment = mintPilotEnrollment(nodeId, req);
+    res.json({ success: true, enrollment });
+  } catch (error: any) {
+    console.error('Failed to regenerate pilot enrollment:', error);
+    res.status(500).json({ error: error.message || 'Failed to regenerate enrollment' });
   }
 });
 
@@ -8376,8 +8570,20 @@ async function startServer() {
   }, MFA_REPLAY_PURGE_INTERVAL_MS);
   mfaReplayPurgeTimer.unref();
 
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  // Pilot-agent mode: bind only to loopback so no external port is exposed.
+  // All traffic is demultiplexed from the primary via the pilot tunnel.
+  const isPilotAgent = process.env.SENCHO_MODE === 'pilot';
+  const listenHost = isPilotAgent ? '127.0.0.1' : undefined;
+
+  server.listen(PORT, listenHost, () => {
+    console.log(`Server running on ${listenHost || '0.0.0.0'}:${PORT}${isPilotAgent ? ' (pilot-agent mode)' : ''}`);
+    if (isPilotAgent) {
+      // Start the outbound tunnel client once the local HTTP server is ready
+      // to accept loopback traffic from the tunnel.
+      import('./pilot/agent').then((m) => m.startPilotAgent(PORT)).catch((err) => {
+        console.error('[Pilot] Agent startup failed:', err);
+      });
+    }
   });
 }
 

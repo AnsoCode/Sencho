@@ -2,16 +2,21 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { apiFetch } from '@/lib/api';
 import type { Capability } from '@/lib/capabilities';
 
+export type NodeMode = 'proxy' | 'pilot_agent';
+
 export interface Node {
   id: number;
   name: string;
   type: 'local' | 'remote';
+  mode?: NodeMode;
   compose_dir: string;
   is_default: boolean;
   status: 'online' | 'offline' | 'unknown';
   created_at: number;
   api_url?: string;
   api_token?: string;
+  pilot_last_seen?: number | null;
+  pilot_agent_version?: string | null;
 }
 
 export interface NodeMeta {

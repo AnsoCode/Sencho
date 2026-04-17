@@ -102,6 +102,7 @@
               "features/global-observability",
               "features/host-console",
               "features/multi-node",
+              "features/pilot-agent",
               "features/fleet-view",
               "features/fleet-sync",
               "features/remote-updates",

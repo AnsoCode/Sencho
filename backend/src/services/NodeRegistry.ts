@@ -3,6 +3,7 @@ import axios from 'axios';
 import { EventEmitter } from 'events';
 import { DatabaseService, Node } from './DatabaseService';
 import { fetchRemoteMeta } from './CapabilityRegistry';
+import { PilotTunnelManager } from './PilotTunnelManager';
 
 /**
  * NodeRegistry: Manages connections for multiple nodes.
@@ -99,12 +100,22 @@ export class NodeRegistry extends EventEmitter {
     /**
      * Get the HTTP proxy target for a remote node.
      * Returns { apiUrl, apiToken } for use by the HTTP proxy middleware.
+     *
+     * Pilot-agent nodes resolve to the loopback URL of their active tunnel
+     * bridge; the bridge strips the bearer token and re-authenticates
+     * implicitly via the pre-verified tunnel socket.
      */
     public getProxyTarget(nodeId: number): { apiUrl: string; apiToken: string } | null {
         const node = DatabaseService.getInstance().getNode(nodeId);
-        if (!node || node.type !== 'remote' || !node.api_url || !node.api_token) {
-            return null;
+        if (!node || node.type !== 'remote') return null;
+
+        if (node.mode === 'pilot_agent') {
+            const loopbackUrl = PilotTunnelManager.getInstance().getLoopbackUrl(nodeId);
+            if (!loopbackUrl) return null;
+            return { apiUrl: loopbackUrl, apiToken: '' };
         }
+
+        if (!node.api_url || !node.api_token) return null;
         return { apiUrl: node.api_url, apiToken: node.api_token };
     }
 
@@ -122,10 +133,46 @@ export class NodeRegistry extends EventEmitter {
         }
 
         if (node.type === 'remote') {
+            if (node.mode === 'pilot_agent') {
+                return this.testPilotConnection(node);
+            }
             return this.testRemoteConnection(node);
         }
 
         return this.testLocalConnection(nodeId);
+    }
+
+    /**
+     * Check whether a pilot-agent node has an active tunnel. Does not call
+     * any endpoint; tunnel liveness is tracked in-process by
+     * PilotTunnelManager and via the JWT handshake that originally accepted
+     * the agent.
+     */
+    private async testPilotConnection(node: Node): Promise<{ success: boolean; error?: string; info?: any }> {
+        const db = DatabaseService.getInstance();
+        const active = PilotTunnelManager.getInstance().hasActiveTunnel(node.id);
+        if (!active) {
+            db.updateNodeStatus(node.id, 'offline');
+            return { success: false, error: 'Pilot agent is not connected. Start the agent container or regenerate the enrollment token.' };
+        }
+        db.updateNodeStatus(node.id, 'online');
+        return {
+            success: true,
+            info: {
+                name: node.name,
+                serverVersion: 'Pilot Agent',
+                senchoVersion: node.pilot_agent_version ?? null,
+                capabilities: [],
+                os: 'Remote (tunnel)',
+                architecture: 'Remote',
+                containers: '-',
+                containersRunning: '-',
+                images: '-',
+                memTotal: 0,
+                cpus: '-',
+                pilotLastSeen: node.pilot_last_seen ?? null,
+            },
+        };
     }
 
     private async testLocalConnection(nodeId: number): Promise<{ success: boolean; error?: string; info?: any }> {

@@ -1,0 +1,96 @@
+---
+title: Pilot Agent
+description: Add remote nodes behind NAT, residential networks, or corporate firewalls without exposing any inbound port.
+---
+
+Pilot Agent mode connects a remote server to your primary Sencho instance through a single outbound WebSocket tunnel. Every request the primary sends to that node, HTTP or WebSocket, rides through this tunnel. The remote host never opens an inbound port and never needs a TLS certificate.
+
+## When to use Pilot Agent
+
+Pick Pilot Agent when the remote host:
+- Sits behind NAT or a residential router.
+- Lives on a corporate network that blocks inbound connections.
+- Roams between networks (laptops, mobile hotspots, rotating cloud IPs).
+- Would otherwise need a reverse proxy, a dynamic DNS entry, or a self-signed TLS certificate just to be reachable.
+
+Pick **Distributed API Proxy** (documented in [Multi-Node Management](/features/multi-node)) when the remote host already has a stable, reachable URL, for example a VPS with a public IP or a LAN server on a home network. Both modes are supported side-by-side, one per node.
+
+## How it works
+
+The agent runs inside a second container on the remote host, using the same `saelix/sencho:latest` image. Setting `SENCHO_MODE=pilot` plus a primary URL and a one-time enrollment token puts the container into agent mode. On boot it dials the primary at `wss://<primary>/api/pilot/tunnel` and holds that connection open. For every tunneled request the primary demultiplexes frames to an internal loopback server, which re-issues the request locally on the agent host against its Docker socket. License tier, role checks, and all other authorization continue to flow from the primary, exactly like proxy mode.
+
+Only outbound HTTPS from the remote to the primary is required. Nothing else is exposed.
+
+## Enrollment walkthrough
+
+### 1. Add the node on the primary
+
+On your primary instance open **Settings → Nodes** and click **Add Node**.
+
+- **Type:** Remote
+- **Mode:** Pilot Agent (the default for remote nodes)
+- **Name:** any label, for example `homelab-nuc`
+- **Compose Directory:** the folder on the remote host where stack folders will live
+
+Click **Add Node**. The form is replaced by an enrollment dialog with a one-line `docker run` command.
+
+<Frame>
+  <img src="/images/pilot-agent/enrollment-dialog.png" alt="Pilot Agent enrollment dialog with docker run command" />
+</Frame>
+
+### 2. Run the command on the remote host
+
+Copy the command and paste it on the remote host. It looks like:
+
+```bash
+docker run -d --restart=unless-stopped --name sencho-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v sencho-agent-data:/app/data \
+  -v /opt/docker/sencho:/app/compose \
+  -e SENCHO_MODE=pilot \
+  -e SENCHO_PRIMARY_URL=https://sencho.example.com \
+  -e SENCHO_ENROLL_TOKEN=<short-lived token> \
+  saelix/sencho:latest
+```
+
+The enrollment token is single-use and expires after 15 minutes. On first connect the agent exchanges it for a long-lived tunnel credential, persisted inside the container volume at `/app/data/pilot.jwt`. Subsequent restarts reconnect automatically without needing a new token.
+
+### 3. Confirm the node is online
+
+The node flips to **Online** in the primary within a few seconds of the agent container starting. The **Endpoint** column shows `tunnel` alongside the time the primary last saw a frame from the agent.
+
+Open the node in the sidebar switcher and use it exactly like any other node: deploy stacks, tail logs, open container terminals, watch host stats.
+
+## Day-to-day operation
+
+Once enrolled, a Pilot Agent node is indistinguishable from a proxy-mode node in the UI. The same switcher, the same stacks page, the same editor, the same host console, the same dashboard.
+
+The agent reconnects automatically if the tunnel drops (transient network blip, primary restart, remote host reboot). It applies an exponential backoff between retries starting at 1 second and capping at 60 seconds, so reconnect traffic stays bounded even during long outages.
+
+## Regenerating enrollment
+
+If the agent container is destroyed before its first successful connect, or the enrollment token expires before you paste it on the remote, open the node's edit dialog on the primary and click **Regenerate enrollment token**. A fresh 15-minute token is issued and the previous tunnel (if any) is disconnected so the new agent replaces it cleanly.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Node stays Offline after starting the agent container">
+    Check the agent container's logs for the first `[Pilot]` line. It prints the primary URL it is dialing and the reason for any failed connect. Common causes: the primary URL is wrong or unreachable from the remote host, the enrollment token expired, or the primary is behind a reverse proxy that strips WebSocket upgrades.
+  </Accordion>
+
+  <Accordion title="Tunnel keeps disconnecting and reconnecting">
+    Usually caused by an HTTP proxy or load balancer in front of the primary with a short idle timeout. The tunnel sends a ping every 30 seconds, so raise the proxy's WebSocket idle timeout above that (90 seconds is a safe floor). If you terminate TLS on the proxy, make sure WebSocket upgrade passthrough is enabled.
+  </Accordion>
+
+  <Accordion title="Enrollment token expired before I ran the docker command">
+    Open **Settings → Nodes** on the primary, click the pencil icon on the pending node, then **Regenerate enrollment token**. The dialog shows a fresh command with a new token.
+  </Accordion>
+
+  <Accordion title="I ran the enrollment command on the wrong host">
+    Stop and remove the agent container on the wrong host (`docker stop sencho-agent && docker rm sencho-agent`), then regenerate the enrollment token on the primary and run the command on the correct host.
+  </Accordion>
+
+  <Accordion title="Primary was restored from backup and the agent will not reconnect">
+    The agent's persisted tunnel credential is signed with the primary's JWT secret. If that secret is rotated or the primary is rebuilt from scratch, existing tunnels stop verifying. Regenerate enrollment for the affected node and restart the agent container so it consumes the fresh token.
+  </Accordion>
+</AccordionGroup>

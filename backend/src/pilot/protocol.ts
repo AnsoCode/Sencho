@@ -1,0 +1,213 @@
+/**
+ * Pilot Tunnel wire protocol.
+ *
+ * A single WebSocket between primary and pilot agent carries many multiplexed
+ * HTTP requests and nested WebSocket streams. Each stream is identified by a
+ * monotonically increasing streamId allocated by the primary (the originator
+ * of every request).
+ *
+ * Wire format is hybrid:
+ *   - Text frames: JSON envelopes for metadata (open/close/headers/control)
+ *   - Binary frames: raw payload bytes with a 5-byte prefix
+ *         [ 1 byte: BinaryFrameType ][ 4 bytes: streamId (big-endian) ][ bytes... ]
+ *
+ * JSON is inspectable and low-overhead for small control messages; binary
+ * avoids base64 bloat on body chunks and WS message payloads.
+ */
+
+export const PROTOCOL_VERSION = 1;
+
+// --- Binary frame types (first byte of a binary WS frame) ---
+
+export enum BinaryFrameType {
+    HttpReqBody = 0x01,
+    HttpResBody = 0x02,
+    WsMessageBinary = 0x03,
+}
+
+// --- JSON envelope types ---
+
+export type JsonFrame =
+    | HelloFrame
+    | HttpReqFrame
+    | HttpReqEndFrame
+    | HttpResFrame
+    | HttpResEndFrame
+    | HttpErrorFrame
+    | WsOpenFrame
+    | WsAcceptFrame
+    | WsRejectFrame
+    | WsMessageTextFrame
+    | WsCloseFrame
+    | ControlFrame;
+
+export interface HelloFrame {
+    t: 'hello';
+    version: number;
+    role: 'primary' | 'agent';
+    agentVersion?: string;
+}
+
+export interface HttpReqFrame {
+    t: 'http_req';
+    s: number;
+    method: string;
+    path: string;
+    headers: Record<string, string>;
+}
+
+export interface HttpReqEndFrame {
+    t: 'http_req_end';
+    s: number;
+}
+
+export interface HttpResFrame {
+    t: 'http_res';
+    s: number;
+    status: number;
+    headers: Record<string, string>;
+}
+
+export interface HttpResEndFrame {
+    t: 'http_res_end';
+    s: number;
+}
+
+export interface HttpErrorFrame {
+    t: 'http_err';
+    s: number;
+    code: 'timeout' | 'tunnel_down' | 'bad_response' | 'agent_error';
+    message: string;
+}
+
+export interface WsOpenFrame {
+    t: 'ws_open';
+    s: number;
+    path: string;
+    headers: Record<string, string>;
+}
+
+export interface WsAcceptFrame {
+    t: 'ws_accept';
+    s: number;
+    headers: Record<string, string>;
+}
+
+export interface WsRejectFrame {
+    t: 'ws_reject';
+    s: number;
+    status: number;
+    message: string;
+}
+
+export interface WsMessageTextFrame {
+    t: 'ws_msg_text';
+    s: number;
+    data: string;
+}
+
+export interface WsCloseFrame {
+    t: 'ws_close';
+    s: number;
+    code: number;
+    reason?: string;
+}
+
+export interface ControlFrame {
+    t: 'ctrl';
+    op: 'enroll_ack' | 'node_info' | 'ping' | 'pong';
+    payload?: Record<string, unknown>;
+}
+
+// --- Serialize / parse ---
+
+export function encodeJsonFrame(frame: JsonFrame): string {
+    return JSON.stringify(frame);
+}
+
+export function decodeJsonFrame(raw: string): JsonFrame {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.t !== 'string') {
+        throw new Error('invalid frame: missing type discriminator');
+    }
+    return parsed as JsonFrame;
+}
+
+/**
+ * Build a binary frame: [type][streamId BE][payload].
+ * Returns a fresh Buffer owned by the caller.
+ */
+export function encodeBinaryFrame(type: BinaryFrameType, streamId: number, payload: Buffer): Buffer {
+    if (!Number.isInteger(streamId) || streamId < 0 || streamId > 0xffffffff) {
+        throw new Error(`invalid streamId: ${streamId}`);
+    }
+    const out = Buffer.allocUnsafe(5 + payload.length);
+    out.writeUInt8(type, 0);
+    out.writeUInt32BE(streamId, 1);
+    payload.copy(out, 5);
+    return out;
+}
+
+export interface DecodedBinaryFrame {
+    type: BinaryFrameType;
+    streamId: number;
+    payload: Buffer;
+}
+
+export function decodeBinaryFrame(buf: Buffer): DecodedBinaryFrame {
+    if (buf.length < 5) {
+        throw new Error(`binary frame too short: ${buf.length} bytes`);
+    }
+    const type = buf.readUInt8(0) as BinaryFrameType;
+    if (type !== BinaryFrameType.HttpReqBody &&
+        type !== BinaryFrameType.HttpResBody &&
+        type !== BinaryFrameType.WsMessageBinary) {
+        throw new Error(`unknown binary frame type: ${type}`);
+    }
+    const streamId = buf.readUInt32BE(1);
+    const payload = buf.subarray(5);
+    return { type, streamId, payload };
+}
+
+// --- WS payload normalization ---
+
+export function wsDataToBuffer(data: unknown): Buffer | null {
+    if (Buffer.isBuffer(data)) return data;
+    if (data instanceof ArrayBuffer) return Buffer.from(data);
+    if (Array.isArray(data)) return Buffer.concat(data.map((d) => Buffer.isBuffer(d) ? d : Buffer.from(d as ArrayBuffer)));
+    return null;
+}
+
+export function wsDataToString(data: unknown): string | null {
+    if (typeof data === 'string') return data;
+    const buf = wsDataToBuffer(data);
+    return buf ? buf.toString('utf8') : null;
+}
+
+// --- Close codes ---
+
+export const PilotCloseCode = {
+    Replaced: 4000,
+    EnrollmentRegenerated: 4001,
+    ProtocolError: 1002,
+} as const;
+
+// --- Stream id allocation ---
+
+/**
+ * Monotonic stream id generator. Primary is the sole allocator.
+ * Wraps at 2^31 (well above practical per-tunnel concurrency).
+ */
+export class StreamIdAllocator {
+    private next: number;
+
+    constructor(start = 1) {
+        this.next = start;
+    }
+
+    allocate(): number {
+        const id = this.next;
+        this.next = this.next >= 0x7fffffff ? 1 : this.next + 1;
+        return id;
+    }
+}

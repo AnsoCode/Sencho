@@ -26,16 +26,28 @@ export interface StackAlert {
     last_fired_at?: number;
 }
 
+export type NodeMode = 'proxy' | 'pilot_agent';
+
 export interface Node {
     id: number;
     name: string;
     type: 'local' | 'remote';
+    mode: NodeMode;
     compose_dir: string;
     is_default: boolean;
     status: 'online' | 'offline' | 'unknown';
     created_at: number;
     api_url?: string;
     api_token?: string;
+    pilot_last_seen?: number | null;
+    pilot_agent_version?: string | null;
+}
+
+export interface PilotEnrollment {
+    node_id: number;
+    token_hash: string;
+    expires_at: number;
+    used_at: number | null;
 }
 
 export interface Label {
@@ -483,6 +495,14 @@ export class DatabaseService {
         created_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS pilot_enrollments (
+        node_id INTEGER PRIMARY KEY,
+        token_hash TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS system_state (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -797,6 +817,11 @@ export class DatabaseService {
         // Distributed API model columns
         maybeAddCol('nodes', 'api_url', "TEXT DEFAULT ''");
         maybeAddCol('nodes', 'api_token', "TEXT DEFAULT ''");
+
+        // Pilot Agent outbound-mode columns
+        maybeAddCol('nodes', 'mode', "TEXT NOT NULL DEFAULT 'proxy'");
+        maybeAddCol('nodes', 'pilot_last_seen', 'INTEGER');
+        maybeAddCol('nodes', 'pilot_agent_version', 'TEXT');
 
         // Scheduled operations migrations
         maybeAddCol('scheduled_task_runs', 'triggered_by', "TEXT NOT NULL DEFAULT 'scheduler'");
@@ -1278,36 +1303,42 @@ export class DatabaseService {
         return {
             ...row,
             is_default: row.is_default === 1,
+            mode: (row.mode === 'pilot_agent' ? 'pilot_agent' : 'proxy') as NodeMode,
             api_token: row.api_token ? crypto.decrypt(row.api_token) : '',
+            pilot_last_seen: row.pilot_last_seen ?? null,
+            pilot_agent_version: row.pilot_agent_version ?? null,
         };
     }
 
+    private static readonly NODE_COLUMNS =
+        'id, name, type, compose_dir, is_default, status, created_at, api_url, api_token, mode, pilot_last_seen, pilot_agent_version';
+
     public getNodes(): Node[] {
-        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes ORDER BY is_default DESC, name ASC');
+        const stmt = this.db.prepare(`SELECT ${DatabaseService.NODE_COLUMNS} FROM nodes ORDER BY is_default DESC, name ASC`);
         return stmt.all().map((row: any) => this.decryptNodeRow(row));
     }
 
     public getNode(id: number): Node | undefined {
-        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE id = ?');
+        const stmt = this.db.prepare(`SELECT ${DatabaseService.NODE_COLUMNS} FROM nodes WHERE id = ?`);
         const row = stmt.get(id) as any;
         if (!row) return undefined;
         return this.decryptNodeRow(row);
     }
 
     public getDefaultNode(): Node | undefined {
-        const stmt = this.db.prepare('SELECT id, name, type, compose_dir, is_default, status, created_at, api_url, api_token FROM nodes WHERE is_default = 1 LIMIT 1');
+        const stmt = this.db.prepare(`SELECT ${DatabaseService.NODE_COLUMNS} FROM nodes WHERE is_default = 1 LIMIT 1`);
         const row = stmt.get() as any;
         if (!row) return undefined;
         return this.decryptNodeRow(row);
     }
 
-    public addNode(node: Omit<Node, 'id' | 'status' | 'created_at'>): number {
+    public addNode(node: Omit<Node, 'id' | 'status' | 'created_at' | 'mode'> & { mode?: NodeMode }): number {
         if (node.is_default) {
             this.db.prepare('UPDATE nodes SET is_default = 0').run();
         }
         const crypto = CryptoService.getInstance();
         const stmt = this.db.prepare(
-            'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at, api_url, api_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO nodes (name, type, compose_dir, is_default, status, created_at, api_url, api_token, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         const result = stmt.run(
             node.name,
@@ -1317,7 +1348,8 @@ export class DatabaseService {
             'unknown',
             Date.now(),
             node.api_url || '',
-            node.api_token ? crypto.encrypt(node.api_token) : ''
+            node.api_token ? crypto.encrypt(node.api_token) : '',
+            node.mode || 'proxy'
         );
         return result.lastInsertRowid as number;
     }
@@ -1343,6 +1375,9 @@ export class DatabaseService {
             fields.push('api_token = ?');
             values.push(updates.api_token ? CryptoService.getInstance().encrypt(updates.api_token) : '');
         }
+        if (updates.mode !== undefined) { fields.push('mode = ?'); values.push(updates.mode); }
+        if (updates.pilot_last_seen !== undefined) { fields.push('pilot_last_seen = ?'); values.push(updates.pilot_last_seen); }
+        if (updates.pilot_agent_version !== undefined) { fields.push('pilot_agent_version = ?'); values.push(updates.pilot_agent_version); }
 
         if (fields.length === 0) return;
 
@@ -1368,6 +1403,43 @@ export class DatabaseService {
 
     public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
         this.db.prepare('UPDATE nodes SET status = ? WHERE id = ?').run(status, id);
+    }
+
+    // --- Pilot enrollments ---
+
+    public getPilotEnrollment(nodeId: number): PilotEnrollment | undefined {
+        const row = this.db.prepare(
+            'SELECT node_id, token_hash, expires_at, used_at FROM pilot_enrollments WHERE node_id = ?'
+        ).get(nodeId) as PilotEnrollment | undefined;
+        return row;
+    }
+
+    public createPilotEnrollment(nodeId: number, tokenHash: string, expiresAt: number): void {
+        this.db.prepare(
+            `INSERT INTO pilot_enrollments (node_id, token_hash, expires_at, used_at)
+             VALUES (?, ?, ?, NULL)
+             ON CONFLICT(node_id) DO UPDATE SET
+                token_hash = excluded.token_hash,
+                expires_at = excluded.expires_at,
+                used_at = NULL`
+        ).run(nodeId, tokenHash, expiresAt);
+    }
+
+    public consumePilotEnrollment(tokenHash: string): PilotEnrollment | undefined {
+        const now = Date.now();
+        return this.db.transaction(() => {
+            const row = this.db.prepare(
+                `SELECT node_id, token_hash, expires_at, used_at FROM pilot_enrollments
+                 WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`
+            ).get(tokenHash, now) as PilotEnrollment | undefined;
+            if (!row) return undefined;
+            this.db.prepare('UPDATE pilot_enrollments SET used_at = ? WHERE node_id = ?').run(now, row.node_id);
+            return { ...row, used_at: now };
+        })();
+    }
+
+    public deletePilotEnrollment(nodeId: number): void {
+        this.db.prepare('DELETE FROM pilot_enrollments WHERE node_id = ?').run(nodeId);
     }
 
     // --- Stack Update Status ---
