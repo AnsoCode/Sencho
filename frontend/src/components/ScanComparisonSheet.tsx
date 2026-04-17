@@ -19,6 +19,7 @@ import {
   MinusCircle,
   PlusCircle,
   ShieldCheck,
+  ShieldOff,
   Equal,
   AlertTriangle,
 } from 'lucide-react';
@@ -282,27 +283,37 @@ export function ScanComparisonSheet({
                     </TableHeader>
                     <TableBody>
                       {pageItems.map((v, idx) => {
-                        const rowClass =
+                        const baseRowClass =
                           filter === 'added'
                             ? 'bg-destructive/5'
                             : filter === 'removed'
                               ? 'bg-success/5'
                               : 'opacity-70';
+                        const rowClass = cn(baseRowClass, v.suppressed && 'opacity-60');
                         return (
                           <TableRow key={`${v.vulnerability_id}-${v.pkg_name}-${idx}`} className={rowClass}>
                             <TableCell className="font-mono text-xs">
-                              {v.primary_url ? (
-                                <a
-                                  href={v.primary_url}
-                                  target="_blank"
-                                  rel="noreferrer noopener"
-                                  className="hover:underline"
-                                >
-                                  {v.vulnerability_id}
-                                </a>
-                              ) : (
-                                v.vulnerability_id
-                              )}
+                              <span className="inline-flex items-center gap-1.5">
+                                {v.suppressed && (
+                                  <ShieldOff
+                                    className="w-3 h-3 text-muted-foreground"
+                                    strokeWidth={1.5}
+                                    aria-label="Suppressed"
+                                  />
+                                )}
+                                {v.primary_url ? (
+                                  <a
+                                    href={v.primary_url}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="hover:underline"
+                                  >
+                                    {v.vulnerability_id}
+                                  </a>
+                                ) : (
+                                  v.vulnerability_id
+                                )}
+                              </span>
                             </TableCell>
                             <TableCell className="font-mono text-xs truncate max-w-[180px]" title={v.pkg_name}>
                               {v.pkg_name}

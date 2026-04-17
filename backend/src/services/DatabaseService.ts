@@ -326,6 +326,18 @@ export interface FleetSyncStatus {
     last_error: string | null;
 }
 
+export interface CveSuppression {
+    id: number;
+    cve_id: string;
+    pkg_name: string | null;
+    image_pattern: string | null;
+    reason: string;
+    created_by: string;
+    created_at: number;
+    expires_at: number | null;
+    replicated_from_control: number;
+}
+
 export interface ScanSummary {
     image_ref: string;
     highest_severity: VulnSeverity | null;
@@ -632,6 +644,23 @@ export class DatabaseService {
         last_error TEXT,
         PRIMARY KEY (node_id, resource)
       );
+
+      CREATE TABLE IF NOT EXISTS cve_suppressions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cve_id TEXT NOT NULL,
+        pkg_name TEXT,
+        image_pattern TEXT,
+        reason TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        replicated_from_control INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_cve_suppressions_cve ON cve_suppressions(cve_id);
+      CREATE INDEX IF NOT EXISTS idx_cve_suppressions_expires ON cve_suppressions(expires_at);
+      -- COALESCE makes NULL scope slots collide the way users expect (NULL == NULL here).
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_cve_suppressions_unique
+        ON cve_suppressions(cve_id, COALESCE(pkg_name, ''), COALESCE(image_pattern, ''));
 
       CREATE TABLE IF NOT EXISTS stack_labels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2513,6 +2542,97 @@ export class DatabaseService {
                    AND (last_success_at IS NULL OR last_success_at < last_failure_at)`,
             )
             .all(resource, cutoff) as FleetSyncStatus[];
+    }
+
+    // --- CVE Suppressions ---
+
+    public getCveSuppressions(): CveSuppression[] {
+        return this.db
+            .prepare('SELECT * FROM cve_suppressions ORDER BY cve_id, pkg_name')
+            .all() as CveSuppression[];
+    }
+
+    public getCveSuppression(id: number): CveSuppression | null {
+        return (
+            (this.db.prepare('SELECT * FROM cve_suppressions WHERE id = ?')
+                .get(id) as CveSuppression | undefined) ?? null
+        );
+    }
+
+    public createCveSuppression(
+        suppression: Omit<CveSuppression, 'id'>,
+    ): CveSuppression {
+        const result = this.db
+            .prepare(
+                `INSERT INTO cve_suppressions
+                    (cve_id, pkg_name, image_pattern, reason, created_by, created_at, expires_at, replicated_from_control)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+                suppression.cve_id,
+                suppression.pkg_name,
+                suppression.image_pattern,
+                suppression.reason,
+                suppression.created_by,
+                suppression.created_at,
+                suppression.expires_at,
+                suppression.replicated_from_control ?? 0,
+            );
+        return { ...suppression, id: result.lastInsertRowid as number };
+    }
+
+    public updateCveSuppression(
+        id: number,
+        updates: Partial<Pick<CveSuppression, 'reason' | 'image_pattern' | 'expires_at'>>,
+    ): CveSuppression | null {
+        const existing = this.getCveSuppression(id);
+        if (!existing) return null;
+        const ALLOWED = new Set(['reason', 'image_pattern', 'expires_at']);
+        const fields: string[] = [];
+        const values: unknown[] = [];
+        for (const [key, value] of Object.entries(updates)) {
+            if (!ALLOWED.has(key)) continue;
+            fields.push(`${key} = ?`);
+            values.push(value);
+        }
+        if (fields.length === 0) return existing;
+        values.push(id);
+        this.db
+            .prepare(`UPDATE cve_suppressions SET ${fields.join(', ')} WHERE id = ?`)
+            .run(...(values as never[]));
+        return this.getCveSuppression(id);
+    }
+
+    public deleteCveSuppression(id: number): void {
+        this.db.prepare('DELETE FROM cve_suppressions WHERE id = ?').run(id);
+    }
+
+    /**
+     * Replace all replicated CVE suppressions in a single transaction.
+     * Preserves rows flagged as locally created on this instance.
+     */
+    public replaceReplicatedCveSuppressions(rows: Array<Omit<CveSuppression, 'id'>>): void {
+        const deleteStmt = this.db.prepare('DELETE FROM cve_suppressions WHERE replicated_from_control = 1');
+        const insertStmt = this.db.prepare(
+            `INSERT INTO cve_suppressions
+                (cve_id, pkg_name, image_pattern, reason, created_by, created_at, expires_at, replicated_from_control)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        );
+        const txn = this.db.transaction((items: Array<Omit<CveSuppression, 'id'>>) => {
+            deleteStmt.run();
+            for (const s of items) {
+                insertStmt.run(
+                    s.cve_id,
+                    s.pkg_name,
+                    s.image_pattern,
+                    s.reason,
+                    s.created_by,
+                    s.created_at,
+                    s.expires_at,
+                );
+            }
+        });
+        txn(rows);
     }
 
     // --- Stack Labels ---

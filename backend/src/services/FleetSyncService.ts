@@ -1,8 +1,14 @@
 import axios, { AxiosError } from 'axios';
-import { DatabaseService, Node, ScanPolicy } from './DatabaseService';
+import { CveSuppression, DatabaseService, Node, ScanPolicy } from './DatabaseService';
 import { NodeRegistry } from './NodeRegistry';
 
-export type FleetResource = 'scan_policies';
+export type FleetResource = 'scan_policies' | 'cve_suppressions';
+
+export const FLEET_RESOURCES: readonly FleetResource[] = ['scan_policies', 'cve_suppressions'];
+
+export function isFleetResource(value: unknown): value is FleetResource {
+    return typeof value === 'string' && (FLEET_RESOURCES as readonly string[]).includes(value);
+}
 
 export type FleetRole = 'control' | 'replica';
 
@@ -140,14 +146,20 @@ export class FleetSyncService {
      * This promotes the instance to 'replica' mode if not already, caches
      * the target identity it was told, and replaces replicated rows atomically.
      */
-    public applyIncomingSync(resource: FleetResource, rows: ScanPolicy[], targetIdentity: string): void {
+    public applyIncomingSync(
+        resource: FleetResource,
+        rows: ScanPolicy[] | Array<Omit<CveSuppression, 'id'>>,
+        targetIdentity: string,
+    ): void {
         const db = DatabaseService.getInstance();
         db.setSystemState('fleet_role', 'replica');
         if (targetIdentity) {
             db.setSystemState('fleet_self_identity', targetIdentity);
         }
         if (resource === 'scan_policies') {
-            db.replaceReplicatedScanPolicies(rows);
+            db.replaceReplicatedScanPolicies(rows as ScanPolicy[]);
+        } else if (resource === 'cve_suppressions') {
+            db.replaceReplicatedCveSuppressions(rows as Array<Omit<CveSuppression, 'id'>>);
         }
     }
 
@@ -166,6 +178,20 @@ export class FleetSyncService {
                     enabled: p.enabled,
                     created_at: p.created_at,
                     updated_at: p.updated_at,
+                }));
+        }
+        if (resource === 'cve_suppressions') {
+            return db
+                .getCveSuppressions()
+                .filter((s) => s.replicated_from_control === 0)
+                .map((s) => ({
+                    cve_id: s.cve_id,
+                    pkg_name: s.pkg_name,
+                    image_pattern: s.image_pattern,
+                    reason: s.reason,
+                    created_by: s.created_by,
+                    created_at: s.created_at,
+                    expires_at: s.expires_at,
                 }));
         }
         return [];

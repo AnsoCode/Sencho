@@ -32,6 +32,7 @@ import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info }
 import type { FleetRole, ScanPolicy, VulnSeverity } from '@/types/security';
 import { useLicense } from '@/context/LicenseContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
+import { SuppressionsPanel } from './SuppressionsPanel';
 
 const SEVERITY_OPTIONS: Array<{ value: VulnSeverity; label: string }> = [
   { value: 'CRITICAL', label: 'Critical' },
@@ -451,6 +452,8 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
             </div>
           </div>
         ))}
+
+      <SuppressionsPanel isReplica={isReplica} />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
