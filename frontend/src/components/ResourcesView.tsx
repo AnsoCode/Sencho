@@ -17,10 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2 } from 'lucide-react';
+import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2, History } from 'lucide-react';
 import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
+import { SENCHO_NAVIGATE_EVENT, type SenchoNavigateDetail } from './NodeManager';
 import type { ScanSummary, VulnSeverity } from '@/types/security';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -704,6 +705,22 @@ export default function ResourcesView() {
                 <h1 className="text-xl font-medium tracking-tight">Resources Hub</h1>
                 {activeNode?.type === 'remote' && (
                     <span className="text-sm text-muted-foreground">- {activeNode.name}</span>
+                )}
+                {trivy.available && isPaid && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto border-border"
+                        onClick={() => {
+                            window.dispatchEvent(new CustomEvent<SenchoNavigateDetail>(SENCHO_NAVIGATE_EVENT, {
+                                detail: { view: 'security-history' },
+                            }));
+                        }}
+                        title="View completed vulnerability scans and compare them"
+                    >
+                        <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                        Scan history
+                    </Button>
                 )}
             </div>
 
@@ -1473,6 +1490,7 @@ export default function ResourcesView() {
                 onClose={() => setInspectScanId(null)}
                 onRescan={(imageRef) => { setInspectScanId(null); handleScanImage(imageRef, true); }}
                 canGenerateSbom={isPaid}
+                canCompare={isPaid}
             />
         </div>
     );

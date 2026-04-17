@@ -24,8 +24,8 @@ interface NodeSchedulingSummary {
 
 export const SENCHO_NAVIGATE_EVENT = 'sencho-navigate';
 export interface SenchoNavigateDetail {
-  view: 'scheduled-ops' | 'auto-updates';
-  nodeId: number;
+  view: 'scheduled-ops' | 'auto-updates' | 'security-history';
+  nodeId?: number;
 }
 
 function formatRelativeTime(timestamp: number): string {

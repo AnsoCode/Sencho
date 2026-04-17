@@ -80,3 +80,20 @@ export interface ScanPolicy {
   created_at: number;
   updated_at: number;
 }
+
+export interface ScanCompareVulnerability {
+  vulnerability_id: string;
+  pkg_name: string;
+  severity: VulnSeverity;
+  installed_version?: string;
+  fixed_version?: string | null;
+  primary_url?: string | null;
+}
+
+export interface ScanCompareResult {
+  scanA: { id: number; scanned_at: number; image_ref: string };
+  scanB: { id: number; scanned_at: number; image_ref: string };
+  added: ScanCompareVulnerability[];
+  removed: ScanCompareVulnerability[];
+  unchanged: Pick<ScanCompareVulnerability, 'vulnerability_id' | 'pkg_name' | 'severity'>[];
+}
