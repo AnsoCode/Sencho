@@ -241,9 +241,14 @@ export function ScanComparisonSheet({
                 size="sm"
                 className="h-7 text-xs px-2.5"
                 onClick={() => { setFilter('unchanged'); setPage(0); }}
+                title={
+                  crossImage
+                    ? 'Same CVE and package name appear in both images. Because the images differ, this does not necessarily mean the finding is literally unchanged.'
+                    : 'Findings present in both scans'
+                }
               >
                 <Equal className="w-3 h-3 mr-1" strokeWidth={1.5} />
-                Unchanged ({data.unchanged.length})
+                {crossImage ? 'Shared' : 'Unchanged'} ({data.unchanged.length})
               </Button>
               {needsPagination && (
                 <div className="flex items-center gap-1 ml-auto">
@@ -349,7 +354,7 @@ export function ScanComparisonSheet({
                               {filter === 'unchanged' && (
                                 <span className="inline-flex items-center gap-1 text-muted-foreground">
                                   <Equal className="w-3 h-3" strokeWidth={1.5} />
-                                  Unchanged
+                                  {crossImage ? 'Shared' : 'Unchanged'}
                                 </span>
                               )}
                             </TableCell>

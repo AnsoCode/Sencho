@@ -171,6 +171,41 @@ describe('ScanComparisonSheet', () => {
     expect(screen.queryByText(/findings per scan/i)).toBeNull();
   });
 
+  it('relabels the unchanged bucket as "Shared" for cross-image comparisons', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({
+        scanB: { id: 2, image_ref: 'alpine:3.19', scanned_at: 1_700_000_010_000 },
+        unchanged: [vuln({ vulnerability_id: 'CVE-U', pkg_name: 'pu' })],
+      })),
+    );
+
+    const user = userEvent.setup();
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Shared \(1\)/ })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /Unchanged/ })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /Shared \(1\)/ }));
+    expect(screen.getByText('Shared')).toBeInTheDocument();
+  });
+
+  it('keeps the "Unchanged" label when both scans use the same image', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({
+        unchanged: [vuln({ vulnerability_id: 'CVE-U', pkg_name: 'pu' })],
+      })),
+    );
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Unchanged \(1\)/ })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /Shared/ })).toBeNull();
+  });
+
   it('reloads when the scan ids change', async () => {
     mockedFetch.mockResolvedValue(jsonResponse(200, result()));
 
