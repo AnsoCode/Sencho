@@ -22,6 +22,7 @@ const ACTION_OPTIONS = [
   { value: 'restart', label: 'Restart Stack', targetType: 'stack' as const },
   { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' as const },
   { value: 'prune', label: 'System Prune', targetType: 'system' as const },
+  { value: 'scan', label: 'Vulnerability Scan', targetType: 'system' as const },
 ];
 
 interface ScheduledOperationsViewProps {
@@ -192,6 +193,9 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
 
     if (actionOption.targetType === 'stack') {
       body.target_id = formTargetId;
+      body.node_id = formNodeId ? parseInt(formNodeId, 10) : null;
+    }
+    if (formAction === 'scan') {
       body.node_id = formNodeId ? parseInt(formNodeId, 10) : null;
     }
     if (formAction === 'prune' && formPruneTargets.length > 0) {
@@ -480,6 +484,19 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
               </>
             )}
 
+            {formAction === 'scan' && (
+              <div className="space-y-2">
+                <Label>Node</Label>
+                <Combobox
+                  options={nodes.map(n => ({ value: String(n.id), label: n.name }))}
+                  value={formNodeId}
+                  onValueChange={setFormNodeId}
+                  placeholder="Select node..."
+                />
+                <p className="text-xs text-muted-foreground">Every image on the selected node will be scanned.</p>
+              </div>
+            )}
+
             {formAction === 'prune' && (
               <>
                 <div className="space-y-2">
@@ -531,7 +548,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !formName || !formCron || (targetType === 'stack' && (!formTargetId || !formNodeId)) || (formAction === 'prune' && formPruneTargets.length === 0)}>
+            <Button onClick={handleSave} disabled={saving || !formName || !formCron || (targetType === 'stack' && (!formTargetId || !formNodeId)) || (formAction === 'scan' && !formNodeId) || (formAction === 'prune' && formPruneTargets.length === 0)}>
               {saving ? 'Saving...' : editingTask ? 'Update' : 'Create'}
             </Button>
           </DialogFooter>

@@ -4,7 +4,7 @@ export interface ScheduledTask {
   target_type: 'stack' | 'fleet' | 'system';
   target_id: string | null;
   node_id: number | null;
-  action: 'restart' | 'snapshot' | 'prune' | 'update';
+  action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan';
   cron_expression: string;
   enabled: number;
   created_by: string;

@@ -47,7 +47,12 @@ const {
   mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
   mockGetProxyTarget: vi.fn().mockReturnValue(null),
   mockIsTrivyAvailable: vi.fn().mockReturnValue(true),
-  mockScanAllNodeImages: vi.fn().mockResolvedValue({ scanned: 0, skipped: 0, failed: 0 }),
+  mockScanAllNodeImages: vi.fn().mockResolvedValue({
+    scanned: 0,
+    skipped: 0,
+    failed: 0,
+    severity: { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 },
+  }),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -777,9 +782,33 @@ describe('SchedulerService - scheduled scan notifications', () => {
     };
   }
 
+  function scanResult(opts: {
+    scanned?: number;
+    skipped?: number;
+    failed?: number;
+    critical?: number;
+    high?: number;
+    medium?: number;
+    low?: number;
+    unknown?: number;
+  } = {}) {
+    return {
+      scanned: opts.scanned ?? 0,
+      skipped: opts.skipped ?? 0,
+      failed: opts.failed ?? 0,
+      severity: {
+        critical: opts.critical ?? 0,
+        high: opts.high ?? 0,
+        medium: opts.medium ?? 0,
+        low: opts.low ?? 0,
+        unknown: opts.unknown ?? 0,
+      },
+    };
+  }
+
   it('dispatches info-level notification when scan completes cleanly', async () => {
     mockGetScheduledTask.mockReturnValue(makeScanTask());
-    mockScanAllNodeImages.mockResolvedValue({ scanned: 3, skipped: 1, failed: 0 });
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ scanned: 3, skipped: 1 }));
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(200);
@@ -798,7 +827,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
   it('dispatches warning-level notification when scan has failures', async () => {
     mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 201, name: 'flaky-scan' }));
-    mockScanAllNodeImages.mockResolvedValue({ scanned: 5, skipped: 0, failed: 2 });
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ scanned: 5, failed: 2 }));
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(201);
@@ -812,7 +841,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
   it('passes target_id to dispatchAlert when set', async () => {
     mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 202, target_id: 'web-stack' }));
-    mockScanAllNodeImages.mockResolvedValue({ scanned: 1, skipped: 0, failed: 0 });
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ scanned: 1 }));
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(202);
@@ -828,9 +857,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
     mockGetScheduledTask.mockReturnValue(makeScanTask({
       id: 204,
       name: 'recovered-scan',
-      last_status: 'failure', // Previous run failed
+      last_status: 'failure',
     }));
-    mockScanAllNodeImages.mockResolvedValue({ scanned: 2, skipped: 0, failed: 0 });
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ scanned: 2 }));
 
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(204);
@@ -853,7 +882,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
       target_id: 'my-stack',
       node_id: 1,
       created_by: 'admin',
-      last_status: null, // No previous failure → no recovery notification
+      last_status: null,
     });
     mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Service: 'web' }]);
 
@@ -861,6 +890,77 @@ describe('SchedulerService - scheduled scan notifications', () => {
     await svc.triggerTask(203);
 
     expect(mockDispatchAlert).not.toHaveBeenCalled();
+  });
+
+  it('dispatches error-level notification when Trivy is unavailable', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 205, target_id: 'payment-stack' }));
+    mockIsTrivyAvailable.mockReturnValueOnce(false);
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(205);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'error',
+      expect.stringMatching(/failed.*Trivy/i),
+      'payment-stack',
+    );
+  });
+
+  it('includes severity counts in the notification message', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 206 }));
+    mockScanAllNodeImages.mockResolvedValue(
+      scanResult({ scanned: 3, skipped: 1, critical: 2, high: 5, medium: 10 }),
+    );
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(206);
+
+    const message = mockDispatchAlert.mock.calls[0][1] as string;
+    expect(message).toContain('2 critical');
+    expect(message).toContain('5 high');
+    expect(message).toContain('10 medium');
+  });
+
+  it('reports "No images to scan" when the node has nothing to scan', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 207 }));
+    mockScanAllNodeImages.mockResolvedValue(scanResult());
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(207);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('No images to scan'),
+      undefined,
+    );
+  });
+
+  it('reports "All N image(s) already scanned recently" when every image was cached', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 208 }));
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ skipped: 12 }));
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(208);
+
+    expect(mockDispatchAlert).toHaveBeenCalledWith(
+      'info',
+      expect.stringContaining('All 12 image(s) already scanned recently'),
+      undefined,
+    );
+  });
+
+  it('persists the run as success even when notification dispatch throws', async () => {
+    mockGetScheduledTask.mockReturnValue(makeScanTask({ id: 209 }));
+    mockScanAllNodeImages.mockResolvedValue(scanResult({ scanned: 1 }));
+    mockDispatchAlert.mockRejectedValueOnce(new Error('webhook down'));
+
+    const svc = SchedulerService.getInstance();
+    await expect(svc.triggerTask(209)).resolves.not.toThrow();
+
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ status: 'success' }),
+    );
   });
 });
 

@@ -13,6 +13,7 @@ import { captureLocalNodeFiles, captureRemoteNodeFiles } from '../utils/snapshot
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 import TrivyService from './TrivyService';
+import type { ScanAllNodeImagesResult } from './TrivyService';
 import TrivyInstaller from './TrivyInstaller';
 
 const TRIVY_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -86,7 +87,7 @@ export class SchedulerService {
                 try {
                     await installer.update();
                     await trivy.detectTrivy();
-                    NotificationService.getInstance().dispatchAlert(
+                    this.safeDispatch(
                         'info',
                         `Trivy updated from v${previous} to v${check.latest}`,
                     );
@@ -97,7 +98,7 @@ export class SchedulerService {
             } else {
                 const lastNotified = settings.trivy_last_notified_version || '';
                 if (lastNotified === check.latest) return;
-                NotificationService.getInstance().dispatchAlert(
+                this.safeDispatch(
                     'info',
                     `Trivy update available: v${check.latest} (currently v${check.current ?? 'unknown'})`,
                 );
@@ -137,6 +138,16 @@ export class SchedulerService {
     public calculateNextRun(cronExpression: string): number {
         const expr = CronExpressionParser.parse(cronExpression);
         return expr.next().toDate().getTime();
+    }
+
+    /**
+     * Fire a notification without awaiting completion, catching any promise
+     * rejection so the scheduler never crashes on a failed dispatch.
+     */
+    private safeDispatch(level: 'info' | 'warning' | 'error', message: string, stackName?: string): void {
+        NotificationService.getInstance()
+            .dispatchAlert(level, message, stackName)
+            .catch(err => console.error('[SchedulerService] Notification dispatch failed:', getErrorMessage(err, 'unknown error')));
     }
 
     private async tick(): Promise<void> {
@@ -280,13 +291,19 @@ export class SchedulerService {
             });
             console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
             if (task.action === 'scan') {
-                NotificationService.getInstance().dispatchAlert(
-                    scanFailedCount > 0 ? 'warning' : 'info',
+                const scanLevel: 'info' | 'warning' = scanFailedCount > 0 ? 'warning' : 'info';
+                if (isDebugEnabled()) {
+                    console.log(
+                        `[SchedulerService:debug] Dispatching scan completion notification (level=${scanLevel}, stackContext=${task.target_id ?? 'none'})`,
+                    );
+                }
+                this.safeDispatch(
+                    scanLevel,
                     `Scheduled scan "${task.name}" completed: ${output}`,
                     task.target_id ?? undefined
                 );
             } else if (task.last_status === 'failure') {
-                NotificationService.getInstance().dispatchAlert(
+                this.safeDispatch(
                     'info',
                     `Scheduled task "${task.name}" (${task.action}) recovered successfully`,
                     task.target_id ?? undefined
@@ -321,7 +338,7 @@ export class SchedulerService {
                 error: errMsg,
             });
             console.error(`[SchedulerService] Task "${task.name}" (id=${task.id}) failed:`, errMsg);
-            NotificationService.getInstance().dispatchAlert(
+            this.safeDispatch(
                 'error',
                 `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`,
                 task.target_id ?? undefined
@@ -598,7 +615,7 @@ export class SchedulerService {
         await compose.updateStack(stackName, undefined, true);
         db.clearStackUpdateStatus(nodeId, stackName);
 
-        NotificationService.getInstance().dispatchAlert(
+        this.safeDispatch(
             'info',
             `Auto-update: stack "${stackName}" updated with new images`,
             stackName
@@ -618,11 +635,55 @@ export class SchedulerService {
             console.log(`[SchedulerService:debug] Scan task ${task.id}: no node_id specified, using default node ${nodeId}`);
         }
 
+        const scanStart = Date.now();
+        if (isDebugEnabled()) console.log(`[SchedulerService:debug] executeScan start: task=${task.id} node=${nodeId}`);
+
         const summary = await trivy.scanAllNodeImages(nodeId, 'scheduled');
 
-        const parts: string[] = [`Scanned ${summary.scanned} image(s)`];
-        if (summary.skipped > 0) parts.push(`${summary.skipped} skipped (cached)`);
-        if (summary.failed > 0) parts.push(`${summary.failed} failed`);
-        return { output: parts.join('; '), failed: summary.failed };
+        if (isDebugEnabled()) {
+            console.log(
+                `[SchedulerService:debug] executeScan summary: scanned=${summary.scanned} skipped=${summary.skipped} failed=${summary.failed} ` +
+                `critical=${summary.severity.critical} high=${summary.severity.high} medium=${summary.severity.medium} ` +
+                `low=${summary.severity.low} unknown=${summary.severity.unknown} durationMs=${Date.now() - scanStart}`,
+            );
+        }
+
+        const output = formatScanOutput(summary);
+        return { output, failed: summary.failed };
     }
+}
+
+/**
+ * Build the human-readable completion message from a bulk scan summary.
+ * Exported for unit tests.
+ */
+export function formatScanOutput(summary: ScanAllNodeImagesResult): string {
+    const { scanned, skipped, failed, severity } = summary;
+
+    let header: string;
+    if (scanned === 0 && skipped === 0 && failed === 0) {
+        header = 'No images to scan';
+    } else if (scanned === 0 && skipped > 0 && failed === 0) {
+        header = `All ${skipped} image(s) already scanned recently (cache hit)`;
+    } else {
+        const parts: string[] = [`Scanned ${scanned} image(s)`];
+        if (skipped > 0) parts.push(`${skipped} skipped (cached)`);
+        if (failed > 0) parts.push(`${failed} failed`);
+        header = parts.join('; ');
+    }
+
+    const severityTiers: Array<[string, number]> = [
+        ['critical', severity.critical],
+        ['high', severity.high],
+        ['medium', severity.medium],
+    ];
+    const nonZero = severityTiers.filter(([, n]) => n > 0);
+    if (nonZero.length === 0) {
+        if (scanned === 0 && skipped === 0 && failed === 0) {
+            return header + '.';
+        }
+        return `${header}. No critical, high, or medium findings.`;
+    }
+    const findings = nonZero.map(([label, n]) => `${n} ${label}`).join(', ');
+    return `${header}. Found ${findings}.`;
 }

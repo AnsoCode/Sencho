@@ -6249,6 +6249,9 @@ app.post('/api/scheduled-tasks', (req: Request, res: Response): void => {
     if (action === 'scan' && target_type !== 'system') {
       res.status(400).json({ error: 'Scan action requires target_type "system".' }); return;
     }
+    if (action === 'scan' && !node_id) {
+      res.status(400).json({ error: 'Scan action requires node_id.' }); return;
+    }
     if (target_type === 'stack' && (!target_id || !node_id)) {
       res.status(400).json({ error: 'Stack operations require target_id and node_id.' }); return;
     }
@@ -6369,6 +6372,12 @@ app.put('/api/scheduled-tasks/:id', (req: Request, res: Response): void => {
     }
     if (finalAction === 'scan' && finalTargetType !== 'system') {
       res.status(400).json({ error: 'Scan action requires target_type "system".' }); return;
+    }
+    if (finalAction === 'scan') {
+      const finalNodeId = node_id !== undefined ? node_id : existing.node_id;
+      if (!finalNodeId) {
+        res.status(400).json({ error: 'Scan action requires node_id.' }); return;
+      }
     }
 
     // Validate prune targets
