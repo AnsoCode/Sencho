@@ -266,6 +266,35 @@ describe('GET /api/security/compare', () => {
     expect(added0102.suppressed).toBe(false);
   });
 
+  it('flags truncated=true when either scan exceeds the 1000-row cap', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const a = seedScan({ scannedAt: 1000, totalVulnerabilities: 1500 });
+    const b = seedScan({ scannedAt: 2000, totalVulnerabilities: 10 });
+
+    const res = await request(app)
+      .get(`/api/security/compare?scanId1=${a}&scanId2=${b}`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
+    expect(res.body.row_limit).toBe(1000);
+    expect(res.body.scanA.total_vulnerabilities).toBe(1500);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('returns truncated=false when both scans fit within the row cap', async () => {
+    const a = seedScan({ scannedAt: 1000, totalVulnerabilities: 5 });
+    const b = seedScan({ scannedAt: 2000, totalVulnerabilities: 10 });
+
+    const res = await request(app)
+      .get(`/api/security/compare?scanId1=${a}&scanId2=${b}`)
+      .set('Authorization', `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(false);
+  });
+
   it('allows cross-image comparison on the same node and preserves distinct image refs', async () => {
     const a = seedScan({ imageRef: 'alpine:3.18', scannedAt: 1000 });
     const b = seedScan({ imageRef: 'alpine:3.19', scannedAt: 2000 });
