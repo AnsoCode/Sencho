@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.58.1](https://github.com/AnsoCode/Sencho/compare/v0.58.0...v0.58.1) (2026-04-17)
+
+
+### Fixed
+
+* **security:** relabel unchanged bucket for cross-image comparisons ([#662](https://github.com/AnsoCode/Sencho/issues/662)) ([e0f2e23](https://github.com/AnsoCode/Sencho/commit/e0f2e230a64e0822ba3f9c3e4ac89f6226feecfa))
+* **security:** server-driven pagination for scan history ([#661](https://github.com/AnsoCode/Sencho/issues/661)) ([2fce1d3](https://github.com/AnsoCode/Sencho/commit/2fce1d3baf3965c7c94d76422815491b6fef6794))
+* **security:** signal when scan comparison is truncated ([#658](https://github.com/AnsoCode/Sencho/issues/658)) ([c211f65](https://github.com/AnsoCode/Sencho/commit/c211f655c3144927e54bf7f47697c36146692bf9))
+
 ## [0.58.0](https://github.com/AnsoCode/Sencho/compare/v0.57.0...v0.58.0) (2026-04-17)
 
 
