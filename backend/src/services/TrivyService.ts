@@ -10,6 +10,7 @@ import {
     VulnScanTrigger,
     VulnerabilityScan,
 } from './DatabaseService';
+import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { disableCapability, enableCapability } from './CapabilityRegistry';
 import TrivyInstaller, { type TrivySource } from './TrivyInstaller';
@@ -38,9 +39,33 @@ interface TrivyRawVulnerability {
     PrimaryURL?: string;
 }
 
+interface TrivyRawSecret {
+    RuleID?: string;
+    Category?: string;
+    Severity?: string;
+    Title?: string;
+    StartLine?: number;
+    EndLine?: number;
+    Match?: string;
+}
+
+interface TrivyRawMisconfig {
+    ID?: string;
+    AVDID?: string;
+    Type?: string;
+    Severity?: string;
+    Title?: string;
+    Description?: string;
+    Message?: string;
+    Resolution?: string;
+    PrimaryURL?: string;
+}
+
 interface TrivyRawResult {
     Target?: string;
     Vulnerabilities?: TrivyRawVulnerability[];
+    Secrets?: TrivyRawSecret[];
+    Misconfigurations?: TrivyRawMisconfig[];
 }
 
 interface TrivyRawOutput {
@@ -63,6 +88,30 @@ export interface TrivyVulnerability {
     primaryUrl: string | null;
 }
 
+export interface TrivySecret {
+    ruleId: string;
+    category: string | null;
+    severity: VulnSeverity;
+    title: string | null;
+    target: string;
+    startLine: number | null;
+    endLine: number | null;
+    matchExcerpt: string | null;
+}
+
+export interface TrivyMisconfig {
+    ruleId: string;
+    checkId: string | null;
+    severity: VulnSeverity;
+    title: string | null;
+    message: string | null;
+    resolution: string | null;
+    target: string;
+    primaryUrl: string | null;
+}
+
+export type TrivyScanner = 'vuln' | 'secret';
+
 export interface TrivyScanResult {
     imageRef: string;
     imageDigest: string | null;
@@ -74,8 +123,11 @@ export interface TrivyScanResult {
     lowCount: number;
     unknownCount: number;
     fixableCount: number;
+    secretCount: number;
+    scannersUsed: string;
     highestSeverity: VulnSeverity | null;
     vulnerabilities: TrivyVulnerability[];
+    secrets: TrivySecret[];
     metadata: {
         os: string | null;
         trivyVersion: string | null;
@@ -83,7 +135,40 @@ export interface TrivyScanResult {
     };
 }
 
+export interface TrivyComposeScanResult {
+    stackName: string;
+    scannedAt: number;
+    highestSeverity: VulnSeverity | null;
+    criticalCount: number;
+    highCount: number;
+    mediumCount: number;
+    lowCount: number;
+    unknownCount: number;
+    misconfigCount: number;
+    misconfigs: TrivyMisconfig[];
+    metadata: {
+        trivyVersion: string | null;
+        scanDurationMs: number;
+    };
+}
+
 export type SbomFormat = 'spdx-json' | 'cyclonedx';
+
+// Keep scanners in canonical order so the DB value is comparable as-is.
+export function normalizeScanners(input?: readonly TrivyScanner[]): TrivyScanner[] {
+    const set = new Set<TrivyScanner>(input && input.length > 0 ? input : ['vuln']);
+    const out: TrivyScanner[] = [];
+    for (const s of ['vuln', 'secret'] as const) if (set.has(s)) out.push(s);
+    return out;
+}
+
+export function redactSecretMatch(match: string | undefined | null): string | null {
+    if (!match) return null;
+    const trimmed = match.trim();
+    if (!trimmed) return null;
+    const head = trimmed.slice(0, 8);
+    return trimmed.length > 8 ? `${head}...` : head;
+}
 
 function normalizeSeverity(raw: string | undefined): VulnSeverity {
     const s = (raw ?? '').toUpperCase();
@@ -103,6 +188,8 @@ function computeHighestSeverity(vulns: TrivyVulnerability[]): VulnSeverity | nul
 
 export function parseTrivyOutput(raw: string): {
     vulnerabilities: TrivyVulnerability[];
+    secrets: TrivySecret[];
+    misconfigs: TrivyMisconfig[];
     os: string | null;
 } {
     let parsed: TrivyRawOutput;
@@ -112,16 +199,19 @@ export function parseTrivyOutput(raw: string): {
         console.error('[Trivy] Failed to parse output; first 200 chars:', raw.slice(0, 200));
         throw new Error('Malformed Trivy output: ' + (e as Error).message);
     }
-    const seen = new Set<string>();
+    const vulnSeen = new Set<string>();
     const vulnerabilities: TrivyVulnerability[] = [];
+    const secrets: TrivySecret[] = [];
+    const misconfigs: TrivyMisconfig[] = [];
     for (const result of parsed.Results ?? []) {
+        const target = result.Target ?? '';
         for (const v of result.Vulnerabilities ?? []) {
             const id = v.VulnerabilityID ?? '';
             const pkg = v.PkgName ?? '';
             if (!id || !pkg) continue;
             const key = `${id}::${pkg}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
+            if (vulnSeen.has(key)) continue;
+            vulnSeen.add(key);
             vulnerabilities.push({
                 vulnerabilityId: id,
                 pkgName: pkg,
@@ -133,6 +223,34 @@ export function parseTrivyOutput(raw: string): {
                 primaryUrl: v.PrimaryURL ? v.PrimaryURL : null,
             });
         }
+        for (const s of result.Secrets ?? []) {
+            const ruleId = s.RuleID ?? '';
+            if (!ruleId) continue;
+            secrets.push({
+                ruleId,
+                category: s.Category ?? null,
+                severity: normalizeSeverity(s.Severity),
+                title: s.Title ?? null,
+                target,
+                startLine: typeof s.StartLine === 'number' ? s.StartLine : null,
+                endLine: typeof s.EndLine === 'number' ? s.EndLine : null,
+                matchExcerpt: redactSecretMatch(s.Match),
+            });
+        }
+        for (const m of result.Misconfigurations ?? []) {
+            const ruleId = m.ID ?? m.AVDID ?? '';
+            if (!ruleId) continue;
+            misconfigs.push({
+                ruleId,
+                checkId: m.AVDID ?? null,
+                severity: normalizeSeverity(m.Severity),
+                title: m.Title ?? null,
+                message: m.Message ?? m.Description ?? null,
+                resolution: m.Resolution ?? null,
+                target,
+                primaryUrl: m.PrimaryURL ? m.PrimaryURL : null,
+            });
+        }
     }
     const osFamily = parsed.Metadata?.OS?.Family;
     const osName = parsed.Metadata?.OS?.Name;
@@ -141,7 +259,7 @@ export function parseTrivyOutput(raw: string): {
             ? `${osFamily} ${osName}`
             : osFamily
         : null;
-    return { vulnerabilities, os: osInfo };
+    return { vulnerabilities, secrets, misconfigs, os: osInfo };
 }
 
 class TrivyService {
@@ -318,34 +436,46 @@ class TrivyService {
     async scanImage(
         imageRef: string,
         nodeId: number,
-        options: { useCache?: boolean; digest?: string | null } = {},
+        options: {
+            useCache?: boolean;
+            digest?: string | null;
+            scanners?: readonly TrivyScanner[];
+        } = {},
     ): Promise<TrivyScanResult> {
         const binary = this.binaryPath;
         if (!binary) {
             throw new Error('Trivy is not available on this host');
         }
+        const scanners = normalizeScanners(options.scanners);
+        const scannersUsed = scanners.join(',');
         const key = this.scanKey(nodeId, imageRef);
         if (this.scanningImages.has(key)) {
             throw new Error('Already scanning this image');
         }
         this.scanningImages.add(key);
         const startedAt = Date.now();
-        diag(`scanImage: start nodeId=${nodeId} imageRef=${imageRef} useCache=${options.useCache !== false}`);
+        diag(
+            `scanImage: start nodeId=${nodeId} imageRef=${imageRef} scanners=${scannersUsed} useCache=${options.useCache !== false}`,
+        );
 
         try {
             const digest = options.digest ?? (await this.getImageDigest(imageRef, nodeId));
             diag(`scanImage: digest=${digest ?? 'null'} for ${imageRef}`);
 
             if (options.useCache !== false && digest) {
-                const cached = DatabaseService.getInstance().getLatestScanByDigest(digest);
+                const cached = DatabaseService.getInstance().getLatestScanByDigest(
+                    digest,
+                    scannersUsed,
+                );
                 if (cached && startedAt - cached.scanned_at < DIGEST_CACHE_TTL_MS) {
                     diag(
                         `scanImage: cache hit for digest=${digest} scanId=${cached.id} ageMs=${startedAt - cached.scanned_at}`,
                     );
-                    const details =
-                        DatabaseService.getInstance().getVulnerabilityDetails(cached.id, {
-                            limit: 1000,
-                        }).items;
+                    const db = DatabaseService.getInstance();
+                    const details = db.getVulnerabilityDetails(cached.id, { limit: 1000 }).items;
+                    const cachedSecrets = scanners.includes('secret')
+                        ? db.getSecretFindings(cached.id, { limit: 1000 }).items
+                        : [];
                     return {
                         imageRef,
                         imageDigest: digest,
@@ -357,6 +487,8 @@ class TrivyService {
                         lowCount: cached.low_count,
                         unknownCount: cached.unknown_count,
                         fixableCount: cached.fixable_count,
+                        secretCount: cached.secret_count,
+                        scannersUsed: cached.scanners_used,
                         highestSeverity: cached.highest_severity,
                         vulnerabilities: details.map((d) => ({
                             vulnerabilityId: d.vulnerability_id,
@@ -367,6 +499,16 @@ class TrivyService {
                             title: d.title ?? '',
                             description: d.description ?? '',
                             primaryUrl: d.primary_url,
+                        })),
+                        secrets: cachedSecrets.map((s) => ({
+                            ruleId: s.rule_id,
+                            category: s.category,
+                            severity: s.severity,
+                            title: s.title,
+                            target: s.target,
+                            startLine: s.start_line,
+                            endLine: s.end_line,
+                            matchExcerpt: s.match_excerpt,
                         })),
                         metadata: {
                             os: cached.os_info,
@@ -387,7 +529,7 @@ class TrivyService {
                     '--quiet',
                     '--no-progress',
                     '--scanners',
-                    'vuln',
+                    scannersUsed,
                     imageRef,
                 ];
                 const execStart = Date.now();
@@ -399,9 +541,9 @@ class TrivyService {
                 diag(
                     `scanImage: trivy exited after ${Date.now() - execStart}ms, output=${stdout.length} bytes`,
                 );
-                const { vulnerabilities, os: osInfo } = parseTrivyOutput(stdout);
+                const { vulnerabilities, secrets, os: osInfo } = parseTrivyOutput(stdout);
                 diag(
-                    `scanImage: parsed ${vulnerabilities.length} unique vulns (os=${osInfo ?? 'unknown'})`,
+                    `scanImage: parsed ${vulnerabilities.length} unique vulns, ${secrets.length} secrets (os=${osInfo ?? 'unknown'})`,
                 );
 
                 let critical = 0,
@@ -441,8 +583,11 @@ class TrivyService {
                     lowCount: low,
                     unknownCount: unknown,
                     fixableCount: fixable,
+                    secretCount: secrets.length,
+                    scannersUsed,
                     highestSeverity: computeHighestSeverity(vulnerabilities),
                     vulnerabilities,
+                    secrets,
                     metadata: {
                         os: osInfo,
                         trivyVersion: this.version,
@@ -467,8 +612,10 @@ class TrivyService {
         nodeId: number,
         triggeredBy: VulnScanTrigger,
         stackContext: string | null = null,
+        scanners: readonly TrivyScanner[] = ['vuln'],
     ): number {
         const db = DatabaseService.getInstance();
+        const scannersUsed = normalizeScanners(scanners).join(',');
         const scanId = db.createVulnerabilityScan({
             node_id: nodeId,
             image_ref: imageRef,
@@ -481,6 +628,9 @@ class TrivyService {
             low_count: 0,
             unknown_count: 0,
             fixable_count: 0,
+            secret_count: 0,
+            misconfig_count: 0,
+            scanners_used: scannersUsed,
             highest_severity: null,
             os_info: null,
             trivy_version: this.version,
@@ -490,7 +640,9 @@ class TrivyService {
             error: null,
             stack_context: stackContext,
         });
-        diag(`beginScan: scanId=${scanId} imageRef=${imageRef} nodeId=${nodeId} trigger=${triggeredBy}`);
+        diag(
+            `beginScan: scanId=${scanId} imageRef=${imageRef} nodeId=${nodeId} trigger=${triggeredBy} scanners=${scannersUsed}`,
+        );
         return scanId;
     }
 
@@ -503,12 +655,15 @@ class TrivyService {
         scanId: number,
         imageRef: string,
         nodeId: number,
-        opts: { useCache?: boolean } = {},
+        opts: { useCache?: boolean; scanners?: readonly TrivyScanner[] } = {},
     ): Promise<VulnerabilityScan> {
         const db = DatabaseService.getInstance();
         const startedAt = Date.now();
         try {
-            const result = await this.scanImage(imageRef, nodeId, { useCache: opts.useCache });
+            const result = await this.scanImage(imageRef, nodeId, {
+                useCache: opts.useCache,
+                scanners: opts.scanners,
+            });
             db.updateVulnerabilityScan(scanId, {
                 image_digest: result.imageDigest,
                 scanned_at: result.scannedAt,
@@ -519,6 +674,8 @@ class TrivyService {
                 low_count: result.lowCount,
                 unknown_count: result.unknownCount,
                 fixable_count: result.fixableCount,
+                secret_count: result.secretCount,
+                scanners_used: result.scannersUsed,
                 highest_severity: result.highestSeverity,
                 os_info: result.metadata.os,
                 trivy_version: result.metadata.trivyVersion,
@@ -538,10 +695,23 @@ class TrivyService {
                     primary_url: v.primaryUrl,
                 })),
             );
+            db.insertSecretFindings(
+                scanId,
+                result.secrets.map((s) => ({
+                    rule_id: s.ruleId,
+                    category: s.category,
+                    severity: s.severity,
+                    title: s.title,
+                    target: s.target,
+                    start_line: s.startLine,
+                    end_line: s.endLine,
+                    match_excerpt: s.matchExcerpt,
+                })),
+            );
             const stored = db.getVulnerabilityScan(scanId);
             if (!stored) throw new Error('Scan vanished after write');
             diag(
-                `finishScan: scanId=${scanId} completed total=${result.totalVulnerabilities} highest=${result.highestSeverity ?? 'none'} durationMs=${result.metadata.scanDurationMs}`,
+                `finishScan: scanId=${scanId} completed vulns=${result.totalVulnerabilities} secrets=${result.secretCount} highest=${result.highestSeverity ?? 'none'} durationMs=${result.metadata.scanDurationMs}`,
             );
             return stored;
         } catch (error) {
@@ -561,10 +731,144 @@ class TrivyService {
         nodeId: number,
         triggeredBy: VulnScanTrigger,
         stackContext: string | null = null,
-        opts: { useCache?: boolean } = {},
+        opts: { useCache?: boolean; scanners?: readonly TrivyScanner[] } = {},
     ): Promise<VulnerabilityScan> {
-        const scanId = this.beginScan(imageRef, nodeId, triggeredBy, stackContext);
+        const scanId = this.beginScan(imageRef, nodeId, triggeredBy, stackContext, opts.scanners);
         return this.finishScan(scanId, imageRef, nodeId, opts);
+    }
+
+    /**
+     * Scan a compose stack directory for misconfigurations. A new scan
+     * row is persisted with image_ref='stack:<name>' so misconfigs share
+     * the same history surface as image scans.
+     */
+    async scanComposeStack(
+        nodeId: number,
+        stackName: string,
+        triggeredBy: VulnScanTrigger = 'manual',
+    ): Promise<VulnerabilityScan> {
+        const binary = this.binaryPath;
+        if (!binary) {
+            throw new Error('Trivy is not available on this host');
+        }
+        const fsvc = FileSystemService.getInstance(nodeId);
+        const baseDir = fsvc.getBaseDir();
+        const resolvedBase = path.resolve(baseDir);
+        const resolved = path.resolve(baseDir, stackName);
+        if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+            throw new Error('Invalid stack path');
+        }
+        if (!(await fsvc.hasComposeFile(resolved))) {
+            throw new Error(`No compose file found for stack: ${stackName}`);
+        }
+
+        const db = DatabaseService.getInstance();
+        const scanId = db.createVulnerabilityScan({
+            node_id: nodeId,
+            image_ref: `stack:${stackName}`,
+            image_digest: null,
+            scanned_at: Date.now(),
+            total_vulnerabilities: 0,
+            critical_count: 0,
+            high_count: 0,
+            medium_count: 0,
+            low_count: 0,
+            unknown_count: 0,
+            fixable_count: 0,
+            secret_count: 0,
+            misconfig_count: 0,
+            scanners_used: 'config',
+            highest_severity: null,
+            os_info: null,
+            trivy_version: this.version,
+            scan_duration_ms: null,
+            triggered_by: triggeredBy,
+            status: 'in_progress',
+            error: null,
+            stack_context: stackName,
+        });
+        const startedAt = Date.now();
+        try {
+            const { env, cleanup } = await this.buildEnv();
+            try {
+                const args = ['config', '--format', 'json', '--quiet', '--no-progress', resolved];
+                const { stdout } = await execFileAsync(binary, args, {
+                    env,
+                    timeout: SCAN_TIMEOUT_MS,
+                    maxBuffer: 64 * 1024 * 1024,
+                });
+                const { misconfigs } = parseTrivyOutput(stdout);
+                let critical = 0,
+                    high = 0,
+                    medium = 0,
+                    low = 0,
+                    unknown = 0;
+                for (const m of misconfigs) {
+                    switch (m.severity) {
+                        case 'CRITICAL':
+                            critical++;
+                            break;
+                        case 'HIGH':
+                            high++;
+                            break;
+                        case 'MEDIUM':
+                            medium++;
+                            break;
+                        case 'LOW':
+                            low++;
+                            break;
+                        default:
+                            unknown++;
+                    }
+                }
+                const highestSeverity: VulnSeverity | null =
+                    critical > 0 ? 'CRITICAL'
+                        : high > 0 ? 'HIGH'
+                        : medium > 0 ? 'MEDIUM'
+                        : low > 0 ? 'LOW'
+                        : unknown > 0 ? 'UNKNOWN'
+                        : null;
+                db.updateVulnerabilityScan(scanId, {
+                    scanned_at: Date.now(),
+                    critical_count: critical,
+                    high_count: high,
+                    medium_count: medium,
+                    low_count: low,
+                    unknown_count: unknown,
+                    misconfig_count: misconfigs.length,
+                    highest_severity: highestSeverity,
+                    trivy_version: this.version,
+                    scan_duration_ms: Date.now() - startedAt,
+                    status: 'completed',
+                });
+                db.insertMisconfigFindings(
+                    scanId,
+                    misconfigs.map((m) => ({
+                        rule_id: m.ruleId,
+                        check_id: m.checkId,
+                        severity: m.severity,
+                        title: m.title,
+                        message: m.message,
+                        resolution: m.resolution,
+                        target: m.target,
+                        primary_url: m.primaryUrl,
+                    })),
+                );
+                const stored = db.getVulnerabilityScan(scanId);
+                if (!stored) throw new Error('Scan vanished after write');
+                return stored;
+            } finally {
+                cleanup();
+            }
+        } catch (error) {
+            const msg = getErrorMessage(error, 'Stack scan failed');
+            db.updateVulnerabilityScan(scanId, {
+                status: 'failed',
+                error: msg,
+                scan_duration_ms: Date.now() - startedAt,
+            });
+            throw error;
+        }
     }
 
     async scanAllNodeImages(
@@ -590,7 +894,7 @@ class TrivyService {
                 const digest = await this.getImageDigest(ref, nodeId);
                 if (digest) {
                     const cached =
-                        DatabaseService.getInstance().getLatestScanByDigest(digest);
+                        DatabaseService.getInstance().getLatestScanByDigest(digest, 'vuln');
                     if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) {
                         skipped++;
                         continue;

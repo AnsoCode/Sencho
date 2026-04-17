@@ -32,6 +32,9 @@ export interface VulnerabilityScan {
   low_count: number;
   unknown_count: number;
   fixable_count: number;
+  secret_count: number;
+  misconfig_count: number;
+  scanners_used: string;
   highest_severity: VulnSeverity | null;
   os_info: string | null;
   trivy_version: string | null;
@@ -40,6 +43,32 @@ export interface VulnerabilityScan {
   status: VulnScanStatus;
   error: string | null;
   stack_context: string | null;
+}
+
+export interface SecretFinding {
+  id: number;
+  scan_id: number;
+  rule_id: string;
+  category: string | null;
+  severity: VulnSeverity;
+  title: string | null;
+  target: string;
+  start_line: number | null;
+  end_line: number | null;
+  match_excerpt: string | null;
+}
+
+export interface MisconfigFinding {
+  id: number;
+  scan_id: number;
+  rule_id: string;
+  check_id: string | null;
+  severity: VulnSeverity;
+  title: string | null;
+  message: string | null;
+  resolution: string | null;
+  target: string;
+  primary_url: string | null;
 }
 
 export interface VulnerabilityDetail {

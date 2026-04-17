@@ -1625,7 +1625,7 @@ async function triggerPostDeployScan(
       try {
         const digest = await svc.getImageDigest(imageRef, nodeId);
         if (digest) {
-          const cached = db.getLatestScanByDigest(digest);
+          const cached = db.getLatestScanByDigest(digest, 'vuln');
           if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) continue;
         }
         const scan = await svc.runScanAndPersist(imageRef, nodeId, 'deploy', stackName);
@@ -1994,6 +1994,19 @@ function validateScanPolicyRow(row: unknown): string | null {
 }
 
 const CVE_ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA-[\w-]{14,})$/;
+
+// Returns a normalized scanners array, undefined when no input was provided,
+// or null when the input is present but invalid.
+function parseScannersInput(raw: unknown): readonly ('vuln' | 'secret')[] | undefined | null {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out = new Set<'vuln' | 'secret'>();
+  for (const item of raw) {
+    if (item !== 'vuln' && item !== 'secret') return null;
+    out.add(item);
+  }
+  return Array.from(out) as readonly ('vuln' | 'secret')[];
+}
 function validateCveSuppressionRow(row: unknown): string | null {
   if (!row || typeof row !== 'object') return 'row must be an object';
   const r = row as Record<string, unknown>;
@@ -7475,17 +7488,47 @@ app.post('/api/security/scan', authMiddleware, (req: Request, res: Response): vo
   const imageRef = rawImageRef;
   const stackContext = typeof req.body?.stackName === 'string' ? req.body.stackName : null;
   const force = req.body?.force === true;
+  const scanners = parseScannersInput(req.body?.scanners);
+  if (scanners === null) {
+    res.status(400).json({ error: 'scanners must be an array of "vuln" or "secret"' });
+    return;
+  }
+  if (scanners?.includes('secret') && !requirePaid(req, res)) return;
   const nodeId = req.nodeId;
   if (svc.isScanning(nodeId, imageRef)) {
     res.status(409).json({ error: 'Already scanning this image' });
     return;
   }
-  const scanId = svc.beginScan(imageRef, nodeId, 'manual', stackContext);
+  const scanId = svc.beginScan(imageRef, nodeId, 'manual', stackContext, scanners);
   res.status(202).json({ scanId });
 
-  svc.finishScan(scanId, imageRef, nodeId, { useCache: !force }).catch((err) => {
+  svc.finishScan(scanId, imageRef, nodeId, { useCache: !force, scanners }).catch((err) => {
     console.error(`[Security] Scan failed for ${imageRef}:`, (err as Error).message);
   });
+});
+
+app.post('/api/security/scan/stack', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const svc = TrivyService.getInstance();
+  if (!svc.isTrivyAvailable()) {
+    res.status(503).json({ error: 'Trivy is not available on this host' }); return;
+  }
+  const stackName = typeof req.body?.stackName === 'string' ? req.body.stackName.trim() : '';
+  if (!stackName || !/^[a-zA-Z0-9_-]+$/.test(stackName)) {
+    res.status(400).json({ error: 'Invalid stack name' }); return;
+  }
+  try {
+    const scan = await svc.scanComposeStack(req.nodeId, stackName, 'manual');
+    res.status(201).json(scan);
+  } catch (error) {
+    const message = (error as Error).message || '';
+    if (message === 'Invalid stack path' || message.startsWith('No compose file found')) {
+      res.status(404).json({ error: message }); return;
+    }
+    console.error('[Security] Stack config scan failed:', error);
+    res.status(500).json({ error: message || 'Failed to scan stack' });
+  }
 });
 
 app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => {
@@ -7543,6 +7586,60 @@ app.get(
     const suppressions = db.getCveSuppressions();
     const enriched = applySuppressions(result.items, scan.image_ref, suppressions);
     res.json({ ...result, items: enriched });
+  },
+);
+
+app.get(
+  '/api/security/scans/:scanId/secrets',
+  authMiddleware,
+  (req: Request, res: Response): void => {
+    if (!requirePaid(req, res)) return;
+    const scanId = Number(req.params.scanId);
+    if (!Number.isFinite(scanId)) {
+      res.status(400).json({ error: 'Invalid scan id' }); return;
+    }
+    const db = DatabaseService.getInstance();
+    const scan = db.getVulnerabilityScan(scanId);
+    if (!scan || scan.node_id !== req.nodeId) {
+      res.status(404).json({ error: 'Scan not found' }); return;
+    }
+    const severity = typeof req.query.severity === 'string'
+      ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
+      : undefined;
+    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
+    if (severity && !validSeverities.has(severity)) {
+      res.status(400).json({ error: 'Invalid severity filter' }); return;
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+    res.json(db.getSecretFindings(scanId, { severity, limit, offset }));
+  },
+);
+
+app.get(
+  '/api/security/scans/:scanId/misconfigs',
+  authMiddleware,
+  (req: Request, res: Response): void => {
+    if (!requirePaid(req, res)) return;
+    const scanId = Number(req.params.scanId);
+    if (!Number.isFinite(scanId)) {
+      res.status(400).json({ error: 'Invalid scan id' }); return;
+    }
+    const db = DatabaseService.getInstance();
+    const scan = db.getVulnerabilityScan(scanId);
+    if (!scan || scan.node_id !== req.nodeId) {
+      res.status(404).json({ error: 'Scan not found' }); return;
+    }
+    const severity = typeof req.query.severity === 'string'
+      ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
+      : undefined;
+    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
+    if (severity && !validSeverities.has(severity)) {
+      res.status(400).json({ error: 'Invalid severity filter' }); return;
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+    res.json(db.getMisconfigFindings(scanId, { severity, limit, offset }));
   },
 );
 
