@@ -31,8 +31,8 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 2. Click **New Schedule**.
 3. Fill in the form:
    - **Name**: A descriptive label (e.g. "Nightly staging restart").
-   - **Action**: Choose Restart Stack, Fleet Snapshot, or System Prune. The form fields below change based on your selection.
-   - **Node**: (Restart Stack only) Select the node where the target stack runs.
+   - **Action**: Choose Restart Stack, Fleet Snapshot, System Prune, or Vulnerability Scan. The form fields below change based on your selection.
+   - **Node**: (Restart Stack and Vulnerability Scan) Select the node to run against. For Restart Stack it determines where the target stack lives; for Vulnerability Scan it determines which node's images are scanned.
    - **Stack**: (Restart Stack only) Select the stack to restart. Becomes available after choosing a node.
    - **Services**: (Restart Stack only) Optionally select specific services within the stack to restart. Leave empty to restart all services.
    - **Prune Targets**: (System Prune only) Select which resources to prune: containers, images, networks, volumes. All are selected by default.
@@ -52,7 +52,7 @@ The task list is displayed as a table with the following columns:
 | Column | Description |
 |--------|-------------|
 | **Name** | The task name |
-| **Action** | Task type badge: Restart Stack, Fleet Snapshot, or System Prune |
+| **Action** | Task type badge: Restart Stack, Fleet Snapshot, System Prune, or Vulnerability Scan |
 | **Target** | Stack name (with selected services, if any), or the target type for non-stack actions |
 | **Schedule** | Human-readable description with the raw cron expression below |
 | **Status** | Last run result: **Success** (green), **Failed** (red), or "Never run" |
@@ -69,6 +69,12 @@ When creating a Restart Stack schedule, you can target individual services inste
 <Frame>
   <img src="/images/scheduled-operations/per-service-restart.png" alt="Service checkboxes displayed when creating a per-service restart schedule" />
 </Frame>
+
+### Scheduled Vulnerability Scans
+
+A Vulnerability Scan task runs Trivy against every image on the selected node and persists the results. The scan uses the same digest-based 24-hour cache as manual scans, so unchanged images are not rescanned on every run. See [Vulnerability Scanning](/features/vulnerability-scanning) for how results are surfaced in the UI and [Installing Trivy](/operations/trivy-setup) for setup on each node.
+
+When a scheduled scan finishes, Sencho dispatches a completion notification with a summary of what was scanned and a breakdown of findings by severity. The full message format is documented in [Alerts & Notifications → Scheduled scan completion](/features/alerts-notifications#scheduled-scan-completion).
 
 ### Prune Label Filter
 
@@ -130,6 +136,8 @@ When a scheduled task fails, Sencho automatically dispatches an **error-level al
 
 When a previously failing task succeeds again, Sencho sends an **info-level recovery notification** to confirm the issue is resolved. This recovery-only approach avoids notification noise from tasks that succeed on every run.
 
+Vulnerability Scan tasks always send a completion notification, even on a clean run, because the message carries severity counts you may want to react to. See [Alerts & Notifications → Scheduled scan completion](/features/alerts-notifications#scheduled-scan-completion) for the full message format.
+
 To configure notification channels, go to **Settings > Notifications**.
 
 <Frame>
@@ -183,3 +191,16 @@ If a task's cron expression becomes invalid after creation (for example, due to 
 ### Run shows "Server restarted during execution"
 
 This means Sencho was restarted (or crashed) while this task was mid-execution. The run was marked as failed automatically on startup. The task itself is still enabled and will run at its next scheduled time. If you want to re-run it immediately, use the **Run Now** button.
+
+### Scheduled scan completed but no notification arrived
+
+The scan notification shares the same delivery path as every other Sencho alert. Check, in order:
+
+1. At least one channel is enabled in **Settings > Notifications** and the **Test** button succeeds for it.
+2. If the stack the scan is associated with has notification routes defined, make sure at least one matching route is enabled; the routing layer takes priority over the global channels.
+3. Open the notification bell. The in-app bell receives every notification regardless of channel configuration, and a failed external delivery is logged there as an error entry you can inspect.
+4. On a remote node, notification channels must be configured on the remote instance itself; channel settings are per-node.
+
+### Scan task fails with "Trivy binary is not available"
+
+Trivy must be installed on the node that runs the scan, not just on the primary instance. Follow [Installing Trivy](/operations/trivy-setup) on the target node, then trigger **Run Now** from the schedule to confirm the scan succeeds before waiting for the next cron tick.

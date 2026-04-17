@@ -77,6 +77,21 @@ interface TrivyRawOutput {
     Results?: TrivyRawResult[];
 }
 
+export interface ScanAllNodeImagesSeverityTotals {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    unknown: number;
+}
+
+export interface ScanAllNodeImagesResult {
+    scanned: number;
+    skipped: number;
+    failed: number;
+    severity: ScanAllNodeImagesSeverityTotals;
+}
+
 export interface TrivyVulnerability {
     vulnerabilityId: string;
     pkgName: string;
@@ -874,7 +889,7 @@ class TrivyService {
     async scanAllNodeImages(
         nodeId: number,
         triggeredBy: VulnScanTrigger = 'scheduled',
-    ): Promise<{ scanned: number; skipped: number; failed: number }> {
+    ): Promise<ScanAllNodeImagesResult> {
         if (this.source === 'none') {
             throw new Error('Trivy is not available on this host');
         }
@@ -889,26 +904,43 @@ class TrivyService {
         let scanned = 0;
         let skipped = 0;
         let failed = 0;
+        const severity = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 };
+        const countedDigests = new Set<string>();
+
+        const addSeverity = (row: VulnerabilityScan | null): void => {
+            if (!row) return;
+            severity.critical += row.critical_count;
+            severity.high += row.high_count;
+            severity.medium += row.medium_count;
+            severity.low += row.low_count;
+            severity.unknown += row.unknown_count;
+        };
+
         for (const ref of imageRefs) {
             try {
                 const digest = await this.getImageDigest(ref, nodeId);
                 if (digest) {
+                    if (countedDigests.has(digest)) continue;
                     const cached =
                         DatabaseService.getInstance().getLatestScanByDigest(digest, 'vuln');
                     if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) {
                         skipped++;
+                        addSeverity(cached);
+                        countedDigests.add(digest);
                         continue;
                     }
                 }
-                await this.runScanAndPersist(ref, nodeId, triggeredBy, null);
+                const fresh = await this.runScanAndPersist(ref, nodeId, triggeredBy, null);
+                addSeverity(fresh);
                 scanned++;
+                if (digest) countedDigests.add(digest);
             } catch (err) {
                 failed++;
                 console.warn(`[Trivy] Failed to scan ${ref}:`, getErrorMessage(err, 'unknown error'));
             }
             await new Promise((r) => setTimeout(r, 300));
         }
-        return { scanned, skipped, failed };
+        return { scanned, skipped, failed, severity };
     }
 
     async generateSBOM(imageRef: string, format: SbomFormat): Promise<string> {

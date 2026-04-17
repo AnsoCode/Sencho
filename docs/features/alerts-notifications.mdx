@@ -166,8 +166,21 @@ Recurring [vulnerability scans](/features/vulnerability-scanning) dispatch a not
 
 - **Info** when every image scanned successfully.
 - **Warning** when one or more images failed to scan during the run.
+- **Error** when the run itself could not start (for example, Trivy is not installed on the target node).
 
-The message includes the scheduled task name and a summary of how many images were scanned, cached, and failed. Failures are typically transient (registry timeouts, missing credentials) and do not stop the rest of the run from completing.
+The message includes the scheduled task name, a summary of how many images were scanned, cached, and failed, and a breakdown of findings by severity. A typical clean-run message looks like:
+
+```
+Scheduled scan "nightly-scan" completed: Scanned 12 image(s); 3 skipped (cached). Found 2 critical, 5 high, 10 medium.
+```
+
+If no critical, high, or medium findings are present, the message ends with `No critical, high, or medium findings.` so the outcome is still explicit. When the target node has nothing to scan, the message reads `No images to scan.`, and when every image was already covered by a recent cached scan it reads `All N image(s) already scanned recently (cache hit).` In both cases the notification still fires so you know the run executed.
+
+<Note>
+  Severity counts reflect the current security posture of the node, aggregated across both freshly scanned images and cached scan results. They are not a delta of what changed on this run.
+</Note>
+
+Failures are typically transient (registry timeouts, missing credentials) and do not stop the rest of the run from completing.
 
 ## Container crash detection
 
