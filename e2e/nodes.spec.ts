@@ -31,6 +31,9 @@ test.describe('Node management', () => {
     // #node-type is a Radix UI combobox - click to open, then pick the option.
     await page.locator('#node-type').click();
     await page.getByRole('option', { name: /remote/i }).click();
+    // Remote nodes default to Pilot Agent mode; switch to Proxy so the api_url field renders.
+    await page.getByRole('combobox', { name: /pilot agent/i }).click();
+    await page.getByRole('button', { name: /distributed api proxy/i }).click();
     // Confirm the API URL field is now visible before proceeding
     await expect(page.locator('#node-api-url')).toBeVisible({ timeout: 3_000 });
     return true;
