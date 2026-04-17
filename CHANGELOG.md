@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.57.0](https://github.com/AnsoCode/Sencho/compare/v0.56.0...v0.57.0) (2026-04-17)
+
+
+### Added
+
+* **fleet:** replicate scan policies across managed nodes ([#649](https://github.com/AnsoCode/Sencho/issues/649)) ([708d15b](https://github.com/AnsoCode/Sencho/commit/708d15b2b351cef50585dc2a5c8697460cb01f50))
+* **scheduler:** notify on scheduled scan completion ([#646](https://github.com/AnsoCode/Sencho/issues/646)) ([e660d2a](https://github.com/AnsoCode/Sencho/commit/e660d2a658a9a0775cd5e448dd2c2933491a33d3))
+* **security:** export scan results as SARIF 2.1.0 ([#652](https://github.com/AnsoCode/Sencho/issues/652)) ([12bbf86](https://github.com/AnsoCode/Sencho/commit/12bbf86dc481bf0f5ba99cf144c1161c31cbee12))
+* **security:** fleet-replicated CVE suppression list ([#650](https://github.com/AnsoCode/Sencho/issues/650)) ([732fc95](https://github.com/AnsoCode/Sencho/commit/732fc95415ddeddf7827ce95ee790839e6c10e46))
+* **security:** scan comparison UI ([#648](https://github.com/AnsoCode/Sencho/issues/648)) ([8ee0c0c](https://github.com/AnsoCode/Sencho/commit/8ee0c0c476e1652d59ef8e4f53dd728996e36250))
+* **security:** secret and misconfiguration scanning ([#651](https://github.com/AnsoCode/Sencho/issues/651)) ([a95bf1f](https://github.com/AnsoCode/Sencho/commit/a95bf1ff333e301125ef8a2b6442f0c74f30c089))
+
 ## [0.56.0](https://github.com/AnsoCode/Sencho/compare/v0.55.1...v0.56.0) (2026-04-17)
 
 
