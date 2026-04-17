@@ -28,8 +28,8 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
 import { TierBadge } from '@/components/TierBadge';
-import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2 } from 'lucide-react';
-import type { ScanPolicy, VulnSeverity } from '@/types/security';
+import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info } from 'lucide-react';
+import type { FleetRole, ScanPolicy, VulnSeverity } from '@/types/security';
 import { useLicense } from '@/context/LicenseContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 
@@ -88,6 +88,8 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   const { status: trivy, updateCheck, refresh: refreshTrivy, refreshUpdateCheck } = useTrivyStatus();
   const [trivyBusy, setTrivyBusy] = useState<null | 'install' | 'update' | 'uninstall' | 'auto-update'>(null);
   const [uninstallConfirm, setUninstallConfirm] = useState(false);
+  const [fleetRole, setFleetRole] = useState<FleetRole>('control');
+  const isReplica = fleetRole === 'replica';
 
   const runTrivyOp = async (
     op: 'install' | 'update' | 'uninstall',
@@ -159,6 +161,23 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     if (isPaid) fetchPolicies();
     else setLoading(false);
   }, [isPaid]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/fleet/role', { localOnly: true });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && (data?.role === 'control' || data?.role === 'replica')) {
+          setFleetRole(data.role);
+        }
+      } catch {
+        /* fallback: treat as control if the check fails */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const openCreate = () => {
     setEditingId(null);
@@ -265,11 +284,29 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
             Policies evaluate every post-deploy scan and alert (or block) when severity exceeds the threshold.
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          Add Policy
-        </Button>
+        {!isReplica && (
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            Add Policy
+          </Button>
+        )}
       </div>
+
+      {isReplica && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-start gap-2 rounded-lg border border-card-border bg-muted/30 px-4 py-3"
+        >
+          <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5} aria-hidden="true" />
+          <div className="text-sm">
+            <div className="font-medium">Managed by control node</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Security policies replicate from the control Sencho instance. View them here for audit; edit them on the control.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -384,24 +421,26 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => openEdit(policy)}
-                >
-                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-                  onClick={() => setDeleteId(policy.id)}
-                >
-                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                </Button>
-              </div>
+              {!isReplica && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => openEdit(policy)}
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => setDeleteId(policy.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="text-xs text-muted-foreground">
               Scope: {policy.stack_pattern ? (
