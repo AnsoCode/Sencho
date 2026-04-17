@@ -590,13 +590,17 @@ export default function ResourcesView() {
         }
     };
 
-    const handleScanImage = async (imageRef: string, force = false) => {
+    const handleScanImage = async (
+        imageRef: string,
+        options: { force?: boolean; scanners?: ('vuln' | 'secret')[] } = {},
+    ) => {
+        const { force = false, scanners } = options;
         setScanningImageRef(imageRef);
         const loadingId = toast.loading(`Scanning ${imageRef}...`);
         try {
             const res = await apiFetch('/security/scan', {
                 method: 'POST',
-                body: JSON.stringify({ imageRef, force }),
+                body: JSON.stringify({ imageRef, force, scanners }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Failed to start scan');
@@ -885,20 +889,37 @@ export default function ResourcesView() {
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     {trivy.available && isAdmin && img.RepoTags?.[0] && img.RepoTags[0] !== '<none>:<none>' && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
-                                                            disabled={scanningImageRef === img.RepoTags[0]}
-                                                            onClick={() => handleScanImage(img.RepoTags![0])}
-                                                            title="Scan for vulnerabilities"
-                                                        >
-                                                            {scanningImageRef === img.RepoTags[0] ? (
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
-                                                            ) : (
-                                                                <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                                            )}
-                                                        </Button>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                                                                    disabled={scanningImageRef === img.RepoTags[0]}
+                                                                    title="Scan for vulnerabilities"
+                                                                >
+                                                                    {scanningImageRef === img.RepoTags[0] ? (
+                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
+                                                                    ) : (
+                                                                        <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                                    )}
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem
+                                                                    onClick={() => handleScanImage(img.RepoTags![0], { scanners: ['vuln'] })}
+                                                                >
+                                                                    Scan (vulnerabilities)
+                                                                </DropdownMenuItem>
+                                                                {isPaid && (
+                                                                    <DropdownMenuItem
+                                                                        onClick={() => handleScanImage(img.RepoTags![0], { scanners: ['vuln', 'secret'] })}
+                                                                    >
+                                                                        Full scan (vulnerabilities + secrets)
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
                                                     )}
                                                     {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'images', id: img.Id, name: img.RepoTags?.[0] })}>
                                                         <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -1488,7 +1509,7 @@ export default function ResourcesView() {
             <VulnerabilityScanSheet
                 scanId={inspectScanId}
                 onClose={() => setInspectScanId(null)}
-                onRescan={(imageRef) => { setInspectScanId(null); handleScanImage(imageRef, true); }}
+                onRescan={(imageRef) => { setInspectScanId(null); handleScanImage(imageRef, { force: true }); }}
                 canGenerateSbom={isPaid}
                 canCompare={isPaid}
                 canManageSuppressions={isPaid && isAdmin}

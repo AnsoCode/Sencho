@@ -281,6 +281,9 @@ export interface VulnerabilityScan {
     low_count: number;
     unknown_count: number;
     fixable_count: number;
+    secret_count: number;
+    misconfig_count: number;
+    scanners_used: string;
     highest_severity: VulnSeverity | null;
     os_info: string | null;
     trivy_version: string | null;
@@ -301,6 +304,32 @@ export interface VulnerabilityDetail {
     severity: VulnSeverity;
     title: string | null;
     description: string | null;
+    primary_url: string | null;
+}
+
+export interface SecretFinding {
+    id: number;
+    scan_id: number;
+    rule_id: string;
+    category: string | null;
+    severity: VulnSeverity;
+    title: string | null;
+    target: string;
+    start_line: number | null;
+    end_line: number | null;
+    match_excerpt: string | null;
+}
+
+export interface MisconfigFinding {
+    id: number;
+    scan_id: number;
+    rule_id: string;
+    check_id: string | null;
+    severity: VulnSeverity;
+    title: string | null;
+    message: string | null;
+    resolution: string | null;
+    target: string;
     primary_url: string | null;
 }
 
@@ -375,6 +404,7 @@ export class DatabaseService {
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
         this.migrateScanPolicyFleetColumns();
+        this.migrateSecretMisconfigColumns();
     }
 
     public static getInstance(): DatabaseService {
@@ -592,6 +622,9 @@ export class DatabaseService {
         low_count INTEGER NOT NULL DEFAULT 0,
         unknown_count INTEGER NOT NULL DEFAULT 0,
         fixable_count INTEGER NOT NULL DEFAULT 0,
+        secret_count INTEGER NOT NULL DEFAULT 0,
+        misconfig_count INTEGER NOT NULL DEFAULT 0,
+        scanners_used TEXT NOT NULL DEFAULT 'vuln',
         highest_severity TEXT,
         os_info TEXT,
         trivy_version TEXT,
@@ -623,6 +656,36 @@ export class DatabaseService {
 
       CREATE INDEX IF NOT EXISTS idx_vuln_details_scan ON vulnerability_details(scan_id);
       CREATE INDEX IF NOT EXISTS idx_vuln_details_severity ON vulnerability_details(severity);
+
+      CREATE TABLE IF NOT EXISTS secret_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scan_id INTEGER NOT NULL,
+        rule_id TEXT NOT NULL,
+        category TEXT,
+        severity TEXT NOT NULL,
+        title TEXT,
+        target TEXT NOT NULL,
+        start_line INTEGER,
+        end_line INTEGER,
+        match_excerpt TEXT,
+        FOREIGN KEY(scan_id) REFERENCES vulnerability_scans(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_secret_findings_scan ON secret_findings(scan_id);
+
+      CREATE TABLE IF NOT EXISTS misconfig_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scan_id INTEGER NOT NULL,
+        rule_id TEXT NOT NULL,
+        check_id TEXT,
+        severity TEXT NOT NULL,
+        title TEXT,
+        message TEXT,
+        resolution TEXT,
+        target TEXT NOT NULL,
+        primary_url TEXT,
+        FOREIGN KEY(scan_id) REFERENCES vulnerability_scans(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_misconfig_findings_scan ON misconfig_findings(scan_id);
 
       CREATE TABLE IF NOT EXISTS scan_policies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -937,6 +1000,19 @@ export class DatabaseService {
         };
         tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
         tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
+    }
+
+    private migrateSecretMisconfigColumns(): void {
+        const tryAddColumn = (table: string, col: string, def: string) => {
+            try {
+                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+            } catch {
+                /* column already present */
+            }
+        };
+        tryAddColumn('vulnerability_scans', 'secret_count', 'INTEGER NOT NULL DEFAULT 0');
+        tryAddColumn('vulnerability_scans', 'misconfig_count', 'INTEGER NOT NULL DEFAULT 0');
+        tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
     }
 
     // --- Agents ---
@@ -2097,10 +2173,11 @@ export class DatabaseService {
             `INSERT INTO vulnerability_scans (
                 node_id, image_ref, image_digest, scanned_at,
                 total_vulnerabilities, critical_count, high_count, medium_count,
-                low_count, unknown_count, fixable_count, highest_severity,
-                os_info, trivy_version, scan_duration_ms, triggered_by, status,
-                error, stack_context
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                low_count, unknown_count, fixable_count,
+                secret_count, misconfig_count, scanners_used,
+                highest_severity, os_info, trivy_version, scan_duration_ms,
+                triggered_by, status, error, stack_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         );
         const result = stmt.run(
             scan.node_id,
@@ -2114,6 +2191,9 @@ export class DatabaseService {
             scan.low_count,
             scan.unknown_count,
             scan.fixable_count,
+            scan.secret_count,
+            scan.misconfig_count,
+            scan.scanners_used,
             scan.highest_severity,
             scan.os_info,
             scan.trivy_version,
@@ -2134,6 +2214,7 @@ export class DatabaseService {
             'node_id', 'image_ref', 'image_digest', 'scanned_at',
             'total_vulnerabilities', 'critical_count', 'high_count',
             'medium_count', 'low_count', 'unknown_count', 'fixable_count',
+            'secret_count', 'misconfig_count', 'scanners_used',
             'highest_severity', 'os_info', 'trivy_version', 'scan_duration_ms',
             'triggered_by', 'status', 'error', 'stack_context',
         ]);
@@ -2198,8 +2279,17 @@ export class DatabaseService {
         );
     }
 
-    public getLatestScanByDigest(digest: string): VulnerabilityScan | null {
+    public getLatestScanByDigest(digest: string, scannersUsed?: string): VulnerabilityScan | null {
         if (!digest) return null;
+        if (scannersUsed) {
+            return (
+                (this.db
+                    .prepare(
+                        "SELECT * FROM vulnerability_scans WHERE image_digest = ? AND scanners_used = ? AND status = 'completed' ORDER BY scanned_at DESC LIMIT 1",
+                    )
+                    .get(digest, scannersUsed) as VulnerabilityScan | undefined) ?? null
+            );
+        }
         return (
             (this.db
                 .prepare(
@@ -2298,6 +2388,126 @@ export class DatabaseService {
                 `SELECT * FROM vulnerability_details WHERE ${whereSql} ORDER BY ${severityOrder}, pkg_name LIMIT ? OFFSET ?`,
             )
             .all(...(params as never[]), limit, offset) as VulnerabilityDetail[];
+        return { items, total };
+    }
+
+    public insertSecretFindings(
+        scanId: number,
+        findings: Array<Omit<SecretFinding, 'id' | 'scan_id'>>,
+    ): void {
+        if (findings.length === 0) return;
+        const stmt = this.db.prepare(
+            `INSERT INTO secret_findings (
+                scan_id, rule_id, category, severity, title, target, start_line, end_line, match_excerpt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const txn = this.db.transaction((rows: typeof findings) => {
+            for (const f of rows) {
+                stmt.run(
+                    scanId,
+                    f.rule_id,
+                    f.category,
+                    f.severity,
+                    f.title,
+                    f.target,
+                    f.start_line,
+                    f.end_line,
+                    f.match_excerpt,
+                );
+            }
+        });
+        txn(findings);
+    }
+
+    public getSecretFindings(
+        scanId: number,
+        opts: { severity?: VulnSeverity; limit?: number; offset?: number } = {},
+    ): { items: SecretFinding[]; total: number } {
+        const limit = Math.max(1, Math.min(opts.limit ?? 100, 1000));
+        const offset = Math.max(0, opts.offset ?? 0);
+        const where = ['scan_id = ?'];
+        const params: unknown[] = [scanId];
+        if (opts.severity) {
+            where.push('severity = ?');
+            params.push(opts.severity);
+        }
+        const whereSql = where.join(' AND ');
+        const total = (
+            this.db
+                .prepare(`SELECT COUNT(*) as cnt FROM secret_findings WHERE ${whereSql}`)
+                .get(...(params as never[])) as { cnt: number }
+        ).cnt;
+        const severityOrder = `CASE severity
+            WHEN 'CRITICAL' THEN 0
+            WHEN 'HIGH' THEN 1
+            WHEN 'MEDIUM' THEN 2
+            WHEN 'LOW' THEN 3
+            ELSE 4 END`;
+        const items = this.db
+            .prepare(
+                `SELECT * FROM secret_findings WHERE ${whereSql} ORDER BY ${severityOrder}, target LIMIT ? OFFSET ?`,
+            )
+            .all(...(params as never[]), limit, offset) as SecretFinding[];
+        return { items, total };
+    }
+
+    public insertMisconfigFindings(
+        scanId: number,
+        findings: Array<Omit<MisconfigFinding, 'id' | 'scan_id'>>,
+    ): void {
+        if (findings.length === 0) return;
+        const stmt = this.db.prepare(
+            `INSERT INTO misconfig_findings (
+                scan_id, rule_id, check_id, severity, title, message, resolution, target, primary_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const txn = this.db.transaction((rows: typeof findings) => {
+            for (const f of rows) {
+                stmt.run(
+                    scanId,
+                    f.rule_id,
+                    f.check_id,
+                    f.severity,
+                    f.title,
+                    f.message,
+                    f.resolution,
+                    f.target,
+                    f.primary_url,
+                );
+            }
+        });
+        txn(findings);
+    }
+
+    public getMisconfigFindings(
+        scanId: number,
+        opts: { severity?: VulnSeverity; limit?: number; offset?: number } = {},
+    ): { items: MisconfigFinding[]; total: number } {
+        const limit = Math.max(1, Math.min(opts.limit ?? 100, 1000));
+        const offset = Math.max(0, opts.offset ?? 0);
+        const where = ['scan_id = ?'];
+        const params: unknown[] = [scanId];
+        if (opts.severity) {
+            where.push('severity = ?');
+            params.push(opts.severity);
+        }
+        const whereSql = where.join(' AND ');
+        const total = (
+            this.db
+                .prepare(`SELECT COUNT(*) as cnt FROM misconfig_findings WHERE ${whereSql}`)
+                .get(...(params as never[])) as { cnt: number }
+        ).cnt;
+        const severityOrder = `CASE severity
+            WHEN 'CRITICAL' THEN 0
+            WHEN 'HIGH' THEN 1
+            WHEN 'MEDIUM' THEN 2
+            WHEN 'LOW' THEN 3
+            ELSE 4 END`;
+        const items = this.db
+            .prepare(
+                `SELECT * FROM misconfig_findings WHERE ${whereSql} ORDER BY ${severityOrder}, target LIMIT ? OFFSET ?`,
+            )
+            .all(...(params as never[]), limit, offset) as MisconfigFinding[];
         return { items, total };
     }
 

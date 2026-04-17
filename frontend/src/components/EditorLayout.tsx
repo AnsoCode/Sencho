@@ -21,7 +21,7 @@ import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highli
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2 } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -63,6 +63,8 @@ import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
+import { useTrivyStatus } from '@/hooks/useTrivyStatus';
+import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 
 interface ContainerInfo {
   Id: string;
@@ -101,6 +103,9 @@ const formatBytes = (bytes: number) => {
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
+  const { status: trivy } = useTrivyStatus();
+  const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
+  const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const { nodes, activeNode, setActiveNode, nodeMeta } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -1035,6 +1040,34 @@ export default function EditorLayout() {
 
   const enterEditMode = () => {
     setIsEditing(true);
+  };
+
+  const scanStackConfig = async () => {
+    if (!selectedFile || stackMisconfigScanning) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    setStackMisconfigScanning(true);
+    const loadingId = toast.loading(`Scanning ${stackName} configuration...`);
+    try {
+      const res = await apiFetch('/security/scan/stack', {
+        method: 'POST',
+        body: JSON.stringify({ stackName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to start scan');
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Scan failed');
+      }
+      toast.success(
+        `Config scan complete: ${data.misconfig_count ?? 0} misconfigurations found`,
+      );
+      setStackMisconfigScanId(data.id as number);
+    } catch (error) {
+      const err = error as { message?: string; error?: string; data?: { error?: string } };
+      toast.error(err?.message || err?.error || err?.data?.error || 'Config scan failed');
+    } finally {
+      toast.dismiss(loadingId);
+      setStackMisconfigScanning(false);
+    }
   };
 
   const deployStack = async (e: React.MouseEvent) => {
@@ -2415,6 +2448,24 @@ export default function EditorLayout() {
                               <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
+                            {trivy.available && isAdmin && isPaid && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="rounded-lg"
+                                onClick={scanStackConfig}
+                                disabled={loadingAction !== null || stackMisconfigScanning}
+                                title="Scan compose configuration for misconfigurations"
+                              >
+                                {stackMisconfigScanning ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" strokeWidth={1.5} />
+                                ) : (
+                                  <ShieldCheck className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                )}
+                                {stackMisconfigScanning ? 'Scanning...' : 'Scan config'}
+                              </Button>
+                            )}
                             {isPaid && backupInfo.exists && (
                               <TooltipProvider>
                                 <Tooltip>
@@ -2883,6 +2934,12 @@ export default function EditorLayout() {
           onSourceChanged={refreshGitSourcePending}
         />
       )}
+
+      {/* Stack config misconfig scan results */}
+      <VulnerabilityScanSheet
+        scanId={stackMisconfigScanId}
+        onClose={() => setStackMisconfigScanId(null)}
+      />
     </div>
   );
 }
