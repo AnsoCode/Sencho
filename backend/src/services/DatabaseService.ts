@@ -2242,7 +2242,7 @@ export class DatabaseService {
 
     public getVulnerabilityScans(
         nodeId: number,
-        opts: { imageRef?: string; limit?: number; offset?: number } = {},
+        opts: { imageRef?: string; imageRefLike?: string; status?: VulnScanStatus; limit?: number; offset?: number } = {},
     ): { items: VulnerabilityScan[]; total: number } {
         const limit = Math.max(1, Math.min(opts.limit ?? 50, 500));
         const offset = Math.max(0, opts.offset ?? 0);
@@ -2251,6 +2251,14 @@ export class DatabaseService {
         if (opts.imageRef) {
             where.push('image_ref = ?');
             params.push(opts.imageRef);
+        }
+        if (opts.imageRefLike) {
+            where.push('image_ref LIKE ?');
+            params.push(`%${opts.imageRefLike}%`);
+        }
+        if (opts.status) {
+            where.push('status = ?');
+            params.push(opts.status);
         }
         const whereSql = where.join(' AND ');
         const total = (

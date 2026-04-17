@@ -86,11 +86,11 @@ function scan(overrides: Partial<VulnerabilityScan> = {}): VulnerabilityScan {
   };
 }
 
-function listResponse(items: VulnerabilityScan[]): Response {
+function listResponse(items: VulnerabilityScan[], total?: number): Response {
   return {
     ok: true,
     status: 200,
-    json: async () => ({ items }),
+    json: async () => ({ items, total: total ?? items.length }),
   } as unknown as Response;
 }
 
@@ -104,12 +104,33 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('SecurityHistoryView', () => {
-  it('fetches scans on mount', async () => {
+  it('fetches completed scans on mount with server-driven pagination params', async () => {
     mockedFetch.mockResolvedValue(listResponse([scan()]));
     render(<SecurityHistoryView />);
-    await waitFor(() =>
-      expect(mockedFetch).toHaveBeenCalledWith('/security/scans?limit=200'),
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
+    const url = mockedFetch.mock.calls[0][0] as string;
+    expect(url).toMatch(/^\/security\/scans\?/);
+    expect(url).toContain('status=completed');
+    expect(url).toContain('offset=0');
+    expect(url).toMatch(/limit=\d+/);
+  });
+
+  it('advances offset when the user pages forward', async () => {
+    mockedFetch.mockResolvedValue(listResponse([scan()], 250));
+    const user = userEvent.setup();
+    render(<SecurityHistoryView />);
+
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+
+    const nextBtn = screen.getAllByRole('button').find(
+      (b) => b.querySelector('.lucide-chevron-right'),
     );
+    expect(nextBtn).toBeDefined();
+    await user.click(nextBtn!);
+
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+    const secondUrl = mockedFetch.mock.calls[1][0] as string;
+    expect(secondUrl).toContain('offset=100');
   });
 
   it('re-fetches when activeNode.id changes', async () => {
