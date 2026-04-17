@@ -2,7 +2,7 @@ const MAX_LENGTH = 255;
 
 const IMAGE_REF_PATTERN = /^[a-zA-Z0-9]([a-zA-Z0-9._\-/:@+]*[a-zA-Z0-9])?$/;
 
-const FORBIDDEN_CHARS = /[\s;|&`$(){}\[\]<>'"\\!*?#~]/;
+const FORBIDDEN_CHARS = /[\s;|&`$(){}[\]<>'"\\!*?#~]/;
 
 export function validateImageRef(ref: unknown): ref is string {
     if (typeof ref !== 'string') return false;
