@@ -175,6 +175,18 @@ export function ScanComparisonSheet({
                 </div>
               )}
 
+              {data.truncated && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" strokeWidth={1.5} />
+                  <span>
+                    Showing the first {data.row_limit ?? 1000} findings per scan. One or both scans exceed this limit, so the comparison may be incomplete.
+                  </span>
+                </div>
+              )}
+
               {/* Delta ribbon */}
               {addedCounts && removedCounts && (
                 <div className="flex flex-wrap gap-2">

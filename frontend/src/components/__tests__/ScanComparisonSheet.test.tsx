@@ -150,6 +150,27 @@ describe('ScanComparisonSheet', () => {
     );
   });
 
+  it('renders the truncation banner when the response flags truncated', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({ truncated: true, row_limit: 1000 })),
+    );
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/first 1000 findings per scan/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('hides the truncation banner when truncated is false', async () => {
+    mockedFetch.mockResolvedValueOnce(jsonResponse(200, result({ truncated: false })));
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    await waitFor(() => expect(screen.getByText(/Baseline/i)).toBeInTheDocument());
+    expect(screen.queryByText(/findings per scan/i)).toBeNull();
+  });
+
   it('reloads when the scan ids change', async () => {
     mockedFetch.mockResolvedValue(jsonResponse(200, result()));
 

@@ -7976,8 +7976,16 @@ app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): 
   if (!a || !b || a.node_id !== req.nodeId || b.node_id !== req.nodeId) {
     res.status(404).json({ error: 'One or both scans not found' }); return;
   }
-  const aVulns = db.getVulnerabilityDetails(scanId1, { limit: 1000 }).items;
-  const bVulns = db.getVulnerabilityDetails(scanId2, { limit: 1000 }).items;
+  const COMPARE_ROW_LIMIT = 1000;
+  const aVulns = db.getVulnerabilityDetails(scanId1, { limit: COMPARE_ROW_LIMIT }).items;
+  const bVulns = db.getVulnerabilityDetails(scanId2, { limit: COMPARE_ROW_LIMIT }).items;
+  const truncated =
+    a.total_vulnerabilities > COMPARE_ROW_LIMIT || b.total_vulnerabilities > COMPARE_ROW_LIMIT;
+  if (truncated) {
+    console.warn(
+      `[Compare] scan(s) exceed ${COMPARE_ROW_LIMIT}-row cap: scanA=${a.id}(${a.total_vulnerabilities}) scanB=${b.id}(${b.total_vulnerabilities})`,
+    );
+  }
   const keyOf = (v: { vulnerability_id: string; pkg_name: string }) =>
     `${v.vulnerability_id}::${v.pkg_name}`;
   const aMap = new Map(aVulns.map((v) => [keyOf(v), v]));
@@ -7990,11 +7998,23 @@ app.get('/api/security/compare', authMiddleware, (req: Request, res: Response): 
   const removed = applySuppressions(removedRaw, a.image_ref, suppressions);
   const unchanged = applySuppressions(unchangedRaw, b.image_ref, suppressions);
   res.json({
-    scanA: { id: a.id, scanned_at: a.scanned_at, image_ref: a.image_ref },
-    scanB: { id: b.id, scanned_at: b.scanned_at, image_ref: b.image_ref },
+    scanA: {
+      id: a.id,
+      scanned_at: a.scanned_at,
+      image_ref: a.image_ref,
+      total_vulnerabilities: a.total_vulnerabilities,
+    },
+    scanB: {
+      id: b.id,
+      scanned_at: b.scanned_at,
+      image_ref: b.image_ref,
+      total_vulnerabilities: b.total_vulnerabilities,
+    },
     added,
     removed,
     unchanged,
+    truncated,
+    row_limit: COMPARE_ROW_LIMIT,
   });
 });
 

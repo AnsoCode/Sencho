@@ -143,9 +143,11 @@ export interface ScanCompareVulnerability {
 }
 
 export interface ScanCompareResult {
-  scanA: { id: number; scanned_at: number; image_ref: string };
-  scanB: { id: number; scanned_at: number; image_ref: string };
+  scanA: { id: number; scanned_at: number; image_ref: string; total_vulnerabilities?: number };
+  scanB: { id: number; scanned_at: number; image_ref: string; total_vulnerabilities?: number };
   added: ScanCompareVulnerability[];
   removed: ScanCompareVulnerability[];
   unchanged: ScanCompareVulnerability[];
+  truncated?: boolean;
+  row_limit?: number;
 }
