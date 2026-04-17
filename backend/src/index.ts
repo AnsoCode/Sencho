@@ -75,6 +75,7 @@ import TrivyInstaller from './services/TrivyInstaller';
 import { severityRank } from './utils/severity';
 import { validateImageRef } from './utils/image-ref';
 import { applySuppressions } from './utils/suppression-filter';
+import { generateSarif } from './services/SarifExporter';
 import semver from 'semver';
 import { CronExpressionParser } from 'cron-parser';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
@@ -7683,6 +7684,55 @@ app.post('/api/security/sbom', authMiddleware, async (req: Request, res: Respons
     res.status(500).json({ error: (error as Error).message || 'Failed to generate SBOM' });
   }
 });
+
+app.get(
+  '/api/security/scans/:scanId/sarif',
+  authMiddleware,
+  (req: Request, res: Response): void => {
+    if (!requireAdmin(req, res)) return;
+    if (!requirePaid(req, res)) return;
+    const scanId = Number(req.params.scanId);
+    if (!Number.isFinite(scanId)) {
+      res.status(400).json({ error: 'Invalid scan id' }); return;
+    }
+    const db = DatabaseService.getInstance();
+    const scan = db.getVulnerabilityScan(scanId);
+    if (!scan || scan.node_id !== req.nodeId) {
+      res.status(404).json({ error: 'Scan not found' }); return;
+    }
+    if (scan.status !== 'completed') {
+      res.status(409).json({ error: 'Scan not complete' }); return;
+    }
+    const fetchAll = <T,>(
+      q: (opts: { limit?: number; offset?: number }) => { items: T[]; total: number },
+    ): T[] => {
+      const pageSize = 1000;
+      const collected: T[] = [];
+      let offset = 0;
+      while (true) {
+        const page = q({ limit: pageSize, offset });
+        collected.push(...page.items);
+        if (collected.length >= page.total || page.items.length === 0) break;
+        offset += page.items.length;
+      }
+      return collected;
+    };
+    try {
+      const details = fetchAll((opts) => db.getVulnerabilityDetails(scanId, opts));
+      const secrets = fetchAll((opts) => db.getSecretFindings(scanId, opts));
+      const misconfigs = fetchAll((opts) => db.getMisconfigFindings(scanId, opts));
+      const suppressed = applySuppressions(details, scan.image_ref, db.getCveSuppressions());
+      const sarif = generateSarif(scan, suppressed, secrets, misconfigs);
+      const safeName = scan.image_ref.replace(/[^a-zA-Z0-9._-]/g, '_') || `scan-${scanId}`;
+      res.setHeader('Content-Type', 'application/sarif+json');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.sarif.json"`);
+      res.send(JSON.stringify(sarif));
+    } catch (error) {
+      console.error('[Security] SARIF export failed:', error);
+      res.status(500).json({ error: (error as Error).message || 'Failed to generate SARIF' });
+    }
+  },
+);
 
 app.get('/api/security/policies', authMiddleware, (req: Request, res: Response): void => {
   if (!requirePaid(req, res)) return;
