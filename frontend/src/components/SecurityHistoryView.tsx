@@ -32,7 +32,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useNodes } from '@/context/NodeContext';
 import type { VulnerabilityScan } from '@/types/security';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 100;
 
 interface GroupedScans {
   image_ref: string;
@@ -60,21 +60,30 @@ export function SecurityHistoryView() {
   const { isAdmin } = useAuth();
   const { activeNode } = useNodes();
   const [scans, setScans] = useState<VulnerabilityScan[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [compareIds, setCompareIds] = useState<[number, number] | null>(null);
   const [inspectScanId, setInspectScanId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pageToLoad: number, searchTerm: string) => {
     setLoading(true);
     try {
-      const res = await apiFetch('/security/scans?limit=200');
+      const params = new URLSearchParams({
+        status: 'completed',
+        limit: String(PAGE_SIZE),
+        offset: String(pageToLoad * PAGE_SIZE),
+      });
+      if (searchTerm.trim()) params.set('imageRefLike', searchTerm.trim());
+      const res = await apiFetch(`/security/scans?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to load scans');
       const body = await res.json();
       const items: VulnerabilityScan[] = Array.isArray(body?.items) ? body.items : [];
-      setScans(items.filter((s) => s.status === 'completed'));
+      setScans(items);
+      setTotal(typeof body?.total === 'number' ? body.total : items.length);
     } catch (err) {
       toast.error((err as Error)?.message || 'Could not load scan history');
     } finally {
@@ -83,22 +92,27 @@ export function SecurityHistoryView() {
   }, []);
 
   useEffect(() => {
-    load();
+    load(page, search);
+  }, [load, page, search, activeNode?.id]);
+
+  useEffect(() => {
     setSelected([]);
-  }, [load, activeNode?.id]);
+    setPage(0);
+  }, [activeNode?.id]);
 
-  const filteredScans = useMemo(() => {
-    if (!search.trim()) return scans;
-    const q = search.toLowerCase();
-    return scans.filter((s) => s.image_ref.toLowerCase().includes(q));
-  }, [scans, search]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchDraft);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchDraft]);
 
-  const groups = useMemo(() => groupByImage(filteredScans), [filteredScans]);
+  const groups = useMemo(() => groupByImage(scans), [scans]);
 
-  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
-  const pageGroups = groups.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-  const needsPagination = groups.length > PAGE_SIZE;
+  const needsPagination = total > PAGE_SIZE;
 
   const toggleSelect = (scanId: number) => {
     setSelected((prev) => {
@@ -151,7 +165,7 @@ export function SecurityHistoryView() {
                 variant="outline"
                 size="sm"
                 className="border-border"
-                onClick={load}
+                onClick={() => load(safePage, search)}
                 disabled={loading}
               >
                 <RefreshCw
@@ -172,8 +186,8 @@ export function SecurityHistoryView() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
               <Input
                 placeholder="Search by image..."
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
                 className="pl-8"
               />
             </div>
@@ -216,7 +230,7 @@ export function SecurityHistoryView() {
           ) : (
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-5 pr-2">
-                {pageGroups.map((group) => (
+                {groups.map((group) => (
                   <div key={group.image_ref}>
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="font-mono text-sm truncate" title={group.image_ref}>

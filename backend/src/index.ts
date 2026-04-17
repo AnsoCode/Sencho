@@ -7544,10 +7544,21 @@ app.post('/api/security/scan/stack', authMiddleware, async (req: Request, res: R
 app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => {
   try {
     const imageRef = typeof req.query.imageRef === 'string' ? req.query.imageRef : undefined;
+    const imageRefLike =
+      typeof req.query.imageRefLike === 'string' && req.query.imageRefLike.trim()
+        ? req.query.imageRefLike.trim()
+        : undefined;
+    const statusParam = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const status =
+      statusParam === 'completed' || statusParam === 'in_progress' || statusParam === 'failed'
+        ? statusParam
+        : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const offset = req.query.offset ? Number(req.query.offset) : undefined;
     const result = DatabaseService.getInstance().getVulnerabilityScans(req.nodeId, {
       imageRef,
+      imageRefLike,
+      status,
       limit,
       offset,
     });
