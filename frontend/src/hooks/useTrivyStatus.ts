@@ -53,11 +53,13 @@ export function useTrivyStatus(): UseTrivyStatusResult {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
     if (status.source === 'managed') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void refreshUpdateCheck();
     } else {
       setUpdateCheck(null);
