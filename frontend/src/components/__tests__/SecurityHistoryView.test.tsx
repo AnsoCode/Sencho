@@ -1,0 +1,188 @@
+/**
+ * Coverage for SecurityHistoryView.
+ *
+ * Locks the scan history's selection and comparison-launch behavior: scans
+ * fetched on mount, selection capped at two, oldest-first baseline ordering,
+ * and selection reset on active-node change.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { VulnerabilityScan } from '@/types/security';
+
+vi.mock('@/lib/api', () => ({
+  apiFetch: vi.fn(),
+}));
+
+vi.mock('@/components/ui/toast-store', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}));
+
+const licenseState = { isPaid: true };
+vi.mock('@/context/LicenseContext', () => ({
+  useLicense: () => licenseState,
+}));
+
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({ isAdmin: true }),
+}));
+
+const nodesState: { activeNode: { id: number } | null } = { activeNode: { id: 1 } };
+vi.mock('@/context/NodeContext', () => ({
+  useNodes: () => nodesState,
+}));
+
+const compareProps: { baselineScanId: number | null; currentScanId: number | null }[] = [];
+vi.mock('../ScanComparisonSheet', () => ({
+  ScanComparisonSheet: (props: { baselineScanId: number | null; currentScanId: number | null }) => {
+    compareProps.push({ baselineScanId: props.baselineScanId, currentScanId: props.currentScanId });
+    return null;
+  },
+}));
+
+vi.mock('../VulnerabilityScanSheet', () => ({
+  SeverityChip: ({ severity }: { severity: string }) => <span>{severity}</span>,
+  VulnerabilityScanSheet: () => null,
+}));
+
+import { apiFetch } from '@/lib/api';
+import { SecurityHistoryView } from '../SecurityHistoryView';
+
+const mockedFetch = apiFetch as unknown as ReturnType<typeof vi.fn>;
+
+function scan(overrides: Partial<VulnerabilityScan> = {}): VulnerabilityScan {
+  return {
+    id: 1,
+    node_id: 1,
+    image_ref: 'alpine:3.19',
+    image_digest: null,
+    scanned_at: 1_700_000_000_000,
+    total_vulnerabilities: 0,
+    critical_count: 0,
+    high_count: 0,
+    medium_count: 0,
+    low_count: 0,
+    unknown_count: 0,
+    fixable_count: 0,
+    secret_count: 0,
+    misconfig_count: 0,
+    scanners_used: 'vuln',
+    highest_severity: null,
+    os_info: null,
+    trivy_version: null,
+    scan_duration_ms: null,
+    triggered_by: 'manual',
+    status: 'completed',
+    error: null,
+    stack_context: null,
+    ...overrides,
+  };
+}
+
+function listResponse(items: VulnerabilityScan[]): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ items }),
+  } as unknown as Response;
+}
+
+beforeEach(() => {
+  mockedFetch.mockReset();
+  compareProps.length = 0;
+  licenseState.isPaid = true;
+  nodesState.activeNode = { id: 1 };
+});
+
+afterEach(() => vi.clearAllMocks());
+
+describe('SecurityHistoryView', () => {
+  it('fetches scans on mount', async () => {
+    mockedFetch.mockResolvedValue(listResponse([scan()]));
+    render(<SecurityHistoryView />);
+    await waitFor(() =>
+      expect(mockedFetch).toHaveBeenCalledWith('/security/scans?limit=200'),
+    );
+  });
+
+  it('re-fetches when activeNode.id changes', async () => {
+    mockedFetch.mockResolvedValue(listResponse([scan()]));
+    const { rerender } = render(<SecurityHistoryView />);
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+
+    nodesState.activeNode = { id: 2 };
+    rerender(<SecurityHistoryView key="remount-signal" />);
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+  });
+
+  it('caps selection at two scans, evicting the oldest', async () => {
+    mockedFetch.mockResolvedValue(
+      listResponse([
+        scan({ id: 1, scanned_at: 1000 }),
+        scan({ id: 2, scanned_at: 2000 }),
+        scan({ id: 3, scanned_at: 3000 }),
+      ]),
+    );
+    const user = userEvent.setup();
+    render(<SecurityHistoryView />);
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(3);
+
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+    await user.click(checkboxes[2]);
+
+    expect(screen.getByRole('button', { name: /Compare \(2\/2\)/ })).toBeEnabled();
+    expect(checkboxes[0].getAttribute('aria-checked')).toBe('false');
+    expect(checkboxes[1].getAttribute('aria-checked')).toBe('true');
+    expect(checkboxes[2].getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('passes older scan as baseline and newer as current on compare', async () => {
+    mockedFetch.mockResolvedValue(
+      listResponse([
+        scan({ id: 10, scanned_at: 3000 }),
+        scan({ id: 20, scanned_at: 1000 }),
+      ]),
+    );
+    const user = userEvent.setup();
+    render(<SecurityHistoryView />);
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    await user.click(screen.getByRole('button', { name: /Compare \(2\/2\)/ }));
+
+    const last = compareProps.at(-1);
+    expect(last?.baselineScanId).toBe(20);
+    expect(last?.currentScanId).toBe(10);
+  });
+
+  it('disables Compare button for community tier', async () => {
+    licenseState.isPaid = false;
+    mockedFetch.mockResolvedValue(
+      listResponse([
+        scan({ id: 1, scanned_at: 1000 }),
+        scan({ id: 2, scanned_at: 2000 }),
+      ]),
+    );
+    const user = userEvent.setup();
+    render(<SecurityHistoryView />);
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    const compareBtn = screen.getByRole('button', { name: /Compare \(2\/2\)/ });
+    expect(compareBtn).toBeDisabled();
+  });
+});
