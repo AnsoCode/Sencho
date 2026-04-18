@@ -46,6 +46,7 @@ import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
 import { cn } from '@/lib/utils';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
+import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
@@ -239,6 +240,7 @@ export default function EditorLayout() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
+  const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
 
   // Mobile navigation sheet state
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -2126,6 +2128,10 @@ export default function EditorLayout() {
                           <BellRing className="h-4 w-4 mr-2" />
                           Alerts
                         </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => setAutoHealStackName(file)}>
+                          <Activity className="h-4 w-4 mr-2" strokeWidth={1.5} />
+                          Auto-Heal
+                        </ContextMenuItem>
                         {isPaid && (
                           <ContextMenuSub>
                             <ContextMenuSubTrigger>
@@ -2921,6 +2927,13 @@ export default function EditorLayout() {
         isOpen={alertSheetOpen}
         onClose={() => setAlertSheetOpen(false)}
         stackName={alertSheetStack}
+      />
+
+      {/* Stack Auto-Heal Sheet */}
+      <StackAutoHealSheet
+        stackName={autoHealStackName ?? ''}
+        open={autoHealStackName !== null}
+        onOpenChange={(open) => { if (!open) setAutoHealStackName(null); }}
       />
 
       {/* Git Source Panel */}
