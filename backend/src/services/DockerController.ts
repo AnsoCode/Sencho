@@ -29,6 +29,8 @@ const IGNORE_PORTS = [1900, 53, 22];
 export interface BulkStackInfo {
   status: 'running' | 'exited' | 'unknown';
   mainPort?: number;
+  /** Unix seconds of the oldest running container (approximates stack uptime). */
+  runningSince?: number;
 }
 
 export interface ClassifiedImage {
@@ -659,6 +661,18 @@ class DockerController {
 
       if (container.State === 'running') {
         result[stackDir].status = 'running';
+
+        // Track the oldest running container's creation time as a proxy for
+        // stack uptime. Docker's listContainers payload exposes Created (unix
+        // seconds) but not StartedAt; for compose stacks the gap is small
+        // enough to treat as uptime without paying for a per-container inspect.
+        const created = typeof container.Created === 'number' ? container.Created : undefined;
+        if (created !== undefined) {
+          const existing = result[stackDir].runningSince;
+          if (existing === undefined || created < existing) {
+            result[stackDir].runningSince = created;
+          }
+        }
 
         // Detect main web port (first running container with a matchable port wins)
         if (result[stackDir].mainPort === undefined && Array.isArray(container.Ports) && container.Ports.length > 0) {

@@ -1,29 +1,26 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Cpu, MemoryStick, HardDrive, Container, Network } from 'lucide-react';
-import {
-  CursorProvider,
-  Cursor,
-  CursorContainer,
-  CursorFollow,
-} from '@/components/animate-ui/primitives/animate/cursor';
-import type { Stats, SystemStats } from './types';
+import { useMemo } from 'react';
+import { Sparkline } from '@/components/ui/sparkline';
+import type { SystemStats } from './types';
 
 interface ResourceGaugesProps {
-  stats: Stats;
   systemStats: SystemStats | null;
+  cpuHistory: number[];
+  netHistory: number[];
 }
 
+const SPARK_WINDOW_MS = 10 * 60 * 1000;
+
 const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
+  if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
-const getValueColor = (value: number, warn = 80, crit = 90): string => {
-  if (value >= crit) return 'text-destructive/80';
-  if (value >= warn) return 'text-warning/80';
+const getValueTone = (value: number, warn = 80, crit = 90): string => {
+  if (value >= crit) return 'text-destructive';
+  if (value >= warn) return 'text-warning';
   return 'text-stat-value';
 };
 
@@ -34,135 +31,131 @@ const getBarColor = (value: number, warn = 80, crit = 90): string => {
 };
 
 function GaugeBar({ value, warn = 80, crit = 90 }: { value: number; warn?: number; crit?: number }) {
+  const color = getBarColor(value, warn, crit);
   return (
-    <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+    <div className="mt-3 h-1 rounded-full bg-muted/60 overflow-hidden">
       <div
         className="h-full rounded-full transition-all duration-500"
-        style={{ width: `${Math.min(value, 100)}%`, backgroundColor: getBarColor(value, warn, crit) }}
+        style={{
+          width: `${Math.min(value, 100)}%`,
+          backgroundColor: color,
+          boxShadow: `0 0 8px ${color}, 0 0 2px ${color}`,
+        }}
       />
     </div>
   );
 }
 
-export function ResourceGauges({ stats, systemStats }: ResourceGaugesProps) {
+export function ResourceGauges({ systemStats, cpuHistory, netHistory }: ResourceGaugesProps) {
   const cpuVal = parseFloat(systemStats?.cpu.usage || '0');
   const ramVal = parseFloat(systemStats?.memory.usagePercent || '0');
   const diskVal = parseFloat(systemStats?.disk?.usagePercent || '0');
 
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      {/* CPU */}
-      <Card className="bg-card shadow-card-bevel">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <CardTitle className="text-xs font-medium text-stat-title">CPU</CardTitle>
-          <Cpu className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className={`text-2xl font-medium font-mono tabular-nums tracking-tight ${systemStats ? getValueColor(cpuVal) : 'text-stat-value'}`}>
-            {systemStats ? `${systemStats.cpu.usage}%` : '...'}
-          </div>
-          <p className="text-xs text-stat-subtitle mt-0.5">
-            {systemStats ? `${systemStats.cpu.cores} cores` : '\u00A0'}
-          </p>
-          {systemStats && <GaugeBar value={cpuVal} />}
-        </CardContent>
-      </Card>
+  const cpuPeak = cpuHistory.length > 0 ? Math.max(...cpuHistory) : 0;
+  const cpuPeakIndex = cpuHistory.length > 0 ? cpuHistory.indexOf(cpuPeak) : -1;
+  const cpuAvg = cpuHistory.length > 0
+    ? cpuHistory.reduce((sum, v) => sum + v, 0) / cpuHistory.length
+    : 0;
 
-      {/* RAM */}
-      <Card className="bg-card shadow-card-bevel">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <CardTitle className="text-xs font-medium text-stat-title">Memory</CardTitle>
-          <MemoryStick className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className={`text-2xl font-medium font-mono tabular-nums tracking-tight ${systemStats ? getValueColor(ramVal) : 'text-stat-value'}`}>
-            {systemStats ? `${systemStats.memory.usagePercent}%` : '...'}
-          </div>
-          <p className="text-xs text-stat-subtitle mt-0.5">
-            {systemStats ? `${formatBytes(systemStats.memory.used)} / ${formatBytes(systemStats.memory.total)}` : '\u00A0'}
-          </p>
-          {systemStats && <GaugeBar value={ramVal} />}
-        </CardContent>
-      </Card>
+  const cpuPeakLabel = useMemo(() => {
+    if (cpuPeakIndex < 0 || cpuHistory.length === 0) return null;
+    const bucketMs = SPARK_WINDOW_MS / cpuHistory.length;
+    const ts = Date.now() - (cpuHistory.length - 1 - cpuPeakIndex) * bucketMs;
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [cpuPeakIndex, cpuHistory.length]);
+
+  const netHasSignal = netHistory.some((v) => v > 0);
+  const netTotalPerSec = (systemStats?.network?.rxSec ?? 0) + (systemStats?.network?.txSec ?? 0);
+
+  return (
+    <div className="grid grid-cols-1 overflow-hidden rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel md:grid-cols-[2fr_1fr_1fr_1fr]">
+      {/* CPU hero */}
+      <div className="relative p-5 md:border-r md:border-border/60">
+        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+          CPU{systemStats ? ` · ${systemStats.cpu.cores} cores` : ''}
+        </div>
+        <div className={`mt-2 font-mono tabular-nums text-4xl leading-none ${systemStats ? getValueTone(cpuVal) : 'text-stat-value'}`}>
+          {systemStats ? `${cpuVal.toFixed(1)}%` : '--'}
+        </div>
+        <div className="mt-1.5 font-mono text-[11px] text-stat-subtitle">
+          {cpuHistory.length > 0
+            ? `avg ${cpuAvg.toFixed(0)}% last 10m · peak ${cpuPeak.toFixed(0)}%${cpuPeakLabel ? ` @ ${cpuPeakLabel}` : ''}`
+            : 'collecting metrics…'}
+        </div>
+        <div className="mt-3 h-14 w-full">
+          <Sparkline
+            points={cpuHistory}
+            stroke="var(--chart-1)"
+            fill="var(--chart-1)"
+            peakColor="var(--chart-2)"
+            peakIndex={cpuPeakIndex >= 0 ? cpuPeakIndex : undefined}
+          />
+        </div>
+      </div>
+
+      {/* Memory */}
+      <div className="p-5 border-t border-border/60 md:border-t-0 md:border-r">
+        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+          MEMORY
+        </div>
+        <div className={`mt-2 font-mono tabular-nums text-2xl leading-none ${systemStats ? getValueTone(ramVal) : 'text-stat-value'}`}>
+          {systemStats ? `${ramVal.toFixed(0)}%` : '--'}
+        </div>
+        <div className="mt-1.5 font-mono text-[11px] text-stat-subtitle">
+          {systemStats ? `${formatBytes(systemStats.memory.used)} / ${formatBytes(systemStats.memory.total)}` : '\u00A0'}
+        </div>
+        {systemStats ? <GaugeBar value={ramVal} /> : null}
+      </div>
 
       {/* Disk */}
-      <Card className="bg-card shadow-card-bevel">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <CardTitle className="text-xs font-medium text-stat-title">Disk</CardTitle>
-          <HardDrive className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className={`text-2xl font-medium font-mono tabular-nums tracking-tight ${systemStats?.disk ? getValueColor(diskVal) : 'text-stat-value'}`}>
-            {systemStats?.disk ? `${systemStats.disk.usagePercent}%` : '...'}
-          </div>
-          <p className="text-xs text-stat-subtitle mt-0.5">
-            {systemStats?.disk ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}` : '\u00A0'}
-          </p>
-          {systemStats?.disk && <GaugeBar value={diskVal} />}
-        </CardContent>
-      </Card>
-
-      {/* Containers */}
-      <Card className="bg-card shadow-card-bevel">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <CardTitle className="text-xs font-medium text-stat-title">Containers</CardTitle>
-          <Container className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="relative">
-            <CursorProvider>
-              <CursorContainer className="inline-flex items-baseline">
-                <span className="text-2xl font-medium font-mono tabular-nums tracking-tight text-stat-value">{stats.active}</span>
-                <span className="text-sm text-stat-subtitle ml-1.5">active</span>
-              </CursorContainer>
-              <Cursor>
-                <div className="h-2 w-2 rounded-full bg-brand" />
-              </Cursor>
-              <CursorFollow
-                side="bottom"
-                sideOffset={4}
-                align="center"
-                transition={{ stiffness: 400, damping: 40, bounce: 0 }}
-              >
-                <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-                  <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
-                    <span className="text-stat-value">{stats.managed}<span className="text-stat-subtitle ml-1 font-sans">managed</span></span>
-                    <span className="text-stat-icon">|</span>
-                    <span className="text-stat-value">{stats.unmanaged}<span className="text-stat-subtitle ml-1 font-sans">external</span></span>
-                  </div>
-                </div>
-              </CursorFollow>
-            </CursorProvider>
-          </div>
-          <p className="text-xs text-stat-subtitle mt-0.5">
-            <span className="font-mono tabular-nums text-destructive/80">{stats.exited}</span> exited
-          </p>
-        </CardContent>
-      </Card>
+      <div className="p-5 border-t border-border/60 md:border-t-0 md:border-r">
+        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+          DISK
+        </div>
+        <div className={`mt-2 font-mono tabular-nums text-2xl leading-none ${systemStats?.disk ? getValueTone(diskVal) : 'text-stat-value'}`}>
+          {systemStats?.disk ? `${diskVal.toFixed(0)}%` : '--'}
+        </div>
+        <div className="mt-1.5 font-mono text-[11px] text-stat-subtitle">
+          {systemStats?.disk ? `${formatBytes(systemStats.disk.used)} / ${formatBytes(systemStats.disk.total)}` : '\u00A0'}
+        </div>
+        {systemStats?.disk ? <GaugeBar value={diskVal} /> : null}
+      </div>
 
       {/* Network */}
-      <Card className="bg-card shadow-card-bevel">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <CardTitle className="text-xs font-medium text-stat-title">Network</CardTitle>
-          <Network className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="space-y-1 mt-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-stat-icon">RX</span>
-              <span className="text-sm font-mono tabular-nums text-stat-value">
-                {systemStats?.network ? `${formatBytes(systemStats.network.rxSec)}/s` : '...'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-stat-icon">TX</span>
-              <span className="text-sm font-mono tabular-nums text-stat-value">
-                {systemStats?.network ? `${formatBytes(systemStats.network.txSec)}/s` : '...'}
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="p-5 border-t border-border/60 md:border-t-0">
+        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+          NETWORK
+        </div>
+        <div className="mt-2 font-mono tabular-nums text-2xl leading-none text-stat-value">
+          {systemStats?.network ? `${formatBytes(netTotalPerSec)}/s` : '--'}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] text-stat-subtitle">
+          {systemStats?.network ? (
+            <>
+              <span className="text-stat-icon">↓</span>
+              <span className="tabular-nums text-stat-value">{formatBytes(systemStats.network.rxSec)}/s</span>
+              <span className="text-stat-icon">·</span>
+              <span className="text-stat-icon">↑</span>
+              <span className="tabular-nums text-stat-value">{formatBytes(systemStats.network.txSec)}/s</span>
+            </>
+          ) : (
+            <span>{'\u00A0'}</span>
+          )}
+        </div>
+        <div className="mt-3 h-5 w-full">
+          {systemStats?.network && netHasSignal ? (
+            <Sparkline
+              points={netHistory}
+              stroke="var(--chart-1)"
+              fill="var(--chart-1)"
+              showPeak={false}
+              strokeWidth={1}
+            />
+          ) : systemStats?.network ? (
+            <span className="block h-full w-full border-b border-dashed border-border/60" />
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

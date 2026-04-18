@@ -56,13 +56,28 @@ export interface NotificationItem {
 export interface StackStatusEntry {
   status: 'running' | 'exited' | 'unknown';
   mainPort?: number;
+  /** Unix seconds of the oldest running container (approximates stack uptime). */
+  runningSince?: number;
 }
 
 export type HealthLevel = 'healthy' | 'degraded' | 'critical';
+
+export interface StackCpuSeries {
+  stackName: string;
+  points: number[];
+  peakValue: number;
+  peakIndex: number;
+  latestValue: number;
+}
 
 export interface DashboardData {
   stats: Stats;
   systemStats: SystemStats | null;
   metrics: MetricPoint[];
   stackStatuses: Record<string, StackStatusEntry>;
+  lastSyncAt: number | null;
+  nodeCount: number;
+  stackCpuSeries: Record<string, StackCpuSeries>;
+  cpuHistory: number[];
+  netHistory: number[];
 }

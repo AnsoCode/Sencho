@@ -1,6 +1,5 @@
-import { useMemo } from 'react';
-import { Card } from '@/components/ui/card';
-import { Activity, Bell } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bell } from 'lucide-react';
 import {
   CursorProvider,
   Cursor,
@@ -14,6 +13,8 @@ interface HealthStatusBarProps {
   systemStats: SystemStats | null;
   notifications: NotificationItem[];
   activeNodeName: string;
+  nodeCount: number;
+  lastSyncAt: number | null;
 }
 
 interface HealthResult {
@@ -28,18 +29,11 @@ function deriveHealth(stats: Stats, systemStats: SystemStats | null, notificatio
   const unreadErrors = notifications.filter(n => !n.is_read && n.level === 'error').length;
 
   const reasons: string[] = [];
-
-  if (cpu >= 90) reasons.push(`CPU at ${cpu.toFixed(1)}%`);
-  else if (cpu >= 80) reasons.push(`CPU at ${cpu.toFixed(1)}%`);
-
-  if (ram >= 90) reasons.push(`RAM at ${ram.toFixed(1)}%`);
-  else if (ram >= 80) reasons.push(`RAM at ${ram.toFixed(1)}%`);
-
-  if (disk >= 90) reasons.push(`Disk at ${disk.toFixed(1)}%`);
-  else if (disk >= 80) reasons.push(`Disk at ${disk.toFixed(1)}%`);
-
-  if (stats.exited > 0) reasons.push(`${stats.exited} exited container${stats.exited !== 1 ? 's' : ''}`);
-  if (unreadErrors > 0) reasons.push(`${unreadErrors} unread error${unreadErrors !== 1 ? 's' : ''}`);
+  if (cpu >= 80) reasons.push(`CPU ${cpu.toFixed(0)}%`);
+  if (ram >= 80) reasons.push(`RAM ${ram.toFixed(0)}%`);
+  if (disk >= 80) reasons.push(`Disk ${disk.toFixed(0)}%`);
+  if (stats.exited > 0) reasons.push(`${stats.exited} exited`);
+  if (unreadErrors > 0) reasons.push(`${unreadErrors} unread ${unreadErrors === 1 ? 'error' : 'errors'}`);
 
   if (cpu >= 90 || ram >= 90 || disk >= 90 || (stats.exited > 0 && unreadErrors > 0)) {
     return { level: 'critical', reasons };
@@ -50,72 +44,184 @@ function deriveHealth(stats: Stats, systemStats: SystemStats | null, notificatio
   return { level: 'healthy', reasons: ['All systems nominal'] };
 }
 
-const healthConfig: Record<HealthLevel, { label: string; dotClass: string; textClass: string }> = {
-  healthy: { label: 'Healthy', dotClass: 'bg-success', textClass: 'text-success' },
-  degraded: { label: 'Degraded', dotClass: 'bg-warning animate-pulse', textClass: 'text-warning' },
-  critical: { label: 'Critical', dotClass: 'bg-destructive animate-pulse', textClass: 'text-destructive' },
+const healthConfig: Record<HealthLevel, { label: string; dotClass: string; textClass: string; railClass: string; tintClass: string }> = {
+  healthy: {
+    label: 'Healthy',
+    dotClass: 'bg-success shadow-[0_0_0_3px_color-mix(in_oklch,var(--success)_20%,transparent)]',
+    textClass: 'text-stat-value',
+    railClass: 'bg-brand',
+    tintClass: 'from-brand/[0.06] via-transparent to-transparent',
+  },
+  degraded: {
+    label: 'Degraded',
+    dotClass: 'bg-warning shadow-[0_0_0_3px_color-mix(in_oklch,var(--warning)_22%,transparent)]',
+    textClass: 'text-warning',
+    railClass: 'bg-warning',
+    tintClass: 'from-warning/[0.06] via-transparent to-transparent',
+  },
+  critical: {
+    label: 'Critical',
+    dotClass: 'bg-destructive shadow-[0_0_0_3px_color-mix(in_oklch,var(--destructive)_24%,transparent)]',
+    textClass: 'text-destructive',
+    railClass: 'bg-destructive',
+    tintClass: 'from-destructive/[0.06] via-transparent to-transparent',
+  },
 };
 
-export function HealthStatusBar({ stats, systemStats, notifications, activeNodeName }: HealthStatusBarProps) {
+function formatGib(bytes: number): string {
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+}
+
+function formatAgo(ms: number): string {
+  const clamped = Math.max(0, ms);
+  if (clamped < 60_000) return `${Math.round(clamped / 1000)}s`;
+  if (clamped < 3_600_000) return `${Math.round(clamped / 60_000)}m`;
+  return `${Math.round(clamped / 3_600_000)}h`;
+}
+
+function useTicker(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+export function HealthStatusBar({
+  stats,
+  systemStats,
+  notifications,
+  activeNodeName,
+  nodeCount,
+  lastSyncAt,
+}: HealthStatusBarProps) {
   const { level, reasons } = useMemo(
     () => deriveHealth(stats, systemStats, notifications),
-    [stats, systemStats, notifications]
+    [stats, systemStats, notifications],
   );
   const config = healthConfig[level];
+  const now = useTicker(1000);
   const unreadAlerts = notifications.filter(n => !n.is_read).length;
+  const running = `${stats.active}/${stats.total}`;
+  const cpuLabel = systemStats ? `${parseFloat(systemStats.cpu.usage).toFixed(0)}%` : '--';
+  const memLabel = systemStats ? formatGib(systemStats.memory.used) : '--';
+  const lastSyncLabel = lastSyncAt ? `last sync ${formatAgo(now - lastSyncAt)}` : 'connecting…';
+  const metaLine = `${activeNodeName} · ${nodeCount} ${nodeCount === 1 ? 'node' : 'nodes'} · ${lastSyncLabel}`;
+  const reasonsLine = reasons.join(' · ');
 
   return (
-    <Card className="bg-card shadow-card-bevel px-4 py-3">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        {/* Health badge */}
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <CursorProvider>
-              <CursorContainer className="flex items-center gap-2">
-                <div className={`h-2.5 w-2.5 rounded-full ${config.dotClass}`} />
-                <span className={`font-mono text-sm font-medium ${config.textClass}`}>
-                  {config.label}
-                </span>
-              </CursorContainer>
-              <Cursor>
-                <div className={`h-2 w-2 rounded-full ${level === 'healthy' ? 'bg-brand' : level === 'degraded' ? 'bg-warning' : 'bg-destructive'}`} />
-              </Cursor>
-              <CursorFollow
-                side="bottom"
-                sideOffset={4}
-                align="center"
-                transition={{ stiffness: 400, damping: 40, bounce: 0 }}
-              >
-                <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-                  <div className="flex flex-col gap-0.5 font-mono text-xs tabular-nums">
-                    {reasons.map((reason) => (
-                      <span key={reason} className="text-stat-value whitespace-nowrap">{reason}</span>
-                    ))}
-                  </div>
-                </div>
-              </CursorFollow>
-            </CursorProvider>
+    <div
+      className={`relative overflow-hidden rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel transition-colors`}
+    >
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-r ${config.tintClass}`} />
+      <div className={`absolute inset-y-0 left-0 w-[3px] ${config.railClass}`} />
+      <div className="relative grid grid-cols-[auto_1fr_auto] items-center gap-6 py-5 pl-7 pr-6">
+        {/* State column */}
+        <div className="flex items-center gap-4">
+          <span
+            aria-hidden="true"
+            className={`h-2.5 w-2.5 rounded-full ${config.dotClass} ${level === 'healthy' ? '' : 'animate-[pulse_2.4s_ease-in-out_infinite]'}`}
+          />
+          <div className="flex flex-col gap-1">
+            <span className={`font-display italic text-3xl leading-none tracking-tight ${config.textClass}`}>
+              {config.label}
+            </span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle">
+              {metaLine}
+            </span>
+            {reasonsLine ? (
+              <span className="font-mono text-[11px] text-stat-subtitle/90">
+                {reasonsLine}
+              </span>
+            ) : null}
           </div>
-          <div className="h-4 w-px bg-border" />
-          <span className="font-mono text-sm text-stat-subtitle">{activeNodeName}</span>
         </div>
 
-        {/* Right side: counts + last updated */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-sm text-stat-subtitle">
-            <Activity className="h-3.5 w-3.5 text-stat-icon" strokeWidth={1.5} />
-            <span className="font-mono tabular-nums">{stats.active}</span>
-            <span>running</span>
-          </div>
-          {unreadAlerts > 0 && (
-            <div className="flex items-center gap-1.5 text-sm text-warning">
-              <Bell className="h-3.5 w-3.5" strokeWidth={1.5} />
-              <span className="font-mono tabular-nums">{unreadAlerts}</span>
-              <span>alert{unreadAlerts !== 1 ? 's' : ''}</span>
-            </div>
-          )}
+        {/* Stats column */}
+        <div className="hidden items-stretch justify-end gap-0 md:flex">
+          <CursorProvider>
+            <CursorContainer>
+              <StatTile label="RUNNING" value={running} tone="value" />
+            </CursorContainer>
+            <Cursor>
+              <span className="h-2 w-2 rounded-full bg-brand" />
+            </Cursor>
+            <CursorFollow
+              side="bottom"
+              sideOffset={8}
+              align="center"
+              transition={{ stiffness: 400, damping: 40, bounce: 0 }}
+            >
+              <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-3 py-2 shadow-md">
+                <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+                  <span className="text-stat-value">
+                    {stats.managed}
+                    <span className="ml-1 font-sans text-stat-subtitle">managed</span>
+                  </span>
+                  <span className="text-stat-icon">·</span>
+                  <span className="text-stat-value">
+                    {stats.unmanaged}
+                    <span className="ml-1 font-sans text-stat-subtitle">external</span>
+                  </span>
+                  {stats.exited > 0 ? (
+                    <>
+                      <span className="text-stat-icon">·</span>
+                      <span className="text-destructive">
+                        {stats.exited}
+                        <span className="ml-1 font-sans text-stat-subtitle">exited</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </CursorFollow>
+          </CursorProvider>
+          <StatTile label="CPU" value={cpuLabel} tone={parseFloat(systemStats?.cpu.usage || '0') >= 80 ? 'warn' : 'value'} divider />
+          <StatTile label="MEM" value={memLabel} tone="value" divider />
+        </div>
+
+        {/* Right column */}
+        <div className="flex items-center gap-2 pl-4">
+          <Bell
+            className={`h-3.5 w-3.5 ${unreadAlerts > 0 ? 'text-warning' : 'text-stat-icon'}`}
+            strokeWidth={1.5}
+          />
+          <span
+            className={`font-mono text-sm tabular-nums ${unreadAlerts > 0 ? 'text-warning' : 'text-stat-subtitle'}`}
+          >
+            {unreadAlerts}
+          </span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle">
+            {unreadAlerts === 1 ? 'alert' : 'alerts'}
+          </span>
         </div>
       </div>
-    </Card>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  tone,
+  divider,
+}: {
+  label: string;
+  value: string;
+  tone: 'value' | 'warn';
+  divider?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col gap-1 px-5 ${divider ? 'border-l border-border/60' : ''}`}>
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+        {label}
+      </span>
+      <span
+        className={`font-mono tabular-nums text-xl leading-none ${tone === 'warn' ? 'text-warning' : 'text-stat-value'}`}
+      >
+        {value}
+      </span>
+    </div>
   );
 }
