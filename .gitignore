@@ -48,6 +48,7 @@ plans/
 CLAUDE.md
 MANUAL_STEPS.md
 docs/superpowers/
+.worktrees/
 
 # Playwright MCP
 .playwright-mcp/
