@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Area, AreaChart, CartesianGrid, ReferenceDot, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { Activity } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MetricPoint, SystemStats } from './types';
 
@@ -43,25 +42,57 @@ export function HistoricalCharts({ metrics, systemStats }: HistoricalChartsProps
 
   const hasData = chartData.length > 0;
 
+  const cpuPeak = useMemo(() => {
+    if (chartData.length === 0) return null;
+    let peak = chartData[0];
+    for (const row of chartData) {
+      if (row.cpu > peak.cpu) peak = row;
+    }
+    return peak;
+  }, [chartData]);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card className="bg-card shadow-card-bevel">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
-            <Activity className="w-4 h-4 text-stat-icon" strokeWidth={1.5} />
-            <span>CPU Usage</span>
-          </CardTitle>
-          <CardDescription className="text-xs">Normalized total CPU percentage over host cores (24h).</CardDescription>
+          <div className="flex items-baseline gap-3">
+            <h2 className="font-display italic text-xl leading-none tracking-tight text-stat-value">CPU</h2>
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-stat-subtitle">
+              last 24h · normalized over cores
+            </span>
+          </div>
         </CardHeader>
         <CardContent className="h-[250px]">
           {hasData ? (
             <ChartContainer config={chartConfig} className="w-full h-full">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dash-cpu-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                 <YAxis tickFormatter={(val) => `${Number(val).toFixed(0)}%`} domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax / 10) * 10)]} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Area type="monotone" dataKey="cpu" stroke="var(--color-cpu)" fill="var(--color-cpu)" fillOpacity={0.4} />
+                <Area
+                  type="monotone"
+                  dataKey="cpu"
+                  stroke="var(--chart-1)"
+                  strokeWidth={1.25}
+                  fill="url(#dash-cpu-fill)"
+                />
+                {cpuPeak ? (
+                  <ReferenceDot
+                    x={cpuPeak.time}
+                    y={cpuPeak.cpu}
+                    r={3}
+                    fill="var(--chart-2)"
+                    stroke="var(--background)"
+                    strokeWidth={1}
+                  />
+                ) : null}
               </AreaChart>
             </ChartContainer>
           ) : (
@@ -75,21 +106,34 @@ export function HistoricalCharts({ metrics, systemStats }: HistoricalChartsProps
 
       <Card className="bg-card shadow-card-bevel">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center space-x-2 text-sm font-medium text-stat-title">
-            <Activity className="w-4 h-4 text-stat-icon" strokeWidth={1.5} />
-            <span>RAM Usage</span>
-          </CardTitle>
-          <CardDescription className="text-xs">Total RAM allocation in GB (24h).</CardDescription>
+          <div className="flex items-baseline gap-3">
+            <h2 className="font-display italic text-xl leading-none tracking-tight text-stat-value">Memory</h2>
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-stat-subtitle">
+              last 24h · total allocation
+            </span>
+          </div>
         </CardHeader>
         <CardContent className="h-[250px]">
           {hasData ? (
             <ChartContainer config={chartConfig} className="w-full h-full">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dash-ram-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--chart-2)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="var(--chart-2)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="time" minTickGap={30} tickMargin={8} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                 <YAxis tickFormatter={(val) => `${Number(val).toFixed(1)} GB`} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Area type="monotone" dataKey="ram" stroke="var(--color-ram)" fill="var(--color-ram)" fillOpacity={0.4} />
+                <Area
+                  type="monotone"
+                  dataKey="ram"
+                  stroke="var(--chart-2)"
+                  strokeWidth={1.25}
+                  fill="url(#dash-ram-fill)"
+                />
               </AreaChart>
             </ChartContainer>
           ) : (

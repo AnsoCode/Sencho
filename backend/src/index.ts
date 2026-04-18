@@ -4376,7 +4376,7 @@ app.get('/api/stacks/statuses', async (req: Request, res: Response) => {
         const dockerController = DockerController.getInstance(req.nodeId);
         const bulkInfo = await dockerController.getBulkStackStatuses(stackNames);
         // Map back to filenames to match frontend expectations
-        const data: Record<string, { status: 'running' | 'exited' | 'unknown'; mainPort?: number }> = {};
+        const data: Record<string, { status: 'running' | 'exited' | 'unknown'; mainPort?: number; runningSince?: number }> = {};
         for (const stack of stacks) {
           const name = stack.replace(/\.(yml|yaml)$/, '');
           data[stack] = bulkInfo[name] ?? { status: 'unknown' };

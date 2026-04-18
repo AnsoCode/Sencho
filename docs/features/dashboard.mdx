@@ -6,53 +6,63 @@ description: Real-time system stats, stack health, historical metrics, and recen
 The **Home** tab is the first thing you see after logging in. It provides a live overview of your node's health, resource usage, stack status, and recent alert activity.
 
 <Frame>
-  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing health status, resource gauges, stack health table, and historical charts" />
+  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing status masthead, unified gauge strip, stack health table, and historical charts" />
 </Frame>
 
-## Health status bar
+## Status masthead
 
-The top bar provides an at-a-glance health assessment for the active node. Sencho evaluates CPU, RAM, disk usage, exited containers, and unread error alerts to derive one of three states:
+The masthead at the top of the dashboard is the single place to read the node's current condition. It carries:
 
-| Status | Meaning |
-|--------|---------|
+- A **state word** (Healthy, Degraded, or Critical) set in the editorial display face so the reader sees it first.
+- A **pulsing dot** that mirrors the state color: green when nominal, amber when degraded, rose when critical.
+- A **meta line** with the active node, the number of nodes in the fleet, and the time since the last successful sync.
+- A **reasons line** that names exactly which signals moved the state away from Healthy (for example, "CPU 84% · 2 exited · 3 unread errors"). No hovering required.
+- Three quick stat tiles on the right: containers running, aggregate CPU, and memory in use. Hover the **Running** tile to see the managed / external / exited breakdown.
+- An alerts counter pinned to the far right.
+
+Sencho derives the state from CPU, RAM, disk usage, exited containers, and unread error alerts:
+
+| State | Meaning |
+|-------|---------|
 | **Healthy** | All systems nominal. No resources above warning thresholds, no unread errors. |
 | **Degraded** | At least one resource is above 80%, there are exited containers, or there are unread error alerts. |
 | **Critical** | At least one resource is above 90%, or there are exited containers combined with unread errors. |
 
-The bar also shows the active node name, the number of running containers, and the current alert count.
+## Unified gauge strip
 
-## Resource gauges
+A single rail of four tiles shows the numbers that change minute-to-minute:
 
-Five compact cards display real-time host and container metrics:
-
-| Card | What it shows |
+| Tile | What it shows |
 |------|---------------|
-| **CPU** | Current CPU usage percentage, core count, and a color-coded gauge bar |
-| **Memory** | RAM usage percentage, used/total in GB, and a gauge bar |
-| **Disk** | Disk usage percentage, used/total for the primary mount, and a gauge bar |
-| **Containers** | Active container count (hover to see managed vs. external breakdown) and exited count |
-| **Network** | Current RX (receive) and TX (transmit) throughput in bytes/second |
+| **CPU (hero)** | Current usage with a 10-minute sparkline, average for the window, and the peak value with its time offset |
+| **Memory** | RAM usage with a compact bar and the exact used/total split |
+| **Disk** | Mount usage with a compact bar and the exact used/total split |
+| **Network** | Total throughput per second with the received/transmitted split and a live rhythm spark |
 
-Gauge bars turn yellow at 80% usage and red at 90%.
+The CPU tile's sparkline uses cyan as the data color and marks the peak in amber. Memory and disk bars turn amber at 80% and rose at 90%.
 
-## Stack health table
+## Stack health
 
-A table listing every stack in your `COMPOSE_DIR` with live status and resource usage:
+A mono table of every stack discovered in your `COMPOSE_DIR`, sorted by load so the stacks demanding attention sit at the top:
 
 | Column | Description |
 |--------|-------------|
+| **State dot** | Green when healthy, amber when any container in the stack is pushing CPU above 80%, rose when one has exited or is above 90% |
 | **Stack** | Stack name (derived from the directory name) |
-| **Status** | `UP` (running) or `DN` (exited) |
+| **Host** | Active node this stack belongs to |
+| **Up** | How long the oldest running container has been up, in compact units (s/m/h/d) |
+| **CPU** | Latest aggregate CPU for the stack's containers |
 | **Memory** | Total memory allocated by the stack's containers |
+| **CPU · 10m** | Per-stack sparkline of the last 10 minutes, tinted to match the row state |
 
-Click any row to navigate directly to that stack's editor. Stacks are sorted with running stacks first, then alphabetically. If you have more than 8 stacks, the table paginates automatically. For fleet-wide CPU usage, see the **CPU** resource gauge card at the top of the dashboard and the **CPU Usage** historical chart below the table.
+Warning rows take on a subtle amber wash; critical rows take on a rose wash. Click any row to jump to that stack's editor. If you have more than 8 stacks, the list paginates automatically.
 
-## Historical metrics charts
+## Historical charts
 
 Two area charts display time-series data sampled at one-minute intervals, retained for up to 24 hours:
 
-- **CPU Usage** - normalized total CPU percentage across all managed containers over host cores
-- **RAM Usage** - total memory allocated by managed containers, in GB
+- **CPU** - normalized total CPU percentage across all managed containers over host cores, stroked in cyan with the peak highlighted in amber.
+- **Memory** - total memory allocated by managed containers in GB.
 
 Hover over a data point to see the exact value at that moment.
 
