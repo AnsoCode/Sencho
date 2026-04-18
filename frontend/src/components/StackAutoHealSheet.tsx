@@ -59,7 +59,7 @@ const clampNonNegative = (setter: (v: string) => void) => (e: React.ChangeEvent<
 };
 
 function actionColorClass(action: AutoHealHistoryEntry['action']): string {
-    if (action === 'restarted') return 'text-green-600';
+    if (action === 'restarted') return 'text-success';
     if (action === 'failed' || action === 'policy_auto_disabled') return 'text-destructive';
     return 'text-muted-foreground';
 }
@@ -210,40 +210,20 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
     const [autoDisableAfter, setAutoDisableAfter] = useState('5');
 
     useEffect(() => {
-        if (open && stackName) {
-            fetchPolicies();
-            fetchServices();
-        }
-    }, [open, stackName]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (!open || !stackName) return;
 
-    const fetchPolicies = async () => {
         setLoading(true);
-        try {
-            const res = await apiFetch(`/auto-heal/policies?stackName=${encodeURIComponent(stackName)}`);
-            if (res.ok) {
-                const data: AutoHealPolicy[] = await res.json();
-                setPolicies(data);
-            } else {
-                console.error('[StackAutoHealSheet] Failed to fetch policies:', res.status);
-            }
-        } catch (e) {
-            console.error('[StackAutoHealSheet] Failed to fetch policies:', e);
-        } finally {
-            setLoading(false);
-        }
-    };
+        apiFetch(`/auto-heal/policies?stackName=${encodeURIComponent(stackName)}`)
+            .then(res => res.json() as Promise<AutoHealPolicy[]>)
+            .then(data => setPolicies(data))
+            .catch(() => toast.error('Failed to load auto-heal policies.'))
+            .finally(() => setLoading(false));
 
-    const fetchServices = async () => {
-        try {
-            const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/services`);
-            if (res.ok) {
-                const services: string[] = await res.json();
-                setServiceOptions(services.map(s => ({ value: s, label: s })));
-            }
-        } catch (e) {
-            console.error('[StackAutoHealSheet] Failed to fetch services:', e);
-        }
-    };
+        apiFetch(`/stacks/${encodeURIComponent(stackName)}/services`)
+            .then(res => res.json() as Promise<string[]>)
+            .then(names => setServiceOptions(names.map(n => ({ value: n, label: n }))))
+            .catch(() => { /* services list is optional, silently skip */ });
+    }, [open, stackName]);
 
     const handleToggle = async (id: number, enabled: boolean) => {
         setSaving(true);
@@ -309,7 +289,10 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
                 setCooldown('5');
                 setMaxRestarts('3');
                 setAutoDisableAfter('5');
-                fetchPolicies();
+                apiFetch(`/auto-heal/policies?stackName=${encodeURIComponent(stackName)}`)
+                    .then(res => res.json() as Promise<AutoHealPolicy[]>)
+                    .then(data => setPolicies(data))
+                    .catch(() => toast.error('Failed to reload policies.'));
             } else {
                 const err = await res.json().catch(() => ({})) as Record<string, unknown>;
                 toast.error((err?.message as string) || (err?.error as string) || 'Failed to add policy.');
@@ -324,7 +307,7 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
     };
 
     const serviceComboOptions = [
-        { value: '', label: 'All services in stack' },
+        { value: '', label: 'All services' },
         ...serviceOptions,
     ];
 
@@ -379,7 +362,7 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
                                         options={serviceComboOptions}
                                         value={service}
                                         onValueChange={setService}
-                                        placeholder="All services in stack"
+                                        placeholder="All services"
                                         searchPlaceholder="Search services..."
                                         emptyText="No services found."
                                     />
@@ -387,8 +370,9 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Unhealthy for (min)</Label>
+                                        <Label htmlFor="unhealthy-duration">Unhealthy for (minutes)</Label>
                                         <Input
+                                            id="unhealthy-duration"
                                             type="text"
                                             inputMode="numeric"
                                             value={unhealthyFor}
@@ -397,8 +381,9 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Cooldown (min)</Label>
+                                        <Label htmlFor="cooldown">Cooldown (minutes)</Label>
                                         <Input
+                                            id="cooldown"
                                             type="text"
                                             inputMode="numeric"
                                             value={cooldown}
@@ -410,8 +395,9 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Max restarts / hr</Label>
+                                        <Label htmlFor="max-restarts">Max restarts / hr</Label>
                                         <Input
+                                            id="max-restarts"
                                             type="text"
                                             inputMode="numeric"
                                             value={maxRestarts}
@@ -420,8 +406,9 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Auto-disable after</Label>
+                                        <Label htmlFor="auto-disable">Auto-disable after (failures)</Label>
                                         <Input
+                                            id="auto-disable"
                                             type="text"
                                             inputMode="numeric"
                                             value={autoDisableAfter}
