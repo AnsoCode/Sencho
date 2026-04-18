@@ -5740,12 +5740,17 @@ app.delete('/api/alerts/:id', authMiddleware, async (req: Request, res: Response
 app.get('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
   if (!requirePaid(req, res)) return;
   const stackName = typeof req.query.stackName === 'string' ? req.query.stackName : undefined;
-  res.json(DatabaseService.getInstance().getAutoHealPolicies(stackName));
+  try {
+    res.json(DatabaseService.getInstance().getAutoHealPolicies(stackName));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to list policies:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
   const parsed = AutoHealPolicyCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
@@ -5753,25 +5758,30 @@ app.post('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response
   }
   const { stack_name, service_name, unhealthy_duration_mins, cooldown_mins, max_restarts_per_hour, auto_disable_after_failures } = parsed.data;
   const now = Date.now();
-  const policy = DatabaseService.getInstance().addAutoHealPolicy({
-    stack_name,
-    service_name: service_name ?? null,
-    unhealthy_duration_mins,
-    cooldown_mins,
-    max_restarts_per_hour,
-    auto_disable_after_failures,
-    enabled: 1,
-    consecutive_failures: 0,
-    last_fired_at: 0,
-    created_at: now,
-    updated_at: now,
-  });
-  res.status(201).json(policy);
+  try {
+    const policy = DatabaseService.getInstance().addAutoHealPolicy({
+      stack_name,
+      service_name: service_name ?? null,
+      unhealthy_duration_mins,
+      cooldown_mins,
+      max_restarts_per_hour,
+      auto_disable_after_failures,
+      enabled: 1,
+      consecutive_failures: 0,
+      last_fired_at: 0,
+      created_at: now,
+      updated_at: now,
+    });
+    res.status(201).json(policy);
+  } catch (err) {
+    console.error('[AutoHeal] Failed to create policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.patch('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
   const parsed = AutoHealPolicyUpdateSchema.safeParse(req.body);
@@ -5779,29 +5789,44 @@ app.patch('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Res
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     return;
   }
-  const db = DatabaseService.getInstance();
-  if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
-  db.updateAutoHealPolicy(id, parsed.data);
-  res.json(db.getAutoHealPolicy(id));
+  try {
+    const db = DatabaseService.getInstance();
+    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
+    db.updateAutoHealPolicy(id, parsed.data);
+    res.json(db.getAutoHealPolicy(id));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to update policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.delete('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
-  const db = DatabaseService.getInstance();
-  if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
-  db.deleteAutoHealPolicy(id);
-  res.json({ success: true });
+  try {
+    const db = DatabaseService.getInstance();
+    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
+    db.deleteAutoHealPolicy(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AutoHeal] Failed to delete policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/auto-heal/policies/:id/history', authMiddleware, (req: Request, res: Response): void => {
   if (!requirePaid(req, res)) return;
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
-  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
-  res.json(DatabaseService.getInstance().getAutoHealHistory(id, limit));
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 100);
+  try {
+    res.json(DatabaseService.getInstance().getAutoHealHistory(id, limit));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to fetch history:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
