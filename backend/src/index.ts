@@ -26,6 +26,7 @@ import { MonitorService } from './services/MonitorService';
 import { AutoHealService } from './services/AutoHealService';
 import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
+import { UpdatePreviewService } from './services/UpdatePreviewService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
@@ -5198,6 +5199,21 @@ app.post('/api/stacks/:stackName/start', async (req: Request, res: Response) => 
   }
 });
 
+// Update preview: semver diff, risk tagging, rollback target for the readiness board
+app.get('/api/stacks/:stackName/update-preview', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) {
+    return res.status(400).json({ error: 'Invalid stack name' });
+  }
+  try {
+    const preview = await UpdatePreviewService.getInstance().getPreview(req.nodeId, stackName);
+    res.json(preview);
+  } catch (error) {
+    console.error(`[Stacks] Update preview failed: ${stackName}`, error);
+    res.status(500).json({ error: 'Failed to compute update preview' });
+  }
+});
+
 // Update stack: pull images and recreate containers
 app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
@@ -6428,7 +6444,18 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
     } else if (excludeAction) {
       tasks = tasks.filter(t => t.action !== excludeAction);
     }
-    res.json(tasks);
+
+    // Timeline view needs every firing inside a rolling window, not just the next run.
+    const scheduler = SchedulerService.getInstance();
+    const windowHours = Math.min(Math.max(Number(req.query.window_hours) || 24, 1), 168);
+    const from = Date.now();
+    const to = from + windowHours * 60 * 60 * 1000;
+    const enriched = tasks.map(t => ({
+      ...t,
+      next_runs: t.enabled === 1 ? scheduler.calculateRunsWithin(t.cron_expression, from, to) : [],
+    }));
+
+    res.json(enriched);
   } catch (error) {
     console.error('[ScheduledTasks] List error:', error);
     res.status(500).json({ error: 'Failed to fetch scheduled tasks' });

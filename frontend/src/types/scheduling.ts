@@ -17,6 +17,7 @@ export interface ScheduledTask {
   prune_targets: string | null;
   target_services: string | null;
   prune_label_filter: string | null;
+  next_runs?: number[];
 }
 
 export interface TaskRun {

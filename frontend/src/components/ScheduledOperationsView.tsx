@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download, CalendarClock, Table2 } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { Combobox } from '@/components/ui/combobox';
@@ -20,10 +20,36 @@ import { getCronDescription, formatTimestamp } from '@/lib/scheduling';
 
 const ACTION_OPTIONS = [
   { value: 'restart', label: 'Restart Stack', targetType: 'stack' as const },
+  { value: 'update', label: 'Auto-update Stack', targetType: 'stack' as const },
   { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' as const },
   { value: 'prune', label: 'System Prune', targetType: 'system' as const },
   { value: 'scan', label: 'Vulnerability Scan', targetType: 'system' as const },
 ];
+
+const TIMELINE_LANES: { key: ScheduledTask['action']; label: string; color: string; bg: string; actions: ScheduledTask['action'][] }[] = [
+  { key: 'restart', label: 'Restart', color: 'var(--brand)', bg: 'oklch(from var(--brand) l c h / 0.18)', actions: ['restart'] },
+  { key: 'update', label: 'Update', color: 'var(--success)', bg: 'oklch(from var(--success) l c h / 0.18)', actions: ['update'] },
+  { key: 'scan', label: 'Scan', color: 'var(--label-purple)', bg: 'var(--label-purple-bg)', actions: ['scan'] },
+  { key: 'prune', label: 'Prune', color: 'var(--warning)', bg: 'oklch(from var(--warning) l c h / 0.18)', actions: ['prune', 'snapshot'] },
+];
+
+const TIMELINE_WINDOW_HOURS = 24;
+const TIMELINE_WINDOW_MS = TIMELINE_WINDOW_HOURS * 60 * 60 * 1000;
+
+function formatHourTick(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatRelative(ts: number, now: number): string {
+  const diff = ts - now;
+  if (diff <= 0) return 'now';
+  const mins = Math.round(diff / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins === 0 ? `in ${hours}h` : `in ${hours}h ${remMins}m`;
+}
 
 interface ScheduledOperationsViewProps {
   filterNodeId?: number | null;
@@ -33,6 +59,8 @@ interface ScheduledOperationsViewProps {
 export default function ScheduledOperationsView({ filterNodeId, onClearFilter }: ScheduledOperationsViewProps) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'timeline' | 'table'>('timeline');
+  const [now, setNow] = useState(() => Date.now());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledTask | null>(null);
@@ -71,7 +99,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/scheduled-tasks?exclude_action=update', { localOnly: true });
+      const res = await apiFetch('/scheduled-tasks', { localOnly: true });
       if (res.ok) {
         setTasks(await res.json());
       }
@@ -112,6 +140,11 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
     fetchStacks();
     fetchNodes();
   }, [fetchTasks, fetchStacks, fetchNodes]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (formAction !== 'restart' || !formTargetId) {
@@ -301,6 +334,18 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
   const targetType = ACTION_OPTIONS.find(a => a.value === formAction)?.targetType;
   const cronDescription = getCronDescription(formCron);
 
+  const windowEnd = now + TIMELINE_WINDOW_MS;
+  const timelinePills = filteredTasks
+    .filter(t => t.enabled === 1 && t.next_runs && t.next_runs.length > 0)
+    .flatMap(task => (task.next_runs ?? []).map(runAt => ({ task, runAt })))
+    .filter(p => p.runAt >= now && p.runAt <= windowEnd)
+    .sort((a, b) => a.runAt - b.runAt);
+
+  const nextPill = timelinePills[0] ?? null;
+  const hourTicks = Array.from({ length: 6 }, (_, i) => now + (i / 5) * TIMELINE_WINDOW_MS);
+  const windowStartLabel = new Date(now).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const windowEndLabel = new Date(windowEnd).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <Card>
@@ -311,6 +356,26 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
               <CardTitle>Scheduled Operations</CardTitle>
             </div>
             <div className="flex items-center gap-2">
+              <div className="inline-flex items-center rounded-md border border-card-border bg-card p-0.5 shadow-btn-glow">
+                <Button
+                  variant={view === 'timeline' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5 gap-1.5"
+                  onClick={() => setView('timeline')}
+                >
+                  <CalendarClock className="w-3.5 h-3.5" strokeWidth={1.5} />
+                  <span className="text-xs">Timeline</span>
+                </Button>
+                <Button
+                  variant={view === 'table' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 px-2.5 gap-1.5"
+                  onClick={() => setView('table')}
+                >
+                  <Table2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                  <span className="text-xs">All tasks</span>
+                </Button>
+              </div>
               <Button variant="outline" size="sm" onClick={fetchTasks} disabled={loading}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                 Refresh
@@ -333,7 +398,142 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
               </Button>
             </div>
           )}
-          {loading && filteredTasks.length === 0 ? (
+          {view === 'timeline' ? (
+            <div className="space-y-5">
+              <div className="flex items-end justify-between gap-6 border-b border-card-border pb-4">
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-stat-subtitle mb-1">
+                    Next 24 hours
+                  </div>
+                  <div className="font-display italic text-3xl text-foreground leading-tight">
+                    Next <em className="not-italic text-brand">24 hours</em>
+                  </div>
+                  <div className="text-xs font-mono text-stat-subtitle mt-1 tabular-nums">
+                    {windowStartLabel} {formatHourTick(now)} → {windowEndLabel} {formatHourTick(windowEnd)}
+                  </div>
+                </div>
+                {nextPill ? (
+                  <div className="text-right">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-stat-subtitle mb-1">
+                      Next
+                    </div>
+                    <div className="font-mono tabular-nums text-2xl text-brand leading-tight">
+                      {formatHourTick(nextPill.runAt)}
+                    </div>
+                    <div className="text-xs font-mono text-stat-subtitle mt-1 truncate max-w-[220px]">
+                      {nextPill.task.name} · {formatRelative(nextPill.runAt, now)}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-right">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-stat-subtitle mb-1">
+                      Next
+                    </div>
+                    <div className="font-mono tabular-nums text-2xl text-stat-subtitle leading-tight">
+                      --:--
+                    </div>
+                    <div className="text-xs font-mono text-stat-subtitle mt-1">
+                      Nothing scheduled
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {loading && filteredTasks.length === 0 ? (
+                <div className="text-center text-muted-foreground py-12">Loading...</div>
+              ) : (
+                <div className="relative">
+                  <div className="space-y-1.5">
+                    {TIMELINE_LANES.map(lane => {
+                      const lanePills = timelinePills.filter(p => lane.actions.includes(p.task.action));
+                      return (
+                        <div key={lane.key} className="grid grid-cols-[80px_1fr] items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ backgroundColor: lane.color }}
+                              aria-hidden="true"
+                            />
+                            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-stat-subtitle">
+                              {lane.label}
+                            </span>
+                          </div>
+                          <div
+                            className="relative h-8 rounded-md border border-card-border bg-background/40 shadow-[inset_0_1px_2px_0_oklch(0_0_0/0.15)]"
+                          >
+                            {lanePills.map((pill, idx) => {
+                              const leftPct = ((pill.runAt - now) / TIMELINE_WINDOW_MS) * 100;
+                              const clamped = Math.max(0, Math.min(100, leftPct));
+                              const targetLabel = pill.task.target_type === 'stack'
+                                ? pill.task.target_id ?? pill.task.name
+                                : pill.task.name;
+                              return (
+                                <button
+                                  key={`${pill.task.id}-${idx}-${pill.runAt}`}
+                                  type="button"
+                                  onClick={() => openRuns(pill.task)}
+                                  className="absolute top-1/2 -translate-y-1/2 h-6 px-2 rounded-sm text-[10px] font-mono tabular-nums flex items-center gap-1.5 border transition-transform hover:scale-105 hover:z-10 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+                                  style={{
+                                    left: `${clamped}%`,
+                                    backgroundColor: lane.bg,
+                                    borderColor: lane.color,
+                                    color: lane.color,
+                                    transform: clamped > 90
+                                      ? 'translate(-100%, -50%)'
+                                      : 'translate(0, -50%)',
+                                  }}
+                                  title={`${pill.task.name} · ${formatHourTick(pill.runAt)} · ${targetLabel}`}
+                                >
+                                  <span>{formatHourTick(pill.runAt)}</span>
+                                  <span className="opacity-70 max-w-[100px] truncate">{targetLabel}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Now rail */}
+                  <div
+                    className="absolute top-0 bottom-6 w-px pointer-events-none"
+                    style={{
+                      left: 'calc(80px + 0.75rem)',
+                      backgroundColor: 'var(--brand)',
+                      boxShadow: '0 0 6px 0 var(--brand), 0 0 2px 0 var(--brand)',
+                    }}
+                    aria-hidden="true"
+                  />
+                  {/* Axis ticks */}
+                  <div className="grid grid-cols-[80px_1fr] gap-3 mt-3">
+                    <div />
+                    <div className="relative h-4">
+                      {hourTicks.map((ts, i) => {
+                        const leftPct = (i / 5) * 100;
+                        return (
+                          <div
+                            key={ts}
+                            className="absolute top-0 text-[10px] font-mono tabular-nums text-stat-subtitle"
+                            style={{
+                              left: `${leftPct}%`,
+                              transform: i === 0 ? 'translateX(0)' : i === 5 ? 'translateX(-100%)' : 'translateX(-50%)',
+                            }}
+                          >
+                            {formatHourTick(ts)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {timelinePills.length === 0 && (
+                    <div className="text-center text-muted-foreground text-sm py-6 mt-2">
+                      Nothing scheduled in the next 24 hours. Toggle to All tasks to see every schedule, or create a new one.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : loading && filteredTasks.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">Loading...</div>
           ) : filteredTasks.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">

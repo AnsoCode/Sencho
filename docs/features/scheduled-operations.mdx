@@ -4,26 +4,41 @@ description: Automate recurring Docker operations like stack restarts, fleet sna
 ---
 
 <Note>
-  Scheduled Operations requires a Sencho **Admiral** license.
-  Skipper and Community Edition do not include this feature.
+  Scheduled Operations requires a Sencho **Admiral** license. Skipper users see only the **Auto-update Stack** action; Admiral users see every action.
 </Note>
 
 ## Overview
 
 Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest, including a full execution history log so you always know what ran and when.
 
+The view opens on a **Timeline** that plots the next 24 hours of scheduled work across four lanes (Restart, Update, Scan, Prune) so you can see, at a glance, what is about to fire and when. Toggle to **All tasks** for the full CRUD table.
+
 <Frame>
-  <img src="/images/scheduled-operations/overview.png" alt="Scheduled operations list view showing tasks with status, schedule, and actions" />
+  <img src="/images/scheduled-operations/timeline.png" alt="Schedules timeline showing the next 24 hours across four lanes with a cyan now rail" />
 </Frame>
+
+## Timeline view
+
+The timeline is the default view. It shows:
+
+- A hero with the current 24-hour window as a date range, and the **next firing** on the right (time, task name, and relative countdown).
+- Four color-coded lanes: **Restart** (cyan), **Update** (green), **Scan** (purple), and **Prune** (amber). Snapshot tasks share the Prune lane.
+- One pill per firing within the window, positioned proportionally to the task's next run time. Click any pill to open that task's execution history.
+- A vertical cyan **now rail** at the left edge, and six mono time ticks along the bottom axis.
+
+Tasks that fire more than once in the window (e.g. an hourly cron) render a pill for each firing. Disabled tasks do not appear on the timeline.
+
+Toggle to **All tasks** from the header to see every schedule in a table, regardless of whether it fires in the next 24 hours.
 
 ## Supported Actions
 
 | Action | Target | Description |
 |--------|--------|-------------|
 | **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack |
+| **Auto-update Stack** | A specific stack on a specific node | Checks each image for updates and recreates the stack if any image has a newer version. See [Auto-Update Readiness](/features/auto-update-policies) for the companion board. Available on Skipper and Admiral. |
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
 | **System Prune** | The default node | Prunes selected resources, optionally filtered by Docker label |
-| **Vulnerability Scan** | All images on a specific node | Runs Trivy against every image on the target node and records the results. Requires Trivy to be installed — see [Installing Trivy](/operations/trivy-setup). Available on Skipper and Admiral. |
+| **Vulnerability Scan** | All images on a specific node | Runs Trivy against every image on the target node and records the results. Requires Trivy to be installed, see [Installing Trivy](/operations/trivy-setup). Available on Skipper and Admiral. |
 
 ## Creating a Scheduled Task
 
@@ -31,9 +46,9 @@ Scheduled Operations lets you automate recurring maintenance tasks across your i
 2. Click **New Schedule**.
 3. Fill in the form:
    - **Name**: A descriptive label (e.g. "Nightly staging restart").
-   - **Action**: Choose Restart Stack, Fleet Snapshot, System Prune, or Vulnerability Scan. The form fields below change based on your selection.
-   - **Node**: (Restart Stack and Vulnerability Scan) Select the node to run against. For Restart Stack it determines where the target stack lives; for Vulnerability Scan it determines which node's images are scanned.
-   - **Stack**: (Restart Stack only) Select the stack to restart. Becomes available after choosing a node.
+   - **Action**: Choose Restart Stack, Auto-update Stack, Fleet Snapshot, System Prune, or Vulnerability Scan. The form fields below change based on your selection.
+   - **Node**: (Restart Stack, Auto-update Stack, and Vulnerability Scan) Select the node to run against. For stack actions it determines where the target stack lives; for Vulnerability Scan it determines which node's images are scanned.
+   - **Stack**: (Restart Stack and Auto-update Stack) Select the stack to target. Becomes available after choosing a node.
    - **Services**: (Restart Stack only) Optionally select specific services within the stack to restart. Leave empty to restart all services.
    - **Prune Targets**: (System Prune only) Select which resources to prune: containers, images, networks, volumes. All are selected by default.
    - **Label Filter**: (System Prune only) Optionally filter prune operations to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`).
@@ -182,7 +197,7 @@ If the server restarts while a task is mid-execution, the orphaned run record is
 
 ### Task was automatically disabled
 
-If a task's cron expression becomes invalid after creation (for example, due to a corrupt database edit or an expression that was valid in a previous version), the scheduler disables the task and records the reason in the last error column. To fix this:
+If a task's cron expression becomes invalid after creation (for example, due to a corrupt database edit), the scheduler disables the task and records the reason in the last error column. To fix this:
 
 1. Open the task in edit mode.
 2. Re-enter a valid cron expression.
