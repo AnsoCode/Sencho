@@ -251,17 +251,13 @@ export function UsersSection() {
         <PaidGate featureName="User management">
           <CapabilityGate capability="users" featureName="User Management">
             <div className="space-y-6">
-                <div className="flex items-start justify-between pr-8">
-                    <div>
-                        <h3 className="text-lg font-medium tracking-tight">User Management</h3>
-                        <p className="text-sm text-muted-foreground">Create and manage user accounts with role-based access control.</p>
-                    </div>
-                    {!showForm && (
+                {!showForm && (
+                    <div className="flex justify-end">
                         <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
                             <Plus className="w-4 h-4 mr-1" strokeWidth={1.5} />Add User
                         </Button>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 {/* Add/Edit Form */}
                 {showForm && (

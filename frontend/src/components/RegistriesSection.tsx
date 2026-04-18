@@ -10,7 +10,6 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
-import { TierBadge } from './TierBadge';
 import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock, Zap } from 'lucide-react';
 
 type RegistryType = 'dockerhub' | 'ghcr' | 'ecr' | 'custom';
@@ -275,15 +274,7 @@ export function RegistriesSection() {
         <AdmiralGate featureName="Private Registry Management">
           <CapabilityGate capability="registries" featureName="Private Registries">
             <div className="space-y-6">
-                <div className="flex items-start justify-between pr-8">
-                    <div>
-                        <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-                            Private Registries <TierBadge />
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                            Store credentials for private Docker registries. Sencho injects them automatically during deploy and pull operations.
-                        </p>
-                    </div>
+                <div className="flex justify-end">
                     <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
                         <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Add Registry
                     </Button>

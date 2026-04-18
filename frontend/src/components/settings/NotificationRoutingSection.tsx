@@ -30,7 +30,6 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from '@/components/AdmiralGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
-import { TierBadge } from '@/components/TierBadge';
 import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
 
 interface NotificationRoute {
@@ -233,15 +232,7 @@ export function NotificationRoutingSection() {
         <AdmiralGate featureName="Notification Routing">
           <CapabilityGate capability="notification-routing" featureName="Notification Routing">
             <div className="space-y-6">
-                <div className="flex items-start justify-between pr-8">
-                    <div>
-                        <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-                            Notification Routing <TierBadge />
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                            Route stack alerts to specific channels instead of your global notification endpoints.
-                        </p>
-                    </div>
+                <div className="flex justify-end">
                     <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
                         <Plus className="w-4 h-4 mr-1.5" /> Add Route
                     </Button>

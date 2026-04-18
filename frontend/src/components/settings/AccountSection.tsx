@@ -83,10 +83,6 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium tracking-tight">Account & Security</h3>
-                <p className="text-sm text-muted-foreground">Manage your credentials and authentication.</p>
-            </div>
             <div className="space-y-4 max-w-sm">
                 <div className="space-y-2">
                     <Label>Current Password</Label>

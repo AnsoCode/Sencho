@@ -3,10 +3,37 @@ title: Settings Reference
 description: Complete reference for every option in the Sencho Settings Hub.
 ---
 
-Open the Settings Hub by clicking the **Profile** icon in the top bar and selecting **Settings**. The left sidebar lists all available sections. Some sections show a lock icon when they require a higher license tier.
+Open the Settings Hub by clicking the **Profile** icon in the top bar and selecting **Settings**. The sidebar groups every section into four themes so related settings live together.
 
 <Frame>
-  <img src="/images/settings/settings-overview.png" alt="Settings Hub showing the Account tab and the full section sidebar" />
+  <img src="/images/settings/settings-hub-grouped.png" alt="Settings Hub with the grouped sidebar: Identity, System, Alerts, Advanced" />
+</Frame>
+
+### Sidebar groups
+
+| Group | What it covers |
+|-------|----------------|
+| **Identity** | Account, License, Users, SSO, API Tokens |
+| **System** (node-scoped) | System Limits, Registries, Nodes |
+| **Alerts** | Notifications, Routing, Webhooks |
+| **Advanced** | Labels, Security, Developer, App Store, Support, About |
+
+Sections that require a higher license tier show a tier chip (`SKIPPER` or `ADMIRAL`) next to their name. Admin-only sections stay hidden for non-admins.
+
+### Quick search
+
+Click **Filter settings** at the top of the sidebar, or press `Ctrl+K` / `⌘K` while the hub is open, to open the command palette. Type any section name, keyword, or synonym (for example, `saml` finds SSO and `trivy` finds Security) and press Enter to jump to it.
+
+<Frame>
+  <img src="/images/settings/settings-search.png" alt="Settings command palette filtered to webhook" />
+</Frame>
+
+### Scope breadcrumb
+
+The content pane shows a breadcrumb such as `SETTINGS › SYSTEM › SYSTEM LIMITS`. For node-scoped sections the breadcrumb appends the active node name (for example, `LOCAL (NODE-SCOPED)`) so you always know which node you are editing.
+
+<Frame>
+  <img src="/images/settings/settings-node-scope.png" alt="System Limits section showing the node-scope indicator in the breadcrumb" />
 </Frame>
 
 ---

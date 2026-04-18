@@ -10,7 +10,6 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
-import { TierBadge } from './TierBadge';
 import { Zap, Plus, Copy, Trash2, CheckCircle, RefreshCw, Clock } from 'lucide-react';
 
 interface ApiTokenListItem {
@@ -132,15 +131,7 @@ export function ApiTokensSection() {
         <AdmiralGate featureName="API Tokens">
           <CapabilityGate capability="api-tokens" featureName="API Tokens">
             <div className="space-y-6">
-                <div className="flex items-start justify-between pr-8">
-                    <div>
-                        <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-                            API Tokens <TierBadge />
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                            Generate scoped tokens for CI/CD pipelines, scripts, and automation.
-                        </p>
-                    </div>
+                <div className="flex justify-end">
                     <Button size="sm" onClick={() => setShowForm(!showForm)}>
                         <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Create Token
                     </Button>

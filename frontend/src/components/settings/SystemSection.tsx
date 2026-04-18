@@ -1,11 +1,8 @@
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { RefreshCw, Info } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { PatchableSettings } from './types';
 
 interface SystemSectionProps {
@@ -14,118 +11,231 @@ interface SystemSectionProps {
     onSave: () => Promise<void>;
     isSaving: boolean;
     isLoading: boolean;
-    isRemote: boolean;
-    activeNodeName?: string;
 }
 
-function SettingsSkeleton() {
+interface NumberChipProps {
+    value: string;
+    onChange: (v: string) => void;
+    suffix: string;
+    min?: number;
+    max?: number;
+    step?: number;
+    warnOver?: number;
+}
+
+function NumberChip({ value, onChange, suffix, min, max, step = 1, warnOver }: NumberChipProps) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(value);
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        if (editing) inputRef.current?.select();
+    }, [editing]);
+
+    const startEdit = () => {
+        setDraft(value);
+        setEditing(true);
+    };
+
+    const commit = () => {
+        const trimmed = draft.trim();
+        const parsed = Number(trimmed);
+        if (trimmed !== '' && Number.isFinite(parsed)) {
+            let next = parsed;
+            if (typeof min === 'number') next = Math.max(min, next);
+            if (typeof max === 'number') next = Math.min(max, next);
+            onChange(String(next));
+        }
+        setEditing(false);
+    };
+
+    const numeric = Number(value);
+    const warn = typeof warnOver === 'number' && Number.isFinite(numeric) && numeric > warnOver;
+
+    const chipClass = cn(
+        'inline-flex items-baseline gap-1 rounded-md border px-2.5 py-1 font-mono text-sm tabular-nums tracking-tight transition-colors min-w-[78px] justify-end focus-within:ring-2 focus-within:ring-brand/50 focus-within:outline-none',
+        warn
+            ? 'border-warning/40 bg-warning/10 text-warning'
+            : 'border-card-border bg-card text-stat-value hover:border-brand/50',
+    );
+
+    if (editing) {
+        return (
+            <span className={chipClass}>
+                <input
+                    ref={inputRef}
+                    type="number"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={commit}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') commit();
+                        if (e.key === 'Escape') setEditing(false);
+                    }}
+                    className="w-12 bg-transparent text-right outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <span className="text-stat-subtitle">{suffix}</span>
+            </span>
+        );
+    }
+
     return (
-        <div className="space-y-6">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
+        <button
+            type="button"
+            className={cn(chipClass, 'focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none')}
+            onClick={startEdit}
+        >
+            <span>{value || '0'}</span>
+            <span className="text-stat-subtitle">{suffix}</span>
+        </button>
+    );
+}
+
+interface TogglePillProps {
+    checked: boolean;
+    onChange: (next: boolean) => void;
+}
+
+function TogglePill({ checked, onChange }: TogglePillProps) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            onClick={() => onChange(!checked)}
+            className={cn(
+                'inline-flex items-center justify-center rounded-md border px-2.5 py-1 font-mono text-xs uppercase tracking-[0.18em] transition-colors min-w-[60px] focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none',
+                checked
+                    ? 'border-success/30 bg-success/10 text-success hover:bg-success/15'
+                    : 'border-card-border bg-card text-stat-subtitle hover:text-stat-value',
+            )}
+        >
+            {checked ? 'ON' : 'OFF'}
+        </button>
+    );
+}
+
+interface RowProps {
+    label: string;
+    desc: string;
+    control: React.ReactNode;
+    last?: boolean;
+}
+
+function Row({ label, desc, control, last }: RowProps) {
+    return (
+        <div
+            className={cn(
+                'flex items-center gap-4 px-4 py-3',
+                !last && 'border-b border-glass-border',
+            )}
+        >
+            <div className="min-w-0 flex-1">
+                <div className="text-sm text-stat-value">{label}</div>
+                <div className="mt-0.5 text-xs text-stat-subtitle">{desc}</div>
             </div>
+            <div className="shrink-0">{control}</div>
         </div>
     );
 }
 
-export function SystemSection({ settings, onSettingChange, onSave, isSaving, isLoading, isRemote, activeNodeName }: SystemSectionProps) {
+function SettingsSkeleton() {
+    return (
+        <div className="space-y-3 rounded-lg border border-glass-border bg-glass p-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+        </div>
+    );
+}
+
+export function SystemSection({ settings, onSettingChange, onSave, isSaving, isLoading }: SystemSectionProps) {
+    if (isLoading) return <SettingsSkeleton />;
+
     return (
         <div className="space-y-6">
-            <div className="flex items-start justify-between pr-8">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight">System Limits & Watchdog</h3>
-                    <p className="text-sm text-muted-foreground">Configure alert thresholds and crash detection.</p>
-                </div>
-                {isRemote && (
-                    <Badge variant="outline" className="text-xs shrink-0 ml-2 mt-0.5">
-                        <Info className="w-3 h-3 mr-1" />
-                        Configuring: {activeNodeName}
-                    </Badge>
-                )}
+            <div className="overflow-hidden rounded-lg border border-glass-border bg-glass">
+                <Row
+                    label="Host CPU limit"
+                    desc="Alerts fire when 5-min avg exceeds"
+                    control={
+                        <NumberChip
+                            value={settings.host_cpu_limit || '90'}
+                            onChange={(v) => onSettingChange('host_cpu_limit', v)}
+                            suffix="%"
+                            min={1}
+                            max={100}
+                            warnOver={95}
+                        />
+                    }
+                />
+                <Row
+                    label="Host RAM limit"
+                    desc="Swap is never acceptable"
+                    control={
+                        <NumberChip
+                            value={settings.host_ram_limit || '90'}
+                            onChange={(v) => onSettingChange('host_ram_limit', v)}
+                            suffix="%"
+                            min={1}
+                            max={100}
+                            warnOver={95}
+                        />
+                    }
+                />
+                <Row
+                    label="Host disk limit"
+                    desc="Low free space slows image pulls and backups"
+                    control={
+                        <NumberChip
+                            value={settings.host_disk_limit || '90'}
+                            onChange={(v) => onSettingChange('host_disk_limit', v)}
+                            suffix="%"
+                            min={1}
+                            max={100}
+                            warnOver={95}
+                        />
+                    }
+                />
+                <Row
+                    label="Janitor threshold"
+                    desc="Alert when reclaimable Docker data exceeds this"
+                    control={
+                        <NumberChip
+                            value={settings.docker_janitor_gb || '5'}
+                            onChange={(v) => onSettingChange('docker_janitor_gb', v)}
+                            suffix="GiB"
+                            min={0}
+                            step={0.5}
+                            warnOver={10}
+                        />
+                    }
+                />
+                <Row
+                    last
+                    label="Global crash capture"
+                    desc="Watch every managed container for unexpected exits"
+                    control={
+                        <TogglePill
+                            checked={settings.global_crash === '1'}
+                            onChange={(next) => onSettingChange('global_crash', next ? '1' : '0')}
+                        />
+                    }
+                />
             </div>
 
-            {isLoading ? <SettingsSkeleton /> : (
-                <>
-                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <Label className="text-base">Host CPU Alert Threshold</Label>
-                                <span className="text-sm font-medium">{settings.host_cpu_limit}%</span>
-                            </div>
-                            <Slider
-                                min={1} max={100} step={1}
-                                value={[parseInt(settings.host_cpu_limit || '90')]}
-                                onValueChange={(v) => onSettingChange('host_cpu_limit', v[0].toString())}
-                            />
-                        </div>
-
-                        <div className="space-y-4 pt-2 border-t border-glass-border">
-                            <div className="flex justify-between items-center">
-                                <Label className="text-base">Host RAM Alert Threshold</Label>
-                                <span className="text-sm font-medium">{settings.host_ram_limit}%</span>
-                            </div>
-                            <Slider
-                                min={1} max={100} step={1}
-                                value={[parseInt(settings.host_ram_limit || '90')]}
-                                onValueChange={(v) => onSettingChange('host_ram_limit', v[0].toString())}
-                            />
-                        </div>
-
-                        <div className="space-y-4 pt-2 border-t border-glass-border">
-                            <div className="flex justify-between items-center">
-                                <Label className="text-base">Host Disk Alert Threshold</Label>
-                                <span className="text-sm font-medium">{settings.host_disk_limit}%</span>
-                            </div>
-                            <Slider
-                                min={1} max={100} step={1}
-                                value={[parseInt(settings.host_disk_limit || '90')]}
-                                onValueChange={(v) => onSettingChange('host_disk_limit', v[0].toString())}
-                            />
-                        </div>
-
-                        <div className="space-y-2 pt-2 border-t border-glass-border">
-                            <Label className="text-base">Docker Janitor Storage Threshold</Label>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    step={0.5}
-                                    value={settings.docker_janitor_gb}
-                                    onChange={(e) => onSettingChange('docker_janitor_gb', e.target.value)}
-                                    className="max-w-[150px]"
-                                />
-                                <span className="text-sm text-muted-foreground">GB reclaimable</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground">Alert when unused Docker data exceeds this size.</p>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-4 border-t border-glass-border">
-                            <div className="space-y-0.5">
-                                <Label htmlFor="global_crash" className="text-base">Global Crash Detection</Label>
-                                <p className="text-xs text-muted-foreground">Watch all containers for unexpected exits</p>
-                            </div>
-                            <Switch
-                                id="global_crash"
-                                checked={settings.global_crash === '1'}
-                                onCheckedChange={(c) => onSettingChange('global_crash', c ? '1' : '0')}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end">
-                        <Button onClick={onSave} disabled={isSaving}>
-                            {isSaving
-                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-                                : 'Save Limits'
-                            }
-                        </Button>
-                    </div>
-                </>
-            )}
+            <div className="flex justify-end">
+                <Button onClick={onSave} disabled={isSaving}>
+                    {isSaving
+                        ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+                        : 'Save limits'
+                    }
+                </Button>
+            </div>
         </div>
     );
 }

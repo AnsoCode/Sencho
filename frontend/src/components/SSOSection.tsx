@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { CapabilityGate } from './CapabilityGate';
-import { Shield, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const ROLE_OPTIONS = [
     { value: 'viewer', label: 'Viewer' },
@@ -397,17 +397,6 @@ export function SSOSection() {
     return (
           <CapabilityGate capability="sso" featureName="SSO Authentication">
             <div className="space-y-6">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-                        <Shield className="w-5 h-5" />
-                        SSO Authentication
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Connect your identity provider so team members can sign in with their existing credentials.
-                        SSO works alongside password authentication - it does not replace it.
-                    </p>
-                </div>
-
                 <div className="space-y-3">
                     {PROVIDERS.map(p => (
                         <ProviderCard

@@ -48,11 +48,6 @@ export function LicenseSection() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium tracking-tight">License</h3>
-                <p className="text-sm text-muted-foreground">Manage your Sencho license.</p>
-            </div>
-
             {/* Current Tier Display */}
             <div className="bg-glass border border-glass-border p-4 rounded-lg space-y-4">
                 <div className="flex items-center justify-between">
