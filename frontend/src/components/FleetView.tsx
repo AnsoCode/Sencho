@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
-    Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle, Box, Activity,
+    Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
     Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
-    CircleCheck, CircleAlert, Globe, Monitor, X,
+    CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network,
 } from 'lucide-react';
+import { FleetMasthead } from './fleet/FleetMasthead';
+import { FleetTopology } from './fleet/FleetTopology';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -145,25 +147,6 @@ function UsageBar({ percent, color }: { percent: number; color: string }) {
                 className={`h-full rounded-full transition-all duration-500 ${color}`}
                 style={{ width: `${Math.min(100, percent)}%` }}
             />
-        </div>
-    );
-}
-
-function StatCard({ icon: Icon, label, value, sub, alert }: {
-    icon: React.ElementType;
-    label: string;
-    value: string;
-    sub?: string;
-    alert?: boolean;
-}) {
-    return (
-        <div className={`rounded-lg border bg-card text-card-foreground shadow-card-bevel p-4 transition-colors ${alert ? 'border-destructive/30 bg-destructive/5' : 'border-card-border border-t-card-border-top hover:border-t-card-border-hover'}`}>
-            <div className="flex items-center gap-2 mb-2">
-                <Icon className={`w-4 h-4 ${alert ? 'text-destructive' : 'text-stat-icon'}`} />
-                <span className="text-xs text-stat-title">{label}</span>
-            </div>
-            <div className={`text-2xl font-medium tabular-nums tracking-tight ${alert ? 'text-destructive/70' : 'text-stat-value'}`}>{value}</div>
-            {sub && <p className="text-xs text-stat-subtitle mt-1">{sub}</p>}
         </div>
     );
 }
@@ -444,6 +427,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
     const [loadingStacks, setLoadingStacks] = useState(false);
 
     const isOnline = node.status === 'online';
+    const isLocal = node.type === 'local';
     const formattedVersion = formatVersion(updateStatus?.version);
     const formattedLatest = formatVersion(updateStatus?.latestVersion);
     const cpuPercent = getNodeCpu(node);
@@ -473,10 +457,19 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
         }
     };
 
+    const localRailClasses = isLocal
+        ? 'relative overflow-hidden ring-1 ring-brand/30 before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-brand before:rounded-l-xl after:pointer-events-none after:absolute after:inset-0 after:bg-gradient-to-r after:from-brand/[0.06] after:via-transparent after:to-transparent'
+        : '';
+
     return (
-        <div className={`rounded-xl border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors hover:border-t-card-border-hover ${isOnline ? '' : 'opacity-60'}`}>
+        <div className={`rounded-xl border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors hover:border-t-card-border-hover ${localRailClasses} ${isOnline ? '' : 'opacity-60'}`}>
             {/* Card Header */}
-            <div className="p-4 pb-3">
+            <div className="relative p-4 pb-3">
+                {isLocal && (
+                    <span className="absolute top-3 right-3 font-mono text-[9px] uppercase tracking-[0.22em] text-brand">
+                        ★ Local
+                    </span>
+                )}
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                         <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isOnline ? 'bg-success-muted' : 'bg-muted'}`}>
@@ -658,6 +651,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+    const [viewMode, setViewMode] = useState<'grid' | 'topology'>('grid');
     const [prefs, setPrefs] = useState<FleetPreferences>(loadPreferences);
     const [fleetLabels, setFleetLabels] = useState<StackLabel[]>([]);
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<string, StackLabel[]>>({});
@@ -689,6 +684,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             const res = await apiFetch('/fleet/overview', { localOnly: true });
             if (res.ok) {
                 setNodes(await res.json());
+                setLastSyncAt(Date.now());
             }
         } catch (error) {
             console.error('Failed to fetch fleet overview:', error);
@@ -830,7 +826,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         return () => { clearInterval(overviewInterval); clearInterval(updateInterval); };
     }, [isPaid, fetchOverview, fetchUpdateStatus]);
 
-    // Fast poll (5s) when any node is actively updating — uses ref to avoid interval thrashing
+    // Fast poll (5s) when any node is actively updating. Uses ref to avoid interval thrashing.
     const hasUpdatingRef = useRef(false);
     useEffect(() => {
         hasUpdatingRef.current = updateStatuses.some(s => s.updateStatus === 'updating');
@@ -852,18 +848,21 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const onlineCount = onlineNodes.length;
     const totalContainers = nodes.reduce((sum, n) => sum + (n.stats?.active ?? 0), 0);
     const totalContainersAll = nodes.reduce((sum, n) => sum + (n.stats?.total ?? 0), 0);
-    const totalStacks = nodes.reduce((sum, n) => sum + (n.stacks?.length ?? 0), 0);
     const criticalCount = onlineNodes.filter(isCritical).length;
 
-    const avgCpu = onlineNodes.length > 0
-        ? (onlineNodes.reduce((sum, n) => sum + getNodeCpu(n), 0) / onlineNodes.length).toFixed(1)
-        : '0';
+    const avgCpuNum = onlineNodes.length > 0
+        ? onlineNodes.reduce((sum, n) => sum + getNodeCpu(n), 0) / onlineNodes.length
+        : 0;
     const worstCpuNode = onlineNodes.length > 0
         ? onlineNodes.reduce((worst, n) => getNodeCpu(n) > getNodeCpu(worst) ? n : worst, onlineNodes[0])
+        : null;
+    const worstCpu = worstCpuNode
+        ? { name: worstCpuNode.name, percent: getNodeCpu(worstCpuNode) }
         : null;
 
     const totalMemUsed = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.used ?? 0), 0);
     const totalMemTotal = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.total ?? 0), 0);
+
 
     const updatableRemoteCount = useMemo(
         () => updateStatuses.filter(s => s.updateAvailable && !s.updateStatus && s.type === 'remote').length,
@@ -938,15 +937,56 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         return filtered;
     }, [nodes, searchQuery, isPaid, prefs, labelFilters, fleetStackLabelMap]);
 
+    const localNode = useMemo(() => processedNodes.find(n => n.type === 'local') ?? null, [processedNodes]);
+    const remoteNodes = useMemo(() => processedNodes.filter(n => n.type !== 'local'), [processedNodes]);
+    const topologyNodes = useMemo(() => processedNodes.map(n => ({
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        status: n.status,
+        cpuPercent: getNodeCpu(n),
+        memPercent: getNodeMem(n),
+        critical: n.status === 'online' && isCritical(n),
+    })), [processedNodes]);
+
     return (
         <div className="h-full overflow-auto p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-medium tracking-tight">Fleet Overview</h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        {loading ? 'Loading...' : `${onlineCount} of ${nodes.length} nodes online · ${totalContainers} containers · ${totalStacks} stacks`}
-                    </p>
+            <FleetMasthead
+                nodeCount={nodes.length}
+                onlineCount={onlineCount}
+                criticalCount={criticalCount}
+                totalCpuPercent={avgCpuNum}
+                worstCpu={worstCpu}
+                totalMemUsed={totalMemUsed}
+                totalMemTotal={totalMemTotal}
+                activeContainers={totalContainers}
+                totalContainers={totalContainersAll}
+                lastSyncAt={lastSyncAt}
+                loading={loading}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-1 rounded-md border border-card-border bg-card p-0.5 shadow-card-bevel">
+                    <Button
+                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-7 text-xs px-2.5 gap-1.5"
+                        onClick={() => setViewMode('grid')}
+                        aria-pressed={viewMode === 'grid'}
+                    >
+                        <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        Grid
+                    </Button>
+                    <Button
+                        variant={viewMode === 'topology' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-7 text-xs px-2.5 gap-1.5"
+                        onClick={() => setViewMode('topology')}
+                        aria-pressed={viewMode === 'topology'}
+                    >
+                        <Network className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        Topology
+                    </Button>
                 </div>
                 <div className="flex items-center gap-2">
                     {isPaid && (
@@ -1026,39 +1066,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     {/* Fleet Content */}
                     {!loading && nodes.length > 0 && (
                         <>
-                            {/* Paid: Fleet Health Summary Cards */}
-                            {isPaid && onlineNodes.length > 0 && (
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                                    <StatCard
-                                        icon={Box}
-                                        label="Containers"
-                                        value={`${totalContainers}`}
-                                        sub={`${totalContainersAll} total across fleet`}
-                                    />
-                                    <StatCard
-                                        icon={Activity}
-                                        label="Fleet CPU"
-                                        value={`${avgCpu}%`}
-                                        sub={worstCpuNode ? `Peak: ${worstCpuNode.name} (${worstCpuNode.systemStats?.cpu.usage}%)` : undefined}
-                                    />
-                                    <StatCard
-                                        icon={MemoryStick}
-                                        label="Fleet Memory"
-                                        value={formatBytes(totalMemUsed)}
-                                        sub={totalMemTotal > 0 ? `of ${formatBytes(totalMemTotal)} (${((totalMemUsed / totalMemTotal) * 100).toFixed(0)}%)` : undefined}
-                                    />
-                                    <StatCard
-                                        icon={AlertTriangle}
-                                        label="Alerts"
-                                        value={`${criticalCount}`}
-                                        sub={criticalCount > 0 ? `${criticalCount} node${criticalCount > 1 ? 's' : ''} above 90% CPU or disk` : 'All nodes healthy'}
-                                        alert={criticalCount > 0}
-                                    />
-                                </div>
-                            )}
-
                             {/* Paid: Search, Sort & Filter Toolbar */}
-                            {isPaid && (
+                            {isPaid && viewMode === 'grid' && (
                                 <div className="flex flex-wrap items-center gap-3 mb-4">
                                     {/* Search */}
                                     <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -1158,22 +1167,46 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </div>
                             )}
 
-                            {/* Node Grid */}
-                            {processedNodes.length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                    {processedNodes.map(node => (
-                                        <NodeCard
-                                            key={node.id}
-                                            node={node}
-                                            onNavigate={onNavigateToNode}
-                                            labelMap={fleetStackLabelMap}
-                                            updateStatus={updateStatusMap.get(node.id)}
-                                            onUpdate={isPaid ? triggerNodeUpdate : undefined}
-                                            updatingNodeId={updatingNodeId}
-                                            onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
-                                            onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
-                                        />
-                                    ))}
+                            {/* Node Grid or Topology */}
+                            {viewMode === 'topology' && processedNodes.length > 0 ? (
+                                <FleetTopology
+                                    nodes={topologyNodes}
+                                    onNodeClick={(id) => onNavigateToNode(id, '')}
+                                />
+                            ) : processedNodes.length > 0 ? (
+                                <div className="space-y-4">
+                                    {localNode && (
+                                        <div className="grid grid-cols-1">
+                                            <NodeCard
+                                                key={localNode.id}
+                                                node={localNode}
+                                                onNavigate={onNavigateToNode}
+                                                labelMap={fleetStackLabelMap}
+                                                updateStatus={updateStatusMap.get(localNode.id)}
+                                                onUpdate={isPaid ? triggerNodeUpdate : undefined}
+                                                updatingNodeId={updatingNodeId}
+                                                onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
+                                                onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
+                                            />
+                                        </div>
+                                    )}
+                                    {remoteNodes.length > 0 && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            {remoteNodes.map(node => (
+                                                <NodeCard
+                                                    key={node.id}
+                                                    node={node}
+                                                    onNavigate={onNavigateToNode}
+                                                    labelMap={fleetStackLabelMap}
+                                                    updateStatus={updateStatusMap.get(node.id)}
+                                                    onUpdate={isPaid ? triggerNodeUpdate : undefined}
+                                                    updatingNodeId={updatingNodeId}
+                                                    onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
+                                                    onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -1232,7 +1265,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 )}
             </Tabs>
 
-            {/* Reconnecting overlay — shown when local node is updating */}
+            {/* Reconnecting overlay shown when local node is updating */}
             {reconnecting && <ReconnectingOverlay preUpdateStartedAt={preUpdateStartedAt} />}
 
             {/* Node Updates modal */}
