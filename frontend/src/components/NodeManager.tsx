@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNodes } from '@/context/NodeContext';
-import type { Node } from '@/context/NodeContext';
+import type { Node, NodeMode } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
@@ -13,7 +13,8 @@ import { Separator } from './ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw } from 'lucide-react';
+import { Combobox } from './ui/combobox';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw, Terminal } from 'lucide-react';
 
 interface NodeSchedulingSummary {
   active_tasks: number;
@@ -41,15 +42,23 @@ function formatRelativeTime(timestamp: number): string {
 interface NodeFormData {
   name: string;
   type: 'local' | 'remote';
+  mode: NodeMode;
   api_url: string;
   api_token: string;
   compose_dir: string;
   is_default: boolean;
 }
 
+interface PilotEnrollment {
+  token: string;
+  expiresAt: number;
+  dockerRun: string;
+}
+
 const defaultFormData: NodeFormData = {
   name: '',
   type: 'remote',
+  mode: 'pilot_agent',
   api_url: '',
   api_token: '',
   compose_dir: '/app/compose',
@@ -71,6 +80,10 @@ export function NodeManager() {
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [generatingToken, setGeneratingToken] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
+
+  // Pilot enrollment state (shown after creating a pilot-agent node)
+  const [activeEnrollment, setActiveEnrollment] = useState<{ nodeId: number; nodeName: string; enrollment: PilotEnrollment } | null>(null);
+  const [enrollmentCopied, setEnrollmentCopied] = useState(false);
 
   // Per-node scheduling summary
   const [nodeSummary, setNodeSummary] = useState<Record<number, NodeSchedulingSummary>>({});
@@ -100,13 +113,23 @@ export function NodeManager() {
         const err = await res.json();
         throw new Error(err.error || 'Failed to create node');
       }
-      const { id: newNodeId } = await res.json();
+      const body = await res.json();
+      const newNodeId: number | undefined = body.id;
+      const enrollment: PilotEnrollment | undefined = body.enrollment;
       toast.success(`Node "${formData.name}" created successfully`);
-      setCreateOpen(false);
-      setFormData(defaultFormData);
 
-      // Auto-test the new node connection immediately
-      if (newNodeId && formData.type === 'remote') {
+      const isPilot = formData.type === 'remote' && formData.mode === 'pilot_agent';
+      if (isPilot && newNodeId && enrollment) {
+        // Keep the dialog open so the admin can copy the docker run command.
+        setActiveEnrollment({ nodeId: newNodeId, nodeName: formData.name, enrollment });
+      } else {
+        setCreateOpen(false);
+        setFormData(defaultFormData);
+      }
+
+      // Auto-test the new node connection immediately (proxy mode only;
+      // pilot agents flip online asynchronously once the container connects).
+      if (newNodeId && formData.type === 'remote' && formData.mode === 'proxy') {
         setTesting(newNodeId);
         try {
           const testRes = await apiFetch(`/nodes/${newNodeId}/test`, { method: 'POST' });
@@ -127,6 +150,34 @@ export function NodeManager() {
       await refreshNodes();
     } catch (error) {
       toast.error((error as Error).message || 'Failed to create node');
+    }
+  };
+
+  const regenerateEnrollment = async (node: Node) => {
+    try {
+      const res = await apiFetch(`/nodes/${node.id}/pilot/enroll`, { method: 'POST', localOnly: true });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to regenerate enrollment');
+      }
+      const { enrollment } = (await res.json()) as { enrollment: PilotEnrollment };
+      setActiveEnrollment({ nodeId: node.id, nodeName: node.name, enrollment });
+      toast.success('New enrollment token generated');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to regenerate enrollment');
+    }
+  };
+
+  const copyEnrollment = async () => {
+    if (!activeEnrollment) return;
+    const text = activeEnrollment.enrollment.dockerRun;
+    try {
+      await navigator.clipboard.writeText(text);
+      setEnrollmentCopied(true);
+      toast.success('Command copied to clipboard');
+      setTimeout(() => setEnrollmentCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy automatically - please select and copy the command manually.');
     }
   };
 
@@ -155,6 +206,7 @@ export function NodeManager() {
     setFormData({
       name: node.name,
       type: node.type,
+      mode: (node.mode === 'pilot_agent' ? 'pilot_agent' : 'proxy'),
       api_url: node.api_url || '',
       api_token: node.api_token || '',
       compose_dir: node.compose_dir,
@@ -302,6 +354,24 @@ export function NodeManager() {
       </div>
 
       {formData.type === 'remote' && (
+        <div className="space-y-2">
+          <Label htmlFor="node-mode">Mode</Label>
+          <Combobox
+            id="node-mode"
+            value={formData.mode}
+            onValueChange={(val) => setFormData({ ...formData, mode: val as NodeMode, api_url: '', api_token: '' })}
+            options={[
+              { value: 'pilot_agent', label: 'Pilot Agent - outbound tunnel from remote host' },
+              { value: 'proxy', label: 'Distributed API Proxy - primary dials the remote' },
+            ]}
+          />
+          <p className="text-xs text-muted-foreground">
+            Pilot Agent requires only outbound HTTPS from the remote host. Distributed API Proxy requires the remote host to expose an inbound port.
+          </p>
+        </div>
+      )}
+
+      {formData.type === 'remote' && formData.mode === 'proxy' && (
         <>
           <div className="space-y-2">
             <Label htmlFor="node-api-url">Sencho API URL</Label>
@@ -394,7 +464,10 @@ export function NodeManager() {
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
               <Button
                 onClick={handleCreate}
-                disabled={!formData.name || (formData.type === 'remote' && (!formData.api_url || !formData.api_token))}
+                disabled={
+                  !formData.name ||
+                  (formData.type === 'remote' && formData.mode === 'proxy' && (!formData.api_url || !formData.api_token))
+                }
               >
                 Add Node
               </Button>
@@ -446,6 +519,7 @@ export function NodeManager() {
               <TableHead className="w-10"></TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Mode</TableHead>
               <TableHead>Endpoint</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Schedules</TableHead>
@@ -477,8 +551,29 @@ export function NodeManager() {
                 <TableCell>
                   <Badge variant="outline">{node.type === 'local' ? 'Local' : 'Remote'}</Badge>
                 </TableCell>
+                <TableCell>
+                  {node.type === 'local' ? (
+                    <span className="text-muted-foreground text-sm">-</span>
+                  ) : node.mode === 'pilot_agent' ? (
+                    <Badge variant="outline" className="gap-1 text-xs">
+                      <Terminal className="w-3 h-3" strokeWidth={1.5} />
+                      Pilot Agent
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="gap-1 text-xs">
+                      <Globe className="w-3 h-3" strokeWidth={1.5} />
+                      Proxy
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell className="text-muted-foreground text-sm font-mono">
-                  {node.type === 'local' ? 'docker.sock' : (node.api_url || '-')}
+                  {node.type === 'local'
+                    ? 'docker.sock'
+                    : node.mode === 'pilot_agent'
+                      ? (node.pilot_last_seen
+                        ? `tunnel (seen ${formatRelativeTime(node.pilot_last_seen + 60_000)} ago)`
+                        : 'tunnel (waiting)')
+                      : (node.api_url || '-')}
                 </TableCell>
                 <TableCell>{getStatusBadge(node.status)}</TableCell>
                 <TableCell>
@@ -643,13 +738,86 @@ export function NodeManager() {
             <DialogTitle>Edit Node</DialogTitle>
           </DialogHeader>
           {renderFormFields()}
+          {formData.type === 'remote' && formData.mode === 'pilot_agent' && editingNodeId !== null && (
+            <div className="rounded-md border border-card-border bg-card/50 p-3 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Re-enroll the agent if the container was lost or the enrollment token expired. The previous tunnel is disconnected automatically.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const node = nodes.find((n) => n.id === editingNodeId);
+                  if (node) regenerateEnrollment(node);
+                }}
+                className="gap-1"
+              >
+                <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Regenerate enrollment token
+              </Button>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditOpen(false); setEditingNodeId(null); }}>Cancel</Button>
             <Button
               onClick={handleEdit}
-              disabled={!formData.name || (formData.type === 'remote' && !formData.api_url)}
+              disabled={
+                !formData.name ||
+                (formData.type === 'remote' && formData.mode === 'proxy' && !formData.api_url)
+              }
             >
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pilot enrollment dialog (create + regenerate flows both open this) */}
+      <Dialog
+        open={activeEnrollment !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveEnrollment(null);
+            setEnrollmentCopied(false);
+            setCreateOpen(false);
+            setFormData(defaultFormData);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="pr-8">
+            <DialogTitle>Enroll the pilot agent</DialogTitle>
+          </DialogHeader>
+          {activeEnrollment && (
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">
+                Run this command on <strong>{activeEnrollment.nodeName}</strong> to start the pilot agent. The token below is valid for 15 minutes and can only be used once.
+              </p>
+              <div className="rounded-md border border-card-border bg-muted/50 p-3">
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground/90">{activeEnrollment.enrollment.dockerRun}</pre>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Expires <span className="font-mono tabular-nums">{formatRelativeTime(activeEnrollment.enrollment.expiresAt)}</span> from now.
+                </p>
+                <Button size="sm" variant="outline" className="gap-1" onClick={copyEnrollment}>
+                  {enrollmentCopied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                  {enrollmentCopied ? 'Copied' : 'Copy command'}
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setActiveEnrollment(null);
+                setEnrollmentCopied(false);
+                setCreateOpen(false);
+                setEditOpen(false);
+                setFormData(defaultFormData);
+              }}
+            >
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>
