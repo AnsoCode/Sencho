@@ -184,7 +184,7 @@ export function StackHealthTable({
           </div>
         ) : null}
       </div>
-      <div className={`grid ${GRID_TEMPLATE} items-center gap-4 border-t border-border/60 px-5 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle`}>
+      <div className={`grid ${GRID_TEMPLATE} items-center gap-4 border-t border-border/60 px-[var(--density-row-x)] py-[var(--density-cell-y)] font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle`}>
         <span />
         <span>STACK</span>
         <span>HOST</span>
@@ -207,7 +207,7 @@ export function StackHealthTable({
                 onNavigateToStack(row.file);
               }
             }}
-            className={`grid ${GRID_TEMPLATE} cursor-pointer items-center gap-4 px-5 py-3 transition-colors hover:bg-accent/5 ${rowTint[row.state]}`}
+            className={`grid ${GRID_TEMPLATE} cursor-pointer items-center gap-4 px-[var(--density-row-x)] py-[var(--density-row-y)] transition-colors hover:bg-accent/5 ${rowTint[row.state]}`}
           >
             <span className={`h-1.5 w-1.5 rounded-full justify-self-center ${stateDot[row.state]}`} aria-hidden="true" />
             <span className="truncate font-mono text-[13px] text-stat-value">{row.name}</span>

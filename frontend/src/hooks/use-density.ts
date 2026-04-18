@@ -1,0 +1,61 @@
+import { useCallback, useEffect, useState } from 'react';
+
+export type Density = 'comfortable' | 'compact';
+
+const STORAGE_KEY = 'sencho.appearance.density';
+const DEFAULT_DENSITY: Density = 'comfortable';
+
+function isDensity(value: unknown): value is Density {
+    return value === 'comfortable' || value === 'compact';
+}
+
+function readStoredDensity(): Density {
+    if (typeof window === 'undefined') return DEFAULT_DENSITY;
+    try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        return isDensity(raw) ? raw : DEFAULT_DENSITY;
+    } catch {
+        return DEFAULT_DENSITY;
+    }
+}
+
+function applyDensityClass(density: Density) {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+    if (!body) return;
+    body.classList.toggle('density-compact', density === 'compact');
+}
+
+export function initializeDensity() {
+    applyDensityClass(readStoredDensity());
+}
+
+export function useDensity(): [Density, (next: Density) => void] {
+    const [density, setDensityState] = useState<Density>(readStoredDensity);
+
+    useEffect(() => {
+        applyDensityClass(density);
+        try {
+            if (window.localStorage.getItem(STORAGE_KEY) !== density) {
+                window.localStorage.setItem(STORAGE_KEY, density);
+            }
+        } catch {
+            // ignore; localStorage may be unavailable (private mode, quota)
+        }
+    }, [density]);
+
+    useEffect(() => {
+        function onStorage(event: StorageEvent) {
+            if (event.key !== STORAGE_KEY) return;
+            if (isDensity(event.newValue)) setDensityState(event.newValue);
+        }
+        window.addEventListener('storage', onStorage);
+        return () => window.removeEventListener('storage', onStorage);
+    }, []);
+
+    const setDensity = useCallback((next: Density) => {
+        setDensityState(next);
+    }, []);
+
+    return [density, setDensity];
+}

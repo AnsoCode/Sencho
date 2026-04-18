@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
+import { initializeDensity } from './hooks/use-density'
 import * as monaco from 'monaco-editor'
 import { loader } from '@monaco-editor/react'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
@@ -17,6 +18,8 @@ window.MonacoEnvironment = {
   },
 }
 loader.config({ monaco })
+
+initializeDensity()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

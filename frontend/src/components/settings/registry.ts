@@ -43,6 +43,15 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         hiddenOnRemote: true,
     },
     {
+        id: 'appearance',
+        group: 'identity',
+        label: 'Appearance',
+        description: 'Density and display preferences saved to this browser.',
+        keywords: ['density', 'comfortable', 'compact', 'spacing', 'display', 'theme'],
+        tier: null,
+        scope: 'global',
+    },
+    {
         id: 'license',
         group: 'identity',
         label: 'License',

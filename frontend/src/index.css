@@ -160,6 +160,14 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* Density: comfortable defaults. Overridden under .density-compact. */
+  --density-scale: 1;            /* proportional scale for fixed dimensions */
+  --density-row-y: 0.75rem;      /* py-3 */
+  --density-row-x: 1.25rem;      /* px-5 */
+  --density-cell-y: 0.5rem;      /* py-2 */
+  --density-tile-y: 1rem;        /* py-4 */
+  --density-gap: 1rem;           /* gap-4 */
+
   /* Terminal (dark well even in light theme) */
   --terminal-bg: oklch(0.12 0 0);
   --terminal-fg: oklch(0.85 0 0);
@@ -429,6 +437,16 @@
       ),
       var(--background);
   }
+}
+
+/* Density: compact mode compresses row/cell padding by ~50%. */
+body.density-compact {
+  --density-scale: 0.75;
+  --density-row-y: 0.375rem;
+  --density-row-x: 1rem;
+  --density-cell-y: 0.25rem;
+  --density-tile-y: 0.625rem;
+  --density-gap: 0.75rem;
 }
 
 /* Dark mode: teal-tinted ambient glow */
