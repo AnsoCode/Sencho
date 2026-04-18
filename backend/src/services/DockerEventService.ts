@@ -24,6 +24,16 @@ import { getErrorMessage } from '../utils/errors';
  * See docs/features/alerts-notifications.mdx for user-facing behaviour.
  */
 
+/** Snapshot of a single container's health tracking state, exposed to AutoHealService. */
+export interface ContainerHealthSnapshot {
+    id: string;
+    name?: string;
+    stackName?: string;
+    healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+    unhealthySince?: number;
+    lastKillAt?: number;
+}
+
 /** Grace window after a `die` before classifying, to absorb out-of-order kill events. */
 const DIE_GRACE_WINDOW_MS = 500;
 
@@ -671,14 +681,7 @@ export class DockerEventService {
     // Container state accessors (used by AutoHealService)
     // ========================================================================
 
-    public listContainerStates(): Array<{
-        id: string;
-        name?: string;
-        stackName?: string;
-        healthStatus?: 'healthy' | 'unhealthy' | 'starting';
-        unhealthySince?: number;
-        lastKillAt?: number;
-    }> {
+    public listContainerStates(): ContainerHealthSnapshot[] {
         return Array.from(this.containerState.entries()).map(([id, s]) => ({
             id,
             name: s.name,
@@ -689,14 +692,7 @@ export class DockerEventService {
         }));
     }
 
-    public getContainerState(id: string): {
-        id: string;
-        name?: string;
-        stackName?: string;
-        healthStatus?: 'healthy' | 'unhealthy' | 'starting';
-        unhealthySince?: number;
-        lastKillAt?: number;
-    } | undefined {
+    public getContainerState(id: string): ContainerHealthSnapshot | undefined {
         const s = this.containerState.get(id);
         if (!s) return undefined;
         return {

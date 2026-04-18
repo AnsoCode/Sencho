@@ -1300,7 +1300,12 @@ export class DatabaseService {
     }
 
     public updateAutoHealPolicy(id: number, patch: Partial<Omit<AutoHealPolicy, 'id' | 'stack_name' | 'created_at'>>): void {
-        const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
+        const ALLOWED_KEYS = new Set([
+            'service_name', 'unhealthy_duration_mins', 'cooldown_mins',
+            'max_restarts_per_hour', 'auto_disable_after_failures',
+            'enabled', 'consecutive_failures', 'last_fired_at',
+        ]);
+        const entries = Object.entries(patch).filter(([k, v]) => ALLOWED_KEYS.has(k) && v !== undefined);
         if (entries.length === 0) return;
         const fields = entries.map(([k]) => `${k} = ?`).join(', ');
         const values = entries.map(([, v]) => v);
@@ -1308,7 +1313,10 @@ export class DatabaseService {
     }
 
     public deleteAutoHealPolicy(id: number): void {
-        this.db.prepare('DELETE FROM auto_heal_policies WHERE id = ?').run(id);
+        this.db.transaction(() => {
+            this.db.prepare('DELETE FROM auto_heal_history WHERE policy_id = ?').run(id);
+            this.db.prepare('DELETE FROM auto_heal_policies WHERE id = ?').run(id);
+        })();
     }
 
     public recordAutoHealHistory(entry: Omit<AutoHealHistoryEntry, 'id'>): void {
