@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Rocket } from 'lucide-react';
-import { TemplateLogo, firstSentence } from './TemplateLogo';
+import { TemplateLogo } from './TemplateLogo';
+import { firstSentence } from './util';
 import type { Template } from './types';
 
 interface FeaturedHeroProps {

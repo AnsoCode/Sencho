@@ -51,8 +51,3 @@ export function TemplateLogo({ logo, title, size, imgError, onImgError }: Templa
     </div>
   );
 }
-
-export function firstSentence(text?: string): string | undefined {
-  if (!text) return undefined;
-  return text.split(/[.!?]/)[0]?.trim() || undefined;
-}

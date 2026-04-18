@@ -1,6 +1,7 @@
 import { Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { TemplateLogo, firstSentence } from './TemplateLogo';
+import { TemplateLogo } from './TemplateLogo';
+import { firstSentence } from './util';
 import type { Template, ScanStatus } from './types';
 
 interface TemplateTileProps {
