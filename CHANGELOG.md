@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.60.0](https://github.com/AnsoCode/Sencho/compare/v0.59.0...v0.60.0) (2026-04-18)
+
+
+### Added
+
+* auto-heal policies for unhealthy containers ([#671](https://github.com/AnsoCode/Sencho/issues/671)) ([5bb4b01](https://github.com/AnsoCode/Sencho/commit/5bb4b0195370363a7ff11d27262a22c076ba9191))
+
 ## [0.59.0](https://github.com/AnsoCode/Sencho/compare/v0.58.1...v0.59.0) (2026-04-18)
 
 
