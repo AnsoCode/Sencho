@@ -21,7 +21,7 @@ import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highli
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -158,6 +158,7 @@ export default function EditorLayout() {
   const [creatingFromGit, setCreatingFromGit] = useState(false);
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
+  const [pendingUnsavedNode, setPendingUnsavedNode] = useState<Node | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [stackActions, setStackActions] = useState<Record<string, StackAction>>({});
   const stackActionsRef = useRef<Record<string, StackAction>>({});
@@ -212,6 +213,8 @@ export default function EditorLayout() {
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [remoteStackResults, setRemoteStackResults] = useState<Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>>>({});
+  const [remoteSearchLoading, setRemoteSearchLoading] = useState(false);
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
   const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
   const [labels, setLabels] = useState<StackLabel[]>([]);
@@ -339,6 +342,70 @@ export default function EditorLayout() {
     window.addEventListener(SENCHO_NAVIGATE_EVENT, handler);
     return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
   }, []);
+
+  // Global stack search: when the user types a query, fan out to every other online
+  // node and fetch its stack list so the sidebar can surface matches from the whole
+  // fleet. Debounced 250ms; cleared as soon as the query is empty.
+  useEffect(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      setRemoteStackResults({});
+      setRemoteSearchLoading(false);
+      return;
+    }
+    const otherNodes = nodes.filter(n => n.id !== activeNode?.id && n.status !== 'offline');
+    if (otherNodes.length === 0) {
+      setRemoteStackResults({});
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setRemoteSearchLoading(true);
+      try {
+        const entries = await Promise.all(otherNodes.map(async (node) => {
+          const empty = [] as Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>;
+          try {
+            const [listRes, statusRes] = await Promise.all([
+              fetchForNode('/stacks', node.id, { signal: controller.signal }),
+              fetchForNode('/stacks/statuses', node.id, { signal: controller.signal }),
+            ]);
+            if (!listRes.ok) return [node.id, empty] as const;
+            const listData = await listRes.json();
+            const list: string[] = Array.isArray(listData) ? listData : [];
+            const statuses: Record<string, 'running' | 'exited' | 'unknown'> = {};
+            if (statusRes.ok) {
+              const raw = await statusRes.json();
+              for (const [key, val] of Object.entries(raw)) {
+                if (typeof val === 'string') {
+                  statuses[key] = val as 'running' | 'exited' | 'unknown';
+                } else if (val && typeof val === 'object' && 'status' in val) {
+                  statuses[key] = (val as StackStatusInfo).status;
+                }
+              }
+            }
+            const matches = list
+              .filter(f => f.toLowerCase().includes(query))
+              .map(file => ({ file, status: statuses[file] ?? 'unknown' as const }));
+            return [node.id, matches] as const;
+          } catch {
+            return [node.id, empty] as const;
+          }
+        }));
+        if (controller.signal.aborted) return;
+        const next: Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>> = {};
+        for (const [id, matches] of entries) {
+          if (matches.length > 0) next[id] = matches;
+        }
+        setRemoteStackResults(next);
+      } finally {
+        if (!controller.signal.aborted) setRemoteSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, activeNode?.id, nodes]);
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
@@ -862,6 +929,22 @@ export default function EditorLayout() {
 
   const hasUnsavedChanges = () =>
     content !== originalContent || envContent !== originalEnvContent;
+
+  // Global-search result click: switch the active node, clear the query so the
+  // sidebar snaps back to the new node's full stack list, then open the stack.
+  // setActiveNode writes to localStorage synchronously, so the next apiFetch
+  // picks up the new node-id header without waiting for a re-render.
+  const loadFileOnNode = async (node: Node, filename: string) => {
+    if (!filename) return;
+    if (selectedFile && filename !== selectedFile && hasUnsavedChanges()) {
+      setPendingUnsavedNode(node);
+      setPendingUnsavedLoad(filename);
+      return;
+    }
+    setActiveNode(node);
+    setSearchQuery('');
+    await loadFile(filename);
+  };
 
   const loadFile = async (filename: string) => {
     if (!filename) return;
@@ -1897,7 +1980,10 @@ export default function EditorLayout() {
         </div>}
 
         {/* Search Input & Stack List */}
-        <Command className="bg-transparent flex-1 flex flex-col overflow-hidden">
+        {/* shouldFilter disabled: we do controlled filtering via filteredFiles. cmdk's
+            internal filter otherwise reconciles against items wrapped in ContextMenu and
+            throws "appendChild: parameter 1 is not of type 'Node'". */}
+        <Command shouldFilter={false} className="bg-transparent flex-1 flex flex-col overflow-hidden">
           <div className="px-4 py-2 flex-none relative">
             <CommandInput
               placeholder="Search stacks..."
@@ -2237,6 +2323,47 @@ export default function EditorLayout() {
                   ))
                 )}
               </CommandList>
+
+              {/* Remote node matches: surfaced only when the user is actively searching. */}
+              {searchQuery.trim() && (remoteSearchLoading || Object.keys(remoteStackResults).length > 0) && (
+                <div className="mt-3 pt-3 border-t border-glass-border">
+                  <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-subtitle px-4 pb-2 flex items-center gap-2">
+                    Other nodes
+                    {remoteSearchLoading && <Loader2 className="w-3 h-3 animate-spin text-stat-icon" strokeWidth={1.5} />}
+                  </h3>
+                  {Object.entries(remoteStackResults).map(([nodeIdStr, files]) => {
+                    const node = nodes.find(n => n.id === Number(nodeIdStr));
+                    if (!node || files.length === 0) return null;
+                    return (
+                      <div key={node.id} className="mb-2">
+                        <div className="px-4 pb-1 flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.06em] text-stat-subtitle">
+                          <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                          <span className="truncate">{node.name}</span>
+                        </div>
+                        {files.map(({ file, status }) => (
+                          <button
+                            key={`${node.id}:${file}`}
+                            type="button"
+                            onClick={() => loadFileOnNode(node, file)}
+                            className="w-full text-left justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight px-2 py-1.5 flex items-center gap-2"
+                          >
+                            <span
+                              className={`font-mono text-[10px] shrink-0 w-5 ${
+                                status === 'running' ? 'text-success' :
+                                status === 'exited' ? 'text-destructive' : 'text-stat-icon'
+                              }`}
+                            >
+                              {status === 'running' ? 'UP' : status === 'exited' ? 'DN' : '--'}
+                            </span>
+                            <span className="flex-1 truncate font-mono text-xs">{file}</span>
+                            <ArrowUpRight className="w-3 h-3 text-stat-icon shrink-0" strokeWidth={1.5} />
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </ScrollArea>
         </Command>
@@ -2814,7 +2941,7 @@ export default function EditorLayout() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!pendingUnsavedLoad} onOpenChange={(open) => { if (!open) setPendingUnsavedLoad(null); }}>
+      <AlertDialog open={!!pendingUnsavedLoad} onOpenChange={(open) => { if (!open) { setPendingUnsavedLoad(null); setPendingUnsavedNode(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
@@ -2823,14 +2950,19 @@ export default function EditorLayout() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingUnsavedLoad(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => { setPendingUnsavedLoad(null); setPendingUnsavedNode(null); }}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               const target = pendingUnsavedLoad;
+              const targetNode = pendingUnsavedNode;
               // Reset content to original so the guard doesn't re-trigger
               setContent(originalContent);
               setEnvContent(originalEnvContent);
               setPendingUnsavedLoad(null);
-              if (target) loadFile(target);
+              setPendingUnsavedNode(null);
+              if (target) {
+                if (targetNode) loadFileOnNode(targetNode, target);
+                else loadFile(target);
+              }
             }}>Discard Changes</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
