@@ -6,29 +6,31 @@ description: Browse and deploy pre-configured application templates in one click
 The **App Store** tab lets you browse a curated catalogue of Docker Compose templates and deploy any of them as a new stack with environment-specific configuration, no YAML required.
 
 <Frame>
-  <img src="/images/app-store/app-store-overview.png" alt="App Store showing a grid of application templates with category filters" />
+  <img src="/images/app-store/app-store-hero.png" alt="App Store with a category sidebar, a featured template hero banner, and editorial tiles with security scan badges" />
 </Frame>
 
 ## Browsing templates
 
-Templates are loaded from a remote registry (configurable in **Settings > App Store**). The default registry is LinuxServer.io. A live count of available apps is shown next to the category pills.
+Templates are loaded from a remote registry (configurable in **Settings > App Store**). The default registry is LinuxServer.io. A live count of available apps is shown in the top right of the view.
 
 **Search:** Type in the search bar to filter templates by name, description, or category in real-time.
 
-**Categories:** Click any category pill to narrow the list:
-`All` · `Automation` · `Books` · `Development` · `Documentation` · `Downloaders` · `Media` · `Monitoring` · `Networking` · `Other` · `Productivity` · `Security` · `Utilities`
+**Category sidebar:** The left rail lists every category with its count. Click a category to narrow the grid. The active category is highlighted with a cyan rail and tinted background.
 
-Each template card shows:
-- Application logo (or a placeholder icon if unavailable)
-- Name and short description
-- Up to three category badges (click a badge to filter by that category)
+**Featured hero:** A featured template is pinned at the top of the grid with its logo, title, description, and a primary **Deploy** button. The hero disappears while you have an active search query.
+
+Each tile shows:
+- A brand-tinted logo square (falls back to the first letter of the template name)
+- Name and first-sentence pitch
+- GitHub star count and primary category
+- A **security scan badge** on the right: `CLEAN` (no CVEs detected), `{n} CVE(s)` (amber, open vulnerabilities), or `UNSCANNED` (no scan recorded yet)
 
 ## Deploying a template
 
-Click any template card to open the **deployment sheet** on the right side of the screen.
+Click any tile to open the **deployment sheet** on the right side of the screen. The sheet splits configuration into two tabs: **Essentials** for a fast one-click deploy and **Advanced** for full control over ports, volumes, and environment.
 
 <Frame>
-  <img src="/images/app-store/app-store-deploy.png" alt="Deployment sheet for heimdall showing stack name, ports, volumes, and environment variables" />
+  <img src="/images/app-store/deploy-sheet-essentials.png" alt="Deployment sheet opened on the Essentials tab, showing the stack name field and a deploy-with-defaults hint" />
 </Frame>
 
 The sheet header displays the app logo, title, and a truncated description with a **Read more** / **Read less** toggle. Below the description you may see:
@@ -40,9 +42,17 @@ The sheet header displays the app logo, title, and a truncated description with 
 
 When deploying to a remote node, a badge at the top of the sheet shows the target node name.
 
+### Essentials tab
+
+The **Essentials** tab has a single field (the stack name) plus a hint that the template's recommended ports, volumes, and environment variables will be used as-is. Click **Deploy {template}** to ship it in one click. For anything more nuanced, switch to **Advanced**.
+
 ### Stack name
 
 Pre-filled with the template name in lowercase. You can change it; the same [naming rules](/features/stack-management#creating-a-stack) apply (lowercase, hyphens, no spaces).
+
+### Advanced tab
+
+The **Advanced** tab exposes every knob the template declares: port mappings, volumes, environment variables, custom key/value pairs, and the post-deploy vulnerability scan toggle. Fields on this tab are pre-populated with the template's defaults, so customizing is additive rather than required.
 
 ### Ports
 

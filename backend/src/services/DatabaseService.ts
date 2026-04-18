@@ -2508,6 +2508,44 @@ export class DatabaseService {
         );
     }
 
+    public getLatestScanSummaryByImageRefs(
+        nodeId: number,
+        imageRefs: string[],
+    ): Map<string, { total: number; critical: number; high: number; scannedAt: number }> {
+        const summary = new Map<string, { total: number; critical: number; high: number; scannedAt: number }>();
+        if (imageRefs.length === 0) return summary;
+
+        const placeholders = imageRefs.map(() => '?').join(',');
+        const rows = this.db
+            .prepare(
+                `SELECT image_ref, total_vulnerabilities, critical_count, high_count, scanned_at
+                 FROM vulnerability_scans v1
+                 WHERE node_id = ?
+                   AND image_ref IN (${placeholders})
+                   AND scanned_at = (
+                     SELECT MAX(scanned_at) FROM vulnerability_scans v2
+                     WHERE v2.node_id = v1.node_id AND v2.image_ref = v1.image_ref
+                   )`,
+            )
+            .all(nodeId, ...imageRefs) as Array<{
+                image_ref: string;
+                total_vulnerabilities: number;
+                critical_count: number;
+                high_count: number;
+                scanned_at: number;
+            }>;
+
+        for (const row of rows) {
+            summary.set(row.image_ref, {
+                total: row.total_vulnerabilities,
+                critical: row.critical_count,
+                high: row.high_count,
+                scannedAt: row.scanned_at,
+            });
+        }
+        return summary;
+    }
+
     public getLatestScanByDigest(digest: string, scannersUsed?: string): VulnerabilityScan | null {
         if (!digest) return null;
         if (scannersUsed) {
