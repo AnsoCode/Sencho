@@ -80,4 +80,6 @@ export interface DashboardData {
   stackCpuSeries: Record<string, StackCpuSeries>;
   cpuHistory: number[];
   netHistory: number[];
+  /** Anchor timestamp (ms) for the sparkline 10-minute window — the newest metric sample. */
+  historyEndAt: number | null;
 }

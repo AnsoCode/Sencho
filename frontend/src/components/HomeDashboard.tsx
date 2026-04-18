@@ -37,6 +37,7 @@ export default function HomeDashboard({ onNavigateToStack, notifications, onClea
         systemStats={data.systemStats}
         cpuHistory={data.cpuHistory}
         netHistory={data.netHistory}
+        historyEndAt={data.historyEndAt}
       />
 
       <StackHealthTable

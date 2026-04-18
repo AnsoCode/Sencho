@@ -105,7 +105,7 @@ export function useDashboardData(): DashboardData {
   // Container stats: 5s polling, resets on node change
   useEffect(() => {
     setStats(DEFAULT_STATS); // eslint-disable-line react-hooks/set-state-in-effect
-    setLastSyncAt(null); // eslint-disable-line react-hooks/set-state-in-effect
+    setLastSyncAt(null);
     const currentNodeId = nodeId;
     const fetchStats = async () => {
       if (nodeIdRef.current !== currentNodeId) return; // Stale effect
@@ -197,12 +197,24 @@ export function useDashboardData(): DashboardData {
 
   const cores = systemStats?.cpu.cores || 1;
 
+  // Anchor the 10-minute sparkline window to the newest metric sample so the
+  // bucketing memos stay pure (calling Date.now() inside useMemo would violate
+  // react-hooks/purity and could yield inconsistent bucket boundaries across
+  // re-renders).
+  const historyEndAt = useMemo<number | null>(() => {
+    if (metrics.length === 0) return null;
+    let max = metrics[0].timestamp;
+    for (let i = 1; i < metrics.length; i += 1) {
+      if (metrics[i].timestamp > max) max = metrics[i].timestamp;
+    }
+    return max;
+  }, [metrics]);
+
   // Aggregate host-level CPU normalized over cores, so the sparkline matches
   // the gauge percentage rather than summing raw container usage.
   const cpuHistory = useMemo<number[]>(() => {
-    if (metrics.length === 0) return Array(SPARK_BUCKETS).fill(0);
-    const now = Date.now();
-    const start = now - SPARK_WINDOW_MS;
+    if (metrics.length === 0 || historyEndAt === null) return Array(SPARK_BUCKETS).fill(0);
+    const start = historyEndAt - SPARK_WINDOW_MS;
     const bucketMs = SPARK_WINDOW_MS / SPARK_BUCKETS;
     // Per-bucket sum across all containers, tracking how many distinct
     // timestamps contributed so we can average per bucket.
@@ -226,7 +238,7 @@ export function useDashboardData(): DashboardData {
       }
     }
     return out;
-  }, [metrics, cores]);
+  }, [metrics, cores, historyEndAt]);
 
   // Network throughput over time: compute per-container deltas between
   // consecutive samples, assign each delta to the bucket of the later sample,
@@ -234,9 +246,8 @@ export function useDashboardData(): DashboardData {
   // delta is paired within a single container's lifeline. Negative deltas
   // (counter reset after a restart) clamp to zero.
   const netHistory = useMemo<number[]>(() => {
-    if (metrics.length === 0) return Array(SPARK_BUCKETS).fill(0);
-    const now = Date.now();
-    const start = now - SPARK_WINDOW_MS;
+    if (metrics.length === 0 || historyEndAt === null) return Array(SPARK_BUCKETS).fill(0);
+    const start = historyEndAt - SPARK_WINDOW_MS;
     const bucketMs = SPARK_WINDOW_MS / SPARK_BUCKETS;
     const byContainer = new Map<string, MetricPoint[]>();
     for (const p of metrics) {
@@ -258,7 +269,7 @@ export function useDashboardData(): DashboardData {
       }
     }
     return out;
-  }, [metrics]);
+  }, [metrics, historyEndAt]);
 
   return {
     stats,
@@ -270,5 +281,6 @@ export function useDashboardData(): DashboardData {
     stackCpuSeries,
     cpuHistory,
     netHistory,
+    historyEndAt,
   };
 }

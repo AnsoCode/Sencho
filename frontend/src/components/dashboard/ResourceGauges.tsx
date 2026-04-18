@@ -6,6 +6,7 @@ interface ResourceGaugesProps {
   systemStats: SystemStats | null;
   cpuHistory: number[];
   netHistory: number[];
+  historyEndAt: number | null;
 }
 
 const SPARK_WINDOW_MS = 10 * 60 * 1000;
@@ -46,7 +47,7 @@ function GaugeBar({ value, warn = 80, crit = 90 }: { value: number; warn?: numbe
   );
 }
 
-export function ResourceGauges({ systemStats, cpuHistory, netHistory }: ResourceGaugesProps) {
+export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEndAt }: ResourceGaugesProps) {
   const cpuVal = parseFloat(systemStats?.cpu.usage || '0');
   const ramVal = parseFloat(systemStats?.memory.usagePercent || '0');
   const diskVal = parseFloat(systemStats?.disk?.usagePercent || '0');
@@ -58,11 +59,11 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory }: Resource
     : 0;
 
   const cpuPeakLabel = useMemo(() => {
-    if (cpuPeakIndex < 0 || cpuHistory.length === 0) return null;
+    if (cpuPeakIndex < 0 || cpuHistory.length === 0 || historyEndAt === null) return null;
     const bucketMs = SPARK_WINDOW_MS / cpuHistory.length;
-    const ts = Date.now() - (cpuHistory.length - 1 - cpuPeakIndex) * bucketMs;
+    const ts = historyEndAt - (cpuHistory.length - 1 - cpuPeakIndex) * bucketMs;
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }, [cpuPeakIndex, cpuHistory.length]);
+  }, [cpuPeakIndex, cpuHistory.length, historyEndAt]);
 
   const netHasSignal = netHistory.some((v) => v > 0);
   const netTotalPerSec = (systemStats?.network?.rxSec ?? 0) + (systemStats?.network?.txSec ?? 0);
