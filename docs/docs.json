@@ -119,6 +119,7 @@
               "features/private-registries",
               "features/vulnerability-scanning",
               "features/cve-suppressions",
+              "features/auto-heal-policies",
               "features/auto-update-policies",
               "features/scheduled-operations",
               "features/sso",
