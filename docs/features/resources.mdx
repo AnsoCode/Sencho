@@ -6,20 +6,26 @@ description: Browse, filter, and clean up Docker images, volumes, networks, and 
 The **Resources** tab gives you a full view of everything Docker is storing on your host, broken down by type and ownership.
 
 <Frame>
-  <img src="/images/resources/resources-overview.png" alt="Resources Hub showing disk footprint, quick clean panel, and images table" />
+  <img src="/images/resources/resources-reclaim.png" alt="Resources Hub with reclaim hero, disk footprint treemap, and quick clean panel" />
 </Frame>
+
+## Reclaim hero
+
+When there is reclaimable disk space (unused images, stopped containers, or dangling volumes), an amber banner leads the view with the total amount you can free and a breakdown of what contributes to it. Click **Review & prune** to jump straight into a confirmation dialog scoped to every reclaimable resource at once.
+
+The hero stays hidden when there is nothing to reclaim, keeping the view focused on the rest of your inventory.
 
 ## Docker disk footprint
 
-The stacked bar at the top visualizes how your Docker disk usage is distributed:
+Below the hero, a three-tile treemap shows how your Docker disk usage is distributed:
 
 | Segment | Meaning |
 |---------|---------|
-| **Sencho Managed** (green) | Images used by stacks in your `COMPOSE_DIR` |
-| **External Projects** (orange) | Images used by Docker projects outside Sencho |
-| **Reclaimable** (gray) | Unused images and dangling layers safe to delete |
+| **Sencho Managed** (green) | Images and volumes used by stacks in your `COMPOSE_DIR` |
+| **External** (amber) | Images and volumes used by Docker projects outside Sencho |
+| **Reclaimable** (neutral) | Unused images, stopped containers, and dangling volumes safe to delete |
 
-Click any segment to automatically filter the tabs below to that category.
+Tile area is proportional to bytes. Click any tile to filter the tabs below to that category.
 
 ## Quick Clean panel
 
@@ -54,6 +60,8 @@ Click the trash icon on any row to delete an individual image. Sencho will warn 
 ### Volumes
 
 Lists all Docker volumes. Columns: name, driver, mount point, size, and managed status.
+
+When any volumes are present, a two-card landing strip above the table highlights the **Largest 5** volumes by size and **Recently changed** volumes from the last 24 hours. This makes it easy to spot growing volumes or newly created data at a glance.
 
 **Filter buttons:** `All` / `Managed` / `External`
 

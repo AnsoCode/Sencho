@@ -51,6 +51,8 @@ export interface ClassifiedVolume {
   Name: string;
   Driver: string;
   Mountpoint: string;
+  Size: number;
+  CreatedAt: string | null;
   managedBy: string | null;
   managedStatus: 'managed' | 'unmanaged';
 }
@@ -124,40 +126,53 @@ class DockerController {
   public async getDiskUsage() {
     const df = await this.docker.df();
 
-    const calculateReclaimableContainers = (items: any[]) => {
-      if (!items || !Array.isArray(items)) return 0;
-      return items.filter(i => i.State !== 'running').reduce((acc, item) => {
+    const reclaimableContainers = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return { bytes: 0, count: 0 };
+      const reclaimable = items.filter(i => i.State !== 'running');
+      const bytes = reclaimable.reduce((acc, item) => {
         let size = item.SizeRw || item.SizeRootFs || 0;
         if (item.UsageData && typeof item.UsageData.Size === 'number') {
           size = item.UsageData.Size;
         }
         return acc + size;
       }, 0);
+      return { bytes, count: reclaimable.length };
     };
 
-    const calculateReclaimableImages = (items: any[]) => {
-      if (!items || !Array.isArray(items)) return 0;
-      return items.filter(i => i.Containers === 0).reduce((acc, item) => {
+    const reclaimableImages = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return { bytes: 0, count: 0 };
+      const reclaimable = items.filter(i => i.Containers === 0);
+      const bytes = reclaimable.reduce((acc, item) => {
         let size = item.VirtualSize || item.Size || item.SharedSize || 0;
         if (item.UsageData && typeof item.UsageData.Size === 'number') {
           size = item.UsageData.Size;
         }
         return acc + size;
       }, 0);
+      return { bytes, count: reclaimable.length };
     };
 
-    const calculateReclaimableVolumes = (items: any[]) => {
-      if (!items || !Array.isArray(items)) return 0;
-      return items.filter(i => i.UsageData?.RefCount === 0).reduce((acc, item) => {
+    const reclaimableVolumes = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return { bytes: 0, count: 0 };
+      const reclaimable = items.filter(i => i.UsageData?.RefCount === 0);
+      const bytes = reclaimable.reduce((acc, item) => {
         const size = item.UsageData?.Size || 0;
         return acc + size;
       }, 0);
+      return { bytes, count: reclaimable.length };
     };
 
+    const images = df.Images ? reclaimableImages(df.Images) : { bytes: 0, count: 0 };
+    const containers = df.Containers ? reclaimableContainers(df.Containers) : { bytes: 0, count: 0 };
+    const volumes = df.Volumes ? reclaimableVolumes(df.Volumes) : { bytes: 0, count: 0 };
+
     return {
-      reclaimableImages: df.Images ? calculateReclaimableImages(df.Images) : 0,
-      reclaimableContainers: df.Containers ? calculateReclaimableContainers(df.Containers) : 0,
-      reclaimableVolumes: df.Volumes ? calculateReclaimableVolumes(df.Volumes) : 0,
+      reclaimableImages: images.bytes,
+      reclaimableContainers: containers.bytes,
+      reclaimableVolumes: volumes.bytes,
+      reclaimableImageCount: images.count,
+      reclaimableContainerCount: containers.count,
+      reclaimableVolumeCount: volumes.count,
     };
   }
 
@@ -263,6 +278,8 @@ class DockerController {
         Name: vol.Name,
         Driver: vol.Driver,
         Mountpoint: vol.Mountpoint,
+        Size: vol.UsageData?.Size ?? 0,
+        CreatedAt: vol.CreatedAt ?? null,
         managedBy: stack,
         managedStatus,
       };
@@ -358,6 +375,9 @@ class DockerController {
     reclaimableImages: number;
     reclaimableContainers: number;
     reclaimableVolumes: number;
+    reclaimableImageCount: number;
+    reclaimableContainerCount: number;
+    reclaimableVolumeCount: number;
     managedImageBytes: number;
     unmanagedImageBytes: number;
     managedVolumeBytes: number;
