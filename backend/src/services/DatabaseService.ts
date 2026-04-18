@@ -28,6 +28,35 @@ export interface StackAlert {
 
 export type NodeMode = 'proxy' | 'pilot_agent';
 
+export interface AutoHealPolicy {
+    id?: number;
+    stack_name: string;
+    service_name: string | null;
+    unhealthy_duration_mins: number;
+    cooldown_mins: number;
+    max_restarts_per_hour: number;
+    auto_disable_after_failures: number;
+    enabled: number;
+    consecutive_failures: number;
+    last_fired_at: number;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface AutoHealHistoryEntry {
+    id?: number;
+    policy_id: number;
+    stack_name: string;
+    service_name: string | null;
+    container_name: string;
+    container_id: string;
+    action: 'restarted' | 'skipped_user_action' | 'skipped_cooldown' | 'skipped_rate_limit' | 'failed' | 'policy_auto_disabled';
+    reason: string;
+    success: number;
+    error: string | null;
+    timestamp: number;
+}
+
 export interface Node {
     id: number;
     name: string;
@@ -807,6 +836,38 @@ export class DatabaseService {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS auto_heal_policies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stack_name TEXT NOT NULL,
+        service_name TEXT,
+        unhealthy_duration_mins INTEGER NOT NULL,
+        cooldown_mins INTEGER NOT NULL DEFAULT 5,
+        max_restarts_per_hour INTEGER NOT NULL DEFAULT 3,
+        auto_disable_after_failures INTEGER NOT NULL DEFAULT 5,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_fired_at INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS auto_heal_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        policy_id INTEGER NOT NULL,
+        stack_name TEXT NOT NULL,
+        service_name TEXT,
+        container_name TEXT NOT NULL,
+        container_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        success INTEGER NOT NULL,
+        error TEXT,
+        timestamp INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auto_heal_history_policy_ts
+        ON auto_heal_history(policy_id, timestamp DESC);
     `);
 
         // Apply migrations safely (ignore if columns already exist)
@@ -1203,6 +1264,86 @@ export class DatabaseService {
     public updateStackAlertLastFired(id: number, timestamp: number): void {
         const stmt = this.db.prepare('UPDATE stack_alerts SET last_fired_at = ? WHERE id = ?');
         stmt.run(timestamp, id);
+    }
+
+    // --- Auto-Heal Policies ---
+
+    public getAutoHealPolicies(stackName?: string): AutoHealPolicy[] {
+        if (stackName) {
+            return this.db.prepare('SELECT * FROM auto_heal_policies WHERE stack_name = ?').all(stackName) as AutoHealPolicy[];
+        }
+        return this.db.prepare('SELECT * FROM auto_heal_policies').all() as AutoHealPolicy[];
+    }
+
+    public getAutoHealPolicy(id: number): AutoHealPolicy | undefined {
+        return this.db.prepare('SELECT * FROM auto_heal_policies WHERE id = ?').get(id) as AutoHealPolicy | undefined;
+    }
+
+    public addAutoHealPolicy(policy: Omit<AutoHealPolicy, 'id'>): AutoHealPolicy {
+        const stmt = this.db.prepare(
+            'INSERT INTO auto_heal_policies (stack_name, service_name, unhealthy_duration_mins, cooldown_mins, max_restarts_per_hour, auto_disable_after_failures, enabled, consecutive_failures, last_fired_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        const result = stmt.run(
+            policy.stack_name,
+            policy.service_name ?? null,
+            policy.unhealthy_duration_mins,
+            policy.cooldown_mins,
+            policy.max_restarts_per_hour,
+            policy.auto_disable_after_failures,
+            policy.enabled,
+            policy.consecutive_failures,
+            policy.last_fired_at,
+            policy.created_at,
+            policy.updated_at
+        );
+        return this.db.prepare('SELECT * FROM auto_heal_policies WHERE id = ?').get(result.lastInsertRowid) as AutoHealPolicy;
+    }
+
+    public updateAutoHealPolicy(id: number, patch: Partial<Omit<AutoHealPolicy, 'id' | 'stack_name' | 'created_at'>>): void {
+        const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
+        if (entries.length === 0) return;
+        const fields = entries.map(([k]) => `${k} = ?`).join(', ');
+        const values = entries.map(([, v]) => v);
+        this.db.prepare(`UPDATE auto_heal_policies SET ${fields}, updated_at = ? WHERE id = ?`).run(...values, Date.now(), id);
+    }
+
+    public deleteAutoHealPolicy(id: number): void {
+        this.db.prepare('DELETE FROM auto_heal_policies WHERE id = ?').run(id);
+    }
+
+    public recordAutoHealHistory(entry: Omit<AutoHealHistoryEntry, 'id'>): void {
+        this.db.prepare(
+            'INSERT INTO auto_heal_history (policy_id, stack_name, service_name, container_name, container_id, action, reason, success, error, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(
+            entry.policy_id,
+            entry.stack_name,
+            entry.service_name ?? null,
+            entry.container_name,
+            entry.container_id,
+            entry.action,
+            entry.reason,
+            entry.success,
+            entry.error ?? null,
+            entry.timestamp
+        );
+    }
+
+    public getAutoHealHistory(policyId: number, limit = 50): AutoHealHistoryEntry[] {
+        return this.db.prepare(
+            'SELECT * FROM auto_heal_history WHERE policy_id = ? ORDER BY timestamp DESC LIMIT ?'
+        ).all(policyId, limit) as AutoHealHistoryEntry[];
+    }
+
+    public incrementConsecutiveFailures(policyId: number): void {
+        this.db.prepare('UPDATE auto_heal_policies SET consecutive_failures = consecutive_failures + 1, updated_at = ? WHERE id = ?').run(Date.now(), policyId);
+    }
+
+    public resetConsecutiveFailures(policyId: number): void {
+        this.db.prepare('UPDATE auto_heal_policies SET consecutive_failures = 0, updated_at = ? WHERE id = ?').run(Date.now(), policyId);
+    }
+
+    public setPolicyEnabled(policyId: number, enabled: boolean): void {
+        this.db.prepare('UPDATE auto_heal_policies SET enabled = ?, updated_at = ? WHERE id = ?').run(enabled ? 1 : 0, Date.now(), policyId);
     }
 
     // --- Notification History ---

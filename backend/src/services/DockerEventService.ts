@@ -61,6 +61,8 @@ interface InternalContainerState extends ContainerLifecycleState {
     stackName?: string;
     lastCrashAlertAt?: number;
     lastActivityAt: number;
+    healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+    unhealthySince?: number;
 }
 
 interface DockerEventPayload {
@@ -400,16 +402,29 @@ export class DockerEventService {
     }
 
     private onHealthStatus(id: string, action: string, event: DockerEventPayload): void {
-        if (!action.includes('unhealthy')) return;
         const state = this.getOrCreateState(id, event);
         state.lastActivityAt = Date.now();
-        if (!this.isCrashAlertsEnabled()) return;
-        const name = state.name ?? id.slice(0, 12);
-        const stackName = state.stackName;
-        void this.emitError(
-            `Healthcheck failed: ${name} is unhealthy.`,
-            stackName,
-        );
+
+        if (action.includes('unhealthy')) {
+            if (state.healthStatus !== 'unhealthy') {
+                state.unhealthySince = Date.now();
+            }
+            state.healthStatus = 'unhealthy';
+            if (!this.isCrashAlertsEnabled()) return;
+            const name = state.name ?? id.slice(0, 12);
+            const stackName = state.stackName;
+            void this.emitError(
+                `Healthcheck failed: ${name} is unhealthy.`,
+                stackName,
+            );
+        } else {
+            state.unhealthySince = undefined;
+            if (action.includes('starting')) {
+                state.healthStatus = 'starting';
+            } else {
+                state.healthStatus = 'healthy';
+            }
+        }
     }
 
     private onStart(id: string): void {
