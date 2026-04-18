@@ -29,19 +29,18 @@ function NumberChip({ value, onChange, suffix, min, max, step = 1, warnOver }: N
     const inputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
-        if (!editing) setDraft(value);
-    }, [editing, value]);
-
-    useEffect(() => {
         if (editing) inputRef.current?.select();
     }, [editing]);
+
+    const startEdit = () => {
+        setDraft(value);
+        setEditing(true);
+    };
 
     const commit = () => {
         const trimmed = draft.trim();
         const parsed = Number(trimmed);
-        if (trimmed === '' || !Number.isFinite(parsed)) {
-            setDraft(value);
-        } else {
+        if (trimmed !== '' && Number.isFinite(parsed)) {
             let next = parsed;
             if (typeof min === 'number') next = Math.max(min, next);
             if (typeof max === 'number') next = Math.min(max, next);
@@ -74,10 +73,7 @@ function NumberChip({ value, onChange, suffix, min, max, step = 1, warnOver }: N
                     onBlur={commit}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter') commit();
-                        if (e.key === 'Escape') {
-                            setDraft(value);
-                            setEditing(false);
-                        }
+                        if (e.key === 'Escape') setEditing(false);
                     }}
                     className="w-12 bg-transparent text-right outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
@@ -90,7 +86,7 @@ function NumberChip({ value, onChange, suffix, min, max, step = 1, warnOver }: N
         <button
             type="button"
             className={cn(chipClass, 'focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none')}
-            onClick={() => setEditing(true)}
+            onClick={startEdit}
         >
             <span>{value || '0'}</span>
             <span className="text-stat-subtitle">{suffix}</span>
