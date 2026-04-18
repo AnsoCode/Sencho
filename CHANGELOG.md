@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.59.0](https://github.com/AnsoCode/Sencho/compare/v0.58.1...v0.59.0) (2026-04-18)
+
+
+### Added
+
+* pilot agent outbound-mode for remote nodes ([#667](https://github.com/AnsoCode/Sencho/issues/667)) ([8e7a567](https://github.com/AnsoCode/Sencho/commit/8e7a567f691cbb0cc047a69c1da38ad097b8d5ee))
+
 ## [0.58.1](https://github.com/AnsoCode/Sencho/compare/v0.58.0...v0.58.1) (2026-04-17)
 
 
