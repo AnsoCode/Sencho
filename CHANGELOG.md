@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.61.0](https://github.com/AnsoCode/Sencho/compare/v0.60.0...v0.61.0) (2026-04-18)
+
+
+### Added
+
+* **app-store:** editorial hero, category rail, security scan signal per tile ([#679](https://github.com/AnsoCode/Sencho/issues/679)) ([ec76206](https://github.com/AnsoCode/Sencho/commit/ec7620675e7fb9cf33a5ec842992bd7d537f02aa))
+* **audit-log:** signal rail, day-banded stream, anomaly detection ([#682](https://github.com/AnsoCode/Sencho/issues/682)) ([591dc75](https://github.com/AnsoCode/Sencho/commit/591dc75d1ee992f28f2d3bb2dcf1fc899c0b9fa2))
+* **dashboard:** status masthead, unified gauges, stack health sparklines ([#676](https://github.com/AnsoCode/Sencho/issues/676)) ([748ba46](https://github.com/AnsoCode/Sencho/commit/748ba46669aa5dcdc97a80a133da7d9f9f85be36))
+* **design-system:** adopt cyan as data color, add Instrument Serif, introduce label roles ([#674](https://github.com/AnsoCode/Sencho/issues/674)) ([7ec189d](https://github.com/AnsoCode/Sencho/commit/7ec189dc3508de8a4458157425f3928b2ffa7c68))
+* **fleet:** add aggregate masthead and local-vs-remote topology ([#677](https://github.com/AnsoCode/Sencho/issues/677)) ([c3b06f4](https://github.com/AnsoCode/Sencho/commit/c3b06f4b13b8c6e2c59bbb7ec8e04c27a84d861a))
+* **resources:** lead with reclaimable disk banner and per-tab landings ([#678](https://github.com/AnsoCode/Sencho/issues/678)) ([5f6fdfc](https://github.com/AnsoCode/Sencho/commit/5f6fdfcba88ab103b4ad8ac0c6a0f6022e6a3d21))
+* **schedules:** next-24h timeline + merge auto-update into schedules ([#681](https://github.com/AnsoCode/Sencho/issues/681)) ([9527884](https://github.com/AnsoCode/Sencho/commit/95278843cf94917886aa8a85e2dce4bb9eb5be1e))
+* **settings:** add comfortable/compact density toggle ([#683](https://github.com/AnsoCode/Sencho/issues/683)) ([ad90bd9](https://github.com/AnsoCode/Sencho/commit/ad90bd9404fd5210879c4d79db18d347b4b471d4))
+* **settings:** group sections, add ⌘K search, scope breadcrumb ([#680](https://github.com/AnsoCode/Sencho/issues/680)) ([0bf061a](https://github.com/AnsoCode/Sencho/commit/0bf061a7456a4bb1a82918c0d845ca29e1cb87d6))
+
 ## [0.60.0](https://github.com/AnsoCode/Sencho/compare/v0.59.0...v0.60.0) (2026-04-18)
 
 
