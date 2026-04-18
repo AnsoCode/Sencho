@@ -1,52 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Rocket, Loader2, Info, ExternalLink, Star, ShieldCheck } from "lucide-react";
-import { toast } from "@/components/ui/toast-store";
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Search, Rocket, Loader2, Info, ExternalLink, Star, ShieldCheck } from 'lucide-react';
+import { toast } from '@/components/ui/toast-store';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
+import { CategorySidebar } from '@/components/appstore/CategorySidebar';
+import { FeaturedHero } from '@/components/appstore/FeaturedHero';
+import { TemplateTile } from '@/components/appstore/TemplateTile';
+import type { Template } from '@/components/appstore/types';
 
 function isValidPort(value: string): boolean {
     if (!value) return true;
     const num = Number(value);
     return Number.isInteger(num) && num >= 1 && num <= 65535;
-}
-
-interface TemplateEnv {
-    name: string;
-    label?: string;
-    default?: string;
-}
-
-interface TemplateVolume {
-    container?: string;
-    bind?: string;
-}
-
-interface Template {
-    type?: number;
-    title: string;
-    description: string;
-    logo?: string;
-    image?: string;
-    ports?: string[];
-    volumes?: TemplateVolume[];
-    env?: TemplateEnv[];
-    categories?: string[];
-    github_url?: string;
-    docs_url?: string;
-    architectures?: string[];
-    stars?: number;
-    source?: string;
 }
 
 interface PortInUseInfo {
@@ -75,12 +51,13 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const [portVars, setPortVars] = useState<Record<string, string>>({});
     const [isDescExpanded, setIsDescExpanded] = useState(false);
     const [volVars, setVolVars] = useState<Record<string, string>>({});
-    const [customEnvs, setCustomEnvs] = useState<Array<{ key: string, value: string }>>([]);
+    const [customEnvs, setCustomEnvs] = useState<Array<{ key: string; value: string }>>([]);
     const [newEnvKey, setNewEnvKey] = useState('');
     const [portsInUse, setPortsInUse] = useState<Record<string, PortInUseInfo>>({});
     const [newEnvVal, setNewEnvVal] = useState('');
     const [autoScan, setAutoScan] = useState(true);
     const [trivyAvailable, setTrivyAvailable] = useState(false);
+    const [sheetTab, setSheetTab] = useState<'essentials' | 'advanced'>('essentials');
 
     useEffect(() => {
         fetchTemplates();
@@ -99,16 +76,14 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             const data = await res.json();
             setTemplates(data || []);
         } catch (err) {
-            toast.error((err as Error).message || "Failed to load App Shop");
+            toast.error((err as Error).message || 'Failed to load App Store');
         } finally {
             setLoading(false);
         }
     };
 
     const handleSelectTemplate = (t: Template) => {
-        // Work on a copy to avoid mutating the template in state
         const envsCopy = [...(t.env || [])];
-        // Inject LSIO standards if missing from the API
         if (!envsCopy.find(e => e.name === 'PUID')) envsCopy.push({ name: 'PUID', label: 'User ID (PUID)', default: '1000' });
         if (!envsCopy.find(e => e.name === 'PGID')) envsCopy.push({ name: 'PGID', label: 'Group ID (PGID)', default: '1000' });
         if (!envsCopy.find(e => e.name === 'TZ')) {
@@ -125,7 +100,6 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         });
         setEnvVars(initEnvs);
 
-        // Initialize Volumes
         const initVols: Record<string, string> = {};
         t.volumes?.forEach((v) => {
             if (v.container) {
@@ -133,7 +107,7 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             }
         });
         setVolVars(initVols);
-        setCustomEnvs([]); // Reset custom envs
+        setCustomEnvs([]);
         setNewEnvKey('');
         setNewEnvVal('');
 
@@ -141,13 +115,13 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         t.ports?.forEach(p => {
             const parts = p.split(':');
             if (parts.length > 1) {
-                initPorts[p] = parts[0]; // Store just the host port for editing
+                initPorts[p] = parts[0];
             }
         });
         setPortVars(initPorts);
-        setIsDescExpanded(false); // Reset description toggle
+        setIsDescExpanded(false);
+        setSheetTab('essentials');
 
-        // Auto-generate stack name from title
         const defaultName = t.title
             .toLowerCase()
             .replace(/[^a-z0-9-]/g, '-')
@@ -155,7 +129,6 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             .replace(/^-|-$/g, '');
         setStackName(defaultName);
 
-        // Fetch currently bound host ports for conflict detection
         setPortsInUse({});
         apiFetch('/ports/in-use').then(r => r.ok ? r.json() : {}).then(setPortsInUse).catch(err => console.error('[AppStore] Failed to fetch ports in use:', err));
 
@@ -163,19 +136,18 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     };
 
     const handleDeploy = async () => {
+        if (!selectedTemplate) return;
         if (!stackName.trim()) {
-            toast.error("Stack name is required");
+            toast.error('Stack name is required');
             return;
         }
 
-        // Validate port numbers
         const invalidPort = Object.entries(portVars).find(([, val]) => val && !isValidPort(val));
         if (invalidPort) {
             toast.error(`Invalid port: ${invalidPort[1]}. Ports must be between 1 and 65535.`);
             return;
         }
 
-        // Pre-check for duplicate stack name
         try {
             const checkRes = await apiFetch('/stacks');
             if (checkRes.ok) {
@@ -191,18 +163,17 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
 
         setIsDeploying(true);
 
-        const modifiedTemplate = { ...selectedTemplate };
+        const modifiedTemplate: Template = { ...selectedTemplate };
         if (modifiedTemplate.ports) {
             modifiedTemplate.ports = modifiedTemplate.ports.map(p => {
                 const parts = p.split(':');
                 if (parts.length > 1 && portVars[p]) {
-                    return `${portVars[p]}:${parts[1]}`; // Stitch the edited host port back
+                    return `${portVars[p]}:${parts[1]}`;
                 }
                 return p;
             });
         }
 
-        // Process Volumes
         if (modifiedTemplate.volumes) {
             modifiedTemplate.volumes = modifiedTemplate.volumes.map((v) => {
                 if (v.container && volVars[v.container] !== undefined) {
@@ -212,7 +183,6 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
             });
         }
 
-        // Merge envs
         const finalEnvVars = { ...envVars };
         customEnvs.forEach(ce => {
             if (ce.key.trim()) finalEnvVars[ce.key.trim()] = ce.value;
@@ -225,8 +195,8 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                     stackName: stackName.trim(),
                     template: modifiedTemplate,
                     envVars: finalEnvVars,
-                    skip_scan: !autoScan
-                })
+                    skip_scan: !autoScan,
+                }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to deploy template');
@@ -241,10 +211,17 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         }
     };
 
-    const categories = useMemo(() => {
-        const cats = new Set<string>();
-        templates.forEach(t => t.categories?.forEach(c => cats.add(c)));
-        return ['All', ...Array.from(cats).sort()];
+    const categoryEntries = useMemo(() => {
+        const counts = new Map<string, number>();
+        templates.forEach(t => {
+            t.categories?.forEach(c => {
+                counts.set(c, (counts.get(c) || 0) + 1);
+            });
+        });
+        const sorted = Array.from(counts.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([name, count]) => ({ name, count }));
+        return [{ name: 'All', count: templates.length }, ...sorted];
     }, [templates]);
 
     const filtered = useMemo(() => templates.filter(t => {
@@ -257,9 +234,19 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         return matchesCategory && matchesSearch;
     }), [templates, selectedCategory, searchQuery]);
 
+    const featuredTemplate = useMemo(() => {
+        if (searchQuery) return null;
+        return filtered.find(t => t.featured) || null;
+    }, [filtered, searchQuery]);
+
+    const gridTemplates = useMemo(() => {
+        if (!featuredTemplate) return filtered;
+        return filtered.filter(t => t.title !== featuredTemplate.title);
+    }, [filtered, featuredTemplate]);
+
     return (
-        <div className="flex flex-col h-full space-y-6">
-            <div className="flex items-center space-x-2">
+        <div className="flex flex-col h-full gap-5">
+            <div className="flex items-center gap-3">
                 <div className="relative flex-1">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -270,94 +257,69 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                         onChange={(e) => { setSearchQuery(e.target.value); }}
                     />
                 </div>
+                <span className="text-xs text-stat-subtitle font-mono tabular-nums shrink-0">
+                    {filtered.length} app{filtered.length !== 1 ? 's' : ''}
+                </span>
             </div>
 
-            {!loading && categories.length > 1 && (
-                <div className="flex items-center gap-2">
-                    <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1 scrollbar-none">
-                        {categories.map(cat => (
-                            <Button
-                                key={cat}
-                                variant={selectedCategory === cat ? 'default' : 'outline'}
-                                size="sm"
-                                className="shrink-0 h-7 text-xs px-3 rounded-full"
-                                onClick={() => setSelectedCategory(cat)}
-                            >
-                                {cat}
-                            </Button>
-                        ))}
-                    </div>
-                    <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                        {filtered.length} app{filtered.length !== 1 ? 's' : ''}
-                    </span>
-                </div>
-            )}
-
-            <ScrollArea className="flex-1">
-                {loading ? (
-                    <div className="flex items-center justify-center h-48">
-                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
-                        {filtered.map((t, idx) => (
-                            <Card
-                                key={idx}
-                                className="cursor-pointer flex flex-col overflow-hidden h-full"
-                                onClick={() => handleSelectTemplate(t)}
-                            >
-                                <CardHeader className="flex flex-row items-start gap-4 space-y-0">
-                                    <div className="w-12 h-12 rounded bg-muted/50 p-1 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                                        {t.logo && !imgErrors[t.logo] ? (
-                                            <img src={t.logo} alt={t.title} className="w-full h-full object-contain" onError={() => setImgErrors(prev => ({ ...prev, [t.logo!]: true }))} />
-                                        ) : (
-                                            <Rocket className="w-6 h-6 text-muted-foreground" />
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <CardTitle className="text-base truncate">{t.title}</CardTitle>
-                                        <p className="text-sm text-muted-foreground line-clamp-2 mt-1 min-h-[40px]">
-                                            {t.description}
-                                        </p>
-                                    </div>
-                                </CardHeader>
-                                {t.categories && t.categories.length > 0 && (
-                                    <CardContent className="pt-0 mt-auto">
-                                        <div className="flex flex-wrap gap-1 mt-2">
-                                            {t.categories.slice(0, 3).map(c => (
-                                                <Badge
-                                                    variant={selectedCategory === c ? 'default' : 'secondary'}
-                                                    key={c}
-                                                    className="text-[10px] px-1.5 py-0 pb-0.5 cursor-pointer"
-                                                    onClick={(e) => { e.stopPropagation(); setSelectedCategory(c); }}
-                                                >
-                                                    {c}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </CardContent>
-                                )}
-                            </Card>
-                        ))}
-                        {filtered.length === 0 && (
-                            <div className="col-span-full py-12 text-center text-muted-foreground">
-                                <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                {templates.length === 0 ? (
-                                    <p>Registry returned no templates. Check your registry URL in Settings.</p>
-                                ) : (
-                                    <p>No apps found matching "{searchQuery}"</p>
-                                )}
-                            </div>
-                        )}
-                    </div>
+            <div className="flex flex-1 min-h-0 gap-5">
+                {!loading && categoryEntries.length > 1 && (
+                    <CategorySidebar
+                        categories={categoryEntries}
+                        selected={selectedCategory}
+                        onSelect={setSelectedCategory}
+                    />
                 )}
-            </ScrollArea>
+
+                <ScrollArea className="flex-1">
+                    {loading ? (
+                        <div className="flex items-center justify-center h-48">
+                            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-5 pb-8 pr-4">
+                            {featuredTemplate && (
+                                <FeaturedHero
+                                    template={featuredTemplate}
+                                    category={selectedCategory !== 'All' ? selectedCategory : undefined}
+                                    onOpen={handleSelectTemplate}
+                                    imgError={!!featuredTemplate.logo && !!imgErrors[featuredTemplate.logo]}
+                                    onImgError={() => featuredTemplate.logo && setImgErrors(prev => ({ ...prev, [featuredTemplate.logo!]: true }))}
+                                />
+                            )}
+
+                            {gridTemplates.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                    {gridTemplates.map((t, idx) => (
+                                        <TemplateTile
+                                            key={`${t.title}-${idx}`}
+                                            template={t}
+                                            onSelect={handleSelectTemplate}
+                                            imgError={!!t.logo && !!imgErrors[t.logo]}
+                                            onImgError={() => t.logo && setImgErrors(prev => ({ ...prev, [t.logo!]: true }))}
+                                        />
+                                    ))}
+                                </div>
+                            ) : !featuredTemplate ? (
+                                <div className="py-12 text-center text-muted-foreground">
+                                    <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                    {templates.length === 0 ? (
+                                        <p>Registry returned no templates. Check your registry URL in Settings.</p>
+                                    ) : (
+                                        <p>No apps found matching "{searchQuery}"</p>
+                                    )}
+                                </div>
+                            ) : null}
+                        </div>
+                    )}
+                </ScrollArea>
+            </div>
 
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetContent className="w-full sm:max-w-md flex flex-col h-full" side="right">
                     {selectedTemplate && (
                         <div className="flex flex-col h-full">
-                            <SheetHeader className="mb-6 text-left">
+                            <SheetHeader className="mb-4 text-left">
                                 {activeNode?.type === 'remote' && (
                                     <div className="mb-2">
                                         <Badge variant="secondary" className="text-xs font-normal">
@@ -373,10 +335,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                             <Rocket className="w-8 h-8 text-muted-foreground" />
                                         )}
                                     </div>
-                                    <div>
-                                        <SheetTitle className="text-xl">{selectedTemplate.title}</SheetTitle>
+                                    <div className="min-w-0">
+                                        <SheetTitle className="text-xl truncate">{selectedTemplate.title}</SheetTitle>
                                         <div className="mt-1">
-                                            <SheetDescription className={isDescExpanded ? "" : "line-clamp-3 text-sm text-muted-foreground"}>
+                                            <SheetDescription className={isDescExpanded ? '' : 'line-clamp-3 text-sm text-muted-foreground'}>
                                                 {selectedTemplate.description}
                                             </SheetDescription>
                                             <span className="text-xs text-primary cursor-pointer hover:underline mt-1 inline-block" onClick={() => setIsDescExpanded(!isDescExpanded)}>
@@ -422,157 +384,178 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
                                 </div>
                             </SheetHeader>
 
-                            <ScrollArea className="flex-1 pr-4 -mx-4 px-4">
-                                <div className="space-y-6 pb-8">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="stackName" className="font-semibold">
-                                            Stack Name <span className="text-destructive">*</span>
-                                        </Label>
-                                        <Input
-                                            id="stackName"
-                                            value={stackName}
-                                            onChange={(e) => setStackName(e.target.value)}
-                                            placeholder="e.g. my-app"
-                                        />
-                                        <p className="text-xs text-muted-foreground">
-                                            This determines the directory name and docker project name.
-                                        </p>
-                                    </div>
+                            <Tabs value={sheetTab} onValueChange={(v) => setSheetTab(v as 'essentials' | 'advanced')} className="flex flex-col flex-1 min-h-0">
+                                <TabsList className="self-start mb-3">
+                                    <TabsTrigger value="essentials">Essentials</TabsTrigger>
+                                    <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                                </TabsList>
 
-                                    {selectedTemplate.ports && selectedTemplate.ports.length > 0 && (
-                                        <div className="space-y-4 pt-4 border-t">
-                                            <h4 className="font-semibold">Ports (Host : Container)</h4>
-                                            {selectedTemplate.ports.map((p, idx) => {
-                                                const parts = p.split(':');
-                                                if (parts.length < 2) return null;
-                                                const hostPort = portVars[p] || '';
-                                                const conflict = hostPort ? portsInUse[hostPort] : undefined;
-                                                return (
-                                                    <div key={idx} className="flex items-center space-x-2">
-                                                        <Input
-                                                            value={hostPort}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                                setPortVars(prev => ({ ...prev, [p]: val }));
-                                                            }}
-                                                            className={cn("w-24 text-center font-mono", hostPort && !isValidPort(hostPort) && "border-destructive")}
-                                                        />
-                                                        {conflict ? (
-                                                            <CursorProvider>
-                                                                <CursorContainer className="inline-flex items-center gap-2">
-                                                                    <span className="text-muted-foreground font-mono">: {parts[1]}</span>
-                                                                    <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
-                                                                </CursorContainer>
-                                                                <Cursor>
-                                                                    <div className="h-2 w-2 rounded-full bg-brand" />
-                                                                </Cursor>
-                                                                <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
-                                                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-                                                                        <span className="font-mono tabular-nums text-xs text-stat-value">
-                                                                            {conflict.stack !== null
-                                                                                ? <>Port {hostPort} used by <span className="text-brand">{conflict.stack}</span></>
-                                                                                : <>Port {hostPort} used by an external app</>
-                                                                            }
-                                                                        </span>
-                                                                    </div>
-                                                                </CursorFollow>
-                                                            </CursorProvider>
-                                                        ) : (
-                                                            <span className="text-muted-foreground font-mono">: {parts[1]}</span>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {selectedTemplate.volumes && selectedTemplate.volumes.length > 0 && (
-                                        <div className="space-y-4 pt-4 border-t">
-                                            <h4 className="font-semibold">Volumes (Host : Container)</h4>
-                                            {selectedTemplate.volumes.map((v, idx: number) => {
-                                                const containerPath = v.container;
-                                                if (!containerPath) return null;
-                                                return (
-                                                    <div key={idx} className="space-y-1.5">
-                                                        <Label className="text-xs text-muted-foreground font-mono">Container: {containerPath}</Label>
-                                                        <Input
-                                                            value={volVars[containerPath] !== undefined ? volVars[containerPath] : ''}
-                                                            onChange={(e) => setVolVars(prev => ({ ...prev, [containerPath]: e.target.value }))}
-                                                            placeholder={`/path/to/host/dir`}
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {selectedTemplate.env && selectedTemplate.env.length > 0 && (
-                                        <div className="space-y-4 pt-4 border-t">
-                                            <h4 className="font-semibold">Environment Variables</h4>
-                                            {selectedTemplate.env.map((e, idx) => (
-                                                <div key={idx} className="space-y-1.5">
-                                                    <Label htmlFor={`env-${e.name}`} className="text-sm">
-                                                        {e.label || e.name}
-                                                    </Label>
-                                                    <Input
-                                                        id={`env-${e.name}`}
-                                                        value={envVars[e.name] !== undefined ? envVars[e.name] : ''}
-                                                        onChange={(ev) => setEnvVars(prev => ({ ...prev, [e.name]: ev.target.value }))}
-                                                        placeholder={e.default || `Enter value for ${e.name}`}
-                                                    />
-                                                    <p className="text-[10px] text-muted-foreground font-mono">
-                                                        {e.name}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-4 pt-4 border-t">
-                                        <h4 className="font-semibold text-sm">Add Custom Variable</h4>
-                                        {customEnvs.map((ce, idx) => (
-                                            <div key={idx} className="flex gap-2">
-                                                <Input value={ce.key} readOnly className="w-1/3 bg-muted font-mono text-xs" />
-                                                <Input value={ce.value} readOnly className="flex-1 bg-muted font-mono text-xs" />
-                                                <Button variant="ghost" size="icon" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground" onClick={() => setCustomEnvs(prev => prev.filter((_, i) => i !== idx))}>-</Button>
+                                <TabsContent value="essentials" className="flex-1 min-h-0 mt-0">
+                                    <ScrollArea className="h-full pr-4 -mx-4 px-4">
+                                        <div className="space-y-4 pb-4">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="stackName" className="font-semibold">
+                                                    Stack Name <span className="text-destructive">*</span>
+                                                </Label>
+                                                <Input
+                                                    id="stackName"
+                                                    value={stackName}
+                                                    onChange={(e) => setStackName(e.target.value)}
+                                                    placeholder="e.g. my-app"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    This determines the directory name and docker project name.
+                                                </p>
                                             </div>
-                                        ))}
-                                        <div className="flex gap-2">
-                                            <Input placeholder="KEY" value={newEnvKey} onChange={e => setNewEnvKey(e.target.value)} className="w-1/3 font-mono text-xs" />
-                                            <Input placeholder="VALUE" value={newEnvVal} onChange={e => setNewEnvVal(e.target.value)} className="flex-1 font-mono text-xs" />
-                                            <Button variant="secondary" onClick={() => {
-                                                if (newEnvKey.trim()) {
-                                                    if (selectedTemplate?.env?.find(e => e.name === newEnvKey.trim())) {
-                                                        toast.warning(`"${newEnvKey.trim()}" already exists in template defaults. The custom value will override it.`);
-                                                    }
-                                                    setCustomEnvs(prev => [...prev, { key: newEnvKey, value: newEnvVal }]);
-                                                    setNewEnvKey('');
-                                                    setNewEnvVal('');
-                                                }
-                                            }}>+</Button>
+
+                                            <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-stat-subtitle">
+                                                Deploy with defaults: the template's recommended ports, volumes, and environment variables.
+                                                Use the Advanced tab to customize.
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
-                            </ScrollArea>
+                                    </ScrollArea>
+                                </TabsContent>
+
+                                <TabsContent value="advanced" className="flex-1 min-h-0 mt-0">
+                                    <ScrollArea className="h-full pr-4 -mx-4 px-4">
+                                        <div className="space-y-6 pb-4">
+                                            {selectedTemplate.ports && selectedTemplate.ports.length > 0 && (
+                                                <div className="space-y-4">
+                                                    <h4 className="font-semibold">Ports (Host : Container)</h4>
+                                                    {selectedTemplate.ports.map((p, idx) => {
+                                                        const parts = p.split(':');
+                                                        if (parts.length < 2) return null;
+                                                        const hostPort = portVars[p] || '';
+                                                        const conflict = hostPort ? portsInUse[hostPort] : undefined;
+                                                        return (
+                                                            <div key={idx} className="flex items-center space-x-2">
+                                                                <Input
+                                                                    value={hostPort}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                                                        setPortVars(prev => ({ ...prev, [p]: val }));
+                                                                    }}
+                                                                    className={cn('w-24 text-center font-mono', hostPort && !isValidPort(hostPort) && 'border-destructive')}
+                                                                />
+                                                                {conflict ? (
+                                                                    <CursorProvider>
+                                                                        <CursorContainer className="inline-flex items-center gap-2">
+                                                                            <span className="text-muted-foreground font-mono">: {parts[1]}</span>
+                                                                            <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+                                                                        </CursorContainer>
+                                                                        <Cursor>
+                                                                            <div className="h-2 w-2 rounded-full bg-brand" />
+                                                                        </Cursor>
+                                                                        <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
+                                                                            <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+                                                                                <span className="font-mono tabular-nums text-xs text-stat-value">
+                                                                                    {conflict.stack !== null
+                                                                                        ? <>Port {hostPort} used by <span className="text-brand">{conflict.stack}</span></>
+                                                                                        : <>Port {hostPort} used by an external app</>
+                                                                                    }
+                                                                                </span>
+                                                                            </div>
+                                                                        </CursorFollow>
+                                                                    </CursorProvider>
+                                                                ) : (
+                                                                    <span className="text-muted-foreground font-mono">: {parts[1]}</span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {selectedTemplate.volumes && selectedTemplate.volumes.length > 0 && (
+                                                <div className="space-y-4 pt-4 border-t">
+                                                    <h4 className="font-semibold">Volumes (Host : Container)</h4>
+                                                    {selectedTemplate.volumes.map((v, idx) => {
+                                                        const containerPath = v.container;
+                                                        if (!containerPath) return null;
+                                                        return (
+                                                            <div key={idx} className="space-y-1.5">
+                                                                <Label className="text-xs text-muted-foreground font-mono">Container: {containerPath}</Label>
+                                                                <Input
+                                                                    value={volVars[containerPath] !== undefined ? volVars[containerPath] : ''}
+                                                                    onChange={(e) => setVolVars(prev => ({ ...prev, [containerPath]: e.target.value }))}
+                                                                    placeholder="/path/to/host/dir"
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {selectedTemplate.env && selectedTemplate.env.length > 0 && (
+                                                <div className="space-y-4 pt-4 border-t">
+                                                    <h4 className="font-semibold">Environment Variables</h4>
+                                                    {selectedTemplate.env.map((e, idx) => (
+                                                        <div key={idx} className="space-y-1.5">
+                                                            <Label htmlFor={`env-${e.name}`} className="text-sm">
+                                                                {e.label || e.name}
+                                                            </Label>
+                                                            <Input
+                                                                id={`env-${e.name}`}
+                                                                value={envVars[e.name] !== undefined ? envVars[e.name] : ''}
+                                                                onChange={(ev) => setEnvVars(prev => ({ ...prev, [e.name]: ev.target.value }))}
+                                                                placeholder={e.default || `Enter value for ${e.name}`}
+                                                            />
+                                                            <p className="text-[10px] text-muted-foreground font-mono">
+                                                                {e.name}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-4 pt-4 border-t">
+                                                <h4 className="font-semibold text-sm">Add Custom Variable</h4>
+                                                {customEnvs.map((ce, idx) => (
+                                                    <div key={idx} className="flex gap-2">
+                                                        <Input value={ce.key} readOnly className="w-1/3 bg-muted font-mono text-xs" />
+                                                        <Input value={ce.value} readOnly className="flex-1 bg-muted font-mono text-xs" />
+                                                        <Button variant="ghost" size="icon" className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground" onClick={() => setCustomEnvs(prev => prev.filter((_, i) => i !== idx))}>-</Button>
+                                                    </div>
+                                                ))}
+                                                <div className="flex gap-2">
+                                                    <Input placeholder="KEY" value={newEnvKey} onChange={e => setNewEnvKey(e.target.value)} className="w-1/3 font-mono text-xs" />
+                                                    <Input placeholder="VALUE" value={newEnvVal} onChange={e => setNewEnvVal(e.target.value)} className="flex-1 font-mono text-xs" />
+                                                    <Button variant="secondary" onClick={() => {
+                                                        if (newEnvKey.trim()) {
+                                                            if (selectedTemplate?.env?.find(e => e.name === newEnvKey.trim())) {
+                                                                toast.warning(`"${newEnvKey.trim()}" already exists in template defaults. The custom value will override it.`);
+                                                            }
+                                                            setCustomEnvs(prev => [...prev, { key: newEnvKey, value: newEnvVal }]);
+                                                            setNewEnvKey('');
+                                                            setNewEnvVal('');
+                                                        }
+                                                    }}>+</Button>
+                                                </div>
+                                            </div>
+
+                                            {trivyAvailable && (
+                                                <div className="flex items-center gap-2 pt-4 border-t">
+                                                    <Checkbox
+                                                        id="auto-scan"
+                                                        checked={autoScan}
+                                                        onCheckedChange={(checked) => setAutoScan(!!checked)}
+                                                    />
+                                                    <Label
+                                                        htmlFor="auto-scan"
+                                                        className="text-sm text-muted-foreground cursor-pointer flex items-center gap-1.5"
+                                                    >
+                                                        <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                        Scan images for vulnerabilities after deploy
+                                                    </Label>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                </TabsContent>
+                            </Tabs>
 
                             <SheetFooter className="pt-4 mt-auto border-t sm:justify-start">
                                 <div className="flex flex-col w-full gap-3">
-                                    {trivyAvailable && (
-                                        <div className="flex items-center gap-2">
-                                            <Checkbox
-                                                id="auto-scan"
-                                                checked={autoScan}
-                                                onCheckedChange={(checked) => setAutoScan(!!checked)}
-                                            />
-                                            <Label
-                                                htmlFor="auto-scan"
-                                                className="text-sm text-muted-foreground cursor-pointer flex items-center gap-1.5"
-                                            >
-                                                <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                                Scan images for vulnerabilities after deploy
-                                            </Label>
-                                        </div>
-                                    )}
                                     <Button
                                         onClick={handleDeploy}
                                         disabled={isDeploying || !stackName.trim() || !can('stack:create')}

@@ -7258,7 +7258,36 @@ app.post('/api/system/networks', async (req: Request, res: Response) => {
 app.get('/api/templates', authMiddleware, async (req: Request, res: Response) => {
   try {
     const templates = await templateService.getTemplates();
-    res.json(templates);
+
+    const imageRefs = templates.map(t => t.image).filter((i): i is string => !!i);
+    const scanSummary = DatabaseService.getInstance().getLatestScanSummaryByImageRefs(req.nodeId, imageRefs);
+
+    let featuredIndex = -1;
+    let featuredStars = 0;
+    templates.forEach((t, i) => {
+      const s = t.stars ?? 0;
+      if (s > featuredStars) {
+        featuredStars = s;
+        featuredIndex = i;
+      }
+    });
+
+    const enriched = templates.map((t, i) => {
+      const summary = t.image ? scanSummary.get(t.image) : undefined;
+      const scan_status: 'clean' | 'vulnerable' | 'unscanned' = summary
+        ? (summary.total === 0 ? 'clean' : 'vulnerable')
+        : 'unscanned';
+      return {
+        ...t,
+        scan_status,
+        scan_cve_count: summary?.total ?? 0,
+        scan_critical_count: summary?.critical ?? 0,
+        scan_high_count: summary?.high ?? 0,
+        featured: i === featuredIndex,
+      };
+    });
+
+    res.json(enriched);
   } catch (error) {
     console.error('[Templates] Failed to fetch:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
