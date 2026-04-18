@@ -1,0 +1,77 @@
+---
+title: "Auto-Heal Policies"
+description: "Automatically restart containers that fail Docker healthchecks."
+---
+
+<Note>
+  Auto-Heal Policies require a **Skipper** or **Admiral** license.
+</Note>
+
+## Overview
+
+Auto-Heal Policies let you define rules that restart containers when they have been in an `unhealthy` Docker healthcheck state for longer than a specified threshold. This keeps long-running services recoverable without manual intervention.
+
+## Prerequisites
+
+- Your containers must define a `HEALTHCHECK` instruction in their `Dockerfile` or in the `healthcheck` section of your `docker-compose.yml`.
+- You must be an admin user.
+- A Skipper or Admiral license.
+
+## Creating a Policy
+
+1. In the sidebar, right-click the stack you want to protect.
+2. Select **Auto-Heal** from the context menu.
+3. In the sheet that opens, fill in the form:
+   - **Service** — Select a specific service from your stack, or choose **All services** to apply the policy to every container.
+   - **Unhealthy for (minutes)** — How long a container must be continuously unhealthy before it is restarted.
+   - **Cooldown (minutes)** — How long to wait after a restart before evaluating the container again.
+   - **Max restarts per hour** — The maximum number of times this container can be restarted within a rolling hour window.
+   - **Auto-disable after (failures)** — How many consecutive failed restart attempts disable the policy automatically.
+4. Click **Add Policy**.
+
+<Frame>
+  <img src="/images/auto-heal-policies/policy-sheet.png" alt="Auto-Heal Policies sheet showing a policy for the web service" />
+</Frame>
+
+## Stack vs Service Scope
+
+- **All services** — The policy applies to every container in the stack that reports `unhealthy` status.
+- **Named service** — The policy targets only the containers for that specific Compose service (matched by the `com.docker.compose.service` label).
+
+Multiple policies can coexist on the same stack. Each policy is evaluated independently.
+
+## Safety Rails
+
+Each policy includes four built-in safety mechanisms:
+
+**Cooldown period** — After a restart is triggered, the policy pauses evaluation for the configured number of minutes. This gives the container time to recover before being evaluated again.
+
+**Hourly restart cap** — If a container has been restarted the configured maximum number of times within the last hour, further restarts are skipped until the window clears. This prevents a persistently broken container from being restarted in a tight loop.
+
+**Recent user action suppression** — If you or another operator has manually stopped or restarted the container in the last 60 seconds, the policy skips evaluation for that container. This avoids interfering with in-progress manual interventions.
+
+**Auto-disable on repeated failures** — If the restart attempt itself fails (for example, because the Docker daemon is temporarily unavailable) the configured number of times in a row, the policy is automatically disabled. A notification is sent, and you can re-enable the policy from the sheet once the underlying issue is resolved.
+
+## Policy History
+
+Each policy row in the sheet can be expanded to show recent activity: restarts, skipped evaluations, and any auto-disable events. The history shows the container name, action taken, and the reason.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The policy was auto-disabled">
+    The policy disabled itself after the configured number of consecutive restart failures. Check the container logs to understand why the restart is failing. Common causes include the Docker daemon being unavailable, insufficient system resources, or a misconfigured compose file. Once the issue is resolved, re-enable the policy from the Auto-Heal sheet.
+  </Accordion>
+
+  <Accordion title="The policy did not fire when expected">
+    Verify that the container's Docker healthcheck actually reports `unhealthy`. A container can fail to start (exit code non-zero) without ever reaching the `unhealthy` state. Use `docker inspect <container>` and check `State.Health.Status`.
+
+    If a manual restart was performed recently, the policy suppresses evaluation for 60 seconds after the restart to avoid conflicting with operator actions.
+
+    Also check that the **Unhealthy for (minutes)** threshold has elapsed. The policy evaluates every 30 seconds, so there may be up to a 30-second delay between the threshold being crossed and the restart firing.
+  </Accordion>
+
+  <Accordion title="The container keeps getting restarted in a loop">
+    If the container becomes unhealthy immediately after each restart, the hourly restart cap and the auto-disable-after-failures setting limit how many times this can occur. Review the container logs to address the root cause. You can lower the **Max restarts per hour** value or increase the **Unhealthy for (minutes)** threshold to reduce restart frequency while you investigate.
+  </Accordion>
+</AccordionGroup>

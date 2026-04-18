@@ -120,6 +120,7 @@
               "features/vulnerability-scanning",
               "features/cve-suppressions",
               "features/auto-update-policies",
+              "features/auto-heal-policies",
               "features/scheduled-operations",
               "features/sso",
               "features/two-factor-authentication",

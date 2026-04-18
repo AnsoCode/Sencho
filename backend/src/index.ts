@@ -23,6 +23,7 @@ import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
+import { AutoHealService } from './services/AutoHealService';
 import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { templateService } from './services/TemplateService';
@@ -5697,6 +5698,16 @@ const AlertCreateSchema = z.object({
   cooldown_mins: z.coerce.number().int().min(0).max(10080),
 });
 
+const AutoHealPolicyCreateSchema = z.object({
+  stack_name: z.string().min(1).max(255),
+  service_name: z.string().min(1).max(255).nullable().optional(),
+  unhealthy_duration_mins: z.coerce.number().int().min(1).max(1440),
+  cooldown_mins: z.coerce.number().int().min(1).max(1440).default(5),
+  max_restarts_per_hour: z.coerce.number().int().min(1).max(60).default(3),
+  auto_disable_after_failures: z.coerce.number().int().min(1).max(100).default(5),
+});
+const AutoHealPolicyUpdateSchema = AutoHealPolicyCreateSchema.partial().omit({ stack_name: true });
+
 app.post('/api/alerts', authMiddleware, async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const parsed = AlertCreateSchema.safeParse(req.body);
@@ -5721,6 +5732,100 @@ app.delete('/api/alerts/:id', authMiddleware, async (req: Request, res: Response
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete alert' });
+  }
+});
+
+// ─── Auto-Heal Policies ───────────────────────────────────────────────────────
+
+app.get('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  const stackName = typeof req.query.stackName === 'string' ? req.query.stackName : undefined;
+  try {
+    res.json(DatabaseService.getInstance().getAutoHealPolicies(stackName));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to list policies:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const parsed = AutoHealPolicyCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    return;
+  }
+  const { stack_name, service_name, unhealthy_duration_mins, cooldown_mins, max_restarts_per_hour, auto_disable_after_failures } = parsed.data;
+  const now = Date.now();
+  try {
+    const policy = DatabaseService.getInstance().addAutoHealPolicy({
+      stack_name,
+      service_name: service_name ?? null,
+      unhealthy_duration_mins,
+      cooldown_mins,
+      max_restarts_per_hour,
+      auto_disable_after_failures,
+      enabled: 1,
+      consecutive_failures: 0,
+      last_fired_at: 0,
+      created_at: now,
+      updated_at: now,
+    });
+    res.status(201).json(policy);
+  } catch (err) {
+    console.error('[AutoHeal] Failed to create policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.patch('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  const parsed = AutoHealPolicyUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    return;
+  }
+  try {
+    const db = DatabaseService.getInstance();
+    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
+    db.updateAutoHealPolicy(id, parsed.data);
+    res.json(db.getAutoHealPolicy(id));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to update policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return;
+  if (!requirePaid(req, res)) return;
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  try {
+    const db = DatabaseService.getInstance();
+    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
+    db.deleteAutoHealPolicy(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AutoHeal] Failed to delete policy:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/auto-heal/policies/:id/history', authMiddleware, (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 100);
+  try {
+    res.json(DatabaseService.getInstance().getAutoHealHistory(id, limit));
+  } catch (err) {
+    console.error('[AutoHeal] Failed to fetch history:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -8535,6 +8640,7 @@ async function startServer() {
 
   // Start Background Watchdog
   MonitorService.getInstance().start();
+  AutoHealService.getInstance().start();
 
   // Start Docker Event Stream (causal crash/OOM/health detection per local node)
   await DockerEventManager.getInstance().start();
@@ -8609,6 +8715,7 @@ const gracefulShutdown = (signal: string) => {
     try { MonitorService.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] MonitorService cleanup failed:', (e as Error).message);
     }
+    try { AutoHealService.getInstance().stop(); } catch (e) { console.warn('[Shutdown] AutoHealService cleanup failed:', (e as Error).message); }
     try { DockerEventManager.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] DockerEventManager cleanup failed:', (e as Error).message);
     }

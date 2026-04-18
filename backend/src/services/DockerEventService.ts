@@ -24,6 +24,16 @@ import { getErrorMessage } from '../utils/errors';
  * See docs/features/alerts-notifications.mdx for user-facing behaviour.
  */
 
+/** Snapshot of a single container's health tracking state, exposed to AutoHealService. */
+export interface ContainerHealthSnapshot {
+    id: string;
+    name?: string;
+    stackName?: string;
+    healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+    unhealthySince?: number;
+    lastKillAt?: number;
+}
+
 /** Grace window after a `die` before classifying, to absorb out-of-order kill events. */
 const DIE_GRACE_WINDOW_MS = 500;
 
@@ -61,6 +71,8 @@ interface InternalContainerState extends ContainerLifecycleState {
     stackName?: string;
     lastCrashAlertAt?: number;
     lastActivityAt: number;
+    healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+    unhealthySince?: number;
 }
 
 interface DockerEventPayload {
@@ -400,16 +412,29 @@ export class DockerEventService {
     }
 
     private onHealthStatus(id: string, action: string, event: DockerEventPayload): void {
-        if (!action.includes('unhealthy')) return;
         const state = this.getOrCreateState(id, event);
         state.lastActivityAt = Date.now();
-        if (!this.isCrashAlertsEnabled()) return;
-        const name = state.name ?? id.slice(0, 12);
-        const stackName = state.stackName;
-        void this.emitError(
-            `Healthcheck failed: ${name} is unhealthy.`,
-            stackName,
-        );
+
+        if (action.includes('unhealthy')) {
+            if (state.healthStatus !== 'unhealthy') {
+                state.unhealthySince = Date.now();
+            }
+            state.healthStatus = 'unhealthy';
+            if (!this.isCrashAlertsEnabled()) return;
+            const name = state.name ?? id.slice(0, 12);
+            const stackName = state.stackName;
+            void this.emitError(
+                `Healthcheck failed: ${name} is unhealthy.`,
+                stackName,
+            );
+        } else {
+            state.unhealthySince = undefined;
+            if (action.includes('starting')) {
+                state.healthStatus = 'starting';
+            } else {
+                state.healthStatus = 'healthy';
+            }
+        }
     }
 
     private onStart(id: string): void {
@@ -419,6 +444,8 @@ export class DockerEventService {
         state.lastKillAt = undefined;
         state.oomPending = undefined;
         state.lastCrashAlertAt = undefined;
+        state.unhealthySince = undefined;
+        state.healthStatus = 'starting';
         state.lastActivityAt = Date.now();
     }
 
@@ -647,6 +674,34 @@ export class DockerEventService {
             status: this.status,
             reconnectAttempts: this.reconnectAttempts,
             trackedContainers: this.containerState.size,
+        };
+    }
+
+    // ========================================================================
+    // Container state accessors (used by AutoHealService)
+    // ========================================================================
+
+    public listContainerStates(): ContainerHealthSnapshot[] {
+        return Array.from(this.containerState.entries()).map(([id, s]) => ({
+            id,
+            name: s.name,
+            stackName: s.stackName,
+            healthStatus: s.healthStatus,
+            unhealthySince: s.unhealthySince,
+            lastKillAt: s.lastKillAt,
+        }));
+    }
+
+    public getContainerState(id: string): ContainerHealthSnapshot | undefined {
+        const s = this.containerState.get(id);
+        if (!s) return undefined;
+        return {
+            id,
+            name: s.name,
+            stackName: s.stackName,
+            healthStatus: s.healthStatus,
+            unhealthySince: s.unhealthySince,
+            lastKillAt: s.lastKillAt,
         };
     }
 }

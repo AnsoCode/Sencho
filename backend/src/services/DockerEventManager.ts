@@ -71,6 +71,11 @@ export class DockerEventManager {
         return Array.from(this.services.values()).map(s => s.getStatus());
     }
 
+    /** Returns the DockerEventService for a given local node, or undefined if not tracked. */
+    public getService(nodeId: number): DockerEventService | undefined {
+        return this.services.get(nodeId);
+    }
+
     // ========================================================================
     // Node lifecycle handlers
     // ========================================================================
