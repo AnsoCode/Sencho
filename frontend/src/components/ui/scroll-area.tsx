@@ -7,8 +7,14 @@ const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
     viewportRef?: React.Ref<HTMLDivElement>;
+    // Opt in when the viewport wraps content that manages its own horizontal
+    // overflow (e.g., a child `overflow-x-auto` table). Overrides Radix's
+    // default `display: table` wrapper so the child can be constrained to the
+    // viewport width and trigger its own scroll. Also renders a horizontal
+    // ScrollBar for viewports that overflow directly.
+    block?: boolean;
   }
->(({ className, children, viewportRef, ...props }, ref) => (
+>(({ className, children, viewportRef, block, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
     className={cn("relative overflow-hidden", className)}
@@ -16,11 +22,15 @@ const ScrollArea = React.forwardRef<
   >
     <ScrollAreaPrimitive.Viewport
       ref={viewportRef}
-      className="h-full w-full rounded-[inherit]"
+      className={cn(
+        "h-full w-full rounded-[inherit]",
+        block && "[&>div]:!block [&>div]:!min-w-0"
+      )}
     >
       {children}
     </ScrollAreaPrimitive.Viewport>
-    <ScrollBar />
+    <ScrollBar orientation="vertical" />
+    {block && <ScrollBar orientation="horizontal" />}
     <ScrollAreaPrimitive.Corner />
   </ScrollAreaPrimitive.Root>
 ))

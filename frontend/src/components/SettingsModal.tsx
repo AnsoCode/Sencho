@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import {
     Dialog,
     DialogClose,
@@ -8,16 +8,20 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import {
+    CommandDialog,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from '@/components/ui/command';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 import type { SenchoSettingsChangedDetail } from '@/lib/events';
-import {
-    Shield, Activity, Bell, Code, Server, Package, X,
-    Info, Crown, Webhook, Users, Zap, Database, LifeBuoy, Lock, Tag, Route, ShieldCheck,
-} from 'lucide-react';
+import { Search, X, Lock } from 'lucide-react';
 import { NodeManager } from './NodeManager';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -40,14 +44,19 @@ import {
     AboutSection,
     LabelsSection,
     DEFAULT_SETTINGS,
+    SETTINGS_GROUPS,
+    SETTINGS_ITEMS,
+    getSettingsItem,
+    getSettingsGroup,
+    isItemVisible,
+    isItemLocked,
 } from './settings';
-import type { PatchableSettings, SectionId } from './settings';
-
-const GLOBAL_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
-    'account', 'license', 'users', 'sso', 'api-tokens', 'registries',
-    'labels', 'notifications', 'notification-routing', 'webhooks', 'security',
-    'nodes', 'appstore',
-]);
+import type {
+    PatchableSettings,
+    SectionId,
+    SettingsItemMeta,
+    VisibilityContext,
+} from './settings';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -60,17 +69,38 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
     const { isAdmin } = useAuth();
     const { license, isPaid } = useLicense();
     const isRemote = activeNode?.type === 'remote';
+    const isAdmiral = isPaid && license?.variant === 'admiral';
     const [activeSection, setActiveSection] = useState<SectionId>(initialSection || 'account');
+    const [commandOpen, setCommandOpen] = useState(false);
+
+    const visibility: VisibilityContext = useMemo(
+        () => ({ isRemote, isAdmin, isPaid, isAdmiral }),
+        [isRemote, isAdmin, isPaid, isAdmiral],
+    );
+
+    const visibleItems = useMemo(
+        () => SETTINGS_ITEMS.filter(item => isItemVisible(item, visibility)),
+        [visibility],
+    );
+
+    const visibleGroups = useMemo(() => {
+        return SETTINGS_GROUPS
+            .map(group => ({
+                ...group,
+                items: visibleItems.filter(item => item.group === group.id),
+            }))
+            .filter(group => group.items.length > 0);
+    }, [visibleItems]);
 
     const contentViewportRef = useRef<HTMLDivElement | null>(null);
     const scrollPositionsRef = useRef<Partial<Record<SectionId, number>>>({});
 
-    const switchSection = (next: SectionId) => {
+    const switchSection = useCallback((next: SectionId) => {
         if (contentViewportRef.current) {
             scrollPositionsRef.current[activeSection] = contentViewportRef.current.scrollTop;
         }
         setActiveSection(next);
-    };
+    }, [activeSection]);
 
     useLayoutEffect(() => {
         if (contentViewportRef.current) {
@@ -82,25 +112,31 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         if (isOpen && initialSection) setActiveSection(initialSection);
     }, [isOpen, initialSection]);
 
-    // Remote nodes don't expose global-only sections, so bounce to a node-scoped one.
     useEffect(() => {
-        if (isRemote && GLOBAL_ONLY_SECTIONS.has(activeSection)) {
-            switchSection('system');
+        const current = getSettingsItem(activeSection);
+        if (!current) return;
+        if (!isItemVisible(current, visibility) && visibleItems.length > 0) {
+            setActiveSection(visibleItems[0].id);
         }
-    }, [isRemote]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [visibility, visibleItems, activeSection]);
 
-    // Auth State
+    const handleDialogKeyDown = useCallback((event: React.KeyboardEvent) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            event.stopPropagation();
+            setCommandOpen(open => !open);
+        }
+    }, []);
+
     const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
     const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-    // Settings state
     const [settings, setSettings] = useState<PatchableSettings>({ ...DEFAULT_SETTINGS });
     const serverSettingsRef = useRef<PatchableSettings>({ ...DEFAULT_SETTINGS });
     const [isSettingsLoading, setIsSettingsLoading] = useState(false);
     const [isSavingSystem, setIsSavingSystem] = useState(false);
     const [isSavingDeveloper, setIsSavingDeveloper] = useState(false);
 
-    // Unsaved changes indicators
     const hasSystemChanges =
         settings.host_cpu_limit !== serverSettingsRef.current.host_cpu_limit ||
         settings.host_ram_limit !== serverSettingsRef.current.host_ram_limit ||
@@ -114,6 +150,11 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
         settings.log_retention_days !== serverSettingsRef.current.log_retention_days ||
         settings.audit_retention_days !== serverSettingsRef.current.audit_retention_days;
+
+    const sectionDirtyFlags: Partial<Record<SectionId, boolean>> = {
+        system: hasSystemChanges,
+        developer: hasDeveloperChanges,
+    };
 
     useEffect(() => {
         if (isOpen) fetchSettings();
@@ -243,29 +284,9 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
         serverSettingsRef.current = { ...serverSettingsRef.current, [key]: value };
     };
 
-    // --- Nav items ---
-    const NavButton = ({ section, icon, label, showDot, locked }: {
-        section: SectionId;
-        icon: React.ReactNode;
-        label: string;
-        showDot?: boolean;
-        locked?: boolean;
-    }) => (
-        <Button
-            variant={activeSection === section ? 'secondary' : 'ghost'}
-            className="w-full justify-start font-medium relative"
-            onClick={() => switchSection(section)}
-        >
-            {icon}
-            {label}
-            {locked && <Lock className="w-3 h-3 ml-auto text-muted-foreground/50" />}
-            {showDot && (
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-amber-400" />
-            )}
-        </Button>
-    );
+    const activeItem = getSettingsItem(activeSection);
+    const activeGroup = activeItem ? getSettingsGroup(activeItem.group) : undefined;
 
-    // --- Section rendering ---
     const renderSection = () => {
         switch (activeSection) {
             case 'account':
@@ -277,18 +298,12 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         isSaving={isSavingPassword}
                     />
                 );
-            case 'license':
-                return <LicenseSection />;
-            case 'users':
-                return <UsersSection />;
-            case 'sso':
-                return <SSOSection />;
-            case 'api-tokens':
-                return <ApiTokensSection />;
-            case 'registries':
-                return <RegistriesSection />;
-            case 'labels':
-                return <LabelsSection />;
+            case 'license': return <LicenseSection />;
+            case 'users': return <UsersSection />;
+            case 'sso': return <SSOSection />;
+            case 'api-tokens': return <ApiTokensSection />;
+            case 'registries': return <RegistriesSection />;
+            case 'labels': return <LabelsSection />;
             case 'system':
                 return (
                     <SystemSection
@@ -301,14 +316,10 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         activeNodeName={activeNode?.name}
                     />
                 );
-            case 'notifications':
-                return <NotificationsSection />;
-            case 'notification-routing':
-                return <NotificationRoutingSection />;
-            case 'webhooks':
-                return <WebhooksSection isPaid={isPaid} />;
-            case 'security':
-                return <SecuritySection isPaid={isPaid} />;
+            case 'notifications': return <NotificationsSection />;
+            case 'notification-routing': return <NotificationRoutingSection />;
+            case 'webhooks': return <WebhooksSection isPaid={isPaid} />;
+            case 'security': return <SecuritySection isPaid={isPaid} />;
             case 'developer':
                 return (
                     <DeveloperSection
@@ -320,8 +331,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         isRemote={isRemote}
                     />
                 );
-            case 'nodes':
-                return <NodeManager />;
+            case 'nodes': return <NodeManager />;
             case 'appstore':
                 return (
                     <AppStoreSection
@@ -331,118 +341,189 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         onSaved={handleRegistrySaved}
                     />
                 );
-            case 'support':
-                return <SupportSection />;
-            case 'about':
-                return <AboutSection />;
+            case 'support': return <SupportSection />;
+            case 'about': return <AboutSection />;
+            default: return null;
         }
     };
 
-    const isAdmiral = isPaid && license?.variant === 'admiral';
-
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent showClose={false} className="sm:max-w-[900px] h-[min(780px,90vh)] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0">
-                <VisuallyHidden><DialogTitle>Settings Hub</DialogTitle></VisuallyHidden>
-                <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
+        <>
+            <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+                <DialogContent
+                    showClose={false}
+                    onKeyDownCapture={handleDialogKeyDown}
+                    className="sm:max-w-[960px] h-[min(780px,90vh)] flex p-0 font-sans shadow-lg bg-background border-border overflow-hidden gap-0"
+                >
+                    <VisuallyHidden><DialogTitle>Settings Hub</DialogTitle></VisuallyHidden>
+                    <VisuallyHidden><DialogDescription>Configure Sencho settings</DialogDescription></VisuallyHidden>
 
-                {/* Sidebar */}
-                <div className="w-[200px] bg-glass border-r border-glass-border flex flex-col p-4 shrink-0 min-h-0">
-                    <div className="font-medium text-lg mb-1 text-foreground tracking-tight">Settings Hub</div>
-                    {isRemote ? (
-                        <div className="text-xs text-muted-foreground mb-5 truncate">{activeNode!.name}</div>
-                    ) : (
-                        <div className="mb-5" />
-                    )}
-                    <ScrollArea className="flex-1 -mr-2 pr-2">
-                        <nav className="space-y-1.5 flex flex-col">
-                        {/* Account / License */}
-                        {!isRemote && (
-                            <NavButton section="account" icon={<Shield className="w-4 h-4 mr-2" />} label="Account" />
-                        )}
-                        {!isRemote && (
-                            <NavButton section="license" icon={<Crown className="w-4 h-4 mr-2" />} label="License" />
-                        )}
-
-                        {!isRemote && <Separator className="my-1.5" />}
-
-                        {/* Users / SSO / API Tokens / Registries */}
-                        {!isRemote && isAdmin && (
-                            <NavButton section="users" icon={<Users className="w-4 h-4 mr-2" />} label="Users" locked={!isPaid} />
-                        )}
-                        {!isRemote && isAdmin && (
-                            <NavButton section="sso" icon={<Shield className="w-4 h-4 mr-2" />} label="SSO" />
-                        )}
-                        {!isRemote && isAdmin && (
-                            <NavButton section="api-tokens" icon={<Zap className="w-4 h-4 mr-2" />} label="API Tokens" locked={!isAdmiral} />
-                        )}
-                        {!isRemote && isAdmin && (
-                            <NavButton section="registries" icon={<Database className="w-4 h-4 mr-2" />} label="Registries" locked={!isAdmiral} />
-                        )}
-                        {!isRemote && (
-                            <NavButton section="labels" icon={<Tag className="w-4 h-4 mr-2" />} label="Labels" locked={!isPaid} />
-                        )}
-
-                        {!isRemote && isAdmin && <Separator className="my-1.5" />}
-
-                        {/* System / Notifications / Webhooks / Developer */}
-                        <NavButton
-                            section="system"
-                            icon={<Activity className="w-4 h-4 mr-2" />}
-                            label="System Limits"
-                            showDot={hasSystemChanges}
-                        />
-                        <NavButton section="notifications" icon={<Bell className="w-4 h-4 mr-2" />} label="Notifications" />
-                        {!isRemote && isAdmin && (
-                            <NavButton section="notification-routing" icon={<Route className="w-4 h-4 mr-2" />} label="Routing" locked={!isAdmiral} />
-                        )}
-                        {!isRemote && (
-                            <NavButton section="webhooks" icon={<Webhook className="w-4 h-4 mr-2" />} label="Webhooks" locked={!isPaid} />
-                        )}
-                        {!isRemote && isAdmin && (
-                            <NavButton section="security" icon={<ShieldCheck className="w-4 h-4 mr-2" />} label="Security" locked={!isPaid} />
-                        )}
-                        <NavButton
-                            section="developer"
-                            icon={<Code className="w-4 h-4 mr-2" />}
-                            label="Developer"
-                            showDot={hasDeveloperChanges}
-                        />
-
-                        <Separator className="my-1.5" />
-
-                        {/* Nodes / App Store */}
-                        {!isRemote && (
-                            <NavButton section="nodes" icon={<Server className="w-4 h-4 mr-2" />} label="Nodes" />
-                        )}
-                        {!isRemote && (
-                            <NavButton section="appstore" icon={<Package className="w-4 h-4 mr-2" />} label="App Store" />
-                        )}
-
-                        <Separator className="my-1.5" />
-
-                        {/* Support / About */}
-                        <NavButton section="support" icon={<LifeBuoy className="w-4 h-4 mr-2" />} label="Support" />
-                        <NavButton section="about" icon={<Info className="w-4 h-4 mr-2" />} label="About" />
-                        </nav>
-                    </ScrollArea>
-                </div>
-
-                {/* Main Content Area */}
-                <div className="flex-1 flex flex-col min-h-0">
-                    <div className="flex justify-end shrink-0 px-3 pt-3">
-                        <DialogClose className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
-                            <X className="h-4 w-4" strokeWidth={1.5} />
-                            <span className="sr-only">Close</span>
-                        </DialogClose>
-                    </div>
-                    <ScrollArea viewportRef={contentViewportRef} className="flex-1">
-                        <div className="px-6 pb-6 flex flex-col gap-6">
-                            {renderSection()}
+                    <aside className="w-[220px] bg-glass border-r border-glass-border flex flex-col shrink-0 min-h-0">
+                        <div className="px-4 pt-4 pb-3">
+                            <div className="font-display italic text-xl leading-none text-stat-value">Settings</div>
+                            <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+                                {isRemote && activeNode ? `node · ${activeNode.name}` : 'control plane'}
+                            </div>
                         </div>
-                    </ScrollArea>
-                </div>
-            </DialogContent>
-        </Dialog>
+
+                        <button
+                            type="button"
+                            onClick={() => setCommandOpen(true)}
+                            className="mx-3 mb-3 flex items-center gap-2 rounded-md border border-card-border border-t-card-border-top bg-card px-2.5 py-1.5 shadow-card-bevel transition-colors hover:border-t-card-border-hover"
+                        >
+                            <Search className="h-3 w-3 text-stat-subtitle" strokeWidth={1.5} />
+                            <span className="flex-1 text-left font-mono text-[11px] text-stat-subtitle">Filter settings</span>
+                            <kbd className="font-mono text-[10px] text-stat-subtitle/70 tabular-nums">{`\u2318K`}</kbd>
+                        </button>
+
+                        <ScrollArea className="flex-1 px-3">
+                            <nav className="flex flex-col gap-4 pb-4">
+                                {visibleGroups.map(group => (
+                                    <div key={group.id} className="flex flex-col gap-0.5">
+                                        <div className="flex items-baseline gap-1.5 px-2 pb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-stat-subtitle">
+                                            <span>{group.label}</span>
+                                            {group.kicker ? (
+                                                <span className="text-stat-subtitle/60">· {group.kicker}</span>
+                                            ) : null}
+                                        </div>
+                                        {group.items.map(item => {
+                                            const locked = isItemLocked(item, visibility);
+                                            const isActive = activeSection === item.id;
+                                            const showDot = sectionDirtyFlags[item.id];
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={item.id}
+                                                    onClick={() => switchSection(item.id)}
+                                                    className={cn(
+                                                        'relative flex items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors',
+                                                        isActive
+                                                            ? 'bg-gradient-to-r from-brand/10 to-transparent text-stat-value'
+                                                            : 'text-stat-subtitle hover:bg-accent/40 hover:text-stat-value',
+                                                    )}
+                                                >
+                                                    {isActive ? (
+                                                        <span className="absolute inset-y-1 left-0 w-[2px] rounded-full bg-brand" />
+                                                    ) : null}
+                                                    <span className={cn(
+                                                        'font-mono text-[11px] leading-none w-3 text-center',
+                                                        isActive ? 'text-brand' : 'text-stat-subtitle/70',
+                                                    )}>
+                                                        {group.glyph}
+                                                    </span>
+                                                    <span className="flex-1 truncate text-sm font-medium">{item.label}</span>
+                                                    {locked && item.tier ? (
+                                                        <TierChip tier={item.tier} />
+                                                    ) : null}
+                                                    {showDot ? (
+                                                        <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                                                    ) : null}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </nav>
+                        </ScrollArea>
+                    </aside>
+
+                    <div className="flex-1 flex flex-col min-h-0 min-w-0">
+                        <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-border/60">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                                    <span>Settings</span>
+                                    <span className="text-stat-subtitle/50">{`\u203A`}</span>
+                                    <span>{activeGroup?.label ?? ''}</span>
+                                    <span className="text-stat-subtitle/50">{`\u203A`}</span>
+                                    <span className="text-stat-value">{activeItem?.label ?? ''}</span>
+                                    {activeItem?.scope === 'node' ? (
+                                        <span className="ml-2 flex items-center gap-1 text-brand">
+                                            <span className="text-stat-subtitle/50">·</span>
+                                            <span className="truncate max-w-[160px]">{activeNode?.name ?? 'local'}</span>
+                                            <span className="text-stat-subtitle/70">(node-scoped)</span>
+                                        </span>
+                                    ) : null}
+                                </div>
+                                <div className="mt-1.5 font-display italic text-2xl leading-tight text-stat-value truncate">
+                                    {activeItem?.label ?? 'Settings'}
+                                </div>
+                                {activeItem?.description ? (
+                                    <div className="mt-1 text-sm text-stat-subtitle/90 truncate">
+                                        {activeItem.description}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <DialogClose className="mt-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                                <X className="h-4 w-4" strokeWidth={1.5} />
+                                <span className="sr-only">Close</span>
+                            </DialogClose>
+                        </header>
+                        <ScrollArea block viewportRef={contentViewportRef} className="flex-1 min-w-0">
+                            <div className="px-6 py-5 flex flex-col gap-6 min-w-0">
+                                {renderSection()}
+                            </div>
+                        </ScrollArea>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
+                <CommandInput placeholder="Jump to a setting..." />
+                <CommandList>
+                    <CommandEmpty>No matching settings.</CommandEmpty>
+                    {visibleGroups.map(group => (
+                        <CommandGroup key={group.id} heading={group.label}>
+                            {group.items.map(item => (
+                                <CommandSearchItem
+                                    key={item.id}
+                                    item={item}
+                                    glyph={group.glyph}
+                                    visibility={visibility}
+                                    onSelect={() => {
+                                        setCommandOpen(false);
+                                        switchSection(item.id);
+                                    }}
+                                />
+                            ))}
+                        </CommandGroup>
+                    ))}
+                </CommandList>
+            </CommandDialog>
+        </>
+    );
+}
+
+function CommandSearchItem({
+    item,
+    glyph,
+    visibility,
+    onSelect,
+}: {
+    item: SettingsItemMeta;
+    glyph: string;
+    visibility: VisibilityContext;
+    onSelect: () => void;
+}) {
+    const locked = isItemLocked(item, visibility);
+    const searchValue = [item.label, item.description, ...item.keywords].join(' ').toLowerCase();
+    return (
+        <CommandItem value={searchValue} onSelect={onSelect}>
+            <span className="font-mono text-[11px] w-3 text-center text-stat-subtitle/70">{glyph}</span>
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span className="text-sm font-medium text-stat-value truncate">{item.label}</span>
+                <span className="text-xs text-stat-subtitle truncate">{item.description}</span>
+            </div>
+            {locked && item.tier ? <TierChip tier={item.tier} /> : null}
+        </CommandItem>
+    );
+}
+
+function TierChip({ tier }: { tier: NonNullable<SettingsItemMeta['tier']> }) {
+    const label = tier === 'admiral' ? 'ADMIRAL' : 'SKIPPER';
+    return (
+        <span className="flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-stat-subtitle/80">
+            <Lock className="h-2.5 w-2.5" strokeWidth={1.5} />
+            {label}
+        </span>
     );
 }
