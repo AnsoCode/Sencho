@@ -26,7 +26,7 @@ async function logout(page: Page) {
 async function openAccountSettings(page: Page) {
   await page.getByRole('button', { name: /profile/i }).click();
   await page.getByRole('button', { name: /settings/i }).click();
-  await expect(page.getByRole('heading', { name: /Account & Security/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Account$/i })).toBeVisible();
 }
 
 /** Fill a login form (no MFA branch). */

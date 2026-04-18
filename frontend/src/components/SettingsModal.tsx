@@ -403,10 +403,13 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                                                     {isActive ? (
                                                         <span className="absolute inset-y-1 left-0 w-[2px] rounded-full bg-brand" />
                                                     ) : null}
-                                                    <span className={cn(
-                                                        'font-mono text-[11px] leading-none w-3 text-center',
-                                                        isActive ? 'text-brand' : 'text-stat-subtitle/70',
-                                                    )}>
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className={cn(
+                                                            'font-mono text-[11px] leading-none w-3 text-center',
+                                                            isActive ? 'text-brand' : 'text-stat-subtitle/70',
+                                                        )}
+                                                    >
                                                         {group.glyph}
                                                     </span>
                                                     <span className="flex-1 truncate text-sm font-medium">{item.label}</span>
@@ -442,9 +445,9 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                                         </span>
                                     ) : null}
                                 </div>
-                                <div className="mt-1.5 font-display italic text-2xl leading-tight text-stat-value truncate">
+                                <h2 className="mt-1.5 font-display italic text-2xl leading-tight text-stat-value truncate">
                                     {activeItem?.label ?? 'Settings'}
-                                </div>
+                                </h2>
                                 {activeItem?.description ? (
                                     <div className="mt-1 text-sm text-stat-subtitle/90 truncate">
                                         {activeItem.description}
