@@ -27,6 +27,7 @@ import { AutoHealService } from './services/AutoHealService';
 import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { UpdatePreviewService } from './services/UpdatePreviewService';
+import { annotateEntries, computeAuditStats, HISTORY_WINDOW_MS } from './services/AuditAnomalyService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
@@ -6238,15 +6239,48 @@ app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => 
     const search = req.query.search as string | undefined;
     const from = req.query.from ? parseInt(req.query.from as string) : undefined;
     const to = req.query.to ? parseInt(req.query.to as string) : undefined;
+    const withAnomalies = req.query.with_anomalies === '1';
 
     if (isDebugEnabled()) {
       console.log(`[Audit:diag] Query: page=${page} limit=${limit} username=${username || '-'} method=${method || '-'} search=${search || '-'}`);
     }
-    const result = DatabaseService.getInstance().getAuditLogs({ page, limit, username, method, from, to, search });
+    const db = DatabaseService.getInstance();
+    const result = db.getAuditLogs({ page, limit, username, method, from, to, search });
+
+    if (withAnomalies && result.entries.length > 0) {
+      const now = Date.now();
+      const historyFrom = now - HISTORY_WINDOW_MS;
+      const oldestInPage = result.entries.reduce(
+        (min, e) => Math.min(min, e.timestamp),
+        result.entries[0].timestamp
+      );
+      const history = db.getAuditLogsInRange(historyFrom, oldestInPage);
+      res.json({ ...result, entries: annotateEntries(result.entries, history, now) });
+      return;
+    }
     res.json(result);
   } catch (error) {
     console.error('[AuditLog] Failed to fetch audit log:', error);
     res.status(500).json({ error: 'Failed to fetch audit log' });
+  }
+});
+
+app.get('/api/audit-log/stats', async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmiral(req, res)) return;
+  if (!requirePermission(req, res, 'system:audit')) return;
+
+  try {
+    const now = Date.now();
+    const db = DatabaseService.getInstance();
+    const cutoff24h = now - 24 * 60 * 60 * 1000;
+    const cutoff7d = now - 7 * 24 * 60 * 60 * 1000;
+    const last30d = db.getAuditLogsInRange(now - HISTORY_WINDOW_MS, now);
+    const last7d = last30d.filter(e => e.timestamp >= cutoff7d);
+    const last24h = last7d.filter(e => e.timestamp >= cutoff24h);
+    res.json(computeAuditStats({ now, last24h, last7d, last30d }));
+  } catch (error) {
+    console.error('[AuditLog] Failed to compute audit stats:', error);
+    res.status(500).json({ error: 'Failed to compute audit stats' });
   }
 });
 
