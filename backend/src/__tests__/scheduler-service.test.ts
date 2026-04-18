@@ -171,6 +171,45 @@ describe('SchedulerService - calculateNextRun', () => {
   });
 });
 
+describe('SchedulerService - calculateRunsWithin', () => {
+  it('expands hourly cron into every firing within a 24h window when limit allows', () => {
+    const svc = SchedulerService.getInstance();
+    const from = Date.now();
+    const to = from + 24 * 60 * 60 * 1000;
+    const runs = svc.calculateRunsWithin('0 * * * *', from, to, 32);
+    expect(runs.length).toBeGreaterThanOrEqual(23);
+    expect(runs.length).toBeLessThanOrEqual(24);
+    for (const run of runs) {
+      expect(run).toBeGreaterThanOrEqual(from);
+      expect(run).toBeLessThanOrEqual(to);
+    }
+  });
+
+  it('returns a single firing for a daily cron', () => {
+    const svc = SchedulerService.getInstance();
+    const from = Date.now();
+    const to = from + 24 * 60 * 60 * 1000;
+    const runs = svc.calculateRunsWithin('0 3 * * *', from, to);
+    expect(runs.length).toBeLessThanOrEqual(2);
+    expect(runs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('honours the limit parameter to avoid runaway expansions', () => {
+    const svc = SchedulerService.getInstance();
+    const from = Date.now();
+    const to = from + 60 * 60 * 1000;
+    const runs = svc.calculateRunsWithin('* * * * *', from, to, 5);
+    expect(runs.length).toBe(5);
+  });
+
+  it('returns empty array for invalid cron instead of throwing', () => {
+    const svc = SchedulerService.getInstance();
+    const from = Date.now();
+    const to = from + 60 * 60 * 1000;
+    expect(svc.calculateRunsWithin('not a cron', from, to)).toEqual([]);
+  });
+});
+
 // ── License gating ─────────────────────────────────────────────────────
 
 describe('SchedulerService - license gating', () => {

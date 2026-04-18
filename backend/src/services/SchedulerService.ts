@@ -140,6 +140,21 @@ export class SchedulerService {
         return expr.next().toDate().getTime();
     }
 
+    public calculateRunsWithin(cronExpression: string, fromMs: number, toMs: number, limit = 16): number[] {
+        try {
+            const expr = CronExpressionParser.parse(cronExpression, { currentDate: new Date(fromMs) });
+            const runs: number[] = [];
+            while (runs.length < limit) {
+                const next = expr.next().toDate().getTime();
+                if (next > toMs) break;
+                runs.push(next);
+            }
+            return runs;
+        } catch {
+            return [];
+        }
+    }
+
     /**
      * Fire a notification without awaiting completion, catching any promise
      * rejection so the scheduler never crashes on a failed dispatch.

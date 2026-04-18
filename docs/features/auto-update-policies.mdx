@@ -1,194 +1,90 @@
 ---
-title: "Auto-Update Policies"
-description: "Automatically check for and apply container image updates on a schedule."
+title: "Auto-Update Readiness"
+description: "Review pending container updates across your fleet, with risk tags, changelogs, and rollback targets, before applying."
 ---
 
 <Note>
-  Auto-Update Policies require a **Skipper** or **Admiral** license.
+  Auto-Update Readiness requires a **Skipper** or **Admiral** license.
 </Note>
 
 ## Overview
 
-Auto-Update Policies let you define schedules for Sencho to automatically check your container images for updates and apply them when new versions are available. Think of it as a built-in Watchtower, integrated directly into your Sencho dashboard with full visibility into what was updated and when.
+Auto-Update Readiness is the launchpad for every pending update across your stacks. Instead of a list of CRUD policies, the view surfaces one card per stack with an available update and tells you, at a glance, whether it is safe to apply.
 
-Each policy targets a specific stack (or all stacks on a node) and runs on a cron schedule. When triggered, Sencho:
+Each card shows:
 
-1. Inspects every container in the target stack
-2. Compares local image digests against the remote registry
-3. If any image has a newer version, pulls the update and recreates the stack with `docker compose up -d`
-4. Records the result in run history for auditability
-
-<Frame>
-  <img src="/images/auto-update-policies/overview.png" alt="Auto-Update Policies view showing the policies list" />
-</Frame>
-
-## Creating a policy
-
-Navigate to **Auto-Update** in the sidebar and click **New Policy**.
+- The current and next tag, with the new version highlighted in cyan.
+- A **risk tag** derived from the version delta: `patch` (safe), `minor`, `major`, or `digest rebuild`.
+- A one-line changelog preview when the registry publishes one.
+- The **rollback target** (the tag Sencho will fall back to if an update is reverted).
+- The next scheduled run for the matching auto-update task, if one exists.
 
 <Frame>
-  <img src="/images/auto-update-policies/create-dialog.png" alt="Create auto-update policy dialog" />
+  <img src="/images/auto-update/readiness-board.png" alt="Readiness board with hero count, per-stack cards, and risk tags" />
 </Frame>
 
-Fill in the following fields:
+The hero at the top counts pending updates fleet-wide and tells you how many of them are ready to apply without human review. Major version jumps and stacks with blocked registries are counted separately so they can be reviewed before the scheduler runs.
 
-| Field | Description |
-|-------|-------------|
-| **Name** | A descriptive name for the policy (e.g., "Nightly media stack update") |
-| **Node** | The node where the target stack runs |
-| **Stack** | The stack to monitor and update, or **All Stacks** to update every stack on the selected node |
-| **Check Frequency** | A cron preset or custom cron expression defining how often to check |
-| **Enabled** | Toggle to enable or disable the policy on creation |
+## Workflow
 
-The Stack selector becomes available after choosing a node. Selecting **All Stacks** will check and update every stack on that node during each run.
+1. Open the **Auto-Update** view from the sidebar.
+2. Skim the card grid. Patch and minor bumps render with a green or amber tag; major bumps render in red and are marked as blocked.
+3. For a safe update, click **Apply now** on the card to pull and recreate the stack immediately.
+4. For a major bump, review the changelog preview and the rollback target before deciding. If you still want to apply it, switch to the **Schedules** view and create or edit an auto-update task for that stack.
+5. Use **Recheck all** in the hero to force an immediate registry poll if you want to bypass the cached update status.
 
-### Schedule presets
+## Risk tags
 
-For convenience, Sencho offers common schedule presets:
+| Tag | Meaning | Source |
+|-----|---------|--------|
+| **patch** | Safe automated update (e.g. `1.2.3` → `1.2.4`) | Semver comparison of tags |
+| **minor** | Backwards-compatible update (e.g. `1.2.3` → `1.3.0`) | Semver comparison of tags |
+| **major** | Potentially breaking change (e.g. `1.2.3` → `2.0.0`). Marked **blocked** by default | Semver comparison of tags |
+| **digest rebuild** | Same tag, new image digest (e.g. `latest` pushed again) | Local vs remote digest diff |
+| **unknown** | Non-semver tag (e.g. `main`, `stable`) | Fallback when tags cannot be compared |
 
-| Preset | Cron Expression | Description |
-|--------|----------------|-------------|
-| Every 6 hours | `0 */6 * * *` | Check four times per day |
-| Every 12 hours | `0 */12 * * *` | Check twice per day |
-| Daily at 3 AM | `0 3 * * *` | Low-traffic window for most users |
-| Daily at midnight | `0 0 * * *` | Start of each day |
-| Weekly (Sunday 3 AM) | `0 3 * * 0` | Minimal disruption for stable stacks |
-| Custom | User-defined | Any valid cron expression |
+Blocked updates still schedule check runs, but the apply button is disabled until you review them manually.
 
-When using a preset, a human-readable description of the schedule is shown below the selector. Custom cron expressions are validated and described in real time.
+## Scheduling auto-updates
 
-## Filtering by node
+Auto-update is a first-class action in the Schedules view. To create a recurring check for a stack:
 
-In a multi-node environment, you can filter the policy list to show only policies targeting a specific node. Click the **calendar icon** on any node row in **Settings > Nodes** to jump directly to a filtered view. A filter badge at the top shows the active node, with a **Clear filter** button to return to the full list.
+1. Open **Schedules** in the top nav.
+2. Click **New Schedule**.
+3. Set **Action** to **Auto-update Stack**, choose the target node and stack, pick a cron expression, and save.
 
-## Managing policies
-
-The policy list is displayed as a table with the following columns:
-
-| Column | Description |
-|--------|-------------|
-| **Name** | The policy name |
-| **Stack** | Target stack name, or "All Stacks" for wildcard policies |
-| **Schedule** | Human-readable description with the raw cron expression below |
-| **Status** | Last run result: **Success** (green), **Failed** (red), or "Never run" |
-| **Last Run** | Timestamp of the most recent execution |
-| **Next Run** | When the policy will next execute |
-| **Enabled** | Toggle switch to enable or disable the policy |
-| **Actions** | Action buttons (see below) |
-
-### Available actions
-
-Each policy row has four action buttons:
-
-- **Run Now** (play icon) - Trigger an immediate check-and-update cycle without waiting for the next scheduled run
-- **Execution History** (clock icon) - Open the run history panel for this policy
-- **Edit** (pencil icon) - Modify the policy name, target, or schedule
-- **Delete** (trash icon) - Permanently remove the policy and all its execution history after confirmation
-
-## Run history
-
-Click the clock icon on any policy to open the run history panel.
-
-<Frame>
-  <img src="/images/auto-update-policies/run-history.png" alt="Run history panel showing execution results" />
-</Frame>
-
-The history is displayed as a table with the following columns:
-
-| Column | Description |
-|--------|-------------|
-| **Time** | When the run started |
-| **Source** | Whether the run was triggered by the **Scheduler** or **Manual** (via Run Now) |
-| **Status** | Success, Failed, or Running |
-| **Duration** | How long the run took (in seconds) |
-| **Details** | Output summary or error message |
-
-Run history is paginated at 20 entries per page. You can export the full history as CSV using the download button in the panel header.
+The task lives alongside restart, prune, snapshot, and scan tasks in the same timeline and table. Run history, notifications, and the Run Now button behave the same as for every other scheduled action. See [Scheduled Operations](/features/scheduled-operations) for details.
 
 ## Multi-node support
 
-Auto-Update Policies work seamlessly across both local and remote nodes. When a policy targets a remote node, Sencho automatically proxies the update execution to the remote Sencho instance via the Distributed API. The remote node performs all image checks and compose updates locally on its own machine, then reports the results back.
+The readiness board scopes to the active node selected in the sidebar, matching the scope of the auto-update schedule attached to each card. When a remote node is selected, Sencho proxies the registry checks and the apply call to the remote Sencho instance via the Distributed API. No additional configuration is needed.
 
-No additional configuration is required. As long as your remote node is connected and reachable, auto-update policies will execute on it just like they do on the local node.
+## How readiness is computed
 
-## How it works
+For each stack with a pending image update, Sencho computes a preview by:
 
-Under the hood, Auto-Update Policies are built on the same scheduling engine as [Scheduled Operations](/features/scheduled-operations). The key difference is that auto-update policies:
+1. Parsing the compose file to enumerate every pullable image reference.
+2. Calling the registry with your configured credentials to fetch the current tag list and remote digest.
+3. Picking the highest semver tag greater than the current tag (keeping the same prefix and suffix) or, if tags match but digests differ, treating it as a digest rebuild.
+4. Scoring the overall stack by the most severe image bump. Any major bump marks the stack as blocked.
+5. Deriving the rollback target from the running tag and normalizing Docker Hub library paths.
 
-- Are available to **Skipper** tier (Scheduled Operations requires Admiral)
-- Can target a single **stack** or **all stacks** on a node
-- Perform a **check-then-update** flow rather than a blind restart
-
-### The check-then-update flow
-
-1. **Enumerate images** - Sencho lists all unique pullable images used by containers in the target stack
-2. **Check digests** - For each image, Sencho compares the local digest against the remote registry manifest
-3. **Conditional update** - Only if at least one image has a newer version does Sencho run `docker compose up -d` to pull and recreate
-4. **Clear indicators** - After a successful update, the blue update indicator dot is automatically cleared
-5. **Notify** - A notification is dispatched informing you which stack was updated and which images changed
-
-If no updates are found, the run completes with an "all images up to date" message and no containers are restarted.
-
-## Relationship to image update detection
-
-Sencho has two complementary features for keeping your images current:
-
-| Feature | Purpose | Tier |
-|---------|---------|------|
-| **Image Update Detection** | Passive: shows a blue dot on stacks with available updates | All tiers |
-| **Auto-Update Policies** | Active: automatically applies updates on a schedule | Skipper+ |
-
-Image Update Detection runs in the background every 6 hours and highlights stacks that have newer images available. Auto-Update Policies take this a step further by automatically applying those updates based on your defined schedule.
-
-## Best practices
-
-- **Start with longer intervals** - Use "Daily at 3 AM" or "Weekly" for production stacks. Reserve shorter intervals for dev/staging environments.
-- **Pin critical images** - If a stack uses `image: postgres:16.2` (pinned tag), auto-update will only detect updates to that exact tag. Use floating tags like `postgres:16` if you want minor version updates.
-- **Monitor run history** - Check run history periodically to ensure updates are applying cleanly. Failed runs may indicate registry authentication issues or compose file problems.
-- **Use "All Stacks" carefully** - Wildcard policies update every stack on the node. This is convenient for dev environments but may be too aggressive for production.
-- **Combine with notifications** - Sencho sends alert notifications when auto-updates are applied, so you stay informed even when updates happen automatically.
+The preview is recomputed each time the readiness board loads, so it reflects the live state of your registries and local images.
 
 ## Troubleshooting
 
-### Policy reports "all images up to date" but I see an update elsewhere
+### Card shows "No changelog available"
 
-This usually means the registry check couldn't determine the remote digest. Common causes:
+Sencho reads changelog metadata from the registry's manifest and OCI annotations. Registries that do not publish this metadata (most private registries and many self-hosted ones) will simply render the card without a changelog. The risk tag is still accurate because it is computed from the tag itself.
 
-- **Private registry without credentials** - If your images are in a private registry, make sure you've added authentication credentials in **Settings > Registries**. Without valid credentials, Sencho can't query the remote manifest.
-- **Network connectivity** - The Sencho instance needs outbound HTTPS access to the registry (e.g., `registry-1.docker.io`, `ghcr.io`). Firewall rules or proxy configurations may block these requests.
-- **Digest-pinned images** - Images referenced by digest (`image: nginx@sha256:abc...`) are immutable by design. Sencho strips the pin for tag-based checking, but if your compose file only uses digest refs, consider switching to tag-based refs for auto-update support.
+### Apply button is disabled with a "blocked" tooltip
 
-Starting with this version, run history now distinguishes between "all images up to date" (clean check) and "image checks failed" (registry unreachable), so you can tell whether the check actually succeeded.
+The stack has a major version bump. Open the cron schedule for that stack and apply manually after reviewing the upstream release notes. The block is a policy decision: major updates never auto-apply without human review.
 
-### Policy keeps failing with "Target node offline"
+### Card stays stuck on "Checking"
 
-This means the remote Sencho instance was unreachable when the policy triggered. Verify:
+The registry call is either still pending or failed. Click **Recheck all** in the hero to retry. If the stack has private-registry credentials, confirm they are still valid in **Settings > Registries**.
 
-- The remote node's Sencho instance is running
-- The API URL and token in **Settings > Nodes** are correct
-- The remote node has not changed IP address or port
+### "Nothing to update" but I see an update on another view
 
-### Policy shows "no containers found"
-
-This warning appears when a policy targets a specific stack that has no running containers. The stack may have been:
-
-- Stopped or removed since the policy was created
-- Renamed (stack names are directory-based)
-
-Check that the target stack exists and has at least one running container. For wildcard ("All Stacks") policies, empty stacks are silently skipped without a warning.
-
-### "Run Now" finishes instantly
-
-This is expected behavior. The Run Now button triggers the update check in the background and returns immediately. The actual check runs asynchronously; check the run history panel to see the result once it completes.
-
-### Policy was automatically disabled
-
-If a policy's cron expression becomes invalid after creation, the scheduler disables the policy and records the reason in the status column. To fix this:
-
-1. Open the policy in edit mode.
-2. Re-enter a valid cron expression (or choose a preset).
-3. Re-enable the policy using the toggle switch.
-
-### Run shows "Server restarted during execution"
-
-This means Sencho was restarted while this policy's update check was mid-execution. The run was marked as failed automatically on startup. The policy itself is still enabled and will run at its next scheduled time. Use **Run Now** if you want to trigger it immediately.
+Image update detection runs every six hours. The readiness board uses the same cached status. Trigger **Recheck all** to force a fresh check, or see [Image update detection](/features/image-update-detection) for details on the refresh cycle.

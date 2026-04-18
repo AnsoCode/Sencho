@@ -6444,7 +6444,18 @@ app.get('/api/scheduled-tasks', (req: Request, res: Response): void => {
     } else if (excludeAction) {
       tasks = tasks.filter(t => t.action !== excludeAction);
     }
-    res.json(tasks);
+
+    // Timeline view needs every firing inside a rolling window, not just the next run.
+    const scheduler = SchedulerService.getInstance();
+    const windowHours = Math.min(Math.max(Number(req.query.window_hours) || 24, 1), 168);
+    const from = Date.now();
+    const to = from + windowHours * 60 * 60 * 1000;
+    const enriched = tasks.map(t => ({
+      ...t,
+      next_runs: t.enabled === 1 ? scheduler.calculateRunsWithin(t.cron_expression, from, to) : [],
+    }));
+
+    res.json(enriched);
   } catch (error) {
     console.error('[ScheduledTasks] List error:', error);
     res.status(500).json({ error: 'Failed to fetch scheduled tasks' });

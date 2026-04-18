@@ -54,7 +54,7 @@ import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
 import ScheduledOperationsView from './ScheduledOperationsView';
-import AutoUpdatePoliciesView from './AutoUpdatePoliciesView';
+import AutoUpdateReadinessView from './AutoUpdateReadinessView';
 import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
@@ -2779,8 +2779,8 @@ export default function EditorLayout() {
               <AuditLogView />
             </CapabilityGate>
           ) : activeView === 'auto-updates' ? (
-            <CapabilityGate capability="auto-updates" featureName="Auto-Update Policies">
-              <AutoUpdatePoliciesView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+            <CapabilityGate capability="auto-updates" featureName="Auto-Update Readiness">
+              <AutoUpdateReadinessView />
             </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
