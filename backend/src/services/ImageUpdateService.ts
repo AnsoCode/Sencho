@@ -1,5 +1,3 @@
-import https from 'https';
-import http from 'http';
 import path from 'path';
 import YAML from 'yaml';
 import DockerController from './DockerController';
@@ -8,87 +6,20 @@ import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
+import { parseImageRef, getRemoteDigest } from './registry-api';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
 
 const BACKFILL_KEY = 'image_update_notifications_backfilled';
-
-// ─── Image ref parsing ────────────────────────────────────────────────────────
-
-interface ParsedRef {
-    registry: string; // e.g. "registry-1.docker.io", "lscr.io", "ghcr.io"
-    repo: string;     // e.g. "library/nginx", "linuxserver/sonarr"
-    tag: string;      // e.g. "latest", "1.25"
-}
-
-function parseImageRef(imageRef: string): ParsedRef | null {
-    if (imageRef.startsWith('sha256:')) return null;
-
-    // Strip digest pin (e.g. "nginx@sha256:abc" → "nginx")
-    const atIdx = imageRef.indexOf('@');
-    if (atIdx !== -1) imageRef = imageRef.slice(0, atIdx);
-
-    let registry = 'registry-1.docker.io';
-    let rest = imageRef;
-
-    const slashIdx = imageRef.indexOf('/');
-    if (slashIdx !== -1) {
-        const firstPart = imageRef.slice(0, slashIdx);
-        if (firstPart.includes('.') || firstPart.includes(':') || firstPart === 'localhost') {
-            registry = firstPart;
-            rest = imageRef.slice(slashIdx + 1);
-        }
-    }
-
-    // Extract tag
-    let tag = 'latest';
-    const colonIdx = rest.lastIndexOf(':');
-    if (colonIdx > 0) {
-        tag = rest.slice(colonIdx + 1);
-        rest = rest.slice(0, colonIdx);
-    }
-
-    // Docker Hub official images (no slash) → prepend "library/"
-    if (registry === 'registry-1.docker.io' && !rest.includes('/')) {
-        rest = `library/${rest}`;
-    }
-
-    return { registry, repo: rest, tag };
-}
 
 export interface ImageCheckResult {
     hasUpdate: boolean;
     error?: string;
 }
 
-// ─── Minimal HTTP helper ──────────────────────────────────────────────────────
-
-interface HttpResult {
-    statusCode: number;
-    headers: Record<string, string | string[] | undefined>;
-    body: string;
-}
-
-function httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 10000): Promise<HttpResult> {
-    return new Promise((resolve, reject) => {
-        const lib = url.startsWith('https:') ? https : http;
-        const req = lib.get(url, { headers }, (res) => {
-            let body = '';
-            res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-            res.on('end', () => resolve({
-                statusCode: res.statusCode ?? 0,
-                headers: res.headers as Record<string, string | string[] | undefined>,
-                body,
-            }));
-        });
-        req.on('error', reject);
-        req.setTimeout(timeoutMs, () => req.destroy(new Error('Request timed out')));
-    });
-}
-
 // ─── Compose file helpers ────────────────────────────────────────────────────
 
-function loadDotEnv(content: string): Record<string, string> {
+export function loadDotEnv(content: string): Record<string, string> {
     const vars: Record<string, string> = {};
     for (const line of content.split('\n')) {
         const trimmed = line.trim();
@@ -106,10 +37,15 @@ function loadDotEnv(content: string): Record<string, string> {
     return vars;
 }
 
-function extractImagesFromCompose(
+export interface ComposeServiceImage {
+    service: string;
+    image: string;
+}
+
+export function extractServiceImagesFromCompose(
     yamlContent: string,
-    envVars: Record<string, string>
-): string[] {
+    envVars: Record<string, string>,
+): ComposeServiceImage[] {
     let parsed: Record<string, unknown>;
     try {
         parsed = YAML.parse(yamlContent) as Record<string, unknown>;
@@ -118,8 +54,8 @@ function extractImagesFromCompose(
     }
     if (!parsed?.services || typeof parsed.services !== 'object') return [];
 
-    const images: string[] = [];
-    for (const svc of Object.values(parsed.services as Record<string, unknown>)) {
+    const out: ComposeServiceImage[] = [];
+    for (const [service, svc] of Object.entries(parsed.services as Record<string, unknown>)) {
         if (!svc || typeof svc !== 'object') continue;
         const raw = (svc as Record<string, unknown>).image;
         if (!raw || typeof raw !== 'string') continue;
@@ -137,84 +73,16 @@ function extractImagesFromCompose(
 
         ref = ref.trim();
         if (!ref || ref.includes('${') || ref.startsWith('sha256:')) continue;
-        images.push(ref);
+        out.push({ service, image: ref });
     }
-    return images;
+    return out;
 }
 
-// ─── Registry auth ────────────────────────────────────────────────────────────
-
-async function getAuthToken(
-    registry: string,
-    repo: string,
-    credentials?: { username: string; password: string } | null
-): Promise<string | null> {
-    try {
-        const basicHeaders: Record<string, string> = {};
-        if (credentials) {
-            basicHeaders['Authorization'] = `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`;
-        }
-
-        let tokenUrl: string;
-
-        if (registry === 'registry-1.docker.io') {
-            tokenUrl = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull`;
-        } else {
-            // Ping /v2/ to get the WWW-Authenticate challenge
-            const ping = await httpGet(`https://${registry}/v2/`, basicHeaders);
-            const wwwAuth = ping.headers['www-authenticate'] as string | undefined;
-            if (!wwwAuth) return null;
-
-            const realmMatch = wwwAuth.match(/realm="([^"]+)"/);
-            const serviceMatch = wwwAuth.match(/service="([^"]+)"/);
-            const scopeMatch = wwwAuth.match(/scope="([^"]+)"/);
-            if (!realmMatch) return null;
-
-            const params = new URLSearchParams();
-            if (serviceMatch) params.set('service', serviceMatch[1]);
-            params.set('scope', scopeMatch ? scopeMatch[1] : `repository:${repo}:pull`);
-            tokenUrl = `${realmMatch[1]}?${params.toString()}`;
-        }
-
-        const tokenRes = await httpGet(tokenUrl, basicHeaders);
-        if (tokenRes.statusCode !== 200) return null;
-
-        const parsed = JSON.parse(tokenRes.body);
-        return parsed.token ?? parsed.access_token ?? null;
-    } catch {
-        return null;
-    }
-}
-
-// ─── Remote digest lookup ─────────────────────────────────────────────────────
-
-// Include manifest list types so we get the fat-manifest digest for multi-arch
-// images - this matches what Docker stores in local RepoDigests.
-const MANIFEST_ACCEPT = [
-    'application/vnd.docker.distribution.manifest.list.v2+json',
-    'application/vnd.docker.distribution.manifest.v2+json',
-    'application/vnd.oci.image.index.v1+json',
-    'application/vnd.oci.image.manifest.v1+json',
-].join(', ');
-
-async function getRemoteDigest(
-    registry: string,
-    repo: string,
-    tag: string,
-    credentials?: { username: string; password: string } | null
-): Promise<string | null> {
-    try {
-        const token = await getAuthToken(registry, repo, credentials);
-        const headers: Record<string, string> = { Accept: MANIFEST_ACCEPT };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await httpGet(`https://${registry}/v2/${repo}/manifests/${tag}`, headers);
-        if (res.statusCode !== 200) return null;
-
-        return (res.headers['docker-content-digest'] as string) ?? null;
-    } catch {
-        return null;
-    }
+export function extractImagesFromCompose(
+    yamlContent: string,
+    envVars: Record<string, string>,
+): string[] {
+    return extractServiceImagesFromCompose(yamlContent, envVars).map(e => e.image);
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
