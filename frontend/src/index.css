@@ -50,12 +50,16 @@
   --info-muted: oklch(0.62 0.14 250 / 0.12);
   --destructive-muted: oklch(0.63 0.19 23 / 0.12);
 
-  /* Charts */
-  --chart-1: oklch(0.8100 0.1700 75.3500);
-  --chart-2: oklch(0.5500 0.2200 264.5300);
-  --chart-3: oklch(0.7200 0 0);
-  --chart-4: oklch(0.9200 0 0);
-  --chart-5: oklch(0.5600 0 0);
+  /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
+  --chart-1: var(--brand);
+  --chart-2: var(--warning);
+  --chart-3: var(--destructive);
+  --chart-4: oklch(0.70 0 0);
+  --chart-5: oklch(0.45 0 0);
+
+  /* Sparkline / data-line styling (centralized) */
+  --data-line-width: 1.25px;
+  --data-peak: var(--warning);
 
   /* Sidebar */
   --sidebar: oklch(0.98 0 0 / 0.80);
@@ -78,7 +82,7 @@
   --card-border-top: oklch(0 0 0 / 0.12);
   --card-border-hover: oklch(0 0 0 / 0.15);
 
-  /* Label palette */
+  /* Label palette — ten raw hues preserved for existing assignments */
   --label-teal: oklch(0.55 0.12 192);
   --label-teal-bg: oklch(0.55 0.12 192 / 0.12);
   --label-blue: oklch(0.55 0.14 250);
@@ -100,13 +104,26 @@
   --label-slate: oklch(0.50 0.01 250);
   --label-slate-bg: oklch(0.50 0.01 250 / 0.12);
 
+  /* Semantic label roles — new labels should consume these */
+  --label-env: var(--label-teal);
+  --label-env-bg: var(--label-teal-bg);
+  --label-role: var(--label-blue);
+  --label-role-bg: var(--label-blue-bg);
+  --label-owner: var(--label-green);
+  --label-owner-bg: var(--label-green-bg);
+  --label-risk: var(--label-rose);
+  --label-risk-bg: var(--label-rose-bg);
+  --label-custom: var(--label-amber);
+  --label-custom-bg: var(--label-amber-bg);
+
   /* Chart grid & axis */
   --chart-grid: oklch(0 0 0 / 0.06);
   --chart-tick: oklch(0 0 0 / 0.45);
 
   /* Typography */
   --font-sans: 'Geist', sans-serif;
-  --font-serif: Georgia, serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
   --font-mono: 'Geist Mono', monospace;
 
   /* Shape */
@@ -197,12 +214,16 @@
   --info-muted: oklch(0.70 0.14 250 / 0.15);
   --destructive-muted: oklch(0.69 0.20 24 / 0.15);
 
-  /* Charts — monochrome blue/teal */
-  --chart-1: oklch(0.72 0.08 220);
-  --chart-2: oklch(0.65 0.08 220);
-  --chart-3: oklch(0.56 0 0);
-  --chart-4: oklch(0.44 0 0);
-  --chart-5: oklch(0.92 0 0);
+  /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
+  --chart-1: var(--brand);
+  --chart-2: var(--warning);
+  --chart-3: var(--destructive);
+  --chart-4: oklch(0.55 0 0);
+  --chart-5: oklch(0.80 0 0);
+
+  /* Sparkline / data-line styling (centralized) */
+  --data-line-width: 1.25px;
+  --data-peak: var(--warning);
 
   /* Sidebar */
   --sidebar: oklch(0.08 0 0 / 0.80);
@@ -225,7 +246,7 @@
   --card-border-top: oklch(1 0 0 / 0.14);
   --card-border-hover: oklch(1 0 0 / 0.14);
 
-  /* Label palette */
+  /* Label palette — ten raw hues preserved for existing assignments */
   --label-teal: oklch(0.75 0.10 192);
   --label-teal-bg: oklch(0.75 0.10 192 / 0.15);
   --label-blue: oklch(0.72 0.12 250);
@@ -247,13 +268,26 @@
   --label-slate: oklch(0.65 0.01 250);
   --label-slate-bg: oklch(0.65 0.01 250 / 0.15);
 
+  /* Semantic label roles — new labels should consume these */
+  --label-env: var(--label-teal);
+  --label-env-bg: var(--label-teal-bg);
+  --label-role: var(--label-blue);
+  --label-role-bg: var(--label-blue-bg);
+  --label-owner: var(--label-green);
+  --label-owner-bg: var(--label-green-bg);
+  --label-risk: var(--label-rose);
+  --label-risk-bg: var(--label-rose-bg);
+  --label-custom: var(--label-amber);
+  --label-custom-bg: var(--label-amber-bg);
+
   /* Chart grid & axis */
   --chart-grid: oklch(1 0 0 / 0.05);
   --chart-tick: oklch(1 0 0 / 0.40);
 
   /* Typography */
   --font-sans: 'Geist', sans-serif;
-  --font-serif: Georgia, serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
   --font-mono: 'Geist Mono', monospace;
 
   /* Shape */
@@ -354,6 +388,7 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
+  --font-display: var(--font-display);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
