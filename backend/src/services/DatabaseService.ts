@@ -2066,6 +2066,12 @@ export class DatabaseService {
         this.db.prepare('DELETE FROM audit_log WHERE timestamp < ?').run(cutoff);
     }
 
+    public getAuditLogsInRange(from: number, to: number): AuditLogEntry[] {
+        return this.db.prepare(
+            'SELECT * FROM audit_log WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC'
+        ).all(from, to) as AuditLogEntry[];
+    }
+
     // --- API Tokens ---
 
     public addApiToken(token: Omit<ApiToken, 'id' | 'last_used_at' | 'revoked_at'>): number {

@@ -61,19 +61,56 @@ Expanding a row reveals additional detail:
 
 Navigate to the **Audit** tab in the sidebar. This tab is visible to users with the **Admin** or **Auditor** role on an Admiral license.
 
+The Audit Log has two views, toggled from the header: **Stream** (default) and **Table**.
+
+### Stream view
+
+Stream gives you an at-a-glance read on activity. A signal rail at the top summarizes the last 24 hours across four tiles, and the feed below groups entries by day with severity dots, relative times, and inline anomaly callouts.
+
 <Frame>
-  <img src="/images/audit-log/audit-log-overview.png" alt="Audit Log view showing the action table with search filters, color-coded method badges, and export controls" />
+  <img src="/images/audit-log/audit-stream.png" alt="Audit Log Stream view showing the signal rail with events, actors, failure rate, and peak hour tiles above a day-banded chronological feed" />
 </Frame>
 
-Click any row to expand it and see the full request details inline.
+**Signal rail tiles:**
+
+| Tile | What it shows |
+|------|---------------|
+| **Events · 24h** | Count of audit entries in the last 24 hours, with a percent change versus the prior 7-day average |
+| **Actors** | Unique users active in the last 24 hours; notes the count of new IP addresses when present |
+| **Failure rate** | Share of 24-hour requests with 4xx or 5xx responses, rendered with an inline sparkline of the hourly failure trend |
+| **Peak hour** | The hour with the highest activity, flagged in amber when it falls outside 08:00-18:00 |
+
+**Feed entries:** each row shows the relative time (e.g. `58m ago`), a severity dot (green for 2xx, amber for 3xx, rose for 4xx/5xx), the actor and action summary, a meta line with exact timestamp, node, status code, IP, and any anomaly flags, and the method and path on the right.
+
+Rows colored in rose or amber indicate failures; the tinting makes spikes of errors visible at a glance.
+
+### Table view
+
+Table keeps the full-featured detail grid for power users: exact timestamps, method badges, action summaries, and status codes in sortable columns. Clicking any row expands it to show the full request path, IP address, node ID, and entry ID.
 
 <Frame>
-  <img src="/images/audit-log/audit-log-expanded.png" alt="Audit Log with an expanded row showing request path, IP address, node ID, and entry ID" />
+  <img src="/images/audit-log/audit-log-overview.png" alt="Audit Log Table view showing the action table with search filters, color-coded method badges, and export controls" />
 </Frame>
 
-The header displays the total number of matching entries and provides **Refresh** and **Export** controls.
+<Frame>
+  <img src="/images/audit-log/audit-log-expanded.png" alt="Audit Log Table view with an expanded row showing request path, IP address, node ID, and entry ID" />
+</Frame>
 
-Results are paginated at 50 entries per page. Navigation controls appear at the bottom of the table when there are multiple pages.
+The header displays the total number of matching entries and provides **Refresh** and **Export** controls in both views.
+
+Results are paginated at 50 entries per page. Navigation controls appear at the bottom of the feed or table when there are multiple pages.
+
+## Anomaly detection
+
+In Stream view, Sencho annotates individual entries with lightweight anomaly flags that help you spot activity that deviates from an actor's normal pattern. Flags appear inline in the entry's meta line, after the IP address.
+
+| Flag | When it fires |
+|------|---------------|
+| **unusual hour** | The entry's hour sits outside the actor's typical activity window, computed from the central 90% of their last 7 days. Requires a baseline of at least 5 prior entries to avoid flagging new users. |
+| **new ip** | The IP address on this entry has not been seen for this actor in the last 30 days, and the actor already has prior history. |
+| **first seen** | The actor has no prior entries in the 30-day history window. Useful for spotting brand-new service accounts, CLI tools, or compromised sessions. |
+
+Flags are computed at read time against your existing audit history. No new tables, no per-entry storage overhead, and the logic is cache-friendly, so enabling Stream view does not slow down the audit log endpoint.
 
 ## Filtering and search
 
