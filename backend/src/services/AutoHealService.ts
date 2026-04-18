@@ -5,6 +5,13 @@ import { DockerEventManager } from './DockerEventManager';
 import { ContainerHealthSnapshot } from './DockerEventService';
 import { NotificationService } from './NotificationService';
 
+// Dockerode listContainers shape (subset used here)
+type ContainerInfo = {
+    Id: string;
+    Names?: string[];
+    Labels?: Record<string, string>;
+};
+
 const EVAL_INTERVAL_MS = 30_000;
 const INITIAL_DELAY_MS = 10_000;
 const RATE_LIMIT_WINDOW_MS = 60 * 60_000; // 1 hour
@@ -64,12 +71,6 @@ export class AutoHealService {
     }
 
     private async evaluateForNode(nodeId: number, policies: AutoHealPolicy[]): Promise<void> {
-        // Dockerode listContainers shape (subset used here)
-        type ContainerInfo = {
-            Id: string;
-            Names?: string[];
-            Labels?: Record<string, string>;
-        };
         let containers: ContainerInfo[];
         try {
             containers = await DockerController.getInstance(nodeId).getRunningContainers();
@@ -85,7 +86,22 @@ export class AutoHealService {
         const eventSvc = DockerEventManager.getInstance().getService(nodeId);
         const now = Date.now();
 
+        // Prune stale entries for containers no longer running on this node
+        const liveIds = new Set(containers.map(c => c.Id));
+        for (const [cid, timestamps] of this.restartTimestamps.entries()) {
+            const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+            if (recent.length === 0 || !liveIds.has(cid)) {
+                this.restartTimestamps.delete(cid);
+            } else {
+                this.restartTimestamps.set(cid, recent);
+            }
+        }
+
         for (const policy of policies) {
+            if (policy.id === undefined) {
+                console.warn('[AutoHeal] skipping policy without id:', policy.stack_name);
+                continue;
+            }
             const candidates = containers.filter(c => {
                 const labels = c.Labels ?? {};
                 if (labels['com.docker.compose.project'] !== policy.stack_name) return false;
@@ -256,25 +272,35 @@ export class AutoHealService {
 
             // Auto-disable if failure threshold reached
             if (failures >= policy.auto_disable_after_failures) {
-                db.setPolicyEnabled(policy.id!, false);
-                db.recordAutoHealHistory({
-                    ...baseEntry,
-                    action: 'policy_auto_disabled',
-                    reason: `Policy disabled after ${failures} consecutive restart failures. Check container logs and re-enable when resolved.`,
-                    success: 0,
-                    error: null,
-                });
-                NotificationService.getInstance()
-                    .dispatchAlert(
-                        'warning',
-                        `Auto-Heal: Policy for ${policy.stack_name}${policy.service_name ? '/' + policy.service_name : ''} has been auto-disabled after ${failures} consecutive failures.`,
-                        policy.stack_name,
-                    )
-                    .catch(e => console.error('[AutoHeal] notification dispatch failed:', e));
+                this.handleAutoDisable(policy.id!, policy, baseEntry, failures);
             }
 
             console.error(`[AutoHeal] restart failed for ${containerName} (${containerId}):`, errorMsg);
         }
+    }
+
+    private handleAutoDisable(
+        policyId: number,
+        policy: AutoHealPolicy,
+        baseEntry: Omit<Parameters<DatabaseService['recordAutoHealHistory']>[0], 'action' | 'reason' | 'success' | 'error'>,
+        failures: number,
+    ): void {
+        const db = DatabaseService.getInstance();
+        db.setPolicyEnabled(policyId, false);
+        db.recordAutoHealHistory({
+            ...baseEntry,
+            action: 'policy_auto_disabled',
+            reason: `Policy disabled after ${failures} consecutive restart failures. Check container logs and re-enable when resolved.`,
+            success: 0,
+            error: null,
+        });
+        NotificationService.getInstance()
+            .dispatchAlert(
+                'warning',
+                `Auto-Heal: Policy for ${policy.stack_name}${policy.service_name ? '/' + policy.service_name : ''} has been auto-disabled after ${failures} consecutive failures.`,
+                policy.stack_name,
+            )
+            .catch(e => console.error('[AutoHeal] notification dispatch failed:', e));
     }
 
     private skipReasonText(reason: string): string {
