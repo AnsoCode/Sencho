@@ -434,6 +434,8 @@ export class DockerEventService {
         state.lastKillAt = undefined;
         state.oomPending = undefined;
         state.lastCrashAlertAt = undefined;
+        state.unhealthySince = undefined;
+        state.healthStatus = 'starting';
         state.lastActivityAt = Date.now();
     }
 
@@ -662,6 +664,48 @@ export class DockerEventService {
             status: this.status,
             reconnectAttempts: this.reconnectAttempts,
             trackedContainers: this.containerState.size,
+        };
+    }
+
+    // ========================================================================
+    // Container state accessors (used by AutoHealService)
+    // ========================================================================
+
+    public listContainerStates(): Array<{
+        id: string;
+        name?: string;
+        stackName?: string;
+        healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+        unhealthySince?: number;
+        lastKillAt?: number;
+    }> {
+        return Array.from(this.containerState.entries()).map(([id, s]) => ({
+            id,
+            name: s.name,
+            stackName: s.stackName,
+            healthStatus: s.healthStatus,
+            unhealthySince: s.unhealthySince,
+            lastKillAt: s.lastKillAt,
+        }));
+    }
+
+    public getContainerState(id: string): {
+        id: string;
+        name?: string;
+        stackName?: string;
+        healthStatus?: 'healthy' | 'unhealthy' | 'starting';
+        unhealthySince?: number;
+        lastKillAt?: number;
+    } | undefined {
+        const s = this.containerState.get(id);
+        if (!s) return undefined;
+        return {
+            id,
+            name: s.name,
+            stackName: s.stackName,
+            healthStatus: s.healthStatus,
+            unhealthySince: s.unhealthySince,
+            lastKillAt: s.lastKillAt,
         };
     }
 }
