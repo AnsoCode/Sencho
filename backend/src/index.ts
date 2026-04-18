@@ -8690,7 +8690,7 @@ const gracefulShutdown = (signal: string) => {
     try { MonitorService.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] MonitorService cleanup failed:', (e as Error).message);
     }
-    try { AutoHealService.getInstance().stop(); } catch { /* ignore */ }
+    try { AutoHealService.getInstance().stop(); } catch (e) { console.warn('[Shutdown] AutoHealService cleanup failed:', (e as Error).message); }
     try { DockerEventManager.getInstance().stop(); } catch (e) {
       console.warn('[Shutdown] DockerEventManager cleanup failed:', (e as Error).message);
     }
