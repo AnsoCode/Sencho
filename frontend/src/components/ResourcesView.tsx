@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from "@/components/ui/tabs";
@@ -33,8 +33,23 @@ import { cn } from '@/lib/utils';
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { lazy, Suspense } from 'react';
+import { ReclaimHero } from './resources/ReclaimHero';
+import { FootprintTreemap } from './resources/FootprintTreemap';
+import { TabLanding, type TabLandingEntry } from './resources/TabLanding';
 
 const NetworkTopologyView = lazy(() => import('./NetworkTopologyView'));
+
+const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function ageLabel(ms: number): string {
+    const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+}
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +57,9 @@ interface UsageData {
     reclaimableImages: number;
     reclaimableContainers: number;
     reclaimableVolumes: number;
+    reclaimableImageCount: number;
+    reclaimableContainerCount: number;
+    reclaimableVolumeCount: number;
     managedImageBytes: number;
     unmanagedImageBytes: number;
     managedVolumeBytes: number;
@@ -61,6 +79,8 @@ interface DockerVolume {
     Name: string;
     Driver: string;
     Mountpoint: string;
+    Size: number;
+    CreatedAt: string | null;
     managedBy: string | null;
     managedStatus: 'managed' | 'unmanaged';
 }
@@ -111,96 +131,6 @@ interface NetworkInspectData {
 type ResourceFilter = 'all' | 'managed' | 'unmanaged';
 type PruneTarget = 'containers' | 'images' | 'networks' | 'volumes';
 type PruneScope = 'managed' | 'all';
-
-// ── Disk Footprint Widget ──────────────────────────────────────────────────────
-
-interface FootprintWidgetProps {
-    usage: UsageData;
-    onFilter: (filter: ResourceFilter) => void;
-}
-
-function FootprintWidget({ usage, onFilter }: FootprintWidgetProps) {
-    const [animated, setAnimated] = useState(false);
-
-    const managedBytes = usage.managedImageBytes + usage.managedVolumeBytes;
-    const unmanagedBytes = usage.unmanagedImageBytes + usage.unmanagedVolumeBytes;
-    const reclaimable = usage.reclaimableImages;
-    const total = managedBytes + unmanagedBytes + reclaimable;
-
-    useEffect(() => {
-        // Trigger bar animation on mount
-        const t = setTimeout(() => setAnimated(true), 60);
-        return () => clearTimeout(t);
-    }, []);
-
-    if (total === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center h-28 text-muted-foreground text-sm gap-2 animate-in fade-in-0 duration-300">
-                <ShieldCheck className="w-8 h-8 opacity-40" />
-                <span>No disk usage data available.</span>
-            </div>
-        );
-    }
-
-    const pct = (n: number) => `${Math.max(0, (n / total) * 100).toFixed(1)}%`;
-
-    const segments: { bytes: number; color: string; label: string; filter: ResourceFilter | null; hoverClass: string }[] = [
-        { bytes: managedBytes, color: 'bg-success', label: 'Sencho Managed', filter: 'managed', hoverClass: 'hover:bg-success/80' },
-        { bytes: unmanagedBytes, color: 'bg-warning', label: 'External Projects', filter: 'unmanaged', hoverClass: 'hover:bg-warning/80' },
-        { bytes: reclaimable, color: 'bg-muted-foreground/20', label: 'Reclaimable', filter: null, hoverClass: '' },
-    ];
-
-    return (
-        <div className="space-y-4 animate-in fade-in-0 duration-300">
-            {/* Stacked bar */}
-            <div className="relative flex h-4 w-full rounded-full overflow-hidden bg-muted gap-px">
-                {segments.map((seg, i) =>
-                    seg.bytes > 0 ? (
-                        <div
-                            key={i}
-                            title={`${seg.label}: ${formatBytes(seg.bytes)}`}
-                            className={cn(
-                                seg.color, seg.hoverClass,
-                                'transition-all duration-700 ease-out',
-                                seg.filter ? 'cursor-pointer' : 'cursor-default',
-                            )}
-                            style={{
-                                width: animated ? pct(seg.bytes) : '0%',
-                                transitionDelay: `${i * 80}ms`,
-                            }}
-                            onClick={() => seg.filter && onFilter(seg.filter)}
-                        />
-                    ) : null
-                )}
-            </div>
-
-            {/* Legend */}
-            <div className="space-y-2.5">
-                {segments.map((seg, i) =>
-                    seg.bytes > 0 ? (
-                        <button
-                            key={i}
-                            disabled={!seg.filter}
-                            onClick={() => seg.filter && onFilter(seg.filter)}
-                            className={cn(
-                                'flex items-center justify-between w-full text-sm group rounded-md px-1 py-0.5 -mx-1 transition-colors duration-150',
-                                seg.filter ? 'cursor-pointer hover:bg-muted/60' : 'cursor-default',
-                            )}
-                        >
-                            <div className="flex items-center gap-2.5 text-muted-foreground group-hover:text-foreground transition-colors">
-                                <span className={cn('w-2.5 h-2.5 rounded-sm shrink-0', seg.color)} />
-                                <span className="font-medium text-xs tracking-wide">{seg.label}</span>
-                            </div>
-                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                                {formatBytes(seg.bytes)}
-                            </span>
-                        </button>
-                    ) : null
-                )}
-            </div>
-        </div>
-    );
-}
 
 // ── Filter Toggle - Segmented Control ─────────────────────────────────────────
 
@@ -700,6 +630,42 @@ export default function ResourcesView() {
         setVolumeFilter(filter);
     };
 
+    const treemapFilterToResourceFilter = (filter: 'managed' | 'unmanaged' | 'reclaimable'): ResourceFilter => {
+        if (filter === 'managed') return 'managed';
+        if (filter === 'unmanaged') return 'unmanaged';
+        return 'unmanaged';
+    };
+
+    const totalReclaimableBytes = (usage?.reclaimableImages ?? 0)
+        + (usage?.reclaimableContainers ?? 0)
+        + (usage?.reclaimableVolumes ?? 0);
+
+    const handleReviewAndPrune = () => {
+        setConfirmPrune({ target: 'images', scope: 'all' });
+    };
+
+    const volumeLandings = useMemo(() => {
+        const largest: TabLandingEntry[] = [...volumes]
+            .sort((a, b) => b.Size - a.Size)
+            .slice(0, 5)
+            .map(vol => ({
+                key: vol.Name,
+                primary: vol.Name,
+                secondary: vol.Size > 0 ? formatBytes(vol.Size) : '-',
+            }));
+        const now = Date.now();
+        const recent: TabLandingEntry[] = volumes
+            .filter(v => !!v.CreatedAt && now - new Date(v.CreatedAt).getTime() <= RECENT_WINDOW_MS)
+            .sort((a, b) => new Date(b.CreatedAt ?? 0).getTime() - new Date(a.CreatedAt ?? 0).getTime())
+            .slice(0, 5)
+            .map(vol => ({
+                key: vol.Name,
+                primary: vol.Name,
+                secondary: vol.CreatedAt ? ageLabel(new Date(vol.CreatedAt).getTime()) : '-',
+            }));
+        return { largest, recent };
+    }, [volumes]);
+
     return (
         <div className="p-6 h-full overflow-auto text-foreground flex flex-col gap-6 animate-in fade-in-0 duration-300">
 
@@ -708,7 +674,7 @@ export default function ResourcesView() {
                 <HardDrive className="w-5 h-5 text-muted-foreground" />
                 <h1 className="text-xl font-medium tracking-tight">Resources Hub</h1>
                 {activeNode?.type === 'remote' && (
-                    <span className="text-sm text-muted-foreground">- {activeNode.name}</span>
+                    <span className="text-sm text-muted-foreground">· {activeNode.name}</span>
                 )}
                 {trivy.available && isPaid && (
                     <Button
@@ -729,6 +695,18 @@ export default function ResourcesView() {
                 )}
             </div>
 
+            {/* Reclaim hero */}
+            {usage && isAdmin && (
+                <ReclaimHero
+                    bytes={totalReclaimableBytes}
+                    imageCount={usage.reclaimableImageCount}
+                    containerCount={usage.reclaimableContainerCount}
+                    volumeCount={usage.reclaimableVolumeCount}
+                    onReview={handleReviewAndPrune}
+                    disabled={isLoading}
+                />
+            )}
+
             {/* Top row: Footprint + Quick Clean */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
@@ -744,16 +722,14 @@ export default function ResourcesView() {
                     </CardHeader>
                     <CardContent>
                         {usage ? (
-                            <FootprintWidget usage={usage} onFilter={handleFootprintFilter} />
+                            <FootprintTreemap
+                                managedBytes={usage.managedImageBytes + usage.managedVolumeBytes}
+                                unmanagedBytes={usage.unmanagedImageBytes + usage.unmanagedVolumeBytes}
+                                reclaimableBytes={totalReclaimableBytes}
+                                onFilter={(f) => handleFootprintFilter(treemapFilterToResourceFilter(f))}
+                            />
                         ) : (
-                            <div className="space-y-3">
-                                <Skeleton className="h-4 w-full rounded-full" />
-                                <div className="space-y-2">
-                                    <Skeleton className="h-4 w-full" />
-                                    <Skeleton className="h-4 w-3/4" />
-                                    <Skeleton className="h-4 w-1/2" />
-                                </div>
-                            </div>
+                            <Skeleton className="h-[150px] w-full rounded-md" />
                         )}
                     </CardContent>
                 </Card>
@@ -936,6 +912,16 @@ export default function ResourcesView() {
 
                     {/* Volumes */}
                     <TabsContent value="volumes" className="m-0 border-0 p-0 animate-in fade-in-0 duration-200">
+                        {!isLoading && volumes.length > 0 && (
+                            <TabLanding
+                                largestSubtitle={`by size · ${volumes.length} total`}
+                                largestEntries={volumeLandings.largest}
+                                largestEmpty="No volumes on disk."
+                                recentSubtitle="last 24h"
+                                recentEntries={volumeLandings.recent}
+                                recentEmpty="No volumes created in the last 24h."
+                            />
+                        )}
                         <FilterToggle
                             value={volumeFilter}
                             onChange={setVolumeFilter}
