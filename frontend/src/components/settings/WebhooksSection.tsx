@@ -10,7 +10,6 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
-import { TierBadge } from '@/components/TierBadge';
 import {
     RefreshCw, CheckCircle, XCircle, Webhook, Copy, Trash2,
     Plus, ChevronDown, ChevronRight, History,
@@ -137,10 +136,6 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
     if (!isPaid) {
         return (
             <div className="space-y-6">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
-                    <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
-                </div>
                 <PaidGate featureName="Webhooks">
                   <CapabilityGate capability="webhooks" featureName="Webhooks">
                     <div className="space-y-3">
@@ -155,11 +150,7 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-start justify-between pr-8">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">Webhooks <TierBadge /></h3>
-                    <p className="text-sm text-muted-foreground">Trigger stack actions from CI/CD pipelines via HTTP.</p>
-                </div>
+            <div className="flex justify-end">
                 <Button size="sm" onClick={() => setShowForm(!showForm)}>
                     <Plus className="w-4 h-4 mr-1.5" /> Create Webhook
                 </Button>

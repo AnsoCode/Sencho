@@ -27,7 +27,6 @@ import {
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
-import { TierBadge } from '@/components/TierBadge';
 import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info } from 'lucide-react';
 import type { FleetRole, ScanPolicy, VulnSeverity } from '@/types/security';
 import { useLicense } from '@/context/LicenseContext';
@@ -256,14 +255,6 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   if (!isPaid) {
     return (
       <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-            Security <TierBadge />
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Define vulnerability scan policies that gate or warn on deploys.
-          </p>
-        </div>
         <PaidGate featureName="Scan Policies">
           <div className="space-y-3">
             <div className="h-16 rounded-lg border bg-card" />
@@ -276,22 +267,14 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between pr-8">
-        <div>
-          <h3 className="text-lg font-medium tracking-tight flex items-center gap-2">
-            Security <TierBadge />
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Policies evaluate every post-deploy scan and alert (or block) when severity exceeds the threshold.
-          </p>
-        </div>
-        {!isReplica && (
+      {!isReplica && (
+        <div className="flex justify-end">
           <Button size="sm" onClick={openCreate}>
             <Plus className="w-4 h-4 mr-1.5" />
             Add Policy
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {isReplica && (
         <div

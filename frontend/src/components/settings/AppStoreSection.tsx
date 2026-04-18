@@ -57,11 +57,6 @@ export function AppStoreSection({ settings, onSettingChange, isLoading, onSaved 
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium tracking-tight">App Store Registry</h3>
-                <p className="text-sm text-muted-foreground">Configure the template source used by the App Store.</p>
-            </div>
-
             {isLoading ? <SettingsSkeleton /> : (
                 <>
                     <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">

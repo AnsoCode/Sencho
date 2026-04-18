@@ -312,8 +312,6 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         onSave={saveSystemSettings}
                         isSaving={isSavingSystem}
                         isLoading={isSettingsLoading}
-                        isRemote={isRemote}
-                        activeNodeName={activeNode?.name}
                     />
                 );
             case 'notifications': return <NotificationsSection />;
@@ -412,8 +410,8 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                                                         {group.glyph}
                                                     </span>
                                                     <span className="flex-1 truncate text-sm font-medium">{item.label}</span>
-                                                    {locked && item.tier ? (
-                                                        <TierChip tier={item.tier} />
+                                                    {item.tier ? (
+                                                        <TierChip tier={item.tier} locked={locked} />
                                                     ) : null}
                                                     {showDot ? (
                                                         <span className="h-1.5 w-1.5 rounded-full bg-warning" />
@@ -513,16 +511,23 @@ function CommandSearchItem({
                 <span className="text-sm font-medium text-stat-value truncate">{item.label}</span>
                 <span className="text-xs text-stat-subtitle truncate">{item.description}</span>
             </div>
-            {locked && item.tier ? <TierChip tier={item.tier} /> : null}
+            {item.tier ? <TierChip tier={item.tier} locked={locked} /> : null}
         </CommandItem>
     );
 }
 
-function TierChip({ tier }: { tier: NonNullable<SettingsItemMeta['tier']> }) {
+function TierChip({ tier, locked }: { tier: NonNullable<SettingsItemMeta['tier']>; locked: boolean }) {
     const label = tier === 'admiral' ? 'ADMIRAL' : 'SKIPPER';
+    if (locked) {
+        return (
+            <span className="flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-stat-subtitle/80">
+                <Lock className="h-2.5 w-2.5" strokeWidth={1.5} />
+                {label}
+            </span>
+        );
+    }
     return (
-        <span className="flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-stat-subtitle/80">
-            <Lock className="h-2.5 w-2.5" strokeWidth={1.5} />
+        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-brand/70">
             {label}
         </span>
     );

@@ -7,11 +7,6 @@ export function AboutSection() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium tracking-tight">About Sencho</h3>
-                <p className="text-sm text-muted-foreground">Version and instance information.</p>
-            </div>
-
             <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Version</span>

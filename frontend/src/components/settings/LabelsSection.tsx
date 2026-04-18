@@ -125,11 +125,7 @@ export function LabelsSection() {
         <PaidGate featureName="Stack Labels">
           <CapabilityGate capability="labels" featureName="Stack Labels">
             <div className="space-y-4">
-                <div className="flex items-center justify-between pr-8">
-                    <div>
-                        <h2 className="text-lg font-semibold tracking-tight">Stack Labels</h2>
-                        <p className="text-sm text-muted-foreground">Organize stacks with colored labels for filtering and bulk actions.</p>
-                    </div>
+                <div className="flex justify-end">
                     <Button size="sm" onClick={openCreate} disabled={labels.length >= MAX_LABELS_PER_NODE}>
                         <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
                         {labels.length >= MAX_LABELS_PER_NODE ? 'Limit reached' : 'New Label'}

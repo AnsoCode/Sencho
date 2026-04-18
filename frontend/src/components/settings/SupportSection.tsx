@@ -8,11 +8,6 @@ export function SupportSection() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-medium tracking-tight">Help & Support</h3>
-                <p className="text-sm text-muted-foreground">Get help with Sencho based on your plan.</p>
-            </div>
-
             {/* Self-serve channels (all tiers) */}
             <div className="space-y-3">
                 <h4 className="text-sm font-medium text-muted-foreground">Resources</h4>

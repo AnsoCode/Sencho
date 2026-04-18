@@ -38,16 +38,12 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
 
     return (
         <div className="space-y-6">
-            <div className="flex items-start justify-between pr-8">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight">Developer</h3>
-                    <p className="text-sm text-muted-foreground">Power user settings for real-time observability and data retention.</p>
-                </div>
-                {isRemote && (
+            {isRemote && (
+                <div className="flex justify-end">
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5 cursor-help">
+                                <Badge variant="secondary" className="text-xs cursor-help">
                                     <Info className="w-3 h-3 mr-1" />
                                     Always Local
                                 </Badge>
@@ -57,8 +53,8 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                             </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
-                )}
-            </div>
+                </div>
+            )}
 
             {isLoading ? <SettingsSkeleton /> : (
                 <>

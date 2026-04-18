@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Combobox } from './ui/combobox';
-import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Server, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw, Terminal } from 'lucide-react';
+import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw, Terminal } from 'lucide-react';
 
 interface NodeSchedulingSummary {
   active_tasks: number;
@@ -430,17 +430,8 @@ export function NodeManager() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between pr-8">
-        <div>
-          <h2 className="text-lg font-medium flex items-center gap-2">
-            <Server className="w-5 h-5" />
-            Nodes
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Manage connections to local and remote Sencho instances
-          </p>
-        </div>
+      {/* Actions */}
+      <div className="flex justify-end">
         <Dialog
           open={createOpen}
           onOpenChange={(open) => {

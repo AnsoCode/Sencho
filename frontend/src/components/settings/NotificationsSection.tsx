@@ -5,17 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
-import { RefreshCw, Info } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type { Agent } from './types';
 
 export function NotificationsSection() {
     const { activeNode } = useNodes();
-    const isRemote = activeNode?.type === 'remote';
 
     const [notifTab, setNotifTab] = useState<'discord' | 'slack' | 'webhook'>('discord');
     const [agents, setAgents] = useState<Record<string, Agent>>({
@@ -127,32 +124,6 @@ export function NotificationsSection() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-start justify-between pr-8">
-                <div>
-                    <h3 className="text-lg font-medium tracking-tight">Notifications & Alerts</h3>
-                    <p className="text-sm text-muted-foreground">
-                        {isRemote
-                            ? <>Configuring notification channels on <span className="font-medium text-foreground">{activeNode!.name}</span>. Alerts from this remote node will dispatch via these channels.</>
-                            : 'Configure external integrations for crash alerts.'
-                        }
-                    </p>
-                </div>
-                {isRemote && (
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Badge variant="secondary" className="text-xs shrink-0 ml-2 mt-0.5 cursor-help">
-                                    <Info className="w-3 h-3 mr-1" />
-                                    Remote
-                                </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="max-w-[240px] text-center">
-                                These channels are saved on the remote Sencho instance and used when it dispatches alerts.
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
-                )}
-            </div>
             <Tabs value={notifTab} onValueChange={(v) => setNotifTab(v as 'discord' | 'slack' | 'webhook')} className="w-full">
                 <TabsList className="w-full mb-4 grid grid-cols-3">
                     <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
