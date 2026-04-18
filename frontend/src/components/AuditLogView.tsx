@@ -565,7 +565,7 @@ function StreamRow({ entry, now }: StreamRowProps) {
         '';
 
     return (
-        <div className={`grid grid-cols-[72px_10px_1fr_auto] gap-3 items-start px-2 py-2 rounded-sm ${rowTint}`}>
+        <div className={`grid grid-cols-[72px_10px_1fr_auto] gap-3 items-start px-2 py-[var(--density-cell-y)] rounded-sm ${rowTint}`}>
             <div className="text-[11px] font-mono text-stat-subtitle tabular-nums leading-4 pt-0.5">
                 {formatRelative(entry.timestamp, now)}
             </div>

@@ -71,7 +71,7 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEnd
   return (
     <div className="grid grid-cols-1 overflow-hidden rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel md:grid-cols-[2fr_1fr_1fr_1fr]">
       {/* CPU hero */}
-      <div className="relative p-5 md:border-r md:border-border/60">
+      <div className="relative px-[var(--density-row-x)] py-[var(--density-tile-y)] md:border-r md:border-border/60">
         <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
           CPU{systemStats ? ` · ${systemStats.cpu.cores} cores` : ''}
         </div>
@@ -95,7 +95,7 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEnd
       </div>
 
       {/* Memory */}
-      <div className="p-5 border-t border-border/60 md:border-t-0 md:border-r">
+      <div className="px-[var(--density-row-x)] py-[var(--density-tile-y)] border-t border-border/60 md:border-t-0 md:border-r">
         <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
           MEMORY
         </div>
@@ -109,7 +109,7 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEnd
       </div>
 
       {/* Disk */}
-      <div className="p-5 border-t border-border/60 md:border-t-0 md:border-r">
+      <div className="px-[var(--density-row-x)] py-[var(--density-tile-y)] border-t border-border/60 md:border-t-0 md:border-r">
         <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
           DISK
         </div>
@@ -123,7 +123,7 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEnd
       </div>
 
       {/* Network */}
-      <div className="p-5 border-t border-border/60 md:border-t-0">
+      <div className="px-[var(--density-row-x)] py-[var(--density-tile-y)] border-t border-border/60 md:border-t-0">
         <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
           NETWORK
         </div>

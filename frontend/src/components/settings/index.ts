@@ -1,4 +1,5 @@
 export { AccountSection } from './AccountSection';
+export { AppearanceSection } from './AppearanceSection';
 export { LicenseSection } from './LicenseSection';
 export { UsersSection } from './UsersSection';
 export { SystemSection } from './SystemSection';

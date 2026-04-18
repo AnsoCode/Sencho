@@ -31,6 +31,7 @@ import { ApiTokensSection } from './ApiTokensSection';
 import { RegistriesSection } from './RegistriesSection';
 import {
     AccountSection,
+    AppearanceSection,
     LicenseSection,
     UsersSection,
     SystemSection,
@@ -298,6 +299,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                         isSaving={isSavingPassword}
                     />
                 );
+            case 'appearance': return <AppearanceSection />;
             case 'license': return <LicenseSection />;
             case 'users': return <UsersSection />;
             case 'sso': return <SSOSection />;
@@ -394,7 +396,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                                                     key={item.id}
                                                     onClick={() => switchSection(item.id)}
                                                     className={cn(
-                                                        'relative flex items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors',
+                                                        'relative flex items-center gap-2 rounded-sm px-2 py-[var(--density-cell-y)] text-left transition-colors',
                                                         isActive
                                                             ? 'bg-gradient-to-r from-brand/10 to-transparent text-stat-value'
                                                             : 'text-stat-subtitle hover:bg-accent/40 hover:text-stat-value',

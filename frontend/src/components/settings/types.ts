@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: PatchableSettings = {
 
 export type SectionId =
     | 'account'
+    | 'appearance'
     | 'license'
     | 'users'
     | 'sso'
