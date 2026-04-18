@@ -6,17 +6,45 @@ description: Monitor all your nodes from a single dashboard with real-time healt
 The **Fleet** tab gives you a bird's-eye view of every node in your Sencho deployment, local and remote, on one screen. It is available to all tiers, with advanced features unlocked by Skipper and Admiral.
 
 <Frame>
-  <img src="/images/fleet-view/fleet-overview.png" alt="Fleet Overview showing health summary cards, toolbar, node cards, and tabs" />
+  <img src="/images/fleet-view/fleet-overview.png" alt="Fleet Overview with the fleet masthead, grid/topology toggle, and pinned local node" />
 </Frame>
 
 ## Page layout
 
-The Fleet page is divided into two tabs:
+### Fleet masthead
 
-- **Overview** - the main monitoring view described on this page
-- **Snapshots** - fleet-wide backup snapshots (covered in [Fleet Backups](/features/fleet-backups))
+The top of the page is a status masthead that summarises the state of the entire fleet at a glance:
 
-The header shows **Fleet Overview** with a subtitle summarising the current state (e.g. "2 of 2 nodes online, 31 containers, 21 stacks"). Two buttons sit in the top-right corner:
+- **Status word** in italic display type: **The fleet** with a pulsing coloured rail (green when all nodes are online and healthy, amber when any node is offline, rose when any node is critical)
+- **Meta line** showing node count, online count, and last sync time (e.g. "2 nodes · 1 online · last sync 7s")
+- **Reasons** line appears when the fleet is degraded, summarising what's wrong ("1 offline · 1 critical")
+- **Stats cluster** with three tiles:
+  - **CPU**: average across online nodes, with the peak node and percentage called out below
+  - **MEM**: total RAM used across the fleet, with total capacity and percentage
+  - **CONTAINERS**: active running count; hover the tile to see a breakdown of running vs total
+- **Alerts** indicator on the right shows the current critical count, highlighted in rose when above zero
+
+### Grid / Topology toggle
+
+Below the masthead, switch between two layouts:
+
+- **Grid** (default): one card per node. The local node is pinned at the top with a cyan accent rail and a ★ Local badge so it is never confused with a remote.
+- **Topology**: a connection diagram with the local node on the left and remotes radiating to the right. Connector lines colour by link health (cyan when online, amber when critical, dashed rose when offline), and each node chip shows its status dot, CPU and memory readings. Click a node to jump to its details.
+
+<Frame>
+  <img src="/images/fleet-view/fleet-topology.png" alt="Fleet Topology view showing the local node on the left with a dashed connector to an offline remote" />
+</Frame>
+
+### Tabs
+
+The Fleet page has two tabs:
+
+- **Overview**: the monitoring view described on this page
+- **Snapshots**: fleet-wide backup snapshots (covered in [Fleet Backups](/features/fleet-backups))
+
+### Action buttons
+
+Two buttons sit in the top-right corner:
 
 | Button | What it does |
 |--------|--------------|
@@ -60,17 +88,6 @@ Click the **Refresh** button in the top-right to re-fetch data from all nodes. T
 <Note>
   The features below require a Skipper or Admiral license. Community users see an upgrade prompt in place of these controls.
 </Note>
-
-### Fleet health summary cards
-
-Four cards appear above the node grid, aggregating data across all online nodes:
-
-| Card | What it shows |
-|------|---------------|
-| **Containers** | Total running containers, with fleet-wide total in subtitle |
-| **Fleet CPU** | Average CPU across all online nodes, plus which node has the highest load |
-| **Fleet Memory** | Total RAM used / total available across the fleet |
-| **Alerts** | Count of nodes with critical resource usage (CPU or disk above 90%). Card turns red when any exist |
 
 ### Auto-refresh
 
