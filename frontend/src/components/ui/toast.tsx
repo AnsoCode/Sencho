@@ -1,12 +1,24 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Loader2 } from 'lucide-react';
-import { useToasts, removeToast, type ToastType } from './toast-store';
+import {
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Info,
+  Loader2,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  useToasts,
+  removeToast,
+  type Toast,
+  type ToastType,
+} from './toast-store';
 
-/* ── Durations & Config ── */
-
-const DURATIONS: Record<ToastType, number> = {
+const DEFAULT_DURATIONS: Record<ToastType, number> = {
   success: 4000,
   error: 6000,
   warning: 5000,
@@ -16,83 +28,81 @@ const DURATIONS: Record<ToastType, number> = {
 
 const MAX_VISIBLE = 5;
 
-/* ── SVG Icons (matching Sera UI exactly — h-6 w-6, stroke-based) ── */
+type ToastConfig = {
+  icon: LucideIcon;
+  iconClass: string;
+  railClass: string;
+  progressClass: string;
+  kicker: string;
+  spin?: boolean;
+};
 
-const InfoIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const SuccessIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const WarningIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-  </svg>
-);
-
-const ErrorIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-/* ── Type config (matching Sera UI's notificationConfig) ── */
-
-const notificationConfig: Record<ToastType, {
-  iconColor: string;
-  icon: React.ReactNode;
-}> = {
-  info: {
-    iconColor: 'text-info',
-    icon: <InfoIcon className="h-6 w-6" />,
-  },
+const TOAST_CONFIG: Record<ToastType, ToastConfig> = {
   success: {
-    iconColor: 'text-success',
-    icon: <SuccessIcon className="h-6 w-6" />,
-  },
-  warning: {
-    iconColor: 'text-warning',
-    icon: <WarningIcon className="h-6 w-6" />,
+    icon: CheckCircle2,
+    iconClass: 'text-success',
+    railClass: 'bg-success',
+    progressClass: 'bg-success/50',
+    kicker: 'Success',
   },
   error: {
-    iconColor: 'text-destructive',
-    icon: <ErrorIcon className="h-6 w-6" />,
+    icon: XCircle,
+    iconClass: 'text-destructive',
+    railClass: 'bg-destructive',
+    progressClass: 'bg-destructive/50',
+    kicker: 'Error',
+  },
+  warning: {
+    icon: AlertTriangle,
+    iconClass: 'text-warning',
+    railClass: 'bg-warning',
+    progressClass: 'bg-warning/50',
+    kicker: 'Warning',
+  },
+  info: {
+    icon: Info,
+    iconClass: 'text-info',
+    railClass: 'bg-info',
+    progressClass: 'bg-info/50',
+    kicker: 'Info',
   },
   loading: {
-    iconColor: 'text-brand',
-    icon: <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.5} />,
+    icon: Loader2,
+    iconClass: 'text-brand',
+    railClass: 'bg-brand',
+    progressClass: 'bg-brand/50',
+    kicker: 'Working',
+    spin: true,
   },
 };
 
-/* ── ToastItem — faithful Sera UI Notification replica ── */
+const ToastItem = memo(function ToastItem({
+  type,
+  message,
+  action,
+  duration: explicitDuration,
+  id,
+}: Toast) {
+  const config = TOAST_CONFIG[type];
+  const Icon = config.icon;
+  const duration = explicitDuration ?? DEFAULT_DURATIONS[type];
 
-function ToastItem({ id, type, message }: { id: string; type: ToastType; message: string }) {
   const [hovered, setHovered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const remainingRef = useRef(DURATIONS[type]);
+  const remainingRef = useRef(duration);
   const startRef = useRef(0);
-  const config = notificationConfig[type];
-  const duration = DURATIONS[type];
 
   const dismiss = useCallback(() => {
     removeToast(id);
   }, [id]);
 
-  // Auto-dismiss timer with hover pause (loading toasts never auto-dismiss)
+  const handleAction = useCallback(() => {
+    action?.onClick();
+    removeToast(id);
+  }, [action, id]);
+
   useEffect(() => {
-    if (type === 'loading') return;
+    if (type === 'loading' || !Number.isFinite(duration)) return;
     if (hovered) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -106,7 +116,7 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [hovered, dismiss, type]);
+  }, [hovered, dismiss, type, duration]);
 
   return (
     <motion.div
@@ -115,62 +125,92 @@ function ToastItem({ id, type, message }: { id: string; type: ToastType; message
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 100 }}
       transition={{ duration: 0.3 }}
-      className="relative w-full max-w-sm rounded-xl p-4 backdrop-blur-[10px] backdrop-saturate-[1.15] bg-popover/95 border border-glass-border overflow-hidden ring-1 ring-glass-border drop-shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 font-[family-name:var(--font-sans)]"
+      className="pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-md border border-glass-border bg-popover/95 ring-1 ring-glass-border drop-shadow-xl backdrop-blur-[10px] backdrop-saturate-[1.15]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      role={type === 'error' ? 'alert' : 'status'}
+      aria-atomic="true"
     >
-      <div className="flex items-center space-x-4">
-        <div className={`flex-shrink-0 ${config.iconColor}`}>
-          {config.icon}
+      <div
+        className={cn('absolute inset-y-0 left-0 w-[3px] opacity-70', config.railClass)}
+        aria-hidden
+      />
+
+      <div className="flex items-start gap-3 px-4 py-3 pl-5">
+        <Icon
+          className={cn(
+            'mt-0.5 h-4 w-4 flex-shrink-0',
+            config.iconClass,
+            config.spin && 'animate-spin',
+          )}
+          strokeWidth={1.5}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              'font-mono text-[10px] uppercase tracking-[0.14em]',
+              config.iconClass,
+            )}
+          >
+            {config.kicker}
+          </div>
+          <p className="mt-1 break-words text-sm leading-snug text-stat-value">
+            {message}
+          </p>
         </div>
-        <div className="flex-1">
-          <p className="font-normal text-foreground text-lg">{message}</p>
-        </div>
+        {action ? (
+          <button
+            type="button"
+            onClick={handleAction}
+            className="flex-shrink-0 self-start rounded-sm px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-brand transition-colors hover:bg-brand/10 focus-visible:bg-brand/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/60"
+          >
+            {action.label}
+          </button>
+        ) : null}
         <button
+          type="button"
           onClick={dismiss}
-          className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-full hover:bg-accent"
-          aria-label="Close notification"
+          aria-label="Dismiss notification"
+          className="flex-shrink-0 self-start rounded-sm p-1 text-stat-icon transition-colors hover:bg-accent hover:text-stat-value focus-visible:bg-accent focus-visible:outline-none"
         >
-          <CloseIcon className="h-5 w-5" />
+          <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden />
         </button>
       </div>
 
-      {/* Progress bar */}
-      <div className="absolute bottom-0 left-0 h-1 w-full bg-glass-border rounded-b-xl overflow-hidden">
+      <div className="absolute bottom-0 left-0 h-[2px] w-full overflow-hidden" aria-hidden>
         {type === 'loading' ? (
           <motion.div
             initial={{ x: '-100%' }}
             animate={{ x: '200%' }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-            className="h-full w-1/3 bg-gradient-to-r from-transparent via-brand to-transparent"
+            className={cn('h-full w-1/3', config.progressClass)}
           />
-        ) : (
+        ) : Number.isFinite(duration) ? (
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: hovered ? undefined : '100%' }}
+            animate={hovered ? false : { width: '100%' }}
             transition={{ duration: duration / 1000, ease: 'linear' }}
-            className="h-full bg-gradient-to-r from-transparent via-brand to-transparent"
+            className={cn('h-full', config.progressClass)}
           />
-        )}
+        ) : null}
       </div>
     </motion.div>
   );
-}
-
-/* ── ToastContainer ── */
+});
 
 export function ToastContainer() {
   const toasts = useToasts();
   const visible = toasts.slice(-MAX_VISIBLE);
 
   return createPortal(
-    <div className="fixed p-4 space-y-2 w-full max-w-sm z-50 bottom-4 right-4">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2 p-4">
       <AnimatePresence mode="popLayout">
         {visible.map((t) => (
-          <ToastItem key={t.id} id={t.id} type={t.type} message={t.message} />
+          <ToastItem key={t.id} {...t} />
         ))}
       </AnimatePresence>
     </div>,
-    document.body
+    document.body,
   );
 }
