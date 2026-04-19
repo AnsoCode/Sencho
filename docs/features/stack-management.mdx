@@ -98,35 +98,51 @@ All discovered stacks appear in the left sidebar. Each shows a color-coded statu
 
 Use the **search box** above the list to filter stacks by name.
 
+## Stack header
+
+Opening a stack puts identity and state front and center.
+
+<Frame>
+  <img src="/images/stack-view/identity-header.png" alt="Stack identity header with breadcrumb, title, state pill, image digest, and action row" />
+</Frame>
+
+The header answers three questions at a glance:
+
+- **What is this?** A breadcrumb (`node › stacks › name`) and the stack name as the title.
+- **Is it healthy?** A pulsing pill to the right of the title reports the live state:
+  - `running · healthy` (green) when at least one container reports a passing healthcheck.
+  - `running · unhealthy` (red) when any container reports a failing healthcheck.
+  - `running · starting` (amber) during the Docker healthcheck start period.
+  - `running` (green) when no healthcheck is defined.
+  - `exited` (red) when no containers are up.
+- **What does it ship?** A mono line under the title shows the primary image tag and the short image digest, with a copy button to grab the full digest.
+
 ## Deploying a stack
 
 Select a stack and click **Start** (or **Deploy** from the context menu) in the stack header. This runs `docker compose up -d`, pulling images if needed and creating or recreating containers.
 
-<Frame>
-  <img src="/images/editor/editor-overview.png" alt="Stack editor with control buttons" />
-</Frame>
-
 ## Controlling a running stack
 
-The stack header shows different actions depending on whether the stack is running or stopped.
+The stack header groups actions by frequency of use. The most common action is the filled cyan button on the left, everyday secondaries sit next to it, and destructive or occasional actions are tucked behind the `⋯` overflow.
 
 **When running:**
 
-| Button | Command | What it does |
-|--------|---------|--------------|
-| **Stop** | `docker compose stop` | Stops containers without removing them. State is preserved. |
-| **Restart** | `docker compose restart` | Restarts all containers in the stack. |
-| **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
-| **Rollback** | Restores backup | Reverts compose and env files to the pre-deploy snapshot and redeploys. Only shown when a backup exists (Skipper+). |
-| **Delete** | `down --volumes` + removes files | Stops and removes containers and volumes, then deletes the stack directory. |
+| Placement | Button | Command | What it does |
+|-----------|--------|---------|--------------|
+| Primary | **Restart** | `docker compose restart` | Restarts all containers in the stack. |
+| Secondary | **Stop** | `docker compose stop` | Stops containers without removing them. State is preserved. |
+| Secondary | **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
+| Overflow `⋯` | **Rollback** | Restores backup | Reverts compose and env files to the pre-deploy snapshot and redeploys. Only shown when a backup exists (Skipper+). |
+| Overflow `⋯` | **Scan config** | Trivy config scan | Scans the compose file for misconfigurations (Skipper+, admin). |
+| Overflow `⋯` | **Delete** | `down --volumes` + removes files | Stops and removes containers and volumes, then deletes the stack directory. |
 
 **When stopped:**
 
-| Button | Command | What it does |
-|--------|---------|--------------|
-| **Start** | `docker compose up -d` | Starts the stack. |
-| **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
-| **Delete** | Removes files | Deletes the stack directory. |
+| Placement | Button | Command | What it does |
+|-----------|--------|---------|--------------|
+| Primary | **Start** | `docker compose up -d` | Starts the stack. |
+| Secondary | **Update** | `docker compose pull` + `up -d` | Pulls the latest image tags and recreates containers. |
+| Overflow `⋯` | **Delete** | Removes files | Deletes the stack directory. |
 
 <Warning>
   **Delete** is irreversible. It removes the stack directory, including `compose.yaml`, `.env`, and any bind-mounted files stored there. Back up important files before deleting.

@@ -21,7 +21,7 @@ import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highli
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -73,6 +73,9 @@ interface ContainerInfo {
   State: string;
   Status?: string;
   Ports?: { PrivatePort: number, PublicPort: number }[];
+  healthStatus?: 'healthy' | 'unhealthy' | 'starting' | 'none';
+  Image?: string;
+  ImageID?: string;
 }
 
 interface StackStatus {
@@ -101,12 +104,69 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
+type StackPill = { label: string; dotClass: string; className: string; pulse: boolean };
+
+const getStackStatePill = (containers: ContainerInfo[]): StackPill | null => {
+  if (!containers || containers.length === 0) return null;
+  const running = containers.some(c => c.State === 'running');
+  if (!running) {
+    return {
+      label: 'exited',
+      dotClass: 'bg-destructive',
+      className: 'border-destructive/40 bg-destructive/10 text-destructive',
+      pulse: false,
+    };
+  }
+  const anyUnhealthy = containers.some(c => c.healthStatus === 'unhealthy');
+  const anyStarting = containers.some(c => c.healthStatus === 'starting');
+  const anyHealthy = containers.some(c => c.healthStatus === 'healthy');
+  if (anyUnhealthy) {
+    return {
+      label: 'running · unhealthy',
+      dotClass: 'bg-destructive',
+      className: 'border-destructive/40 bg-destructive/10 text-destructive',
+      pulse: true,
+    };
+  }
+  if (anyStarting) {
+    return {
+      label: 'running · starting',
+      dotClass: 'bg-warning',
+      className: 'border-warning/40 bg-warning/10 text-warning',
+      pulse: true,
+    };
+  }
+  if (anyHealthy) {
+    return {
+      label: 'running · healthy',
+      dotClass: 'bg-success',
+      className: 'border-success/40 bg-success/10 text-success',
+      pulse: true,
+    };
+  }
+  return {
+    label: 'running',
+    dotClass: 'bg-success',
+    className: 'border-success/40 bg-success/10 text-success',
+    pulse: true,
+  };
+};
+
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
   const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
+  const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
+  const copiedDigestTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copiedDigestTimerRef.current !== null) {
+        window.clearTimeout(copiedDigestTimerRef.current);
+      }
+    };
+  }, []);
   const { nodes, activeNode, setActiveNode, nodeMeta } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -2555,81 +2615,141 @@ export default function EditorLayout() {
                   <Card className="rounded-xl border-muted bg-card">
                     <CardHeader className="p-4 pb-2">
                       <div className="flex flex-col gap-3">
-                        {/* Stack Name */}
-                        <CardTitle className="text-2xl font-medium">{stackName}</CardTitle>
+                        {/* Identity block */}
+                        <div className="flex flex-col gap-1.5">
+                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+                            {(activeNode?.name || 'local')} <span className="text-muted-foreground/60">›</span> stacks <span className="text-muted-foreground/60">›</span> {stackName}
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <CardTitle className="font-display italic text-3xl leading-none tracking-tight">{stackName}</CardTitle>
+                            {(() => {
+                              const pill = getStackStatePill(safeContainers);
+                              if (!pill) return null;
+                              return (
+                                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 ${pill.className}`}>
+                                  <span
+                                    aria-hidden="true"
+                                    className={`h-1.5 w-1.5 rounded-full ${pill.dotClass} ${pill.pulse ? 'animate-[pulse_2.4s_ease-in-out_infinite]' : ''}`}
+                                  />
+                                  <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{pill.label}</span>
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          {(() => {
+                            const first = safeContainers[0];
+                            if (!first?.Image) return null;
+                            const digest = first.ImageID ? first.ImageID.replace(/^sha256:/, '').slice(0, 12) : '';
+                            return (
+                              <div className="flex items-center gap-1.5 font-mono text-[11px] text-stat-subtitle">
+                                <span>image <span className="text-muted-foreground/60">·</span> <span className="text-foreground/90">{first.Image}</span></span>
+                                {digest && first.ImageID && (
+                                  <>
+                                    <span className="text-muted-foreground/60">·</span>
+                                    <span>digest <span className="text-foreground/90">{digest}</span></span>
+                                    <button
+                                      type="button"
+                                      aria-label={copiedDigest === first.ImageID ? 'Copied' : 'Copy digest'}
+                                      onClick={() => {
+                                        const id = first.ImageID as string;
+                                        void navigator.clipboard.writeText(id).then(() => {
+                                          setCopiedDigest(id);
+                                          if (copiedDigestTimerRef.current !== null) {
+                                            window.clearTimeout(copiedDigestTimerRef.current);
+                                          }
+                                          copiedDigestTimerRef.current = window.setTimeout(() => {
+                                            setCopiedDigest(prev => (prev === id ? null : prev));
+                                            copiedDigestTimerRef.current = null;
+                                          }, 1500);
+                                        });
+                                      }}
+                                      className="inline-flex h-4 w-4 items-center justify-center rounded text-stat-subtitle hover:text-foreground hover:bg-muted/60 transition-colors"
+                                    >
+                                      {copiedDigest === first.ImageID ? (
+                                        <Check className="h-3 w-3" strokeWidth={2} />
+                                      ) : (
+                                        <Copy className="h-3 w-3" strokeWidth={1.5} />
+                                      )}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
                         {/* Action Bar */}
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
-                              <>
-                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
-                                  <Square className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                  {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
-                                </Button>
-                                <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={restartStack} disabled={loadingAction !== null}>
-                                  <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                  {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
-                                </Button>
-                              </>
+                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
+                                <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
+                              </Button>
                             ) : (
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={deployStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
+                              </Button>
+                            )}
+                            {isRunning && (
+                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
+                                <Square className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
                               </Button>
                             )}
                             <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
                               <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               {loadingAction === 'update' ? 'Updating...' : 'Update'}
                             </Button>
-                            {trivy.available && isAdmin && isPaid && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="rounded-lg"
-                                onClick={scanStackConfig}
-                                disabled={loadingAction !== null || stackMisconfigScanning}
-                                title="Scan compose configuration for misconfigurations"
-                              >
-                                {stackMisconfigScanning ? (
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" strokeWidth={1.5} />
-                                ) : (
-                                  <ShieldCheck className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                            {(() => {
+                              const canRollback = isPaid && backupInfo.exists;
+                              const canScan = trivy.available && isAdmin && isPaid;
+                              const hasOverflowExtras = canRollback || canScan;
+                              return (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button type="button" size="sm" variant="ghost" className="rounded-lg h-8 w-8 p-0" disabled={loadingAction !== null} aria-label="More actions">
+                                  <MoreVertical className="w-4 h-4" strokeWidth={1.5} />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                {canRollback && (
+                                  <DropdownMenuItem onClick={rollbackStack} disabled={loadingAction !== null}>
+                                    <Undo2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                    <div className="flex flex-col gap-0.5">
+                                      <span>{loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}</span>
+                                      {backupInfo.timestamp && (
+                                        <span className="text-[10px] text-stat-subtitle font-mono">{new Date(backupInfo.timestamp).toLocaleString()}</span>
+                                      )}
+                                    </div>
+                                  </DropdownMenuItem>
                                 )}
-                                {stackMisconfigScanning ? 'Scanning...' : 'Scan config'}
-                              </Button>
-                            )}
-                            {isPaid && backupInfo.exists && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={rollbackStack} disabled={loadingAction !== null}>
-                                      <Undo2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                      {loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {backupInfo.timestamp
-                                      ? `Roll back to backup from ${new Date(backupInfo.timestamp).toLocaleString()}`
-                                      : 'Roll back to previous deployment'}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="rounded-lg text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-                              disabled={loadingAction !== null}
-                              onClick={() => {
-                                setStackToDelete(selectedFile);
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                              {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
-                            </Button>
+                                {canScan && (
+                                  <DropdownMenuItem onClick={scanStackConfig} disabled={loadingAction !== null || stackMisconfigScanning}>
+                                    {stackMisconfigScanning ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" strokeWidth={1.5} />
+                                    ) : (
+                                      <ShieldCheck className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                    )}
+                                    {stackMisconfigScanning ? 'Scanning...' : 'Scan config'}
+                                  </DropdownMenuItem>
+                                )}
+                                {hasOverflowExtras && <DropdownMenuSeparator />}
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                  disabled={loadingAction !== null}
+                                  onClick={() => {
+                                    setStackToDelete(selectedFile);
+                                    setDeleteDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                                  {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
