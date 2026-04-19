@@ -31,12 +31,20 @@ Click **Console** in the top navigation bar. The session starts immediately in t
 
 The Console page is a vertical stack of two surfaces:
 
+<Frame>
+  <img src="/images/host-console/host-console-masthead.png" alt="Masthead with cyan rail, Connected state, and shell, viewport, and session uptime metadata" />
+</Frame>
+
 | Surface | What it shows |
 |---------|---------------|
 | **Masthead** | Connection state (`Connected`, `Reconnecting`, or `Disconnected`) with a live status dot that pulses cyan while the session is active. The kicker reads `HOST CONSOLE · {node}`. When the console was opened from a stack, a small `← {stack-name}` link sits beside the state word so you can return to the stack editor. |
 | **Metadata** | Right side of the masthead: the active **shell** (e.g. `BASH`), the current **viewport** (`{cols}×{rows}` as reported by the fit addon), and **session uptime** since the shell opened. |
 | **Terminal well** | The interactive xterm session, sized to fill the remaining height. |
 | **Chip strip** | Floating bottom-right controls: **Copy** (copies the current selection), **Clear** (wipes the visible scrollback without killing the shell), **Download** (exports the full scrollback as a timestamped `.txt`), and **Reconnect** (closes and reopens the WebSocket without leaving the page). |
+
+<Frame>
+  <img src="/images/host-console/host-console-chip-strip.png" alt="Floating chip strip with Copy, Clear, Download, and Reconnect buttons" />
+</Frame>
 
 ## Shell type
 
