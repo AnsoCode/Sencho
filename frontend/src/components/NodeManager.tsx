@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Combobox } from './ui/combobox';
 import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw, Terminal } from 'lucide-react';
+import { formatTimeUntil, formatTimeAgo } from '@/lib/relativeTime';
 
 interface NodeSchedulingSummary {
   active_tasks: number;
@@ -27,16 +28,6 @@ export const SENCHO_NAVIGATE_EVENT = 'sencho-navigate';
 export interface SenchoNavigateDetail {
   view: 'scheduled-ops' | 'auto-updates' | 'security-history';
   nodeId?: number;
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const diff = timestamp - Date.now();
-  if (diff < 0) return 'overdue';
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  return `${Math.floor(hrs / 24)}d`;
 }
 
 interface NodeFormData {
@@ -562,7 +553,7 @@ export function NodeManager() {
                     ? 'docker.sock'
                     : node.mode === 'pilot_agent'
                       ? (node.pilot_last_seen
-                        ? `tunnel (seen ${formatRelativeTime(node.pilot_last_seen + 60_000)} ago)`
+                        ? `tunnel (seen ${formatTimeAgo(node.pilot_last_seen)})`
                         : 'tunnel (waiting)')
                       : (node.api_url || '-')}
                 </TableCell>
@@ -583,7 +574,7 @@ export function NodeManager() {
                             <Tooltip>
                               <TooltipTrigger>
                                 <span className="text-xs text-muted-foreground">
-                                  next {formatRelativeTime(summary.next_run_at)}
+                                  next {formatTimeUntil(summary.next_run_at)}
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent>
@@ -789,7 +780,7 @@ export function NodeManager() {
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Expires <span className="font-mono tabular-nums">{formatRelativeTime(activeEnrollment.enrollment.expiresAt)}</span> from now.
+                  Expires <span className="font-mono tabular-nums">{formatTimeUntil(activeEnrollment.enrollment.expiresAt)}</span> from now.
                 </p>
                 <Button size="sm" variant="outline" className="gap-1" onClick={copyEnrollment}>
                   {enrollmentCopied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
