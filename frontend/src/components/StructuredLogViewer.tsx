@@ -1,0 +1,224 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from './ui/button';
+import { Download } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface StructuredLogViewerProps {
+  stackName: string;
+}
+
+type LogLevel = 'info' | 'warn' | 'err';
+
+interface LogRow {
+  id: number;
+  ts: string | null;
+  level: LogLevel;
+  message: string;
+}
+
+type Filter = 'all' | LogLevel;
+
+const BUFFER_CAP = 10_000;
+const TIMESTAMP_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(.*)$/;
+const ANSI_REGEX = /\x1b\[[0-9;]*[A-Za-z]/g;
+const ERROR_REGEX = /\b(ERROR|ERR|FATAL|Exception)\b/i;
+const WARN_REGEX = /\b(WARN|WARNING|WRN)\b/i;
+
+function parseLine(raw: string): Omit<LogRow, 'id'> {
+  const stripped = raw.replace(ANSI_REGEX, '').replace(/[\r\n]+$/, '');
+  const match = stripped.match(TIMESTAMP_REGEX);
+  const ts = match ? match[1] : null;
+  const body = match ? match[2] : stripped;
+  let level: LogLevel = 'info';
+  if (ERROR_REGEX.test(body)) level = 'err';
+  else if (WARN_REGEX.test(body)) level = 'warn';
+  return { ts, level, message: body };
+}
+
+function formatTs(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+export default function StructuredLogViewer({ stackName }: StructuredLogViewerProps) {
+  const [rows, setRows] = useState<LogRow[]>([]);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [following, setFollowing] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const rowIdRef = useRef(0);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pendingRef = useRef<LogRow[]>([]);
+
+  useEffect(() => { followingRef.current = following; }, [following]);
+
+  useEffect(() => {
+    const cleanStackName = stackName.replace(/\.(yml|yaml)$/, '');
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/stacks/${cleanStackName}/logs${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`;
+
+    let closed = false;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      if (closed) return;
+      const text = typeof event.data === 'string' ? event.data : '';
+      if (!text) return;
+      for (const line of text.split(/\r?\n/)) {
+        if (!line) continue;
+        const parsed = parseLine(line);
+        if (!parsed.message) continue;
+        rowIdRef.current += 1;
+        pendingRef.current.push({ id: rowIdRef.current, ...parsed });
+      }
+    };
+
+    ws.onerror = () => { /* surface nothing; reconnection is backend's job */ };
+
+    // Batch incoming lines into state every 250 ms to avoid thrashing React.
+    const flushInterval = window.setInterval(() => {
+      if (pendingRef.current.length === 0) return;
+      const incoming = pendingRef.current;
+      pendingRef.current = [];
+      setRows((prev) => {
+        const merged = prev.concat(incoming);
+        return merged.length > BUFFER_CAP ? merged.slice(merged.length - BUFFER_CAP) : merged;
+      });
+    }, 250);
+
+    return () => {
+      closed = true;
+      window.clearInterval(flushInterval);
+      try { ws.close(); } catch { /* ignore */ }
+      wsRef.current = null;
+      pendingRef.current = [];
+    };
+  }, [stackName]);
+
+  const filtered = useMemo(() => {
+    if (filter === 'all') return rows;
+    return rows.filter(r => r.level === filter);
+  }, [rows, filter]);
+
+  const errCount = useMemo(() => rows.reduce((n, r) => r.level === 'err' ? n + 1 : n, 0), [rows]);
+
+  // Auto-scroll to bottom when following.
+  useEffect(() => {
+    if (!followingRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [filtered]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distanceFromBottom < 24;
+    if (atBottom !== followingRef.current) {
+      followingRef.current = atBottom;
+      setFollowing(atBottom);
+    }
+  };
+
+  const resumeFollow = () => {
+    setFollowing(true);
+    followingRef.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  const downloadLogs = () => {
+    const text = rows.map(r => `${r.ts ?? ''} ${r.level.toUpperCase()} ${r.message}`.trim()).join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${stackName.replace(/\.(yml|yaml)$/, '')}-logs.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const label = `logs · ${stackName.replace(/\.(yml|yaml)$/, '')}`;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col rounded-xl border border-muted bg-card/40">
+      <div className="flex items-center justify-between border-b border-muted px-3 py-2 gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="font-mono text-xs text-stat-subtitle truncate">{label}</span>
+          {following ? (
+            <span className="flex items-center gap-1.5 text-[10px] font-mono text-success">
+              <span className="h-1.5 w-1.5 rounded-full bg-success animate-[pulse_2.4s_ease-in-out_infinite]" />
+              following
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={resumeFollow}
+              className="text-[10px] font-mono text-stat-subtitle hover:text-foreground transition-colors underline-offset-2 hover:underline"
+            >
+              resume follow
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {(['all', 'info', 'warn', 'err'] as const).map(f => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={cn(
+                'rounded-md px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors',
+                filter === f ? 'bg-brand/15 text-brand' : 'text-stat-subtitle hover:text-foreground',
+              )}
+            >
+              {f}{f === 'err' && errCount > 0 ? ` ${errCount}` : ''}
+            </button>
+          ))}
+          <div className="mx-1 h-4 w-px bg-muted" />
+          <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={downloadLogs} aria-label="Download logs">
+            <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </Button>
+        </div>
+      </div>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto font-mono text-[11px] leading-[1.5]"
+      >
+        {filtered.length === 0 ? (
+          <div className="px-3 py-2 text-stat-subtitle">Waiting for log output…</div>
+        ) : (
+          filtered.map(row => (
+            <div
+              key={row.id}
+              className={cn(
+                'grid grid-cols-[64px_44px_1fr] items-start gap-2 border-l-2 border-transparent px-3 py-0.5',
+                row.level === 'err' && 'border-destructive bg-destructive/[0.04]',
+                row.level === 'warn' && 'bg-warning/[0.04]',
+              )}
+            >
+              <span className="text-stat-subtitle">{formatTs(row.ts)}</span>
+              <span className={cn(
+                'font-mono text-[9px] uppercase tracking-wide',
+                row.level === 'err' && 'text-destructive',
+                row.level === 'warn' && 'text-warning',
+                row.level === 'info' && 'text-success/80',
+              )}>
+                {row.level}
+              </span>
+              <span className="whitespace-pre-wrap break-all text-foreground/90">{row.message}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
