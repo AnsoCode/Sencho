@@ -99,7 +99,7 @@ export function NodeSwitcher({ onManageNodes }: NodeSwitcherProps) {
                 <div className="relative overflow-hidden">
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-brand/[0.05] via-transparent to-transparent" />
                     <div className="absolute inset-y-0 left-0 w-[2px] bg-brand/60" />
-                    <div className="relative flex items-center justify-between px-5 py-3.5">
+                    <div className="relative flex items-center justify-between px-[var(--density-row-x)] py-[var(--density-tile-y)]">
                         <div className="flex items-baseline gap-2.5">
                             <span className="font-display text-xl italic leading-none text-stat-value">
                                 Connected
@@ -136,7 +136,7 @@ export function NodeSwitcher({ onManageNodes }: NodeSwitcherProps) {
                                 }}
                                 aria-current={isActive ? 'true' : undefined}
                                 className={cn(
-                                    'group relative flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors',
+                                    'group relative flex w-full items-center gap-3 px-[var(--density-row-x)] py-[var(--density-row-y)] text-left transition-colors',
                                     'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
                                 )}
                             >
@@ -182,7 +182,7 @@ export function NodeSwitcher({ onManageNodes }: NodeSwitcherProps) {
                             setOpen(false);
                             onManageNodes();
                         }}
-                        className="flex w-full items-center gap-2.5 px-5 py-2.5 text-left text-sm text-stat-value transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                        className="flex w-full items-center gap-2.5 px-[var(--density-row-x)] py-[var(--density-row-y)] text-left text-sm text-stat-value transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
                     >
                         <Settings2 className="h-4 w-4 text-stat-icon" strokeWidth={1.5} />
                         <span className="flex-1 truncate">Manage nodes</span>

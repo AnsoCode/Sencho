@@ -96,7 +96,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                 <div className="relative overflow-hidden">
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-brand/[0.05] via-transparent to-transparent" />
                     <div className="absolute inset-y-0 left-0 w-[2px] bg-brand/60" />
-                    <div className="relative flex items-center gap-3 px-5 py-4">
+                    <div className="relative flex items-center gap-3 px-[var(--density-row-x)] py-[var(--density-tile-y)]">
                         <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/10">
                             {initials ? (
                                 <span className="font-display text-lg leading-none text-brand">
@@ -157,7 +157,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                 </div>
 
                 {/* Appearance */}
-                <div className="flex items-center justify-between gap-3 border-t border-card-border/60 px-5 py-3">
+                <div className="flex items-center justify-between gap-3 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
                     <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
                         Appearance
                     </span>
@@ -175,7 +175,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                     <button
                         type="button"
                         onClick={logout}
-                        className="flex w-full items-center gap-2.5 px-5 py-3 text-left text-sm text-destructive transition-colors hover:bg-destructive/5 focus-visible:bg-destructive/5 focus-visible:outline-none"
+                        className="flex w-full items-center gap-2.5 px-[var(--density-row-x)] py-[var(--density-row-y)] text-left text-sm text-destructive transition-colors hover:bg-destructive/5 focus-visible:bg-destructive/5 focus-visible:outline-none"
                     >
                         <LogOut className="h-4 w-4" strokeWidth={1.5} />
                         Log Out
@@ -209,7 +209,7 @@ function MenuRow({
 }: MenuRowProps) {
     const TrailingIcon = trailingIcon ?? (external ? ExternalLink : undefined);
     const classes = cn(
-        'flex w-full items-center gap-2.5 px-5 py-2.5 text-left text-sm text-stat-value transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+        'flex w-full items-center gap-2.5 px-[var(--density-row-x)] py-[var(--density-row-y)] text-left text-sm text-stat-value transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
         disabled && 'pointer-events-none opacity-50',
     );
 
