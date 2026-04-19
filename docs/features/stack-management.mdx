@@ -154,6 +154,30 @@ The structured viewer holds up to 10,000 lines; older entries are dropped from t
 
 **Raw terminal** keeps the original xterm-based viewer for cases where ANSI art, control sequences, or interactive TTY output matter. Lines include the raw ISO timestamp.
 
+## Anatomy panel
+
+The right half of the stack view is the anatomy panel: a read-only summary of what the compose file declares, without making you open the YAML editor.
+
+<Frame>
+  <img src="/images/stack-view/anatomy-panel.png" alt="Stack view with the anatomy panel on the right showing services, ports, volumes, env file, network, and source" />
+</Frame>
+
+Each row maps one compose concept to the value it resolves to right now:
+
+- **Services** — Cyan pills, one per key under `services:`.
+- **Ports** — `{host} → {container}/{proto}` per service, host port highlighted.
+- **Volumes** — `{host-path} → {container-path}` per mount.
+- **Restart** — The effective restart policy.
+- **Env file** — Filename plus a count of defined variables. If the compose file references a `${VAR}` that the env file does not define and has no `:-default`, the missing name is called out inline in rose italic.
+- **Network** — Derived network name and driver (default `{stack}_default · bridge`).
+- **Source** — `git · {host}/{repo}#{branch}` when Git Source is configured, else `local`. The whole row is clickable and opens the Git Source dialog. A pulsing cyan dot appears when upstream has moved ahead of the working copy.
+
+If an image update is available for the primary service, an inline banner appears below the rows with the version bump (`27.1.4 → 27.1.5`), risk classification (`safe · patch`, `minor`, or `major · review required`), and an **apply** button that runs the update against the current scheduled-task pipeline. Major bumps show a rose banner and require explicit review before applying.
+
+### Editing compose.yaml
+
+Anatomy is the default surface. When you need to change the compose file, click **edit compose.yaml** in the anatomy header. The Monaco editor slides in over the anatomy panel with the full editing toolbar (tabs for `compose.yaml` and `.env`, Git Source shortcut, Save / Save & Deploy). Close the editor with the `×` button in its header to return to the anatomy view; unsaved changes are discarded when you close.
+
 ## Deploying a stack
 
 Select a stack and click **Start** (or **Deploy** from the context menu) in the stack header. This runs `docker compose up -d`, pulling images if needed and creating or recreating containers.
