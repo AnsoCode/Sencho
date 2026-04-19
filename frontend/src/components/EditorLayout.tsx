@@ -20,13 +20,13 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, Bell, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
 import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
+import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { isValidVersion } from '@/lib/version';
 import { toast } from '@/components/ui/toast-store';
@@ -37,7 +37,6 @@ import { Checkbox } from './ui/checkbox';
 import { GitSourceFields, type ApplyMode } from './stack/GitSourceFields';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -2530,75 +2529,15 @@ export default function EditorLayout() {
 
           {/* RIGHT ZONE: Utilities */}
           <div className="flex-shrink-0 flex items-center gap-2">
-            {/* Notifications Popover */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg relative" title="Notifications">
-                  <Bell className="w-4 h-4" />
-                  {notifications.filter(n => !n.is_read).length > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 p-0" align="end">
-                <div className="flex items-center justify-between p-4 border-b">
-                  <h4 className="font-medium">Notifications</h4>
-                  <div className="flex gap-2">
-                    {notifications.filter(n => !n.is_read).length > 0 && (
-                      <Button variant="ghost" size="sm" onClick={markAllRead} className="h-auto p-0 text-xs">
-                        Mark all as read
-                      </Button>
-                    )}
-                    {notifications.length > 0 && (
-                      <Button variant="ghost" size="sm" onClick={clearAllNotifications} className="h-auto p-0 text-xs text-muted-foreground hover:text-destructive transition-colors">
-                        <Trash2 className="w-3 h-3 mr-1" />
-                        Clear all
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <ScrollArea className="h-80">
-                  {notifications.length === 0 ? (
-                    <div className="p-4 text-sm text-muted-foreground text-center">No notifications</div>
-                  ) : (
-                    <div className="flex flex-col">
-                      {notifications.map((notif) => (
-                        <div key={`${notif.nodeId}-${notif.id}`} className={`p-4 border-b text-sm ${notif.is_read ? 'opacity-70' : 'bg-muted/50'} relative group`}>
-                          <div className="flex items-center gap-2 mb-1 pr-6">
-                            <Badge variant={notif.level === 'error' ? 'destructive' : notif.level === 'warning' ? 'secondary' : 'default'} className="text-[10px] uppercase">
-                              {notif.level}
-                            </Badge>
-                            {nodesRef.current.find(n => n.id === notif.nodeId)?.type === 'remote' && (
-                              <Badge variant="outline" className="text-[10px] font-normal">
-                                {notif.nodeName}
-                              </Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground ml-auto">
-                              {new Date(notif.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="font-medium pr-6">{notif.message}</p>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteNotification(notif);
-                            }}
-                          >
-                            <X className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              </PopoverContent>
-            </Popover>
+            {/* Notifications */}
+            <NotificationPanel
+              notifications={notifications}
+              nodes={nodes}
+              onMarkAllRead={markAllRead}
+              onClearAll={clearAllNotifications}
+              onDelete={deleteNotification}
+            />
+
 
             {/* User Profile Dropdown */}
             <UserProfileDropdown
