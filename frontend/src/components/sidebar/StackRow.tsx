@@ -35,6 +35,20 @@ function statusColor(status: StackRowStatus, isBusy: boolean): string {
   return 'text-stat-icon';
 }
 
+function RowTooltip({ trigger, label }: { trigger: ReactNode; label: string }) {
+  return (
+    <CursorProvider>
+      <CursorContainer className="inline-flex items-center shrink-0">{trigger}</CursorContainer>
+      <Cursor><div className="h-2 w-2 rounded-full bg-brand" /></Cursor>
+      <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
+        <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
+          <span className="font-mono text-xs tabular-nums text-stat-value">{label}</span>
+        </div>
+      </CursorFollow>
+    </CursorProvider>
+  );
+}
+
 export function StackRow(props: StackRowProps) {
   const { file, displayName, status, isBusy, isActive, isPaid, labels, hasUpdate, hasGitPending, onSelect, kebabSlot } = props;
 
@@ -57,30 +71,16 @@ export function StackRow(props: StackRowProps) {
         </span>
       )}
       {hasUpdate && (
-        <CursorProvider>
-          <CursorContainer className="inline-flex items-center shrink-0">
-            <span className="w-2 h-2 rounded-full bg-info animate-pulse" />
-          </CursorContainer>
-          <Cursor><div className="h-2 w-2 rounded-full bg-brand" /></Cursor>
-          <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
-            <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-              <span className="font-mono text-xs tabular-nums text-stat-value">Update available</span>
-            </div>
-          </CursorFollow>
-        </CursorProvider>
+        <RowTooltip
+          trigger={<span className="w-2 h-2 rounded-full bg-info animate-pulse" />}
+          label="Update available"
+        />
       )}
       {hasGitPending && (
-        <CursorProvider>
-          <CursorContainer className="inline-flex items-center shrink-0">
-            <GitBranch className="w-3 h-3 text-brand" strokeWidth={1.5} />
-          </CursorContainer>
-          <Cursor><div className="h-2 w-2 rounded-full bg-brand" /></Cursor>
-          <CursorFollow side="bottom" sideOffset={4} align="center" transition={{ stiffness: 400, damping: 40, bounce: 0 }}>
-            <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-              <span className="font-mono text-xs tabular-nums text-stat-value">Git source update pending</span>
-            </div>
-          </CursorFollow>
-        </CursorProvider>
+        <RowTooltip
+          trigger={<GitBranch className="w-3 h-3 text-brand" strokeWidth={1.5} />}
+          label="Git source update pending"
+        />
       )}
       <div
         className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"

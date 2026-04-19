@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { StackRow } from '../StackRow';
 import type { Label } from '@/components/label-types';
@@ -42,5 +42,35 @@ describe('StackRow', () => {
     expect(screen.getByTestId('stack-row')).not.toHaveClass('bg-accent/[0.07]');
     rerender(<StackRow {...base({ isActive: true })} />);
     expect(screen.getByTestId('stack-row')).toHaveClass('bg-accent/[0.07]');
+  });
+
+  it('fires onSelect on click', () => {
+    const onSelect = vi.fn();
+    render(<StackRow {...base({ onSelect })} />);
+    screen.getByTestId('stack-row').click();
+    expect(onSelect).toHaveBeenCalledWith('web.yml');
+  });
+
+  it('fires onSelect on Enter and Space', () => {
+    const onSelect = vi.fn();
+    render(<StackRow {...base({ onSelect })} />);
+    const row = screen.getByTestId('stack-row');
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it('kebab click does not trigger onSelect', () => {
+    const onSelect = vi.fn();
+    render(<StackRow {...base({ onSelect, kebabSlot: <button data-testid="kebab">k</button> })} />);
+    screen.getByTestId('kebab').click();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('renders loader when isBusy', () => {
+    const { container } = render(<StackRow {...base({ isBusy: true })} />);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    expect(screen.queryByText('UP')).not.toBeInTheDocument();
   });
 });
