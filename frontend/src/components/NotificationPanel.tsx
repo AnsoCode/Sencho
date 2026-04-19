@@ -169,7 +169,7 @@ export function NotificationPanel({
                 <div className="relative overflow-hidden">
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-brand/[0.05] via-transparent to-transparent" />
                     <div className="absolute inset-y-0 left-0 w-[2px] bg-brand/60" />
-                    <div className="relative flex items-center justify-between px-5 py-3.5">
+                    <div className="relative flex items-center justify-between px-[var(--density-row-x)] py-[var(--density-tile-y)]">
                         <div className="flex items-baseline gap-2.5">
                             <span className="font-display text-xl italic leading-none text-stat-value">
                                 Notifications
@@ -207,7 +207,7 @@ export function NotificationPanel({
                 </div>
 
                 {/* Filter segment */}
-                <div className="flex items-center justify-end border-t border-card-border/60 px-5 py-2.5">
+                <div className="flex items-center justify-end border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
                     <SegmentedControl
                         value={filter}
                         options={filterOptions}
@@ -223,7 +223,7 @@ export function NotificationPanel({
                     <div className="max-h-[480px] overflow-y-auto border-t border-card-border/60">
                         {groups.map((group) => (
                             <div key={group.label}>
-                                <div className="sticky top-0 z-10 border-b border-card-border/40 bg-popover/95 px-5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle backdrop-blur-[10px] backdrop-saturate-[1.15]">
+                                <div className="sticky top-0 z-10 border-b border-card-border/40 bg-popover/95 px-[var(--density-row-x)] py-[var(--density-cell-y)] font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle backdrop-blur-[10px] backdrop-saturate-[1.15]">
                                     {group.label}
                                 </div>
                                 {group.items.map((notif) => (
@@ -260,7 +260,7 @@ function NotificationRow({ notif, showNodeName, onDelete, onNavigate }: Notifica
     const isRoutable = Boolean(onNavigate && notif.stack_name);
 
     const surfaceClasses = cn(
-        'flex w-full items-start gap-3 px-5 py-3 text-left transition-colors',
+        'flex w-full items-start gap-3 px-[var(--density-row-x)] py-[var(--density-row-y)] text-left transition-colors',
         isRoutable && 'cursor-pointer hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none',
     );
 
@@ -352,7 +352,7 @@ function EmptyState({ filter, hasAny }: EmptyStateProps) {
     }
 
     return (
-        <div className="flex flex-col items-center gap-2 border-t border-card-border/60 px-5 py-12 text-center">
+        <div className="flex flex-col items-center gap-2 border-t border-card-border/60 px-[var(--density-row-x)] py-12 text-center">
             <BellOff className="h-8 w-8 text-stat-icon" strokeWidth={1.5} />
             <p className="text-sm text-stat-value">{title}</p>
             <p className="font-mono text-[11px] text-stat-subtitle">{subtitle}</p>
