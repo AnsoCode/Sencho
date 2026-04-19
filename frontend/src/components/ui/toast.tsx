@@ -90,7 +90,7 @@ const ToastItem = memo(function ToastItem({
   const [hovered, setHovered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remainingRef = useRef(duration);
-  const startRef = useRef(Date.now());
+  const startRef = useRef(0);
 
   const dismiss = useCallback(() => {
     removeToast(id);
