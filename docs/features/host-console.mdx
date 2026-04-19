@@ -27,15 +27,24 @@ The Host Console gives you a real terminal session on the Sencho host, streamed 
 
 Click **Console** in the top navigation bar. The session starts immediately in the `COMPOSE_DIR` root. If a stack is selected in the sidebar, the terminal opens directly inside that stack's directory instead.
 
-The header bar shows:
+## Cockpit layout
 
-- **Host Console** label with a terminal icon
-- The active **node name** (e.g. "Local" or a remote node)
-- The **stack name** in parentheses, if one is selected
-- A green **Connected** badge while the WebSocket session is active
-- A **Close Console** button on the right to end the session
+The Console page is a vertical stack of two surfaces:
 
-Clicking **Close Console** terminates the shell process on the host and disconnects the WebSocket.
+<Frame>
+  <img src="/images/host-console/host-console-masthead.png" alt="Masthead with cyan rail, Connected state, and shell, viewport, and session uptime metadata" />
+</Frame>
+
+| Surface | What it shows |
+|---------|---------------|
+| **Masthead** | Connection state (`Connected`, `Reconnecting`, or `Disconnected`) with a live status dot that pulses cyan while the session is active. The kicker reads `HOST CONSOLE · {node}`. When the console was opened from a stack, a small `← {stack-name}` link sits beside the state word so you can return to the stack editor. |
+| **Metadata** | Right side of the masthead: the active **shell** (e.g. `BASH`), the current **viewport** (`{cols}×{rows}` as reported by the fit addon), and **session uptime** since the shell opened. |
+| **Terminal well** | The interactive xterm session, sized to fill the remaining height. |
+| **Chip strip** | Floating bottom-right controls: **Copy** (copies the current selection), **Clear** (wipes the visible scrollback without killing the shell), **Download** (exports the full scrollback as a timestamped `.txt`), and **Reconnect** (closes and reopens the WebSocket without leaving the page). |
+
+<Frame>
+  <img src="/images/host-console/host-console-chip-strip.png" alt="Floating chip strip with Copy, Clear, Download, and Reconnect buttons" />
+</Frame>
 
 ## Shell type
 
