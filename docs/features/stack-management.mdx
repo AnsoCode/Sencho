@@ -117,6 +117,43 @@ The header answers three questions at a glance:
   - `exited` (red) when no containers are up.
 - **What does it ship?** A mono line under the title shows the primary image tag and the short image digest, with a copy button to grab the full digest.
 
+## Container health strip
+
+Below the header, each container in the stack gets a single row that answers "is this piece working, and how do I reach it?" without expanding anything.
+
+<Frame>
+  <img src="/images/stack-view/health-strip-logs.png" alt="Stack view showing the per-container health strip above the structured logs viewer" />
+</Frame>
+
+Each row includes:
+
+- **Health badge.** A colored glyph reports the Docker healthcheck state: `✓` green for passing, `✗` red for failing, `…` amber while the healthcheck start period is still in flight. Containers without a `healthcheck:` block show a neutral `✓`.
+- **Container name** in mono.
+- **Meta line.** Uptime (`up 20 hours`), healthcheck state when one is defined, and the primary port mapping (`6875 → 80/tcp`).
+- **Open link.** When the container publishes a port, an `open ↗` link launches the app in a new tab using the active node's hostname.
+- **Live stat tiles.** Three tiles show CPU, memory, and network I/O with a rolling 60-sample sparkline. The sparkline uses the cyan data color and refreshes roughly every 1.5 seconds.
+- **Action icons.** Shortcuts to open this container's logs or a bash shell.
+
+## Logs viewer
+
+The logs area at the bottom of the stack view has two modes. Toggle between them with the segmented control in the top-right of the panel; your choice is remembered for next time.
+
+**Structured** (default) parses every line into a DOM row with three columns: local time, level badge, and message. Level detection is automatic:
+
+- `err` rows get a red left rail and a subtle rose tint.
+- `warn` rows get a warm tint.
+- `info` rows render plainly.
+
+The toolbar includes:
+
+- **Following indicator.** A pulsing green dot reads `following` while auto-scroll is engaged. Scrolling up stops follow; a `resume follow` link re-engages it and jumps to the bottom.
+- **Level filter.** `all · info · warn · err` pills. The `err` pill shows the running error count as a badge.
+- **Download.** Exports the current buffer as a plain text file.
+
+The structured viewer holds up to 10,000 lines; older entries are dropped from the top as new ones arrive.
+
+**Raw terminal** keeps the original xterm-based viewer for cases where ANSI art, control sequences, or interactive TTY output matter. Lines include the raw ISO timestamp.
+
 ## Deploying a stack
 
 Select a stack and click **Start** (or **Deploy** from the context menu) in the stack header. This runs `docker compose up -d`, pulling images if needed and creating or recreating containers.

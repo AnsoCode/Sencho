@@ -285,7 +285,7 @@ export class ComposeService {
             }
           };
 
-          const child = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
+          const child = spawn('docker', ['logs', '-f', '-t', '--tail', '100', containerName], {
             env: {
               ...process.env,
               PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'

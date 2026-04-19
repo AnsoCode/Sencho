@@ -37,7 +37,6 @@ import { Checkbox } from './ui/checkbox';
 import { GitSourceFields, type ApplyMode } from './stack/GitSourceFields';
 import { Skeleton } from './ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
@@ -50,6 +49,8 @@ import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
+import StructuredLogViewer from './StructuredLogViewer';
+import { Sparkline } from './ui/sparkline';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
@@ -102,6 +103,23 @@ const formatBytes = (bytes: number) => {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+// Extract the "up X time" portion from a Docker status string like
+// "Up 12 days (healthy)" → "up 12 days". Returns null when the container
+// is not in an uptime-reporting state (exited, created, restarting, etc.).
+const extractUptime = (status: string | undefined): string | null => {
+  if (!status) return null;
+  const match = status.match(/^\s*Up\s+(.+?)(?:\s*\(.*\))?\s*$/i);
+  if (!match) return null;
+  return `up ${match[1].trim()}`;
+};
+
+const healthcheckLabel = (health?: 'healthy' | 'unhealthy' | 'starting' | 'none'): string | null => {
+  if (!health || health === 'none') return null;
+  if (health === 'healthy') return 'healthcheck passing';
+  if (health === 'unhealthy') return 'healthcheck failing';
+  return 'healthcheck starting';
 };
 
 type StackPill = { label: string; dotClass: string; className: string; pulse: boolean };
@@ -184,15 +202,39 @@ export default function EditorLayout() {
   const [envFiles, setEnvFiles] = useState<string[]>([]);
   const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [containerStats, setContainerStats] = useState<Record<string, { cpu: string, ram: string, net: string, lastRx?: number, lastTx?: number }>>({});
+  const [containerStats, setContainerStats] = useState<Record<string, {
+    cpu: string;
+    ram: string;
+    net: string;
+    lastRx?: number;
+    lastTx?: number;
+    history: { cpu: number[]; mem: number[]; netIn: number[]; netOut: number[] };
+  }>>({});
   // Incoming WebSocket stats are written here first (no re-render), then flushed
   // to React state in one batched update every 1.5 s.
-  const pendingStatsRef = useRef<Record<string, { cpu: string; ram: string; net: string; lastRx: number; lastTx: number }>>({});
+  const pendingStatsRef = useRef<Record<string, {
+    cpu: string;
+    ram: string;
+    net: string;
+    lastRx: number;
+    lastTx: number;
+    cpuNum: number;
+    memNum: number;
+    netInNum: number;
+    netOutNum: number;
+  }>>({});
   // Raw rx/tx byte totals used for rate calculation. Never cleared on flush so
   // the delta is always computed against the most recent known value, avoiding
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const [logsMode, setLogsMode] = useState<'structured' | 'raw'>(() => {
+    if (typeof window === 'undefined') return 'structured';
+    return (localStorage.getItem('sencho.stackView.logsMode') as 'structured' | 'raw' | null) ?? 'structured';
+  });
+  useEffect(() => {
+    try { localStorage.setItem('sencho.stackView.logsMode', logsMode); } catch { /* ignore */ }
+  }, [logsMode]);
   const [gitSourceOpen, setGitSourceOpen] = useState(false);
   const [gitSourcePendingMap, setGitSourcePendingMap] = useState<Record<string, boolean>>({});
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
@@ -944,6 +986,10 @@ export default function EditorLayout() {
               net: netIO,
               lastRx: currentRx,
               lastTx: currentTx,
+              cpuNum: parseFloat(cpuPercent) || 0,
+              memNum: data.memory_stats.usage / (1024 * 1024),
+              netInNum: rxRate,
+              netOutNum: txRate,
             };
           } catch {
             // Ignore parse errors
@@ -963,16 +1009,26 @@ export default function EditorLayout() {
       pendingStatsRef.current = {};
 
       setContainerStats(prev => {
-        let hasChanges = false;
         const next = { ...prev };
+        const HISTORY_CAP = 60;
         for (const [id, newStats] of Object.entries(pending)) {
-          const old = prev[id];
-          if (!old || old.cpu !== newStats.cpu || old.ram !== newStats.ram || old.net !== newStats.net) {
-            next[id] = newStats;
-            hasChanges = true;
-          }
+          const prior = prev[id]?.history ?? { cpu: [], mem: [], netIn: [], netOut: [] };
+          const history = {
+            cpu: [...prior.cpu, newStats.cpuNum].slice(-HISTORY_CAP),
+            mem: [...prior.mem, newStats.memNum].slice(-HISTORY_CAP),
+            netIn: [...prior.netIn, newStats.netInNum].slice(-HISTORY_CAP),
+            netOut: [...prior.netOut, newStats.netOutNum].slice(-HISTORY_CAP),
+          };
+          next[id] = {
+            cpu: newStats.cpu,
+            ram: newStats.ram,
+            net: newStats.net,
+            lastRx: newStats.lastRx,
+            lastTx: newStats.lastTx,
+            history,
+          };
         }
-        return hasChanges ? next : prev;
+        return next;
       });
     }, 1500);
 
@@ -1751,19 +1807,6 @@ export default function EditorLayout() {
   // Get display name for stack (now just returns the name as-is since no extension)
   const getDisplayName = (stackName: string) => {
     return stackName;
-  };
-
-  const getContainerBadge = (container: ContainerInfo) => {
-    const status = (container.Status || '').toLowerCase();
-    const state = (container.State || '').toLowerCase();
-
-    if (status.includes('(unhealthy)') || state === 'exited' || state === 'dead') {
-      return { variant: 'destructive' as const, text: container.State };
-    }
-    if (status.includes('(starting)')) {
-      return { variant: 'secondary' as const, text: container.State };
-    }
-    return { variant: 'default' as const, text: container.State };
   };
 
   return (
@@ -2755,113 +2798,134 @@ export default function EditorLayout() {
                       </div>
                     </CardHeader>
                     <CardContent className="p-4 pt-2">
-                      {/* Containers List */}
+                      {/* Per-container health strip */}
                       <div className="mt-4">
                         <h4 className="text-sm font-medium text-muted-foreground mb-3">CONTAINERS</h4>
                         {safeContainers.length === 0 ? (
                           <div className="text-muted-foreground text-sm">No containers running for this stack.</div>
                         ) : (
-                          <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-2">
                             {safeContainers.map(container => {
                               let mainPort: number | undefined;
+                              let mainPortPrivate: number | undefined;
+                              let mainPortProto: string | undefined;
                               if (container.Ports && container.Ports.length > 0) {
                                 const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
                                 const IGNORE_PORTS = [1900, 53, 22];
-
-                                // 1. Match typical Web UI Private ports
                                 let match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PrivatePort));
-                                // 2. Match typical Web UI Public ports
                                 if (!match) match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PublicPort));
-                                // 3. Fallback to any port not in ignore list
                                 if (!match) match = container.Ports.find(p => !IGNORE_PORTS.includes(p.PrivatePort) && !IGNORE_PORTS.includes(p.PublicPort));
-
-                                mainPort = (match || container.Ports[0]).PublicPort;
+                                const chosen = match || container.Ports[0];
+                                mainPort = chosen.PublicPort;
+                                mainPortPrivate = chosen.PrivatePort;
+                                mainPortProto = 'tcp';
                               }
 
+                              const containerName = container?.Names?.[0]?.replace(/^\//, '') || container?.Id?.slice(0, 12) || 'container';
+                              const isRunning = container.State === 'running';
+                              const health = container.healthStatus;
+                              const uptime = isRunning ? extractUptime(container.Status) : null;
+                              const hcLabel = healthcheckLabel(health);
+                              const stats = containerStats[container?.Id];
+                              const history = stats?.history;
+
+                              const badgeClass = health === 'unhealthy' || !isRunning
+                                ? 'bg-destructive text-destructive-foreground'
+                                : health === 'starting'
+                                  ? 'bg-warning text-warning-foreground'
+                                  : 'bg-success text-success-foreground';
+                              const badgeGlyph = health === 'unhealthy' || !isRunning ? '✗' : health === 'starting' ? '…' : '✓';
+                              const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
+
                               return (
-                                <div key={container?.Id || Math.random()} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                                  <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
-                                      <HoverCard>
-                                        <HoverCardTrigger asChild>
-                                          <div className="cursor-help inline-flex">
-                                            <Badge variant={getContainerBadge(container).variant} className="text-xs">
-                                              {getContainerBadge(container).text || 'unknown'}
-                                            </Badge>
-                                          </div>
-                                        </HoverCardTrigger>
-                                        <HoverCardContent className="flex w-50 flex-col gap-0.5">
-                                          <div className="space-y-1">
-                                            <h4 className="text-sm font-medium">Container Status</h4>
-                                            <p className="text-sm text-muted-foreground">
-                                              {container?.Status || 'No status details available'}
-                                            </p>
-                                          </div>
-                                        </HoverCardContent>
-                                      </HoverCard>
-                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                        CPU: {container.State === 'running' ? (containerStats[container?.Id]?.cpu || 'N/A') : '0.00%'} | RAM: {container.State === 'running' ? (containerStats[container?.Id]?.ram || 'N/A') : '0.00 MB'} | NET: {container.State === 'running' ? (containerStats[container?.Id]?.net || '0 B ↓ / 0 B ↑') : '0 B/s ↓ / 0 B/s ↑'}
-                                      </span>
+                                <div key={container?.Id || Math.random()} className="rounded-lg border border-muted bg-muted/30 px-3 py-2.5">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                                      <div className={cn('mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', badgeClass)}>
+                                        {badgeGlyph}
+                                      </div>
+                                      <div className="flex min-w-0 flex-col gap-0.5">
+                                        <div className="truncate font-mono text-sm text-foreground">{containerName}</div>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-stat-subtitle">
+                                          {uptime ? <span>{uptime}</span> : <span>{(container.State || 'unknown').toLowerCase()}</span>}
+                                          {hcLabel ? <><span>·</span><span>{hcLabel}</span></> : null}
+                                          {mainPort && mainPortPrivate ? (
+                                            <>
+                                              <span>·</span>
+                                              <span>{mainPort} → {mainPortPrivate}/{mainPortProto}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const host = activeNode?.type === 'remote' && activeNode?.api_url
+                                                    ? new URL(activeNode.api_url).hostname
+                                                    : window.location.hostname;
+                                                  window.open(`http://${host}:${mainPort}`, '_blank');
+                                                }}
+                                                className="inline-flex items-center gap-1 text-brand hover:underline"
+                                              >
+                                                open <ArrowUpRight className="h-3 w-3" strokeWidth={1.5} />
+                                              </button>
+                                            </>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7 rounded-md"
+                                        onClick={() => openLogViewer(container?.Id, containerName)}
+                                        disabled={!isRunning}
+                                        aria-label="View logs"
+                                      >
+                                        <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                      </Button>
+                                      {isAdmin && (
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-7 w-7 rounded-md"
+                                          onClick={() => openBashModal(container?.Id, containerName)}
+                                          disabled={!isRunning}
+                                          aria-label="Open bash shell"
+                                        >
+                                          <Terminal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="flex gap-1">
-                                    {mainPort && (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="rounded-lg h-8 w-8"
-                                              onClick={() => {
-                                                const host = activeNode?.type === 'remote' && activeNode?.api_url
-                                                  ? new URL(activeNode.api_url).hostname
-                                                  : window.location.hostname;
-                                                window.open(`http://${host}:${mainPort}`, '_blank');
-                                              }}
-                                            >
-                                              <ExternalLink className="w-4 h-4" />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>Open App ({mainPort})</TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    )}
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className="rounded-lg h-8 w-8"
-                                            onClick={() => openLogViewer(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
-                                            disabled={container?.State !== 'running'}
-                                          >
-                                            <ScrollText className="w-4 h-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>View Live Logs</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                    {isAdmin && (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="rounded-lg h-8 w-8"
-                                              onClick={() => openBashModal(container?.Id, container?.Names?.[0]?.replace('/', '') || 'container')}
-                                              disabled={container?.State !== 'running'}
-                                            >
-                                              <Terminal className="w-4 h-4" />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>Open Bash Terminal</TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    )}
-                                  </div>
+                                  {isRunning ? (
+                                    <div className="mt-2 grid grid-cols-3 gap-2">
+                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
+                                        <div className="flex flex-col">
+                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">cpu</span>
+                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.cpu ?? '-'}</span>
+                                        </div>
+                                        <div className="ml-auto h-5 w-16">
+                                          <Sparkline points={history?.cpu ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
+                                        <div className="flex flex-col">
+                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">mem</span>
+                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.ram ?? '-'}</span>
+                                        </div>
+                                        <div className="ml-auto h-5 w-16">
+                                          <Sparkline points={history?.mem ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
+                                        <div className="flex flex-col">
+                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">net i/o</span>
+                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.net ?? '-'}</span>
+                                        </div>
+                                        <div className="ml-auto h-5 w-16">
+                                          <Sparkline points={history?.netIn ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
                               );
                             })}
@@ -2871,14 +2935,46 @@ export default function EditorLayout() {
                     </CardContent>
                   </Card>
 
-                  {/* Terminal Section */}
-                  <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 min-h-[300px] shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
-                    <h3 className="text-sm font-medium text-stat-subtitle mb-2">Terminal</h3>
-                    <div className="h-[calc(100%-24px)]">
-                      <ErrorBoundary>
-                        <TerminalComponent stackName={stackName} />
-                      </ErrorBoundary>
+                  {/* Logs Section */}
+                  <div className="flex-1 min-h-[320px] flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-stat-subtitle">Logs</h3>
+                      <div className="inline-flex rounded-md border border-muted bg-muted/30 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setLogsMode('structured')}
+                          className={cn(
+                            'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors',
+                            logsMode === 'structured' ? 'bg-brand/15 text-brand' : 'text-stat-subtitle hover:text-foreground',
+                          )}
+                        >
+                          Structured
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogsMode('raw')}
+                          className={cn(
+                            'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors',
+                            logsMode === 'raw' ? 'bg-brand/15 text-brand' : 'text-stat-subtitle hover:text-foreground',
+                          )}
+                        >
+                          Raw terminal
+                        </button>
+                      </div>
                     </div>
+                    {logsMode === 'structured' ? (
+                      <ErrorBoundary>
+                        <StructuredLogViewer stackName={stackName} />
+                      </ErrorBoundary>
+                    ) : (
+                      <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
+                        <div className="h-full">
+                          <ErrorBoundary>
+                            <TerminalComponent stackName={stackName} />
+                          </ErrorBoundary>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
