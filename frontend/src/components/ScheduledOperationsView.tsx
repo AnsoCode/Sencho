@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Clock, Plus, Pencil, Trash2, History, RefreshCw, Play, ChevronLeft, ChevronRight, Download, CalendarClock, Table2 } from 'lucide-react';
@@ -588,9 +588,9 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
                       {formatTimestamp(task.next_run_at)}
                     </TableCell>
                     <TableCell>
-                      <Switch
+                      <TogglePill
                         checked={task.enabled === 1}
-                        onCheckedChange={() => handleToggle(task)}
+                        onChange={() => handleToggle(task)}
                       />
                     </TableCell>
                     <TableCell className="text-right">
@@ -742,7 +742,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
             </div>
 
             <div className="flex items-center gap-2">
-              <Switch checked={formEnabled} onCheckedChange={setFormEnabled} id="task-enabled" />
+              <TogglePill checked={formEnabled} onChange={setFormEnabled} id="task-enabled" />
               <Label htmlFor="task-enabled">Enabled</Label>
             </div>
           </div>

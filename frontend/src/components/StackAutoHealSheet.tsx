@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Combobox } from '@/components/ui/combobox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
@@ -131,9 +131,9 @@ function PolicyRow({ policy, onDelete, onToggle, deleting, saving }: PolicyRowPr
                     )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                    <Switch
+                    <TogglePill
                         checked={policy.enabled === 1}
-                        onCheckedChange={(checked) => policy.id != null && onToggle(policy.id, checked)}
+                        onChange={(checked) => policy.id != null && onToggle(policy.id, checked)}
                         disabled={saving}
                         aria-label={`Toggle policy for ${policy.service_name ?? 'all services'}`}
                     />

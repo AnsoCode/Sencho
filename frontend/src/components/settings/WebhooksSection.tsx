@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/toast-store';
@@ -244,7 +244,7 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
                                     <Badge variant="secondary" className="text-[10px] shrink-0">{wh.stack_name}</Badge>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                    <Switch checked={wh.enabled} onCheckedChange={(c) => handleToggle(wh.id!, c)} />
+                                    <TogglePill checked={wh.enabled} onChange={(c) => handleToggle(wh.id!, c)} />
                                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDelete(wh.id!)}>
                                         <Trash2 className="w-4 h-4 text-muted-foreground" />
                                     </Button>
