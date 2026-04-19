@@ -39,12 +39,19 @@ export class NotificationService {
      *  - agents table (all tiers): global fallback channels used when no
      *    notification_routes match or when no stackName is provided.
      */
-    public async dispatchAlert(level: 'info' | 'warning' | 'error', message: string, stackName?: string) {
+    public async dispatchAlert(
+        level: 'info' | 'warning' | 'error',
+        message: string,
+        stackName?: string,
+        containerName?: string,
+    ) {
         // 1. Log to history and get the full inserted record (with id)
         const notification = this.dbService.addNotificationHistory({
             level,
             message,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            stack_name: stackName,
+            container_name: containerName,
         });
 
         // 2. Push to connected browser clients via WebSocket

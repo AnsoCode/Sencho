@@ -89,6 +89,7 @@ interface NotificationPanelProps {
     onMarkAllRead: () => void;
     onClearAll: () => void;
     onDelete: (notif: NotificationItem) => void;
+    onNavigate?: (notif: NotificationItem) => void;
 }
 
 export function NotificationPanel({
@@ -97,8 +98,10 @@ export function NotificationPanel({
     onMarkAllRead,
     onClearAll,
     onDelete,
+    onNavigate,
 }: NotificationPanelProps) {
     const [filter, setFilter] = useState<NotifFilter>('all');
+    const [open, setOpen] = useState(false);
 
     const unreadCount = useMemo(
         () => notifications.filter((n) => !n.is_read).length,
@@ -137,8 +140,14 @@ export function NotificationPanel({
             </span>
         ) : null;
 
+    const handleNavigate = (notif: NotificationItem) => {
+        if (!onNavigate || !notif.stack_name) return;
+        onNavigate(notif);
+        setOpen(false);
+    };
+
     return (
-        <Popover>
+        <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
                     variant="ghost"
@@ -225,6 +234,7 @@ export function NotificationPanel({
                                             notif.nodeId !== undefined && remoteNodeIds.has(notif.nodeId)
                                         }
                                         onDelete={onDelete}
+                                        onNavigate={onNavigate ? handleNavigate : undefined}
                                     />
                                 ))}
                             </div>
@@ -240,22 +250,22 @@ interface NotificationRowProps {
     notif: NotificationItem;
     showNodeName: boolean;
     onDelete: (notif: NotificationItem) => void;
+    onNavigate?: (notif: NotificationItem) => void;
 }
 
-function NotificationRow({ notif, showNodeName, onDelete }: NotificationRowProps) {
+function NotificationRow({ notif, showNodeName, onDelete, onNavigate }: NotificationRowProps) {
     const config = LEVEL_CONFIG[notif.level];
     const Icon = config.icon;
     const isUnread = !notif.is_read;
+    const isRoutable = Boolean(onNavigate && notif.stack_name);
 
-    return (
-        <div className="group relative flex items-start gap-3 border-b border-card-border/40 px-5 py-3 transition-colors last:border-b-0 hover:bg-accent/40">
-            <div
-                className={cn(
-                    'absolute inset-y-0 left-0 w-[3px] transition-opacity',
-                    config.railClass,
-                    isUnread ? 'opacity-100' : 'opacity-30',
-                )}
-            />
+    const surfaceClasses = cn(
+        'flex w-full items-start gap-3 px-5 py-3 text-left transition-colors',
+        isRoutable && 'cursor-pointer hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none',
+    );
+
+    const content = (
+        <>
             <Icon
                 className={cn('mt-0.5 h-4 w-4 flex-shrink-0', config.iconClass)}
                 strokeWidth={1.5}
@@ -281,14 +291,41 @@ function NotificationRow({ notif, showNodeName, onDelete }: NotificationRowProps
                     <span className="tabular-nums">{formatRelative(notif.timestamp)}</span>
                 </div>
             </div>
+        </>
+    );
+
+    const ariaLabel = isRoutable
+        ? (notif.container_name
+            ? `Open ${notif.stack_name} and view logs for ${notif.container_name}`
+            : `Open ${notif.stack_name}`)
+        : undefined;
+
+    return (
+        <div className="group relative border-b border-card-border/40 last:border-b-0">
+            <div
+                className={cn(
+                    'pointer-events-none absolute inset-y-0 left-0 z-10 w-[3px] transition-opacity',
+                    config.railClass,
+                    isUnread ? 'opacity-100' : 'opacity-30',
+                )}
+            />
+            {isRoutable ? (
+                <button
+                    type="button"
+                    className={surfaceClasses}
+                    onClick={() => onNavigate?.(notif)}
+                    aria-label={ariaLabel}
+                >
+                    {content}
+                </button>
+            ) : (
+                <div className={surfaceClasses}>{content}</div>
+            )}
             <Button
                 variant="ghost"
                 size="icon"
-                className="absolute right-2 top-2 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(notif);
-                }}
+                className="absolute right-2 top-2 z-20 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={() => onDelete(notif)}
                 title="Dismiss"
             >
                 <X className="h-3 w-3" strokeWidth={1.5} />

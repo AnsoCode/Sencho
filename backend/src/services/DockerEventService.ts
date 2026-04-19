@@ -426,6 +426,7 @@ export class DockerEventService {
             void this.emitError(
                 `Healthcheck failed: ${name} is unhealthy.`,
                 stackName,
+                state.name,
             );
         } else {
             state.unhealthySince = undefined;
@@ -535,7 +536,7 @@ export class DockerEventService {
         // rate-suppressed alerts don't silently lock out the next real crash.
         if (state) state.lastCrashAlertAt = Date.now();
 
-        await this.emitError(message, info.stackName);
+        await this.emitError(message, info.stackName, info.name);
     }
 
     private isCrashAlertsEnabled(): boolean {
@@ -641,16 +642,16 @@ export class DockerEventService {
     // Notification wrappers (prefix with node name for multi-node clarity)
     // ========================================================================
 
-    private async emitError(message: string, stackName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('error', this.prefix(message), stackName);
+    private async emitError(message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('error', this.prefix(message), stackName, containerName);
     }
 
-    private async emitWarning(message: string, stackName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('warning', this.prefix(message), stackName);
+    private async emitWarning(message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('warning', this.prefix(message), stackName, containerName);
     }
 
-    private async emitInfo(message: string, stackName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('info', this.prefix(message), stackName);
+    private async emitInfo(message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('info', this.prefix(message), stackName, containerName);
     }
 
     private prefix(message: string): string {

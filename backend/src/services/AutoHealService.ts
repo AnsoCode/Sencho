@@ -244,6 +244,7 @@ export class AutoHealService {
                     'info',
                     `Auto-Heal: Restarted ${containerName} on stack ${policy.stack_name} after being unhealthy for ${policy.unhealthy_duration_mins} minute(s).`,
                     policy.stack_name,
+                    containerName,
                 )
                 .catch(err => console.error('[AutoHeal] notification dispatch failed:', err));
         } catch (err) {
@@ -267,6 +268,7 @@ export class AutoHealService {
                     'warning',
                     `Auto-Heal: Failed to restart ${containerName} on stack ${policy.stack_name}. Error: ${errorMsg}`,
                     policy.stack_name,
+                    containerName,
                 )
                 .catch(e => console.error('[AutoHeal] notification dispatch failed:', e));
 
