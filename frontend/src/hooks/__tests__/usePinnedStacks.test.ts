@@ -41,10 +41,23 @@ describe('usePinnedStacks', () => {
       for (let i = 0; i < 10; i++) result.current.pin(`s${i}.yml`);
     });
     expect(result.current.pinned).toHaveLength(10);
+    expect(result.current.evictedOldest).toBeNull();
     act(() => result.current.pin('s10.yml'));
     expect(result.current.pinned).toHaveLength(10);
     expect(result.current.pinned[0]).toBe('s1.yml');
     expect(result.current.pinned[9]).toBe('s10.yml');
+    expect(result.current.evictedOldest).toEqual({ file: 's0.yml', seq: 1 });
+  });
+
+  it('evictedOldest seq increments on each eviction', () => {
+    const { result } = renderHook(() => usePinnedStacks(1));
+    act(() => {
+      for (let i = 0; i < 10; i++) result.current.pin(`s${i}.yml`);
+    });
+    act(() => result.current.pin('s10.yml'));
+    expect(result.current.evictedOldest).toEqual({ file: 's0.yml', seq: 1 });
+    act(() => result.current.pin('s11.yml'));
+    expect(result.current.evictedOldest).toEqual({ file: 's1.yml', seq: 2 });
   });
 
   it('isolates state per node', () => {

@@ -29,13 +29,13 @@ export interface UsePinnedStacksResult {
   pin: (file: string) => void;
   unpin: (file: string) => void;
   isPinned: (file: string) => boolean;
-  evictedOldest: string | null;
+  evictedOldest: { file: string; seq: number } | null;
 }
 
 export function usePinnedStacks(nodeId: number | undefined): UsePinnedStacksResult {
   const key = nodeId !== undefined ? String(nodeId) : '__none__';
   const [map, setMap] = useState<PinnedMap>(() => readMap());
-  const [evictedOldest, setEvictedOldest] = useState<string | null>(null);
+  const [evictedOldest, setEvictedOldest] = useState<{ file: string; seq: number } | null>(null);
 
   useEffect(() => { writeMap(map); }, [map]);
 
@@ -48,7 +48,7 @@ export function usePinnedStacks(nodeId: number | undefined): UsePinnedStacksResu
       const next = [...current, file];
       if (next.length > MAX_PINS) {
         const removed = next.shift()!;
-        setEvictedOldest(removed);
+        setEvictedOldest(prev => ({ file: removed, seq: (prev?.seq ?? 0) + 1 }));
       }
       return { ...prev, [key]: next };
     });
@@ -63,7 +63,7 @@ export function usePinnedStacks(nodeId: number | undefined): UsePinnedStacksResu
     });
   }, [key]);
 
-  const isPinned = useCallback((file: string) => (map[key] ?? []).includes(file), [map, key]);
+  const isPinned = useCallback((file: string) => pinned.includes(file), [pinned]);
 
   return { pinned, pin, unpin, isPinned, evictedOldest };
 }
