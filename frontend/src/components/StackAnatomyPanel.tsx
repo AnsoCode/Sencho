@@ -425,6 +425,7 @@ export default function StackAnatomyPanel({
               <button
                 type="button"
                 onClick={onOpenGitSource}
+                aria-label="Git Source"
                 className="inline-flex items-center gap-1.5 font-mono text-[11px] text-left hover:text-brand transition-colors"
               >
                 <GitBranch className="h-3 w-3 shrink-0" strokeWidth={1.5} />
