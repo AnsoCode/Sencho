@@ -3,66 +3,80 @@ title: Global Observability
 description: A unified, searchable log stream from every container across all your stacks.
 ---
 
-The **Logs** tab aggregates output from all running containers into a single scrollable view. Instead of tailing logs one container at a time, you see everything in one place, with filtering to focus on what matters.
+The **Logs** tab aggregates output from all running containers into a single scrollable view. Instead of tailing logs one container at a time, you see everything in one place, with contextual metrics and filtering to focus on what matters.
 
 <Frame>
-  <img src="/images/global-observability/global-observability-overview.png" alt="Global Observability view showing real-time log lines from multiple containers" />
+  <img src="/images/global-observability/global-observability-overview.png" alt="Global Observability view with live masthead, signal rail, and streaming log feed" />
 </Frame>
+
+## Cockpit layout
+
+The page is laid out as a vertical stack of surfaces, each with a distinct role:
+
+| Surface | What it shows |
+|---------|---------------|
+| **Masthead** | Stream state (`Streaming`, `Idle`, or `Offline`) with a live status dot. Right side shows time since the last event and current session uptime. |
+| **Signal rail** | Four tiles: `EVENTS / MIN` with a 60-second sparkline, `ERRORS` count, `WARNINGS` count, and distinct `CONTAINERS` count. Values reflect the current buffer. |
+| **Filter strip** | Search box, stacks multi-select, stream pills (`All`, `Out`, `Err`), and level pills (`All`, `Info`, `Warn`, `Error`). |
+| **Feed** | Chronological rows grouped by day-banded headers (`NOW`, `2M AGO`, `TODAY 14:20`). Each row shows a severity dot, timestamp, container name, and message. Error rows are tinted rose; warning rows tinted amber. |
+| **Chip strip** | Floating bottom-right controls for `Pause`, `Clear`, and `Download`. |
+
+## Streaming
+
+Logs stream live via Server-Sent Events the moment you open the page. The masthead dot pulses cyan while the stream is active; it settles to grey when no events have arrived in the last ten seconds, and turns rose if the connection fails.
+
+If your browser cannot open an `EventSource` connection, Sencho falls back to polling every five seconds automatically. The transport choice is transparent, and no setting is needed to enable streaming.
 
 ## Log format
 
-Each line displays:
+Each row shows:
 
-- **Timestamp** - when the log line was emitted (local time, 12-hour format)
-- **Container name** - the specific container that produced the line, shown in brackets
-- **Level** - `INFO`, `WARN`, or `ERROR` (where detectable), colour-coded for quick scanning
-- **Message** - the raw log output, tinted red for `STDERR` lines
+- **Severity dot** - green for `INFO`, amber for `WARN`, rose with a soft glow for `ERROR`
+- **Timestamp** - when the log line was emitted (24-hour local time)
+- **Container name** - the specific container that produced the line, rendered in brand cyan
+- **Message** - the raw log output, tinted rose for `STDERR` lines
 
-`WARN` lines appear in amber, `ERROR` lines in red, and `INFO` lines in green so you can spot problems at a glance.
+Rows for errors are tinted rose across the full width; warnings are tinted amber. The whole-row tint makes problems easy to scan without reading every line.
 
-## Streaming modes
+## Day bands
 
-Sencho supports two modes for fetching logs, controlled by the **Developer Mode** toggle in **Settings → Developer**:
-
-| Mode | How it works | Best for |
-|------|-------------|----------|
-| **Standard** (default) | Polls all containers on a configurable interval | General use; lower overhead |
-| **Developer mode** | Server-Sent Events (SSE) stream; logs arrive as they are emitted | Debugging; watching events in real time |
-
-When Developer Mode is active, a pulsing green **● LIVE** indicator appears in the toolbar to confirm the SSE stream is connected.
-
-The default polling interval is 5 seconds. You can change it to 1, 3, 5, or 10 seconds in **Settings → Developer → Standard Log Polling Rate**. This setting is disabled while Developer Mode is active because SSE streaming replaces polling entirely.
+When consecutive log rows span a large time gap, a tracked-mono header is drawn between them showing how long ago the next block of rows was emitted. Labels roll up as time passes: recent events are `NOW`, then `2M AGO`, `12M AGO`, `1H AGO`, and eventually a full calendar date.
 
 ## Filtering logs
 
-Use the controls in the toolbar above the log panel to narrow what you see:
+Use the filter strip above the feed to narrow what you see:
 
 | Control | What it does |
 |---------|-------------|
-| **Search** | Full-text filter across the message, container name, and stack name (case-insensitive) |
+| **Search** | Full-text filter across the message, container name, and stack name (case-insensitive). |
 | **Stacks** | Checkbox dropdown; select one or more stacks to show only their containers' logs. Displays "All" when nothing is selected. |
-| **All Streams** | Filter by output stream: `All Streams`, `STDOUT`, or `STDERR` |
-| **All Levels** | Filter by severity: `All Levels`, `ERROR`, `WARN`, or `INFO` |
+| **Stream pills** | Filter by output stream: `All`, `Out` (STDOUT), or `Err` (STDERR). |
+| **Level pills** | Filter by severity: `All`, `Info`, `Warn`, or `Error`. |
 
-Filters combine. For example, you can show only `ERROR` lines from a specific stack while searching for a keyword.
+Filters combine. For example, you can show only `Error` lines from a specific stack while searching for a keyword.
+
+## Pause and resume
+
+Click **Pause** in the chip strip to freeze the feed while you inspect a run of events. The stream keeps filling in the background, and a cyan pill appears showing how many new events are waiting. Click the pill or **Resume** to flush them and return to live mode.
 
 ## Controls
 
 | Button | What it does |
-|--------|-------------|
-| **Clear** (trash icon) | Clears the current log buffer in the UI. Does not delete logs from Docker. |
-| **Download** (download icon) | Exports the currently filtered logs as a `.txt` file. The filename includes a timestamp for easy identification. |
+|--------|--------------|
+| **Pause / Resume** | Freezes and resumes the feed without disconnecting the stream. |
+| **Clear** | Clears the current log buffer in the UI. Does not delete logs from Docker. |
+| **Download** | Exports the currently filtered logs as a `.txt` file. The filename includes an ISO timestamp for easy identification. |
 
 ## Auto-scroll
 
-The log view automatically scrolls to the bottom as new lines arrive. If you scroll up to inspect older entries, auto-scroll pauses so you are not pulled away. Scrolling back to the bottom re-enables it.
+The feed automatically scrolls to the bottom as new rows arrive. If you scroll up to inspect older entries, auto-scroll pauses so you are not pulled away. Scrolling back to the bottom re-enables it.
 
 ## Display limits
 
 To keep the browser responsive, the log viewer enforces two capacity limits:
 
 - **Memory buffer** - a maximum of 2,000 log entries are held in memory at a time. Older entries are dropped as new ones arrive.
-- **Rendered rows** - only the most recent 300 entries from the filtered set are rendered as DOM nodes. If more entries match, a notice appears at the top of the log area showing how many entries exist versus how many are displayed.
+- **Rendered rows** - only the most recent 300 entries from the filtered set are rendered as DOM nodes. If more entries match, a notice appears at the top of the feed showing how many entries exist versus how many are displayed.
 
 For deeper investigation, use the [per-container log viewer](/features/editor#log-viewer) in the Editor tab, or `docker compose logs` directly from the [Host Console](/features/host-console).
 

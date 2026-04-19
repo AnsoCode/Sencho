@@ -179,7 +179,7 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         id: 'developer',
         group: 'advanced',
         label: 'Developer',
-        description: 'Retention windows, log refresh cadence, and debug modes.',
+        description: 'Retention windows and debug modes.',
         keywords: ['retention', 'logs', 'metrics', 'debug', 'developer'],
         tier: null,
         scope: 'node',
