@@ -95,6 +95,7 @@
             "pages": [
               "features/overview",
               "features/dashboard",
+              "features/sidebar",
               "features/stack-management",
               "features/editor",
               "features/resources",
