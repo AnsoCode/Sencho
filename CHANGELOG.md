@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.62.0](https://github.com/AnsoCode/Sencho/compare/v0.61.0...v0.62.0) (2026-04-19)
+
+
+### Added
+
+* **notifications:** deep-link bell rows to source stack and container logs ([#692](https://github.com/AnsoCode/Sencho/issues/692)) ([ed2a16a](https://github.com/AnsoCode/Sencho/commit/ed2a16af798db3db80cce89b550c1c27f418753d))
+* **sidebar:** global multi-node stack search with status ([#685](https://github.com/AnsoCode/Sencho/issues/685)) ([bd94ef9](https://github.com/AnsoCode/Sencho/commit/bd94ef9e1549eea85a1e6f0e0389eb7ac5d6db4d))
+* **stack-view:** anatomy panel replaces always-open yaml ([#690](https://github.com/AnsoCode/Sencho/issues/690)) ([9e41d5e](https://github.com/AnsoCode/Sencho/commit/9e41d5e6b81015e04f10b7ae699d2f228a78eaf0))
+* **stack-view:** identity header with health state and action hierarchy ([#688](https://github.com/AnsoCode/Sencho/issues/688)) ([82aabfe](https://github.com/AnsoCode/Sencho/commit/82aabfe64caa43548757f0f13fcaadde1b5a0518))
+* **stack-view:** per-container health strip and structured logs viewer ([#689](https://github.com/AnsoCode/Sencho/issues/689)) ([a65a1c0](https://github.com/AnsoCode/Sencho/commit/a65a1c0e867ad8d52cdbbe972548a040deea0ae2))
+* **ui:** redesign node switcher as sidebar identity anchor ([#694](https://github.com/AnsoCode/Sencho/issues/694)) ([e721742](https://github.com/AnsoCode/Sencho/commit/e7217425605df55911405cc51cc48fca200b6622))
+* **ui:** redesign top bar as chrome-glass masthead ([#696](https://github.com/AnsoCode/Sencho/issues/696)) ([5589110](https://github.com/AnsoCode/Sencho/commit/5589110925907f6f7bfee234f3e004c0485239c2))
+* **ui:** redesign user menu and notification panel ([#691](https://github.com/AnsoCode/Sencho/issues/691)) ([7c01906](https://github.com/AnsoCode/Sencho/commit/7c01906e708f1b8af56fa07e257d2ae5e3e76c76))
+* **ui:** replace Switch with TogglePill per design audit ([#687](https://github.com/AnsoCode/Sencho/issues/687)) ([88ec71f](https://github.com/AnsoCode/Sencho/commit/88ec71fcaaf7caea21697505ab638c5faeacfa30))
+* **ui:** wire overlay popovers to density tokens ([#695](https://github.com/AnsoCode/Sencho/issues/695)) ([72a1ecd](https://github.com/AnsoCode/Sencho/commit/72a1ecd19290e3895def4f8c6a4b5e7fbf28404e))
+
 ## [0.61.0](https://github.com/AnsoCode/Sencho/compare/v0.60.0...v0.61.0) (2026-04-18)
 
 
