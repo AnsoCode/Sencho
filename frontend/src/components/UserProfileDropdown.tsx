@@ -1,12 +1,26 @@
 import { useState } from 'react';
-import { Settings, LogOut, ExternalLink, Monitor, Sun, Moon, User, Loader2 } from 'lucide-react';
+import {
+    Settings,
+    LogOut,
+    ExternalLink,
+    Monitor,
+    Sun,
+    Moon,
+    User,
+    Loader2,
+    BookOpen,
+    MessageSquare,
+    CreditCard,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
+import { cn } from '@/lib/utils';
 import { TierBadge } from './TierBadge';
 
 type Theme = 'light' | 'dark' | 'auto';
@@ -15,6 +29,23 @@ interface UserProfileDropdownProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
     onOpenSettings: () => void;
+}
+
+const THEME_OPTIONS = [
+    { value: 'auto' as const, label: 'Auto', icon: Monitor },
+    { value: 'light' as const, label: 'Light', icon: Sun },
+    { value: 'dark' as const, label: 'Dark', icon: Moon },
+];
+
+function getInitials(username: string | undefined): string {
+    if (!username) return '';
+    const trimmed = username.trim();
+    if (!trimmed) return '';
+    const parts = trimmed.split(/[\s._-]+/).filter(Boolean);
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return trimmed.slice(0, 2).toUpperCase();
 }
 
 export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
@@ -39,134 +70,181 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
         }
     };
 
+    const showBilling = license?.status === 'active' && !license?.isLifetime;
+    const initials = getInitials(user?.username);
+    const roleLabel = user?.role;
+
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full w-9 h-9" title="Profile">
-                    <User className="w-4 h-4" />
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full p-0 font-mono text-[11px] font-semibold uppercase tracking-wider"
+                    title="Profile"
+                    aria-label="Profile"
+                >
+                    {initials ? initials : <User className="h-4 w-4" strokeWidth={1.5} />}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 p-0 rounded-xl" align="end" sideOffset={8}>
-                {/* User Info */}
-                <div className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                            <User className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{user?.username ?? 'admin'}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${isAdmin ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                                    {user?.role ?? 'admin'}
+            <PopoverContent
+                className="w-72 overflow-hidden rounded-md p-0"
+                align="end"
+                sideOffset={8}
+            >
+                {/* Identity header */}
+                <div className="relative overflow-hidden">
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-brand/[0.05] via-transparent to-transparent" />
+                    <div className="absolute inset-y-0 left-0 w-[2px] bg-brand/60" />
+                    <div className="relative flex items-center gap-3 px-5 py-4">
+                        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/10">
+                            {initials ? (
+                                <span className="font-display text-lg leading-none text-brand">
+                                    {initials}
                                 </span>
-                                <span className="text-muted-foreground/40">·</span>
+                            ) : (
+                                <User className="h-5 w-5 text-brand" strokeWidth={1.5} />
+                            )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-stat-value">
+                                {user?.username ?? 'admin'}
+                            </p>
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                                {roleLabel ? (
+                                    <span
+                                        className={cn(
+                                            'rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em]',
+                                            isAdmin
+                                                ? 'bg-brand/10 text-brand'
+                                                : 'bg-muted text-stat-subtitle',
+                                        )}
+                                    >
+                                        {roleLabel}
+                                    </span>
+                                ) : null}
                                 <TierBadge />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <Separator />
-
-                {/* Navigation Links */}
-                <div className="p-1">
-                    <button
-                        onClick={onOpenSettings}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-left"
-                    >
-                        <Settings className="w-4 h-4 text-muted-foreground" />
-                        Settings
-                    </button>
-                    {license?.status === 'active' && !license?.isLifetime && (
-                        <button
+                {/* Navigation strip */}
+                <div className="border-t border-card-border/60">
+                    <MenuRow icon={Settings} label="Settings" onClick={onOpenSettings} />
+                    {showBilling ? (
+                        <MenuRow
+                            icon={CreditCard}
+                            label="Billing"
                             onClick={openBillingPortal}
                             disabled={billingLoading}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-left disabled:opacity-50"
-                        >
-                            {billingLoading ? (
-                                <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
-                            ) : (
-                                <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                            )}
-                            Billing
-                        </button>
-                    )}
-                </div>
-
-                <Separator />
-
-                {/* Theme Toggle */}
-                <div className="p-3">
-                    <p className="text-xs text-muted-foreground mb-2">Theme</p>
-                    <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
-                        <button
-                            onClick={() => setTheme('auto')}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors ${
-                                theme === 'auto' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                            <Monitor className="w-3.5 h-3.5" />
-                            System
-                        </button>
-                        <button
-                            onClick={() => setTheme('light')}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors ${
-                                theme === 'light' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                            <Sun className="w-3.5 h-3.5" />
-                            Light
-                        </button>
-                        <button
-                            onClick={() => setTheme('dark')}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors ${
-                                theme === 'dark' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                            <Moon className="w-3.5 h-3.5" />
-                            Dark
-                        </button>
-                    </div>
-                </div>
-
-                <Separator />
-
-                {/* Documentation Links */}
-                <div className="p-1">
-                    <a
+                            loading={billingLoading}
+                            trailingIcon={ExternalLink}
+                        />
+                    ) : null}
+                    <MenuRow
+                        icon={BookOpen}
+                        label="Documentation"
                         href="https://docs.sencho.io"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors"
-                    >
-                        <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                        Documentation
-                    </a>
-                    <a
+                        external
+                    />
+                    <MenuRow
+                        icon={MessageSquare}
+                        label="Feedback"
                         href="https://github.com/AnsoCode/Sencho/issues"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg hover:bg-muted transition-colors"
-                    >
-                        <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                        Feedback
-                    </a>
+                        external
+                    />
                 </div>
 
-                <Separator />
+                {/* Appearance */}
+                <div className="flex items-center justify-between gap-3 border-t border-card-border/60 px-5 py-3">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                        Appearance
+                    </span>
+                    <SegmentedControl
+                        value={theme}
+                        options={THEME_OPTIONS}
+                        onChange={setTheme}
+                        iconOnly
+                        ariaLabel="Theme"
+                    />
+                </div>
 
                 {/* Logout */}
-                <div className="p-2">
-                    <Button
-                        variant="outline"
-                        className="w-full justify-center"
+                <div className="border-t border-card-border/60">
+                    <button
+                        type="button"
                         onClick={logout}
+                        className="flex w-full items-center gap-2.5 px-5 py-3 text-left text-sm text-destructive transition-colors hover:bg-destructive/5 focus-visible:bg-destructive/5 focus-visible:outline-none"
                     >
-                        <LogOut className="w-4 h-4 mr-2" />
+                        <LogOut className="h-4 w-4" strokeWidth={1.5} />
                         Log Out
-                    </Button>
+                    </button>
                 </div>
             </PopoverContent>
         </Popover>
+    );
+}
+
+interface MenuRowProps {
+    icon: LucideIcon;
+    label: string;
+    onClick?: () => void;
+    href?: string;
+    external?: boolean;
+    disabled?: boolean;
+    loading?: boolean;
+    trailingIcon?: LucideIcon;
+}
+
+function MenuRow({
+    icon: Icon,
+    label,
+    onClick,
+    href,
+    external,
+    disabled,
+    loading,
+    trailingIcon,
+}: MenuRowProps) {
+    const TrailingIcon = trailingIcon ?? (external ? ExternalLink : undefined);
+    const classes = cn(
+        'flex w-full items-center gap-2.5 px-5 py-2.5 text-left text-sm text-stat-value transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+        disabled && 'pointer-events-none opacity-50',
+    );
+
+    const leadingIcon = loading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-stat-icon" strokeWidth={1.5} />
+    ) : (
+        <Icon className="h-4 w-4 text-stat-icon" strokeWidth={1.5} />
+    );
+
+    const body = (
+        <>
+            {leadingIcon}
+            <span className="flex-1 truncate">{label}</span>
+            {TrailingIcon ? (
+                <TrailingIcon className="h-3 w-3 text-stat-icon" strokeWidth={1.5} />
+            ) : null}
+        </>
+    );
+
+    if (href) {
+        return (
+            <a
+                href={href}
+                target={external ? '_blank' : undefined}
+                rel={external ? 'noopener noreferrer' : undefined}
+                className={classes}
+            >
+                {body}
+            </a>
+        );
+    }
+
+    return (
+        <button type="button" onClick={onClick} disabled={disabled} className={classes}>
+            {body}
+        </button>
     );
 }
