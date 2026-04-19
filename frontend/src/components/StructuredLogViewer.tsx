@@ -20,6 +20,7 @@ type Filter = 'all' | LogLevel;
 
 const BUFFER_CAP = 10_000;
 const TIMESTAMP_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(.*)$/;
+// eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /\x1b\[[0-9;]*[A-Za-z]/g;
 const ERROR_REGEX = /\b(ERROR|ERR|FATAL|Exception)\b/i;
 const WARN_REGEX = /\b(WARN|WARNING|WRN)\b/i;
