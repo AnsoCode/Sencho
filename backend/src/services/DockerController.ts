@@ -801,7 +801,7 @@ class DockerController {
         // Map to frontend's expected interface
         // Note: docker compose ps returns Name (singular), but frontend expects Names (array)
         // Dockerode returns Names with leading slash, so we add it for compatibility
-        return containers.map((c) => {
+        const mapped = containers.map((c) => {
           let Ports: { PrivatePort: number, PublicPort: number }[] = [];
           if (c.Publishers && Array.isArray(c.Publishers)) {
             Ports = c.Publishers
@@ -817,11 +817,12 @@ class DockerController {
             Ports
           };
         });
+        return await this.enrichContainers(mapped);
       }
 
       // SMART FALLBACK: Trigger when docker compose ps returns empty
       // This handles legacy containers with incorrect project labels
-      return await this.smartFallback(stackName, stackDir);
+      return await this.enrichContainers(await this.smartFallback(stackName, stackDir));
 
     } catch (error) {
       // If command fails (e.g., stack not deployed, invalid YAML, missing env_file)
@@ -829,8 +830,28 @@ class DockerController {
       console.error(`Docker Compose Error for ${stackName}:`, execError.stderr || execError.message);
 
       // Try smart fallback even on error
-      return await this.smartFallback(stackName, stackDir);
+      return await this.enrichContainers(await this.smartFallback(stackName, stackDir));
     }
+  }
+
+  /**
+   * Inspect each container to attach healthcheck status, image tag, and image digest.
+   * Each mapper catches its own errors, so Promise.all never rejects (allSettled adds ceremony with no behavior change).
+   */
+  private async enrichContainers<T extends { Id?: string }>(list: T[]): Promise<Array<T & { healthStatus: 'healthy' | 'unhealthy' | 'starting' | 'none'; Image?: string; ImageID?: string }>> {
+    return Promise.all(list.map(async (c) => {
+      const base = { ...c, healthStatus: 'none' as const };
+      if (!c.Id) return base;
+      try {
+        const info = await this.docker.getContainer(c.Id).inspect();
+        const health = info.State?.Health?.Status;
+        const healthStatus: 'healthy' | 'unhealthy' | 'starting' | 'none' =
+          health === 'healthy' || health === 'unhealthy' || health === 'starting' ? health : 'none';
+        return { ...c, healthStatus, Image: info.Config?.Image, ImageID: info.Image };
+      } catch {
+        return base;
+      }
+    }));
   }
 
   /**
