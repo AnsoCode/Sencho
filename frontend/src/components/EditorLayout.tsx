@@ -50,6 +50,7 @@ import { GitSourcePanel } from './stack/GitSourcePanel';
 import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import StructuredLogViewer from './StructuredLogViewer';
+import StackAnatomyPanel from './StackAnatomyPanel';
 import { Sparkline } from './ui/sparkline';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
@@ -314,6 +315,7 @@ export default function EditorLayout() {
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'security-history'>('dashboard');
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [remoteStackResults, setRemoteStackResults] = useState<Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>>>({});
   const [remoteSearchLoading, setRemoteSearchLoading] = useState(false);
@@ -1071,6 +1073,7 @@ export default function EditorLayout() {
     }
     setIsFileLoading(true);
     setIsEditing(false); // Reset to view mode when loading a new file
+    setEditingCompose(false); // Default back to anatomy on stack switch
     try {
       const res = await apiFetch(`/stacks/${filename}`);
       const text = await res.text();
@@ -1381,9 +1384,9 @@ export default function EditorLayout() {
     }
   };
 
-  const updateStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const updateStack = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!selectedFile || isStackBusy(selectedFile)) return;
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
@@ -2651,11 +2654,11 @@ export default function EditorLayout() {
             </AdmiralGate>
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
             <ErrorBoundary>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                {/* Left Column (Command Center & Terminal) */}
-                <div className="flex flex-col h-full gap-6">
-                  {/* Command Center Card */}
-                  <Card className="rounded-xl border-muted bg-card">
+              <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 min-h-[600px] h-[calc(100vh-160px)] max-h-[1040px]">
+                {/* Left column: identity + health strip + logs, stacked */}
+                <div className="flex flex-col gap-6 min-h-0">
+                  {/* Command Center Card (identity + health strip) */}
+                  <Card className="rounded-xl border-muted bg-card shrink-0">
                     <CardHeader className="p-4 pb-2">
                       <div className="flex flex-col gap-3">
                         {/* Identity block */}
@@ -2935,8 +2938,8 @@ export default function EditorLayout() {
                     </CardContent>
                   </Card>
 
-                  {/* Logs Section */}
-                  <div className="flex-1 min-h-[320px] flex flex-col gap-2">
+                  {/* Logs Section (fills remaining left-column height) */}
+                  <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-medium text-stat-subtitle">Logs</h3>
                       <div className="inline-flex rounded-md border border-muted bg-muted/30 p-0.5">
@@ -2978,8 +2981,9 @@ export default function EditorLayout() {
                   </div>
                 </div>
 
-                {/* Right Column (The Editor) */}
-                <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-[600px] bg-card">
+                {/* Right column: anatomy panel by default, Monaco editor when editing */}
+                {editingCompose ? (
+                <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-0 bg-card">
                   <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
                       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
@@ -3010,8 +3014,9 @@ export default function EditorLayout() {
                         </Select>
                       )}
                     </div>
-                    {can('stack:edit', 'stack', stackName) && (
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      {can('stack:edit', 'stack', stackName) && (
+                        <>
                         <Button
                           size="sm"
                           variant="outline"
@@ -3054,8 +3059,23 @@ export default function EditorLayout() {
                             </DropdownMenu>
                           </div>
                         )}
-                      </div>
-                    )}
+                        </>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="rounded-lg h-8 w-8 p-0"
+                        onClick={() => {
+                          if (isEditing) {
+                            discardChanges();
+                          }
+                          setEditingCompose(false);
+                        }}
+                        aria-label="Close editor"
+                      >
+                        <X className="w-4 h-4" strokeWidth={1.5} />
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {activeTab === 'env' && (
@@ -3099,6 +3119,19 @@ export default function EditorLayout() {
                     </div>
                   </div>
                 </Card>
+                ) : (
+                <StackAnatomyPanel
+                  stackName={stackName}
+                  content={content}
+                  envContent={envContent}
+                  selectedEnvFile={selectedEnvFile}
+                  gitSourcePending={Boolean(gitSourcePendingMap[stackName])}
+                  onEditCompose={() => setEditingCompose(true)}
+                  onOpenGitSource={() => setGitSourceOpen(true)}
+                  onApplyUpdate={() => { void updateStack(); }}
+                  canEdit={can('stack:edit', 'stack', stackName)}
+                />
+                )}
               </div>
             </ErrorBoundary>
           ) : activeView === 'global-observability' ? (
