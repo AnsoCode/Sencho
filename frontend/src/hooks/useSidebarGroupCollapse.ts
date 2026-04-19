@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type CollapseMap = Record<string, boolean>;
 
@@ -26,12 +26,19 @@ export interface UseSidebarGroupCollapseResult {
 export function useSidebarGroupCollapse(nodeId: number | undefined): UseSidebarGroupCollapseResult {
   const key = storageKey(nodeId);
   const [map, setMap] = useState<CollapseMap>(() => readMap(key));
+  const skipNextWrite = useRef(true); // skip the initial mount write (state came from readMap)
 
   useEffect(() => {
+    // Node changed: re-hydrate and skip the write that setMap would otherwise trigger.
+    skipNextWrite.current = true;
     setMap(readMap(key));
   }, [key]);
 
   useEffect(() => {
+    if (skipNextWrite.current) {
+      skipNextWrite.current = false;
+      return;
+    }
     try {
       window.localStorage.setItem(key, JSON.stringify(map));
     } catch {

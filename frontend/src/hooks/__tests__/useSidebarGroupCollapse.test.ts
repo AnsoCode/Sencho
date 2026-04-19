@@ -37,4 +37,12 @@ describe('useSidebarGroupCollapse', () => {
     const { result } = renderHook(() => useSidebarGroupCollapse(1));
     expect(result.current.isCollapsed('prod')).toBe(true);
   });
+
+  it('setCollapsed writes explicit boolean value', () => {
+    const { result } = renderHook(() => useSidebarGroupCollapse(1));
+    act(() => result.current.setCollapsed('prod', true));
+    expect(result.current.isCollapsed('prod')).toBe(true);
+    act(() => result.current.setCollapsed('prod', false));
+    expect(result.current.isCollapsed('prod')).toBe(false);
+  });
 });
