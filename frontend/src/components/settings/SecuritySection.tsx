@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from '@/components/ui/combobox';
 import {
@@ -358,9 +358,9 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
                 Check daily and install newer Trivy releases automatically.
               </p>
             </div>
-            <Switch
+            <TogglePill
               checked={trivy.autoUpdate}
-              onCheckedChange={handleAutoUpdateToggle}
+              onChange={handleAutoUpdateToggle}
               disabled={trivyBusy !== null}
             />
           </div>
@@ -483,9 +483,9 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
                   Emit a critical alert when this policy is violated after a deploy.
                 </p>
               </div>
-              <Switch
+              <TogglePill
                 checked={form.block_on_deploy}
-                onCheckedChange={(c) => setForm({ ...form, block_on_deploy: c })}
+                onChange={(c) => setForm({ ...form, block_on_deploy: c })}
               />
             </div>
             <div className="flex items-center justify-between rounded-lg border border-glass-border px-3 py-2.5">
@@ -493,9 +493,9 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
                 <Label className="text-sm">Enabled</Label>
                 <p className="text-xs text-muted-foreground">Disabled policies are skipped during evaluation.</p>
               </div>
-              <Switch
+              <TogglePill
                 checked={form.enabled}
-                onCheckedChange={(c) => setForm({ ...form, enabled: c })}
+                onChange={(c) => setForm({ ...form, enabled: c })}
               />
             </div>
           </div>

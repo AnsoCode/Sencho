@@ -50,6 +50,10 @@ MANUAL_STEPS.md
 docs/superpowers/
 .worktrees/
 
+# Design system (local-only; authoritative reference for agents + user)
+frontend/DESIGN.md
+.design-bundle/
+
 # Playwright MCP
 .playwright-mcp/
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
@@ -142,9 +142,9 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                     )}
                 </div>
                 <div className="flex items-center gap-2">
-                    <Switch
+                    <TogglePill
                         checked={!!config.enabled}
-                        onCheckedChange={(checked) => update('enabled', checked)}
+                        onChange={(checked) => update('enabled', checked)}
                         onClick={(e) => e.stopPropagation()}
                     />
                 </div>
@@ -221,9 +221,9 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Switch
+                                <TogglePill
                                     checked={config.ldapTlsRejectUnauthorized !== false}
-                                    onCheckedChange={checked => update('ldapTlsRejectUnauthorized', checked)}
+                                    onChange={checked => update('ldapTlsRejectUnauthorized', checked)}
                                 />
                                 <Label className="text-xs text-muted-foreground">Verify TLS certificate</Label>
                             </div>

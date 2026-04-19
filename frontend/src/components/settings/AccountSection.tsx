@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, RefreshCw, Shield, ShieldCheck } from 'lucide-react';
 import { MfaEnrollDialog } from '@/components/mfa/MfaEnrollDialog';
@@ -179,9 +179,9 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
                                                 SSO logins skip the second factor by default.
                                             </div>
                                         </div>
-                                        <Switch
+                                        <TogglePill
                                             checked={mfa.sso_enforce_mfa}
-                                            onCheckedChange={handleBypassToggle}
+                                            onChange={handleBypassToggle}
                                             disabled={togglingBypass}
                                         />
                                     </div>

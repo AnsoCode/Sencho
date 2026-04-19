@@ -18,7 +18,7 @@ import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { Container, Network, Loader2, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -306,7 +306,7 @@ export default function NetworkTopologyView({ onContainerClick }: NetworkTopolog
     return (
         <div className="rounded-lg border border-card-border bg-card shadow-card-bevel overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-card-border">
-                <Switch id="show-system" checked={includeSystem} onCheckedChange={setIncludeSystem} />
+                <TogglePill id="show-system" checked={includeSystem} onChange={setIncludeSystem} />
                 <Label htmlFor="show-system" className="text-xs cursor-pointer">
                     Show system networks
                 </Label>

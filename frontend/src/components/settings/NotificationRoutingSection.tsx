@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from '@/components/ui/combobox';
@@ -322,7 +322,7 @@ export function NotificationRoutingSection() {
                                 <div className="space-y-2">
                                     <Label>Enabled</Label>
                                     <div className="pt-2">
-                                        <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
+                                        <TogglePill checked={formEnabled} onChange={setFormEnabled} />
                                     </div>
                                 </div>
                             </div>
@@ -373,9 +373,9 @@ export function NotificationRoutingSection() {
                                 )}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                                <Switch
+                                <TogglePill
                                     checked={route.enabled}
-                                    onCheckedChange={() => handleToggleEnabled(route)}
+                                    onChange={() => handleToggleEnabled(route)}
                                     className="scale-75"
                                 />
                                 <Button

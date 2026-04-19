@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -64,10 +64,10 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                                 <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
                                 <p className="text-xs text-muted-foreground">Enable Real-Time Metrics, Debug Diagnostics & Extended Logs</p>
                             </div>
-                            <Switch
+                            <TogglePill
                                 id="developer_mode"
                                 checked={settings.developer_mode === '1'}
-                                onCheckedChange={(c) => onSettingChange('developer_mode', c ? '1' : '0')}
+                                onChange={(c) => onSettingChange('developer_mode', c ? '1' : '0')}
                             />
                         </div>
 

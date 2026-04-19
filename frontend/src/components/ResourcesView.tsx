@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { TogglePill } from "@/components/ui/toggle-pill";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
@@ -1311,18 +1311,18 @@ export default function ResourcesView() {
                         </div>
                         <div className="flex items-center gap-6 pt-1">
                             <div className="flex items-center gap-2">
-                                <Switch
+                                <TogglePill
                                     id="net-internal"
                                     checked={createNetworkForm.internal}
-                                    onCheckedChange={v => setCreateNetworkForm(f => ({ ...f, internal: v }))}
+                                    onChange={v => setCreateNetworkForm(f => ({ ...f, internal: v }))}
                                 />
                                 <Label htmlFor="net-internal" className="text-xs cursor-pointer">Internal <span className="text-muted-foreground">(no external access)</span></Label>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Switch
+                                <TogglePill
                                     id="net-attachable"
                                     checked={createNetworkForm.attachable}
-                                    onCheckedChange={v => setCreateNetworkForm(f => ({ ...f, attachable: v }))}
+                                    onChange={v => setCreateNetworkForm(f => ({ ...f, attachable: v }))}
                                 />
                                 <Label htmlFor="net-attachable" className="text-xs cursor-pointer">Attachable</Label>
                             </div>

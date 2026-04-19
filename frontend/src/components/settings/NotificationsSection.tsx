@@ -4,7 +4,7 @@ import { springs } from '@/lib/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { TogglePill } from '@/components/ui/toggle-pill';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
@@ -96,10 +96,10 @@ export function NotificationsSection() {
         <div className="space-y-4 py-4">
             <div className="flex items-center justify-between">
                 <Label htmlFor={`${type}-enabled`} className="font-medium">Enable {title}</Label>
-                <Switch
+                <TogglePill
                     id={`${type}-enabled`}
                     checked={agents[type].enabled}
-                    onCheckedChange={(c) => handleAgentChange(type, 'enabled', c)}
+                    onChange={(c) => handleAgentChange(type, 'enabled', c)}
                 />
             </div>
             <div className="space-y-2">
