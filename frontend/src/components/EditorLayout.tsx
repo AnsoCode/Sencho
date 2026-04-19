@@ -378,9 +378,6 @@ export default function EditorLayout() {
     return items;
   }, [isAdmin, isPaid, license?.variant, can]);
 
-  // Only highlight a tab if activeView matches a nav item
-  const navTabValue = navItems.some(i => i.value === activeView) ? activeView : undefined;
-
   // Reset editor state (extracted from Home button onClick)
   const resetEditorState = () => {
     setSelectedFile(null);
@@ -2484,7 +2481,6 @@ export default function EditorLayout() {
         <TopBar
           activeView={activeView}
           navItems={navItems}
-          navTabValue={navTabValue}
           onNavigate={handleNavigate}
           mobileNavOpen={mobileNavOpen}
           onMobileNavOpenChange={setMobileNavOpen}

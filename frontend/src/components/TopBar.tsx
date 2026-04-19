@@ -3,8 +3,6 @@ import type { LucideIcon } from 'lucide-react';
 import { Menu } from 'lucide-react';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
-import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
-import { springs } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
 export interface TopBarNavItem {
@@ -16,7 +14,6 @@ export interface TopBarNavItem {
 interface TopBarProps {
     activeView: string;
     navItems: TopBarNavItem[];
-    navTabValue: string | undefined;
     onNavigate: (value: string) => void;
     mobileNavOpen: boolean;
     onMobileNavOpenChange: (open: boolean) => void;
@@ -27,7 +24,6 @@ interface TopBarProps {
 export function TopBar({
     activeView,
     navItems,
-    navTabValue,
     onNavigate,
     mobileNavOpen,
     onMobileNavOpenChange,
@@ -46,37 +42,33 @@ export function TopBar({
             <div className="flex-1 min-w-0" />
 
             {/* CENTER ZONE: Navigation (hidden on mobile) */}
-            <nav aria-label="Primary" className="hidden md:flex justify-center">
-                <Highlight
-                    className="inset-0 rounded-md bg-accent"
-                    value={navTabValue}
-                    controlledItems
-                    mode="children"
-                    click={false}
-                    transition={springs.snappy}
-                >
-                    <div className="inline-flex items-center rounded-lg p-1 gap-0.5">
-                        {navItems.map(({ value, label, icon: Icon }) => (
-                            <HighlightItem key={value} value={value}>
-                                <button
-                                    onClick={() => onNavigate(value)}
-                                    aria-label={label}
-                                    aria-current={activeView === value ? 'page' : undefined}
-                                    className={cn(
-                                        'relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
-                                        activeView === value
-                                            ? 'text-foreground after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[2px] after:rounded-full after:bg-brand after:blur-[2px]'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    )}
-                                >
-                                    <Icon className="w-4 h-4 shrink-0" strokeWidth={1.5} />
-                                    <span className="hidden xl:inline">{label}</span>
-                                </button>
-                            </HighlightItem>
-                        ))}
-                    </div>
-                </Highlight>
+            <nav aria-label="Primary" className="hidden md:flex self-stretch items-stretch">
+                {navItems.map(({ value, label, icon: Icon }) => {
+                    const isActive = activeView === value;
+                    return (
+                        <button
+                            key={value}
+                            onClick={() => onNavigate(value)}
+                            aria-label={label}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={cn(
+                                'relative inline-flex h-full items-center gap-2 px-4',
+                                'font-mono text-[10px] uppercase tracking-[0.18em] transition-colors',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
+                                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                            )}
+                        >
+                            <Icon className="w-4 h-4 shrink-0" strokeWidth={1.5} />
+                            <span className="hidden xl:inline">{label}</span>
+                            {isActive && (
+                                <span
+                                    aria-hidden
+                                    className="pointer-events-none absolute inset-x-0 -bottom-px h-[2px] bg-brand"
+                                />
+                            )}
+                        </button>
+                    );
+                })}
             </nav>
 
             {/* RIGHT ZONE: Utilities + identity pin */}
