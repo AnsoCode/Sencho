@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 type CollapseMap = Record<string, boolean>;
 
+interface CollapseState {
+  key: string;
+  map: CollapseMap;
+}
+
 function storageKey(nodeId: number | undefined): string {
   return `sencho:sidebar:groups:${nodeId ?? '__none__'}`;
 }
@@ -25,18 +30,20 @@ export interface UseSidebarGroupCollapseResult {
 
 export function useSidebarGroupCollapse(nodeId: number | undefined): UseSidebarGroupCollapseResult {
   const key = storageKey(nodeId);
-  const [map, setMap] = useState<CollapseMap>(() => readMap(key));
-  const skipNextWrite = useRef(true); // skip the initial mount write (state came from readMap)
+  const [state, setState] = useState<CollapseState>(() => ({ key, map: readMap(key) }));
+
+  if (state.key !== key) {
+    // Node changed: re-hydrate during render (derived state pattern).
+    setState({ key, map: readMap(key) });
+  }
+
+  const map = state.map;
+  const lastWrittenKey = useRef<string | null>(null);
 
   useEffect(() => {
-    // Node changed: re-hydrate and skip the write that setMap would otherwise trigger.
-    skipNextWrite.current = true;
-    setMap(readMap(key));
-  }, [key]);
-
-  useEffect(() => {
-    if (skipNextWrite.current) {
-      skipNextWrite.current = false;
+    if (lastWrittenKey.current !== key) {
+      // First sighting of this key (mount or node change): state was hydrated from storage; no write needed.
+      lastWrittenKey.current = key;
       return;
     }
     try {
@@ -49,11 +56,11 @@ export function useSidebarGroupCollapse(nodeId: number | undefined): UseSidebarG
   const isCollapsed = useCallback((groupKey: string) => map[groupKey] === true, [map]);
 
   const toggle = useCallback((groupKey: string) => {
-    setMap(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+    setState(prev => ({ key: prev.key, map: { ...prev.map, [groupKey]: !prev.map[groupKey] } }));
   }, []);
 
   const setCollapsed = useCallback((groupKey: string, collapsed: boolean) => {
-    setMap(prev => ({ ...prev, [groupKey]: collapsed }));
+    setState(prev => ({ key: prev.key, map: { ...prev.map, [groupKey]: collapsed } }));
   }, []);
 
   return { isCollapsed, toggle, setCollapsed };
