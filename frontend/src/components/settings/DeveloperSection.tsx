@@ -5,7 +5,6 @@ import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLicense } from '@/context/LicenseContext';
 import { RefreshCw, Database, Info } from 'lucide-react';
 import type { PatchableSettings } from './types';
@@ -62,37 +61,13 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
                                 <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
-                                <p className="text-xs text-muted-foreground">Enable Real-Time Metrics, Debug Diagnostics & Extended Logs</p>
+                                <p className="text-xs text-muted-foreground">Enable Real-Time Metrics and Debug Diagnostics</p>
                             </div>
                             <TogglePill
                                 id="developer_mode"
                                 checked={settings.developer_mode === '1'}
                                 onChange={(c) => onSettingChange('developer_mode', c ? '1' : '0')}
                             />
-                        </div>
-
-                        <div className="space-y-2 pt-4 border-t border-glass-border">
-                            <Label className={`text-base ${settings.developer_mode === '1' ? 'text-muted-foreground' : ''}`}>
-                                Standard Log Polling Rate
-                            </Label>
-                            <Select
-                                value={settings.global_logs_refresh}
-                                onValueChange={(val) => onSettingChange('global_logs_refresh', val as '1' | '3' | '5' | '10')}
-                                disabled={settings.developer_mode === '1'}
-                            >
-                                <SelectTrigger className="max-w-[200px]">
-                                    <SelectValue placeholder="Select rate" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="1">1 second</SelectItem>
-                                    <SelectItem value="3">3 seconds</SelectItem>
-                                    <SelectItem value="5">5 seconds</SelectItem>
-                                    <SelectItem value="10">10 seconds</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            {settings.developer_mode === '1' && (
-                                <p className="text-xs text-warning">SSE streaming is active - polling rate is overridden.</p>
-                            )}
                         </div>
                     </div>
 

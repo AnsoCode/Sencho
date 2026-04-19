@@ -931,7 +931,6 @@ export class DatabaseService {
         stmt.run('host_disk_limit', '90');
         stmt.run('global_crash', '1');
         stmt.run('docker_janitor_gb', '5');
-        stmt.run('global_logs_refresh', '5');
         stmt.run('developer_mode', '0');
         stmt.run('metrics_retention_hours', '24');
         stmt.run('log_retention_days', '30');

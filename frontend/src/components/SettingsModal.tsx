@@ -147,7 +147,6 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
 
     const hasDeveloperChanges =
         settings.developer_mode !== serverSettingsRef.current.developer_mode ||
-        settings.global_logs_refresh !== serverSettingsRef.current.global_logs_refresh ||
         settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
         settings.log_retention_days !== serverSettingsRef.current.log_retention_days ||
         settings.audit_retention_days !== serverSettingsRef.current.audit_retention_days;
@@ -178,7 +177,6 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
                 docker_janitor_gb: nodeData.docker_janitor_gb ?? DEFAULT_SETTINGS.docker_janitor_gb,
                 global_crash: (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
                 template_registry_url: nodeData.template_registry_url ?? '',
-                global_logs_refresh: (localData.global_logs_refresh as '1' | '3' | '5' | '10') ?? DEFAULT_SETTINGS.global_logs_refresh,
                 developer_mode: (localData.developer_mode as '0' | '1') ?? DEFAULT_SETTINGS.developer_mode,
                 metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
                 log_retention_days: localData.log_retention_days ?? DEFAULT_SETTINGS.log_retention_days,
@@ -234,7 +232,6 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
     const saveDeveloperSettings = async () => {
         const payload = {
             developer_mode: settings.developer_mode,
-            global_logs_refresh: settings.global_logs_refresh,
             metrics_retention_hours: settings.metrics_retention_hours,
             log_retention_days: settings.log_retention_days,
             audit_retention_days: settings.audit_retention_days,

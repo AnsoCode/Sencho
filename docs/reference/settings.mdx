@@ -253,16 +253,19 @@ Quick reference:
 
 ## Developer
 
-**Scope:** Per-node (streaming and polling settings), Global (data retention)
+**Scope:** Per-node (developer mode), Global (data retention)
 
-Advanced settings for log streaming behavior and data retention. Most users can leave these at their defaults.
+<Frame>
+  <img src="/images/settings/settings-developer-section.png" alt="Developer settings panel with the Developer Mode toggle and Data Retention fields" />
+</Frame>
 
-### Streaming
+Advanced settings for debug diagnostics and data retention. Most users can leave these at their defaults.
+
+### Debug
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Developer Mode** | Off | Enables real-time SSE streaming for [Global Observability](/features/global-observability), and activates debug diagnostics (timing, cache state, file resolution) in the server logs |
-| **Standard Log Polling Rate** | 5s | Polling interval in standard mode. Options: `1s`, `3s`, `5s`, `10s`. Disabled when Developer Mode is on. |
+| **Developer Mode** | Off | Enables Real-Time Metrics and Debug Diagnostics (timing, cache state, file resolution) in the server logs. Does not affect [Global Observability](/features/global-observability) streaming, which is always on. |
 
 ### Data Retention
 
@@ -273,10 +276,6 @@ Advanced settings for log streaming behavior and data retention. Most users can 
 | **Audit Log Retention** | 90 days | 365 | How long to keep audit trail entries (Admiral only) |
 
 Click **Save Developer Settings** to apply.
-
-<Note>
-  Lower polling rates (1s) increase backend CPU usage as Sencho polls Docker more frequently. Use only when actively debugging.
-</Note>
 
 ---
 
