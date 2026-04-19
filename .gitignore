@@ -49,6 +49,7 @@ CLAUDE.md
 MANUAL_STEPS.md
 docs/superpowers/
 .worktrees/
+.superpowers/
 
 # Design system (local-only; authoritative reference for agents + user)
 frontend/DESIGN.md
