@@ -129,7 +129,10 @@ export function NotificationPanel({
 
     const bellBadge =
         unreadCount > 0 ? (
-            <span className="absolute -right-1 -top-1 flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 font-mono text-[9px] font-semibold tabular-nums leading-none text-destructive-foreground">
+            <span
+                aria-hidden="true"
+                className="absolute -right-1 -top-1 flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 font-mono text-[9px] font-semibold tabular-nums leading-none text-destructive-foreground"
+            >
                 {unreadCount > 99 ? '99+' : unreadCount}
             </span>
         ) : null;
@@ -142,6 +145,7 @@ export function NotificationPanel({
                     size="icon"
                     className="relative h-8 w-8 rounded-lg"
                     title="Notifications"
+                    aria-label="Notifications"
                 >
                     <Bell className="h-4 w-4" strokeWidth={1.5} />
                     {bellBadge}

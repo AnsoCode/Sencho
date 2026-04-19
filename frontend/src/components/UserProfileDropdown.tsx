@@ -82,6 +82,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                     size="icon"
                     className="h-9 w-9 rounded-full p-0 font-mono text-[11px] font-semibold uppercase tracking-wider"
                     title="Profile"
+                    aria-label="Profile"
                 >
                     {initials ? initials : <User className="h-4 w-4" strokeWidth={1.5} />}
                 </Button>
