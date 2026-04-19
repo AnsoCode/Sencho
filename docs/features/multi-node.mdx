@@ -56,10 +56,14 @@ Click the **wifi icon** (Test Connection) on any node row at any time to re-chec
 
 ## Switching between nodes
 
-The **node switcher** dropdown in the top-left of the sidebar shows the currently active node and its Sencho version. Click it to switch to any registered node. All views (dashboard stats, stack list, editor, resources, logs) immediately reflect the selected node.
+The **node switcher** sits at the top of the sidebar and acts as a persistent identity anchor. It shows the active node's status dot, type (`LOCAL`, `REMOTE`, or `AGENT`), and name, so you always know which node you are viewing.
+
+When two or more nodes are registered, clicking the switcher opens a popover listing every connected node. Each row includes a status dot, name, and a metadata line with the node type, version, and (for pilot agents) the time since the agent last checked in. The active node is marked with a cyan accent rail, and a filled star calls out the default node.
+
+Click any row to switch. All views (dashboard stats, stack list, editor, resources, logs) immediately reflect the selected node. A **Manage nodes** link at the bottom of the popover opens the Nodes settings page to add, edit, or remove nodes.
 
 <Frame>
-  <img src="/images/multi-node/node-switcher-dropdown.png" alt="Node switcher dropdown expanded showing available nodes" />
+  <img src="/images/multi-node/node-switcher-dropdown.png" alt="Node switcher popover listing connected nodes with type, version, and active-row accent" />
 </Frame>
 
 ## Per-node scheduling and update indicators

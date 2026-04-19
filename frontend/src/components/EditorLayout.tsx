@@ -20,7 +20,7 @@ import { springs } from '@/lib/motion';
 import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Server, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -28,7 +28,6 @@ import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
-import { isValidVersion } from '@/lib/version';
 import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
@@ -59,6 +58,7 @@ import AutoUpdateReadinessView from './AutoUpdateReadinessView';
 import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
+import { NodeSwitcher } from './NodeSwitcher';
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
@@ -185,7 +185,7 @@ export default function EditorLayout() {
       }
     };
   }, []);
-  const { nodes, activeNode, setActiveNode, nodeMeta } = useNodes();
+  const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
   const nodesRef = useRef<Node[]>([]);
@@ -344,7 +344,7 @@ export default function EditorLayout() {
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels'>('account');
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels' | 'nodes'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
   const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
@@ -1860,45 +1860,14 @@ export default function EditorLayout() {
           </div>
         </div>
 
-        {/* Node Switcher */}
-        {nodes.length > 1 && (
-          <div className="px-4 pt-2 pb-0">
-            <Select
-              value={activeNode?.id?.toString() || ''}
-              onValueChange={(val) => {
-                const node = nodes.find(n => n.id === parseInt(val));
-                if (node) setActiveNode(node);
-              }}
-            >
-              <SelectTrigger className="w-full h-9 text-sm">
-                <div className="flex items-center gap-2">
-                  <Server className="w-3.5 h-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Select node" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                {nodes.map(node => {
-                  const meta = nodeMeta.get(node.id);
-                  return (
-                    <SelectItem key={node.id} value={node.id.toString()}>
-                      <div className="flex items-center gap-2 w-full">
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${node.status === 'online' ? 'bg-success' :
-                          node.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
-                          }`} />
-                        <span>{node.name}</span>
-                        {isValidVersion(meta?.version) && (
-                          <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60 ml-auto">
-                            v{meta.version}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <div className="px-4 pt-2 pb-0">
+          <NodeSwitcher
+            onManageNodes={() => {
+              setSettingsInitialSection('nodes');
+              setSettingsModalOpen(true);
+            }}
+          />
+        </div>
 
         {/* Create Stack & Scan Buttons */}
         {can('stack:create') && <div className="p-4 flex gap-2">
