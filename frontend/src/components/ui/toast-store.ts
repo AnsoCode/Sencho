@@ -2,12 +2,26 @@ import { useSyncExternalStore } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface ToastOptions {
+  action?: ToastAction;
+  duration?: number;
+}
+
 export interface Toast {
   id: string;
   type: ToastType;
   message: string;
   createdAt: number;
+  action?: ToastAction;
+  duration?: number;
 }
+
+const MAX_BUFFERED = 20;
 
 let toasts: Toast[] = [];
 const listeners: Set<() => void> = new Set();
@@ -17,15 +31,28 @@ function notify() {
   listeners.forEach((fn) => fn());
 }
 
-function addToast(type: ToastType, message: string): string {
+function addToast(type: ToastType, message: string, opts?: ToastOptions): string {
   const id = `toast-${++idCounter}-${Date.now()}`;
-  toasts = [...toasts, { id, type, message, createdAt: Date.now() }];
+  const next: Toast[] = [
+    ...toasts,
+    {
+      id,
+      type,
+      message,
+      createdAt: Date.now(),
+      action: opts?.action,
+      duration: opts?.duration,
+    },
+  ];
+  toasts = next.length > MAX_BUFFERED ? next.slice(-MAX_BUFFERED) : next;
   notify();
   return id;
 }
 
 export function removeToast(id: string) {
-  toasts = toasts.filter((t) => t.id !== id);
+  const next = toasts.filter((t) => t.id !== id);
+  if (next.length === toasts.length) return;
+  toasts = next;
   notify();
 }
 
@@ -45,10 +72,11 @@ export function useToasts() {
 }
 
 export const toast = {
-  success: (message: string) => addToast('success', message),
-  error: (message: string) => addToast('error', message),
-  warning: (message: string) => addToast('warning', message),
-  info: (message: string) => addToast('info', message),
-  loading: (message: string) => addToast('loading', message),
+  success: (message: string, opts?: ToastOptions) => addToast('success', message, opts),
+  error: (message: string, opts?: ToastOptions) => addToast('error', message, opts),
+  warning: (message: string, opts?: ToastOptions) => addToast('warning', message, opts),
+  info: (message: string, opts?: ToastOptions) => addToast('info', message, opts),
+  loading: (message: string, opts?: Omit<ToastOptions, 'duration'>) =>
+    addToast('loading', message, opts),
   dismiss: (id: string) => removeToast(id),
 };
