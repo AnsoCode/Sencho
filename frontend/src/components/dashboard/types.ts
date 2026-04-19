@@ -51,6 +51,8 @@ export interface NotificationItem {
   is_read: number;
   nodeId?: number;
   nodeName?: string;
+  stack_name?: string;
+  container_name?: string;
 }
 
 export interface StackStatusEntry {

@@ -239,6 +239,7 @@ export default function EditorLayout() {
   const [gitSourcePendingMap, setGitSourcePendingMap] = useState<Record<string, boolean>>({});
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
+  const pendingLogsRef = useRef<{ stackName: string; containerName: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createMode, setCreateMode] = useState<'empty' | 'git' | 'docker-run'>('empty');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -1044,6 +1045,27 @@ export default function EditorLayout() {
     };
   }, [containers]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Resolve a pending container name (from notification click) to a live
+  // container id once the target stack's container list loads, then dispatch
+  // the logs event. Only consume when the current stack matches the pending
+  // target — prevents a canceled unsaved-load from leaking the pending name
+  // into an unrelated container refresh. Container ids churn across
+  // recreations, so we store the name and resolve here instead of storing an
+  // id at dispatch time.
+  useEffect(() => {
+    const pending = pendingLogsRef.current;
+    if (!pending || selectedFile !== pending.stackName || containers.length === 0) return;
+    pendingLogsRef.current = null;
+    const match = containers.find(c =>
+      (c.Names ?? []).some(n => n.replace(/^\//, '') === pending.containerName),
+    );
+    if (match) {
+      window.dispatchEvent(new CustomEvent<SenchoOpenLogsDetail>(SENCHO_OPEN_LOGS_EVENT, {
+        detail: { containerId: match.Id, containerName: pending.containerName },
+      }));
+    }
+  }, [containers, selectedFile]);
+
   const hasUnsavedChanges = () =>
     content !== originalContent || envContent !== originalEnvContent;
 
@@ -1154,6 +1176,21 @@ export default function EditorLayout() {
       setContainers([]);
     } finally {
       setIsFileLoading(false);
+    }
+  };
+
+  const navigateToNotification = (notif: NotificationItem) => {
+    if (!notif.stack_name) return;
+    pendingLogsRef.current = notif.container_name
+      ? { stackName: notif.stack_name, containerName: notif.container_name }
+      : null;
+    const targetNode = notif.nodeId !== undefined
+      ? nodes.find(n => n.id === notif.nodeId)
+      : activeNode;
+    if (targetNode && targetNode.id !== activeNode?.id) {
+      loadFileOnNode(targetNode, notif.stack_name);
+    } else {
+      loadFile(notif.stack_name);
     }
   };
 
@@ -2536,6 +2573,7 @@ export default function EditorLayout() {
               onMarkAllRead={markAllRead}
               onClearAll={clearAllNotifications}
               onDelete={deleteNotification}
+              onNavigate={navigateToNotification}
             />
 
 

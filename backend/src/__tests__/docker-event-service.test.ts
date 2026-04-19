@@ -121,6 +121,7 @@ describe('DockerEventService - die classification', () => {
             'error',
             expect.stringContaining('Container Crash Detected'),
             undefined,
+            'web',
         );
     });
 
@@ -188,6 +189,7 @@ describe('DockerEventService - die classification', () => {
             'error',
             expect.stringContaining('OOM Kill'),
             undefined,
+            'hog',
         );
     });
 
@@ -220,6 +222,7 @@ describe('DockerEventService - die classification', () => {
             'error',
             expect.stringContaining('Healthcheck failed'),
             undefined,
+            'api',
         );
     });
 
@@ -314,6 +317,7 @@ describe('DockerEventService - malformed payloads', () => {
             'error',
             expect.stringContaining('Container Crash Detected'),
             undefined,
+            'ok',
         );
     });
 });
@@ -497,6 +501,7 @@ describe('DockerEventService - hardening', () => {
             'error',
             expect.stringContaining('Container Crash Detected'),
             undefined,
+            'app',
         );
     });
 
@@ -550,6 +555,7 @@ describe('DockerEventService - hardening', () => {
             'error',
             expect.stringContaining('Container Crash Detected'),
             undefined,
+            'ephemeral',
         );
     });
 

@@ -199,6 +199,8 @@ export interface NotificationHistory {
     timestamp: number;
     is_read: boolean;
     dispatch_error?: string;
+    stack_name?: string;
+    container_name?: string;
 }
 
 export interface FleetSnapshot {
@@ -444,6 +446,7 @@ export class DatabaseService {
         this.migrateRegistries();
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
+        this.migrateNotificationHistoryContext();
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
     }
@@ -1076,6 +1079,18 @@ export class DatabaseService {
         try { this.db.prepare('ALTER TABLE notification_history ADD COLUMN dispatch_error TEXT').run(); } catch { /* already exists */ }
     }
 
+    private migrateNotificationHistoryContext(): void {
+        const tryAddColumn = (col: string, def: string) => {
+            try {
+                this.db.prepare(`ALTER TABLE notification_history ADD COLUMN ${col} ${def}`).run();
+            } catch {
+                /* column already present */
+            }
+        };
+        tryAddColumn('stack_name', 'TEXT');
+        tryAddColumn('container_name', 'TEXT');
+    }
+
     private migrateScanPolicyFleetColumns(): void {
         const tryAddColumn = (table: string, col: string, def: string) => {
             try {
@@ -1360,13 +1375,23 @@ export class DatabaseService {
         const stmt = this.db.prepare('SELECT * FROM notification_history ORDER BY timestamp DESC LIMIT ?');
         return stmt.all(limit).map((row: any) => ({
             ...row,
-            is_read: row.is_read === 1
+            is_read: row.is_read === 1,
+            stack_name: row.stack_name ?? undefined,
+            container_name: row.container_name ?? undefined,
         }));
     }
 
     public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
-        const stmt = this.db.prepare('INSERT INTO notification_history (level, message, timestamp, is_read) VALUES (?, ?, ?, 0)');
-        const result = stmt.run(notification.level, notification.message, notification.timestamp);
+        const stmt = this.db.prepare(
+            'INSERT INTO notification_history (level, message, timestamp, is_read, stack_name, container_name) VALUES (?, ?, ?, 0, ?, ?)'
+        );
+        const result = stmt.run(
+            notification.level,
+            notification.message,
+            notification.timestamp,
+            notification.stack_name ?? null,
+            notification.container_name ?? null
+        );
 
         this.db.exec(`
       DELETE FROM notification_history
@@ -1381,6 +1406,8 @@ export class DatabaseService {
             message: notification.message,
             timestamp: notification.timestamp,
             is_read: false,
+            stack_name: notification.stack_name,
+            container_name: notification.container_name,
         };
     }
 

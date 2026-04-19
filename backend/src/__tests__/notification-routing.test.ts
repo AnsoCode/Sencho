@@ -214,6 +214,23 @@ describe('NotificationService - routing logic', () => {
       level: 'info',
       message: 'Should be logged',
       timestamp: expect.any(Number),
+      stack_name: undefined,
+      container_name: undefined,
+    });
+  });
+
+  it('persists stackName and containerName context on the history row', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('warning', 'Restarted', 'my-app', 'my-app-web-1');
+
+    expect(mockAddNotificationHistory).toHaveBeenCalledWith({
+      level: 'warning',
+      message: 'Restarted',
+      timestamp: expect.any(Number),
+      stack_name: 'my-app',
+      container_name: 'my-app-web-1',
     });
   });
 
