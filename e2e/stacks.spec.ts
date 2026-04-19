@@ -64,10 +64,11 @@ test.describe('Stack management', () => {
     // Click on the stack to open the editor
     await page.getByText(TEST_STACK).first().click();
 
-    // The toolbar Delete button has the Lucide Trash2 icon
-    const deleteBtn = page.locator('button:has(.lucide-trash-2)');
-    await expect(deleteBtn).toBeVisible({ timeout: 10_000 });
-    await deleteBtn.click();
+    // Destructive actions live under the overflow menu in the stack toolbar
+    await page.getByRole('button', { name: 'More actions' }).click();
+    const deleteItem = page.getByRole('menuitem', { name: /delete/i });
+    await expect(deleteItem).toBeVisible({ timeout: 10_000 });
+    await deleteItem.click();
 
     // AlertDialog confirmation
     await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 5_000 });
