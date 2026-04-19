@@ -148,6 +148,7 @@
   /* Material simulation — inherent depth */
   --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.04), 0 1px 2px 0 oklch(0 0 0 / 0.05);
   --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.04);
+  --chrome-top-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.45);
 
   /* Motion timing */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -304,6 +305,7 @@
   /* Material simulation — inherent depth */
   --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
   --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.06);
+  --chrome-top-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
 
   /* Shadows — near-zero, depth comes from surface tone */
   --shadow-x: 0px;
@@ -413,6 +415,7 @@
   --shadow-2xl: var(--shadow-2xl);
   --shadow-card-bevel: var(--card-bevel);
   --shadow-btn-glow: var(--button-inner-glow);
+  --shadow-chrome-top: var(--chrome-top-highlight);
 }
 
 /* ─────────────────────────────────────────────────────────────

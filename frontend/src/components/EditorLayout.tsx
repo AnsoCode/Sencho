@@ -17,10 +17,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
-import { Highlight, HighlightItem } from './animate-ui/primitives/effects/highlight';
 import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Download, Clock, Menu, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Download, Clock, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
@@ -39,7 +38,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
+import { TopBar } from './TopBar';
 import { cn } from '@/lib/utils';
 import { SettingsModal } from './SettingsModal';
 import { StackAlertSheet } from './StackAlertSheet';
@@ -2482,60 +2481,14 @@ export default function EditorLayout() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Header Bar — Three-zone layout: Node Pill | Navigation | Utilities */}
-        <div className="h-14 flex items-center px-4 border-b border-border gap-3">
-          {/* LEFT ZONE: Node Context Pill */}
-          <div className="flex-shrink-0">
-            {activeNode?.type === 'remote' ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-info-muted border border-info/20 text-info text-sm font-medium">
-                <span className="w-2 h-2 rounded-full bg-info animate-pulse shrink-0" />
-                {activeNode.name}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border text-muted-foreground text-sm">
-                <span className="w-2 h-2 rounded-full bg-success animate-pulse shrink-0" />
-                {activeNode?.name ?? 'Local'}
-              </div>
-            )}
-          </div>
-
-          {/* CENTER ZONE: Navigation Group (hidden on mobile) */}
-          <div className="flex-1 hidden md:flex justify-center">
-            <Highlight
-              className="inset-0 rounded-md bg-accent"
-              value={navTabValue}
-              controlledItems
-              mode="children"
-              click={false}
-              transition={springs.snappy}
-            >
-              <div className="inline-flex items-center rounded-lg p-1 gap-0.5">
-                {navItems.map(({ value, label, icon: Icon }) => (
-                  <HighlightItem key={value} value={value}>
-                    <button
-                      onClick={() => handleNavigate(value)}
-                      className={cn(
-                        'relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                        activeView === value
-                          ? 'text-foreground after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[2px] after:rounded-full after:bg-brand after:blur-[2px]'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span className="hidden xl:inline">{label}</span>
-                    </button>
-                  </HighlightItem>
-                ))}
-              </div>
-            </Highlight>
-          </div>
-
-          {/* Spacer for mobile (when center nav is hidden) */}
-          <div className="flex-1 md:hidden" />
-
-          {/* RIGHT ZONE: Utilities */}
-          <div className="flex-shrink-0 flex items-center gap-2">
-            {/* Notifications */}
+        <TopBar
+          activeView={activeView}
+          navItems={navItems}
+          navTabValue={navTabValue}
+          onNavigate={handleNavigate}
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavOpenChange={setMobileNavOpen}
+          notifications={
             <NotificationPanel
               notifications={notifications}
               nodes={nodes}
@@ -2544,47 +2497,15 @@ export default function EditorLayout() {
               onDelete={deleteNotification}
               onNavigate={navigateToNotification}
             />
-
-
-            {/* User Profile Dropdown */}
+          }
+          userMenu={
             <UserProfileDropdown
               theme={theme}
               setTheme={setTheme}
               onOpenSettings={() => setSettingsModalOpen(true)}
             />
-
-            {/* Mobile Navigation Trigger */}
-            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg md:hidden">
-                  <Menu className="w-4 h-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-64 p-0">
-                <div className="p-4 border-b">
-                  <p className="text-sm font-medium">Navigation</p>
-                </div>
-                <nav className="flex flex-col p-2 gap-1">
-                  {navItems.map(({ value, label, icon: Icon }) => (
-                    <button
-                      key={value}
-                      onClick={() => { handleNavigate(value); setMobileNavOpen(false); }}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
-                        activeView === value
-                          ? 'bg-glass-highlight font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-glass-highlight hover:text-foreground'
-                      )}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {label}
-                    </button>
-                  ))}
-                </nav>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </div>
+          }
+        />
 
         {/* Main Workspace */}
         <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
