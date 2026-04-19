@@ -16,6 +16,7 @@ import {
 import type { MenuGroup, MenuItem, StackMenuCtx } from '@/components/sidebar/sidebar-types';
 
 export function useStackMenuItems(file: string, ctx: StackMenuCtx): MenuGroup[] {
+  const { showDeploy, showStop, showRestart, showUpdate } = ctx.menuVisibility;
   return useMemo(() => {
     const groups: MenuGroup[] = [];
 
@@ -55,7 +56,6 @@ export function useStackMenuItems(file: string, ctx: StackMenuCtx): MenuGroup[] 
     groups.push({ id: 'organize', items: organize });
 
     const lifecycle: MenuItem[] = [];
-    const { showDeploy, showStop, showRestart, showUpdate } = ctx.menuVisibility;
     if (showDeploy) lifecycle.push({ id: 'deploy', label: 'Deploy', icon: Play, shortcut: '⌘↵', onSelect: ctx.deploy, disabled: ctx.isBusy });
     if (showStop) lifecycle.push({ id: 'stop', label: 'Stop', icon: Square, shortcut: '⌘.', onSelect: ctx.stop, disabled: ctx.isBusy });
     if (showRestart) lifecycle.push({ id: 'restart', label: 'Restart', icon: RotateCw, shortcut: '⌘R', onSelect: ctx.restart, disabled: ctx.isBusy });
@@ -79,7 +79,10 @@ export function useStackMenuItems(file: string, ctx: StackMenuCtx): MenuGroup[] 
     ctx.canDelete,
     ctx.isPinned,
     ctx.labels,
-    ctx.menuVisibility,
+    showDeploy,
+    showStop,
+    showRestart,
+    showUpdate,
     ctx.openAlertSheet,
     ctx.openAutoHeal,
     ctx.checkUpdates,

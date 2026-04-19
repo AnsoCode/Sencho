@@ -86,4 +86,13 @@ describe('useStackMenuItems', () => {
     const ids = lifecycle.items.map(i => i.id);
     expect(ids).toEqual(['deploy', 'update']);
   });
+
+  it('disables every lifecycle item when isBusy', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
+      isBusy: true,
+      menuVisibility: { showDeploy: true, showStop: true, showRestart: true, showUpdate: true },
+    })));
+    const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
+    expect(lifecycle.items.every(i => i.disabled === true)).toBe(true);
+  });
 });
