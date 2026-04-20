@@ -48,6 +48,9 @@
   --info: oklch(0.62 0.14 250);
   --info-foreground: oklch(1 0 0);
   --info-muted: oklch(0.62 0.14 250 / 0.12);
+  --update: oklch(0.62 0.22 320);
+  --update-foreground: oklch(1 0 0);
+  --update-muted: oklch(0.62 0.22 320 / 0.12);
   --destructive-muted: oklch(0.63 0.19 23 / 0.12);
 
   /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
@@ -221,6 +224,9 @@
   --info: oklch(0.70 0.14 250);
   --info-foreground: oklch(0.10 0 0);
   --info-muted: oklch(0.70 0.14 250 / 0.15);
+  --update: oklch(0.72 0.20 320);
+  --update-foreground: oklch(0.10 0 0);
+  --update-muted: oklch(0.72 0.20 320 / 0.15);
   --destructive-muted: oklch(0.69 0.20 24 / 0.15);
 
   /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
@@ -393,6 +399,9 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-info-muted: var(--info-muted);
+  --color-update: var(--update);
+  --color-update-foreground: var(--update-foreground);
+  --color-update-muted: var(--update-muted);
   --color-destructive-muted: var(--destructive-muted);
 
   --font-sans: var(--font-sans);

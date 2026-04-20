@@ -602,8 +602,11 @@ export function NodeManager() {
                         )}
                         {(summary?.stacks_with_updates ?? 0) > 0 && (
                           <span className="flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-info animate-pulse" />
-                            <span className="font-mono text-xs tabular-nums tracking-tight text-info">
+                            <span className="relative inline-flex w-2 h-2 shrink-0">
+                              <span className="absolute inset-0 rounded-full bg-update opacity-75 animate-ping" />
+                              <span className="relative w-2 h-2 rounded-full bg-update" />
+                            </span>
+                            <span className="font-mono text-xs tabular-nums tracking-tight text-update">
                               {summary!.stacks_with_updates}
                             </span>
                           </span>
