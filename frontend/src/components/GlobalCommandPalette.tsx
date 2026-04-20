@@ -4,7 +4,6 @@ import {
     useContext,
     useEffect,
     useMemo,
-    useRef,
     useState,
     type ReactNode,
 } from 'react';
@@ -104,35 +103,33 @@ export function GlobalCommandPalette({ navItems, onNavigate, onSelectStack }: Gl
     const { nodes, activeNode, setActiveNode } = useNodes();
     const [query, setQuery] = useState('');
 
-    useEffect(() => {
-        if (!open) setQuery('');
-    }, [open]);
-
     const { hits: remoteHits, loading: stacksLoading } = useCrossNodeStackSearch({
         query,
         enabled: open,
     });
     const stackHits = useMemo(() => remoteHits.slice(0, MAX_STACK_HITS), [remoteHits]);
 
-    const nodesRef = useRef(nodes);
-    nodesRef.current = nodes;
+    const handleOpenChange = useCallback((next: boolean) => {
+        setOpen(next);
+        if (!next) setQuery('');
+    }, [setOpen]);
 
     const handleSelectNav = useCallback((value: string) => {
-        setOpen(false);
+        handleOpenChange(false);
         onNavigate(value);
-    }, [onNavigate, setOpen]);
+    }, [handleOpenChange, onNavigate]);
 
     const handleSelectNode = useCallback((node: Node) => {
-        setOpen(false);
+        handleOpenChange(false);
         setActiveNode(node);
-    }, [setActiveNode, setOpen]);
+    }, [handleOpenChange, setActiveNode]);
 
     const handleSelectStack = useCallback((hit: StackHit) => {
-        const node = nodesRef.current.find(n => n.id === hit.nodeId);
+        const node = nodes.find(n => n.id === hit.nodeId);
         if (!node) return;
-        setOpen(false);
+        handleOpenChange(false);
         onSelectStack(node, hit.file);
-    }, [onSelectStack, setOpen]);
+    }, [handleOpenChange, nodes, onSelectStack]);
 
     const visibleNodes = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -141,7 +138,7 @@ export function GlobalCommandPalette({ navItems, onNavigate, onSelectStack }: Gl
     }, [nodes, query]);
 
     return (
-        <CommandDialog open={open} onOpenChange={setOpen}>
+        <CommandDialog open={open} onOpenChange={handleOpenChange}>
             <VisuallyHidden>
                 <DialogTitle>Search</DialogTitle>
                 <DialogDescription>Jump to a page, node, or stack</DialogDescription>
