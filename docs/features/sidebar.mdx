@@ -1,0 +1,54 @@
+---
+title: Stack Sidebar
+description: Manage, group, and pin your stacks from the primary sidebar.
+---
+
+The stack sidebar is your cockpit for every stack on the active node. Stacks are grouped by label, your most-used stacks can be pinned to the top, and a live activity footer keeps you aware of what just happened.
+
+<Frame>
+  <img src="/images/sidebar/sidebar-overview.png" alt="Stack sidebar overview" />
+</Frame>
+
+## Layout
+
+From top to bottom:
+
+1. **Branding header** shows your Sencho build version.
+2. **Node switcher** selects which Sencho instance you are managing.
+3. **Create Stack** opens the new-stack dialog. The folder icon scans your compose directory.
+4. **Search** filters stacks by name. Press <kbd>⌘K</kbd> (or <kbd>Ctrl+K</kbd>) to focus it.
+5. **Stack list** shows your stacks grouped by label.
+6. **Activity footer** shows the most recent stack event.
+
+## Groups
+
+Stacks are grouped by label. Stacks with multiple labels appear in each matching group so you always see the full fleet membership per label. Stacks without labels appear in an **Unlabeled** group at the bottom. Click a group header to collapse or expand it; the collapsed state is remembered per node.
+
+## Pinning
+
+Right-click a stack and choose **Pin to top**. Pinned stacks sit in a dedicated **PINNED** group at the top of the list. Up to 10 stacks can be pinned per node; pinning an 11th evicts the oldest.
+
+<Frame>
+  <img src="/images/sidebar/sidebar-pinned.png" alt="Pinned stacks appear in a PINNED group at top" />
+</Frame>
+
+## Context menu
+
+Right-click any stack (or open the kebab that appears on hover) for its context menu, grouped by purpose:
+
+- **Inspect**: view alerts, open the auto-heal sheet, check for image updates, open the running app.
+- **Organize**: assign labels, pin or unpin the stack.
+- **Lifecycle**: deploy, stop, restart, or update the stack.
+- **Destructive**: delete the stack.
+
+<Frame>
+  <img src="/images/sidebar/sidebar-context-menu.png" alt="Grouped stack context menu" />
+</Frame>
+
+## Activity footer
+
+The footer shows the most recent stack lifecycle event within the last hour. Click it to jump to the global activity log. When nothing has happened recently, the footer reads **IDLE**.
+
+<Frame>
+  <img src="/images/sidebar/sidebar-activity.png" alt="Activity footer ticker" />
+</Frame>

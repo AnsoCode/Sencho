@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
 import Editor from '@monaco-editor/react';
@@ -17,26 +17,19 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
-import { CursorProvider, Cursor, CursorContainer, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, ExternalLink, MoreVertical, BellRing, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Download, Clock, FolderSearch, Loader2, Tag, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { LabelPill, LabelDot } from './LabelPill';
 import { type Label as StackLabel } from './label-types';
-import { LabelAssignPopover } from './LabelAssignPopover';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
-import { Command, CommandInput, CommandList, CommandItem } from './ui/command';
 import { ScrollArea } from './ui/scroll-area';
 import { Checkbox } from './ui/checkbox';
 import { GitSourceFields, type ApplyMode } from './stack/GitSourceFields';
-import { Skeleton } from './ui/skeleton';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from './ui/context-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
 import { cn } from '@/lib/utils';
@@ -66,6 +59,11 @@ import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
+import { StackSidebar } from '@/components/sidebar/StackSidebar';
+import { usePinnedStacks } from '@/hooks/usePinnedStacks';
+import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
+import type { StackRowStatus } from '@/components/sidebar/StackRow';
+import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
 
 interface ContainerInfo {
   Id: string;
@@ -322,9 +320,10 @@ export default function EditorLayout() {
   const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
   const [labels, setLabels] = useState<StackLabel[]>([]);
   const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
-  const [activeLabelFilters, setActiveLabelFilters] = useState<Set<number>>(new Set());
-  const [bulkActionLabel, setBulkActionLabel] = useState<StackLabel | null>(null);
-  const [bulkAction, setBulkAction] = useState<string>('');
+  // Bulk-action dialog is retained as a safety fallback; the label pill entry
+  // point that drove the setters was removed alongside the sidebar rewrite.
+  const [bulkActionLabel] = useState<StackLabel | null>(null);
+  const [bulkAction] = useState<string>('');
   const [bulkActionOpen, setBulkActionOpen] = useState(false);
   const [bulkActionRunning, setBulkActionRunning] = useState(false);
 
@@ -342,6 +341,7 @@ export default function EditorLayout() {
 
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [tickerConnected, setTickerConnected] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels' | 'nodes'>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
@@ -679,6 +679,7 @@ export default function EditorLayout() {
           ws?.close();
           return;
         }
+        setTickerConnected(true);
         retryCount = 0; // Reset backoff on successful connect
       };
 
@@ -700,6 +701,7 @@ export default function EditorLayout() {
       };
 
       ws.onclose = (event) => {
+        setTickerConnected(false);
         if (!isMounted) return;
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
         const delay = Math.min(1000 * Math.pow(2, retryCount), MAX_RETRY_DELAY_MS);
@@ -1830,651 +1832,329 @@ export default function EditorLayout() {
   const stackName = selectedFile || '';
 
   // Filter files based on search query
-  const filteredFiles = files.filter(file => {
-    if (!file.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (activeLabelFilters.size > 0) {
-      const fileLabels = stackLabelMap[file] || [];
-      if (!fileLabels.some(l => activeLabelFilters.has(l.id))) return false;
-    }
-    return true;
-  });
+  const filteredFiles = files.filter(file =>
+    file.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Get display name for stack (now just returns the name as-is since no extension)
   const getDisplayName = (stackName: string) => {
     return stackName;
   };
 
+  const { pinned, pin, unpin, isPinned, evictedOldest } = usePinnedStacks(activeNode?.id);
+
+  useEffect(() => {
+    if (evictedOldest) toast.info('Pinned. Unpinned oldest (max 10).');
+  }, [evictedOldest]);
+
+  const { isCollapsed, toggle: toggleCollapse } = useSidebarGroupCollapse(activeNode?.id);
+
+  const remoteResults = useMemo(() => {
+    return Object.entries(remoteStackResults).flatMap(([nodeIdStr, remoteFiles]) => {
+      const node = nodes.find(n => n.id === Number(nodeIdStr));
+      if (!node || remoteFiles.length === 0) return [];
+      return [{
+        nodeId: node.id,
+        nodeName: node.name,
+        files: remoteFiles.map(({ file, status }) => ({ file, status: status as StackRowStatus })),
+      }];
+    });
+  }, [remoteStackResults, nodes]);
+
+  const buildMenuCtx = useCallback((file: string): StackMenuCtx => {
+    const stackName = file.replace(/\.(yml|yaml)$/, '');
+    return {
+      stackStatus: (stackStatuses[file] ?? 'unknown') as 'running' | 'exited' | 'unknown',
+      hasPort: Boolean(stackPorts[file]),
+      isBusy: isStackBusy(file),
+      isPaid,
+      canDelete: can('stack:delete', 'stack', stackName),
+      isPinned: isPinned(file),
+      labels,
+      assignedLabelIds: (stackLabelMap[file] ?? []).map(l => l.id),
+      menuVisibility: getStackMenuVisibility(file),
+      openAlertSheet: () => openAlertSheet(file),
+      openAutoHeal: () => setAutoHealStackName(file),
+      checkUpdates: () => checkUpdatesForStack(),
+      openStackApp: () => openStackApp(file),
+      deploy: () => executeStackActionByFile(file, 'deploy', 'deploy'),
+      stop: () => executeStackActionByFile(file, 'stop', 'stop'),
+      restart: () => executeStackActionByFile(file, 'restart', 'restart'),
+      update: () => executeStackActionByFile(file, 'update', 'update'),
+      remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
+      pin: () => pin(file),
+      unpin: () => unpin(file),
+      toggleLabel: async (labelId: number) => {
+        const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
+        const assigned = currentIds.includes(labelId);
+        const newIds = assigned ? currentIds.filter(id => id !== labelId) : [...currentIds, labelId];
+        const loadingId = toast.loading('Updating labels...');
+        try {
+          const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, {
+            method: 'PUT',
+            body: JSON.stringify({ labelIds: newIds }),
+          });
+          if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error((data as { error?: string })?.error || 'Failed to update labels.'); }
+          refreshLabels();
+        } catch (err: unknown) {
+          toast.error((err as Error)?.message || 'Failed to update labels.');
+        } finally {
+          toast.dismiss(loadingId);
+        }
+      },
+      openLabelManager: () => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stackStatuses, stackPorts, isPaid, isPinned, labels, stackLabelMap,
+    pin, unpin,
+  ]);
+
+  const createStackSlot = can('stack:create') ? (
+    <Dialog open={createDialogOpen} onOpenChange={(o) => {
+      setCreateDialogOpen(o);
+      if (!o) {
+        setCreateMode('empty');
+        resetCreateFromGitForm();
+        resetCreateFromDockerRunForm();
+      }
+    }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="rounded-lg w-full">
+          <Plus className="w-4 h-4 mr-2" />
+          Create Stack
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-xl w-[95vw] p-0 gap-0">
+        <DialogHeader className="px-6 pt-6 pb-3">
+          <DialogTitle>Create New Stack</DialogTitle>
+          <DialogDescription className="sr-only">
+            Create a new stack: empty, cloned from a Git repository, or converted from a docker run command.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="px-6 pb-2">
+          <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git' | 'docker-run')}>
+            <TabsList>
+              <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                <TabsHighlightItem value="empty">
+                  <TabsTrigger value="empty">
+                    <Plus className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                    Empty
+                  </TabsTrigger>
+                </TabsHighlightItem>
+                <TabsHighlightItem value="git">
+                  <TabsTrigger value="git">
+                    <GitBranch className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                    From Git
+                  </TabsTrigger>
+                </TabsHighlightItem>
+                <TabsHighlightItem value="docker-run">
+                  <TabsTrigger value="docker-run">
+                    <FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                    From Docker Run
+                  </TabsTrigger>
+                </TabsHighlightItem>
+              </TabsHighlight>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {createMode === 'empty' && (
+          <>
+            <div className="px-6 py-4 space-y-2">
+              <Label htmlFor="create-stack-name">Stack Name</Label>
+              <Input
+                id="create-stack-name"
+                placeholder="Stack name (e.g., myapp)"
+                value={newStackName}
+                onChange={(e) => setNewStackName(e.target.value)}
+              />
+            </div>
+            <DialogFooter className="px-6 pb-6">
+              <Button onClick={handleCreateStack}>Create</Button>
+            </DialogFooter>
+          </>
+        )}
+        {createMode === 'git' && (
+          <>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="px-6 py-4 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="create-git-stack-name">Stack Name</Label>
+                  <Input
+                    id="create-git-stack-name"
+                    placeholder="Stack name (e.g., myapp)"
+                    value={newStackName}
+                    onChange={(e) => setNewStackName(e.target.value)}
+                    disabled={creatingFromGit}
+                  />
+                </div>
+
+                <GitSourceFields
+                  variant="create"
+                  disabled={creatingFromGit}
+                  repoUrl={gitRepoUrl}
+                  branch={gitBranch}
+                  composePath={gitComposePath}
+                  syncEnv={gitSyncEnv}
+                  authType={gitAuthType}
+                  token={gitToken}
+                  hasStoredToken={false}
+                  applyMode={gitApplyMode}
+                  onRepoUrlChange={setGitRepoUrl}
+                  onBranchChange={setGitBranch}
+                  onComposePathChange={setGitComposePath}
+                  onSyncEnvChange={setGitSyncEnv}
+                  onAuthTypeChange={setGitAuthType}
+                  onTokenChange={setGitToken}
+                  onApplyModeChange={setGitApplyMode}
+                />
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="create-git-deploy-now"
+                    checked={gitDeployNow}
+                    onCheckedChange={(c) => setGitDeployNow(c === true)}
+                    disabled={creatingFromGit}
+                  />
+                  <Label htmlFor="create-git-deploy-now" className="text-xs cursor-pointer">
+                    Deploy after create
+                  </Label>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter className="px-6 py-4 border-t border-glass-border">
+              <Button onClick={handleCreateStackFromGit} disabled={creatingFromGit}>
+                {creatingFromGit ? (
+                  <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
+                ) : (
+                  <><GitBranch className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create from Git</>
+                )}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+        {createMode === 'docker-run' && (
+          <>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="px-6 py-4 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="create-dr-stack-name">Stack Name</Label>
+                  <Input
+                    id="create-dr-stack-name"
+                    placeholder="Stack name (e.g., myapp)"
+                    value={newStackName}
+                    onChange={(e) => setNewStackName(e.target.value)}
+                    disabled={creatingFromDockerRun}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="create-dr-command">Paste your docker run command</Label>
+                  <textarea
+                    id="create-dr-command"
+                    spellCheck={false}
+                    className="flex w-full rounded-md border border-glass-border bg-input px-3 py-2 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
+                    placeholder="docker run -d --name nginx -p 8080:80 nginx:latest"
+                    value={dockerRunInput}
+                    onChange={(e) => {
+                      setDockerRunInput(e.target.value);
+                      // The preview only reflects the previous command; clear it when
+                      // the input changes so the user can't create a stack from stale YAML.
+                      if (convertedYaml !== null) setConvertedYaml(null);
+                    }}
+                    disabled={creatingFromDockerRun}
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleConvertDockerRun}
+                      disabled={isConverting || creatingFromDockerRun || !dockerRunInput.trim()}
+                    >
+                      {isConverting ? (
+                        <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />Converting</>
+                      ) : (
+                        <><FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />Convert</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                {convertedYaml !== null && (
+                  <div className="space-y-2">
+                    <Label>compose.yaml preview</Label>
+                    <ScrollArea className="max-h-[240px] rounded-md border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
+                      <pre className="px-3 py-2 text-xs font-mono whitespace-pre leading-relaxed">
+                        {convertedYaml}
+                      </pre>
+                    </ScrollArea>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+            <DialogFooter className="px-6 py-4 border-t border-glass-border">
+              <Button
+                onClick={handleCreateStackFromDockerRun}
+                disabled={creatingFromDockerRun || !convertedYaml || !newStackName.trim()}
+              >
+                {creatingFromDockerRun ? (
+                  <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
+                ) : (
+                  <><Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create Stack</>
+                )}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  ) : null;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Left Sidebar (Stacks) */}
-      <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-md flex flex-col">
-        {/* Branding Header */}
-        <div className="h-14 flex items-center justify-center px-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <img src={isDarkMode ? '/sencho-logo-dark.png' : '/sencho-logo-light.png'} alt="Sencho Logo" className="w-10 h-10" />
-            <h1 className="text-2xl font-medium tracking-tight">Sencho</h1>
-          </div>
-        </div>
-
-        <div className="px-4 pt-2 pb-0">
+      <StackSidebar
+        isDarkMode={isDarkMode}
+        nodeSwitcherSlot={
           <NodeSwitcher
-            onManageNodes={() => {
-              setSettingsInitialSection('nodes');
-              setSettingsModalOpen(true);
-            }}
+            onManageNodes={() => { setSettingsInitialSection('nodes'); setSettingsModalOpen(true); }}
           />
-        </div>
-
-        {/* Create Stack & Scan Buttons */}
-        {can('stack:create') && <div className="p-4 flex gap-2">
-          <Dialog open={createDialogOpen} onOpenChange={(o) => {
-            setCreateDialogOpen(o);
-            if (!o) {
-              setCreateMode('empty');
-              resetCreateFromGitForm();
-              resetCreateFromDockerRunForm();
-            }
-          }}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="flex-1 rounded-lg">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Stack
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-xl w-[95vw] p-0 gap-0">
-              <DialogHeader className="px-6 pt-6 pb-3">
-                <DialogTitle>Create New Stack</DialogTitle>
-                <DialogDescription className="sr-only">
-                  Create a new stack: empty, cloned from a Git repository, or converted from a docker run command.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="px-6 pb-2">
-                <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git' | 'docker-run')}>
-                  <TabsList>
-                    <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
-                      <TabsHighlightItem value="empty">
-                        <TabsTrigger value="empty">
-                          <Plus className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                          Empty
-                        </TabsTrigger>
-                      </TabsHighlightItem>
-                      <TabsHighlightItem value="git">
-                        <TabsTrigger value="git">
-                          <GitBranch className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                          From Git
-                        </TabsTrigger>
-                      </TabsHighlightItem>
-                      <TabsHighlightItem value="docker-run">
-                        <TabsTrigger value="docker-run">
-                          <FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                          From Docker Run
-                        </TabsTrigger>
-                      </TabsHighlightItem>
-                    </TabsHighlight>
-                  </TabsList>
-                </Tabs>
-              </div>
-
-              {createMode === 'empty' && (
-                <>
-                  <div className="px-6 py-4 space-y-2">
-                    <Label htmlFor="create-stack-name">Stack Name</Label>
-                    <Input
-                      id="create-stack-name"
-                      placeholder="Stack name (e.g., myapp)"
-                      value={newStackName}
-                      onChange={(e) => setNewStackName(e.target.value)}
-                    />
-                  </div>
-                  <DialogFooter className="px-6 pb-6">
-                    <Button onClick={handleCreateStack}>Create</Button>
-                  </DialogFooter>
-                </>
-              )}
-              {createMode === 'git' && (
-                <>
-                  <ScrollArea className="max-h-[70vh]">
-                    <div className="px-6 py-4 space-y-5">
-                      <div className="space-y-2">
-                        <Label htmlFor="create-git-stack-name">Stack Name</Label>
-                        <Input
-                          id="create-git-stack-name"
-                          placeholder="Stack name (e.g., myapp)"
-                          value={newStackName}
-                          onChange={(e) => setNewStackName(e.target.value)}
-                          disabled={creatingFromGit}
-                        />
-                      </div>
-
-                      <GitSourceFields
-                        variant="create"
-                        disabled={creatingFromGit}
-                        repoUrl={gitRepoUrl}
-                        branch={gitBranch}
-                        composePath={gitComposePath}
-                        syncEnv={gitSyncEnv}
-                        authType={gitAuthType}
-                        token={gitToken}
-                        hasStoredToken={false}
-                        applyMode={gitApplyMode}
-                        onRepoUrlChange={setGitRepoUrl}
-                        onBranchChange={setGitBranch}
-                        onComposePathChange={setGitComposePath}
-                        onSyncEnvChange={setGitSyncEnv}
-                        onAuthTypeChange={setGitAuthType}
-                        onTokenChange={setGitToken}
-                        onApplyModeChange={setGitApplyMode}
-                      />
-
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="create-git-deploy-now"
-                          checked={gitDeployNow}
-                          onCheckedChange={(c) => setGitDeployNow(c === true)}
-                          disabled={creatingFromGit}
-                        />
-                        <Label htmlFor="create-git-deploy-now" className="text-xs cursor-pointer">
-                          Deploy after create
-                        </Label>
-                      </div>
-                    </div>
-                  </ScrollArea>
-                  <DialogFooter className="px-6 py-4 border-t border-glass-border">
-                    <Button onClick={handleCreateStackFromGit} disabled={creatingFromGit}>
-                      {creatingFromGit ? (
-                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
-                      ) : (
-                        <><GitBranch className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create from Git</>
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </>
-              )}
-              {createMode === 'docker-run' && (
-                <>
-                  <ScrollArea className="max-h-[70vh]">
-                    <div className="px-6 py-4 space-y-5">
-                      <div className="space-y-2">
-                        <Label htmlFor="create-dr-stack-name">Stack Name</Label>
-                        <Input
-                          id="create-dr-stack-name"
-                          placeholder="Stack name (e.g., myapp)"
-                          value={newStackName}
-                          onChange={(e) => setNewStackName(e.target.value)}
-                          disabled={creatingFromDockerRun}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="create-dr-command">Paste your docker run command</Label>
-                        <textarea
-                          id="create-dr-command"
-                          spellCheck={false}
-                          className="flex w-full rounded-md border border-glass-border bg-input px-3 py-2 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
-                          placeholder="docker run -d --name nginx -p 8080:80 nginx:latest"
-                          value={dockerRunInput}
-                          onChange={(e) => {
-                            setDockerRunInput(e.target.value);
-                            // The preview only reflects the previous command; clear it when
-                            // the input changes so the user can't create a stack from stale YAML.
-                            if (convertedYaml !== null) setConvertedYaml(null);
-                          }}
-                          disabled={creatingFromDockerRun}
-                        />
-                        <div className="flex justify-end">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleConvertDockerRun}
-                            disabled={isConverting || creatingFromDockerRun || !dockerRunInput.trim()}
-                          >
-                            {isConverting ? (
-                              <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />Converting</>
-                            ) : (
-                              <><FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />Convert</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                      {convertedYaml !== null && (
-                        <div className="space-y-2">
-                          <Label>compose.yaml preview</Label>
-                          <ScrollArea className="max-h-[240px] rounded-md border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
-                            <pre className="px-3 py-2 text-xs font-mono whitespace-pre leading-relaxed">
-                              {convertedYaml}
-                            </pre>
-                          </ScrollArea>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                  <DialogFooter className="px-6 py-4 border-t border-glass-border">
-                    <Button
-                      onClick={handleCreateStackFromDockerRun}
-                      disabled={creatingFromDockerRun || !convertedYaml || !newStackName.trim()}
-                    >
-                      {creatingFromDockerRun ? (
-                        <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
-                      ) : (
-                        <><Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create Stack</>
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </>
-              )}
-            </DialogContent>
-          </Dialog>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="rounded-lg shrink-0"
-                  onClick={handleScanStacks}
-                  disabled={isScanning}
-                >
-                  {isScanning
-                    ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
-                    : <FolderSearch className="w-4 h-4" strokeWidth={1.5} />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Scan stacks folder</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>}
-
-        {/* Search Input & Stack List */}
-        {/* shouldFilter disabled: we do controlled filtering via filteredFiles. cmdk's
-            internal filter otherwise reconciles against items wrapped in ContextMenu and
-            throws "appendChild: parameter 1 is not of type 'Node'". */}
-        <Command shouldFilter={false} className="bg-transparent flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-2 flex-none relative">
-            <CommandInput
-              placeholder="Search stacks..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              className="h-9 border-none"
-            />
-            <kbd className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-glass-border bg-glass-highlight px-1.5 font-mono text-[10px] text-muted-foreground">
-              {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'}K
-            </kbd>
-          </div>
-          {isPaid && labels.length > 0 && (
-            <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none flex-none">
-              {labels.map(label => (
-                <ContextMenu key={label.id}>
-                  <ContextMenuTrigger asChild>
-                    <div>
-                      <LabelPill
-                        label={label}
-                        size="sm"
-                        active={activeLabelFilters.has(label.id)}
-                        onClick={() => {
-                          setActiveLabelFilters(prev => {
-                            const next = new Set(prev);
-                            if (next.has(label.id)) next.delete(label.id);
-                            else next.add(label.id);
-                            return next;
-                          });
-                        }}
-                      />
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('deploy'); setBulkActionOpen(true); }}>
-                      <Play className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                      Deploy all
-                    </ContextMenuItem>
-                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('stop'); setBulkActionOpen(true); }}>
-                      <Square className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                      Stop all
-                    </ContextMenuItem>
-                    <ContextMenuItem disabled={bulkActionRunning} onClick={() => { setBulkActionLabel(label); setBulkAction('restart'); setBulkActionOpen(true); }}>
-                      <RotateCw className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                      Restart all
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              ))}
-            </div>
-          )}
-          <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-icon px-4 py-2 mt-2 flex-none">STACKS</h3>
-          <ScrollArea className="flex-1 px-2 pb-2">
-            <div data-stacks-loaded={isLoading ? "false" : "true"}>
-              <CommandList className="max-h-none overflow-visible">
-                {isLoading ? (
-                  <div className="space-y-2 px-2 mt-2">
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                    <Skeleton className="h-12 w-full" />
-                  </div>
-                ) : (
-                  (filteredFiles || []).map(file => (
-                    <ContextMenu key={file}>
-                      <ContextMenuTrigger asChild>
-                        <div>
-                          <CommandItem
-                            value={file}
-                            onSelect={() => loadFile(file)}
-                            className={`justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight group ${selectedFile === file ? '!bg-glass-highlight !text-foreground border border-glass-border' : ''}`}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <span
-                                className={`font-mono text-[10px] shrink-0 w-[18px] flex items-center ${
-                                  isStackBusy(file) ? 'text-muted-foreground' :
-                                  stackStatuses[file] === 'running' ? 'text-success' :
-                                  stackStatuses[file] === 'exited' ? 'text-destructive' : 'text-stat-icon'
-                                }`}
-                              >
-                                {isStackBusy(file)
-                                  ? <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2} />
-                                  : stackStatuses[file] === 'running' ? 'UP'
-                                  : stackStatuses[file] === 'exited' ? 'DN'
-                                  : '--'}
-                              </span>
-                              <span className="flex-1 truncate font-mono text-[13px]">{getDisplayName(file)}</span>
-                              {isPaid && stackLabelMap[file]?.length > 0 && (
-                                <span className="flex items-center gap-0.5 shrink-0 ml-1">
-                                  {stackLabelMap[file].map(l => (
-                                    <LabelDot key={l.id} color={l.color} />
-                                  ))}
-                                </span>
-                              )}
-
-                              {stackUpdates[file] && (
-                                <CursorProvider>
-                                  <CursorContainer className="inline-flex items-center shrink-0">
-                                    <span className="w-2 h-2 rounded-full bg-info animate-pulse" />
-                                  </CursorContainer>
-                                  <Cursor>
-                                    <div className="h-2 w-2 rounded-full bg-brand" />
-                                  </Cursor>
-                                  <CursorFollow
-                                    side="bottom"
-                                    sideOffset={4}
-                                    align="center"
-                                    transition={{ stiffness: 400, damping: 40, bounce: 0 }}
-                                  >
-                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-                                      <span className="font-mono text-xs tabular-nums text-stat-value">Update available</span>
-                                    </div>
-                                  </CursorFollow>
-                                </CursorProvider>
-                              )}
-
-                              {gitSourcePendingMap[file] && (
-                                <CursorProvider>
-                                  <CursorContainer className="inline-flex items-center shrink-0">
-                                    <GitBranch className="w-3 h-3 text-brand" strokeWidth={1.5} />
-                                  </CursorContainer>
-                                  <Cursor>
-                                    <div className="h-2 w-2 rounded-full bg-brand" />
-                                  </Cursor>
-                                  <CursorFollow
-                                    side="bottom"
-                                    sideOffset={4}
-                                    align="center"
-                                    transition={{ stiffness: 400, damping: 40, bounce: 0 }}
-                                  >
-                                    <div className="rounded-md border border-card-border bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] px-2.5 py-1.5 shadow-md">
-                                      <span className="font-mono text-xs tabular-nums text-stat-value">Git source update pending</span>
-                                    </div>
-                                  </CursorFollow>
-                                </CursorProvider>
-                              )}
-
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => openAlertSheet(file)}>
-                                      <BellRing className="h-4 w-4 mr-2" />
-                                      Alerts
-                                    </DropdownMenuItem>
-                                    {isPaid && (
-                                      <LabelAssignPopover
-                                        stackName={file}
-                                        allLabels={labels}
-                                        assignedLabelIds={(stackLabelMap[file] || []).map(l => l.id)}
-                                        onLabelsChanged={refreshLabels}
-                                      >
-                                        <DropdownMenuItem onSelect={e => e.preventDefault()}>
-                                          <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                                          Labels
-                                        </DropdownMenuItem>
-                                      </LabelAssignPopover>
-                                    )}
-                                    <DropdownMenuItem onClick={() => checkUpdatesForStack()}>
-                                      <RefreshCw className="h-4 w-4 mr-2" />
-                                      Check for updates
-                                    </DropdownMenuItem>
-                                    {stackStatuses[file] === 'running' && stackPorts[file] && (
-                                      <DropdownMenuItem onClick={() => openStackApp(file)}>
-                                        <ExternalLink className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                                        Open App
-                                      </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuSeparator />
-                                    {(() => {
-                                      const { showDeploy, showStop, showRestart, showUpdate } = getStackMenuVisibility(file);
-                                      const busy = isStackBusy(file);
-                                      return (
-                                        <>
-                                          {showDeploy && (
-                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
-                                              <Play className="h-4 w-4 mr-2" />
-                                              Deploy
-                                            </DropdownMenuItem>
-                                          )}
-                                          {showStop && (
-                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
-                                              <Square className="h-4 w-4 mr-2" />
-                                              Stop
-                                            </DropdownMenuItem>
-                                          )}
-                                          {showRestart && (
-                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
-                                              <RotateCw className="h-4 w-4 mr-2" />
-                                              Restart
-                                            </DropdownMenuItem>
-                                          )}
-                                          {showUpdate && (
-                                            <DropdownMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
-                                              <Download className="h-4 w-4 mr-2" />
-                                              Update
-                                            </DropdownMenuItem>
-                                          )}
-                                        </>
-                                      );
-                                    })()}
-                                    {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
-                                      <>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          className="text-destructive focus:text-destructive"
-                                          onClick={() => {
-                                            setStackToDelete(file.replace(/\.(yml|yaml)$/, ''));
-                                            setDeleteDialogOpen(true);
-                                          }}
-                                        >
-                                          <Trash2 className="h-4 w-4 mr-2" />
-                                          Delete
-                                        </DropdownMenuItem>
-                                      </>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </div>
-                          </CommandItem>
-                        </div>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent>
-                        <ContextMenuItem onClick={() => openAlertSheet(file)}>
-                          <BellRing className="h-4 w-4 mr-2" />
-                          Alerts
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => setAutoHealStackName(file)}>
-                          <Activity className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                          Auto-Heal
-                        </ContextMenuItem>
-                        {isPaid && (
-                          <ContextMenuSub>
-                            <ContextMenuSubTrigger>
-                              <Tag className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                              Labels
-                            </ContextMenuSubTrigger>
-                            <ContextMenuSubContent className="min-w-[180px]">
-                              {labels.map(label => {
-                                const assigned = (stackLabelMap[file] || []).some(l => l.id === label.id);
-                                return (
-                                  <ContextMenuItem
-                                    key={label.id}
-                                    onClick={async () => {
-                                      const currentIds = (stackLabelMap[file] || []).map(l => l.id);
-                                      const newIds = assigned ? currentIds.filter(id => id !== label.id) : [...currentIds, label.id];
-                                      const loadingId = toast.loading('Updating labels...');
-                                      try {
-                                        const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, { method: 'PUT', body: JSON.stringify({ labelIds: newIds }) });
-                                        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data?.error || 'Failed to update labels.'); }
-                                        refreshLabels();
-                                      } catch (err: unknown) { toast.error((err as Error)?.message || 'Failed to update labels.'); } finally { toast.dismiss(loadingId); }
-                                    }}
-                                  >
-                                    <LabelDot color={label.color} />
-                                    <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
-                                    {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
-                                  </ContextMenuItem>
-                                );
-                              })}
-                              {labels.length === 0 && (
-                                <ContextMenuItem disabled>
-                                  <span className="text-xs text-muted-foreground">No labels yet</span>
-                                </ContextMenuItem>
-                              )}
-                              <ContextMenuSeparator />
-                              <ContextMenuItem onClick={() => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); }}>
-                                <Plus className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                                <span className="text-xs">Manage labels...</span>
-                              </ContextMenuItem>
-                            </ContextMenuSubContent>
-                          </ContextMenuSub>
-                        )}
-                        <ContextMenuItem onClick={() => checkUpdatesForStack()}>
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Check for updates
-                        </ContextMenuItem>
-                        {stackStatuses[file] === 'running' && stackPorts[file] && (
-                          <ContextMenuItem onClick={() => openStackApp(file)}>
-                            <ExternalLink className="h-4 w-4 mr-2" strokeWidth={1.5} />
-                            Open App
-                          </ContextMenuItem>
-                        )}
-                        <ContextMenuSeparator />
-                        {(() => {
-                          const { showDeploy, showStop, showRestart, showUpdate } = getStackMenuVisibility(file);
-                          const busy = isStackBusy(file);
-                          return (
-                            <>
-                              {showDeploy && (
-                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'deploy', 'deploy')}>
-                                  <Play className="h-4 w-4 mr-2" />
-                                  Deploy
-                                </ContextMenuItem>
-                              )}
-                              {showStop && (
-                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'stop', 'stop')}>
-                                  <Square className="h-4 w-4 mr-2" />
-                                  Stop
-                                </ContextMenuItem>
-                              )}
-                              {showRestart && (
-                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'restart', 'restart')}>
-                                  <RotateCw className="h-4 w-4 mr-2" />
-                                  Restart
-                                </ContextMenuItem>
-                              )}
-                              {showUpdate && (
-                                <ContextMenuItem disabled={busy} onClick={() => executeStackActionByFile(file, 'update', 'update')}>
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Update
-                                </ContextMenuItem>
-                              )}
-                            </>
-                          );
-                        })()}
-                        {can('stack:delete', 'stack', file.replace(/\.(yml|yaml)$/, '')) && (
-                          <>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => {
-                                setStackToDelete(file.replace(/\.(yml|yaml)$/, ''));
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </ContextMenuItem>
-                          </>
-                        )}
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  ))
-                )}
-              </CommandList>
-
-              {/* Remote node matches: surfaced only when the user is actively searching. */}
-              {searchQuery.trim() && (remoteSearchLoading || Object.keys(remoteStackResults).length > 0) && (
-                <div className="mt-3 pt-3 border-t border-glass-border">
-                  <h3 className="text-[10px] font-medium tracking-[0.08em] uppercase text-stat-subtitle px-4 pb-2 flex items-center gap-2">
-                    Other nodes
-                    {remoteSearchLoading && <Loader2 className="w-3 h-3 animate-spin text-stat-icon" strokeWidth={1.5} />}
-                  </h3>
-                  {Object.entries(remoteStackResults).map(([nodeIdStr, files]) => {
-                    const node = nodes.find(n => n.id === Number(nodeIdStr));
-                    if (!node || files.length === 0) return null;
-                    return (
-                      <div key={node.id} className="mb-2">
-                        <div className="px-4 pb-1 flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.06em] text-stat-subtitle">
-                          <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                          <span className="truncate">{node.name}</span>
-                        </div>
-                        {files.map(({ file, status }) => (
-                          <button
-                            key={`${node.id}:${file}`}
-                            type="button"
-                            onClick={() => loadFileOnNode(node, file)}
-                            className="w-full text-left justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight px-2 py-1.5 flex items-center gap-2"
-                          >
-                            <span
-                              className={`font-mono text-[10px] shrink-0 w-5 ${
-                                status === 'running' ? 'text-success' :
-                                status === 'exited' ? 'text-destructive' : 'text-stat-icon'
-                              }`}
-                            >
-                              {status === 'running' ? 'UP' : status === 'exited' ? 'DN' : '--'}
-                            </span>
-                            <span className="flex-1 truncate font-mono text-xs">{file}</span>
-                            <ArrowUpRight className="w-3 h-3 text-stat-icon shrink-0" strokeWidth={1.5} />
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </Command>
-      </div>
+        }
+        createStackSlot={createStackSlot}
+        onScan={handleScanStacks}
+        isScanning={isScanning}
+        canCreate={can('stack:create')}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        list={{
+          files: filteredFiles ?? [],
+          isLoading,
+          isPaid,
+          selectedFile,
+          searchQuery,
+          stackLabelMap,
+          stackStatuses: stackStatuses as Record<string, StackRowStatus | undefined>,
+          stackUpdates,
+          gitSourcePendingMap,
+          labels,
+          pinnedFiles: pinned,
+          isCollapsed,
+          toggleCollapse,
+          isBusy: isStackBusy,
+          getDisplayName,
+          onSelectFile: loadFile,
+          buildMenuCtx,
+          remoteResults,
+          remoteLoading: remoteSearchLoading,
+          onSelectRemoteFile: (nodeId, file) => {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) loadFileOnNode(node, file);
+          },
+        }}
+        notifications={notifications}
+        tickerConnected={tickerConnected}
+        onOpenActivity={() => setActiveView('global-observability')}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
