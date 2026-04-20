@@ -51,6 +51,12 @@ import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
 import { NodeSwitcher } from './NodeSwitcher';
+import {
+    GlobalCommandPalette,
+    GlobalCommandPaletteProvider,
+    GlobalCommandPaletteTrigger,
+} from './GlobalCommandPalette';
+import { useCrossNodeStackSearch } from '@/hooks/useCrossNodeStackSearch';
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
@@ -314,8 +320,6 @@ export default function EditorLayout() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [remoteStackResults, setRemoteStackResults] = useState<Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>>>({});
-  const [remoteSearchLoading, setRemoteSearchLoading] = useState(false);
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
   const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
   const [labels, setLabels] = useState<StackLabel[]>([]);
@@ -417,19 +421,6 @@ export default function EditorLayout() {
     localStorage.setItem('sencho-theme', theme);
   }, [isDarkMode, theme]);
 
-  // ⌘K / Ctrl+K — focus stack search input
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
-        input?.focus();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   // Listen for cross-component navigation (e.g., NodeManager → Schedules)
   useEffect(() => {
     const handler = (e: Event) => {
@@ -443,69 +434,19 @@ export default function EditorLayout() {
     return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
   }, []);
 
-  // Global stack search: when the user types a query, fan out to every other online
-  // node and fetch its stack list so the sidebar can surface matches from the whole
-  // fleet. Debounced 250ms; cleared as soon as the query is empty.
-  useEffect(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) {
-      setRemoteStackResults({});
-      setRemoteSearchLoading(false);
-      return;
+  // Fan out stack search across other online nodes so the sidebar can surface matches from the whole fleet.
+  const { hits: remoteSearchHits, loading: remoteSearchLoading } = useCrossNodeStackSearch({
+    query: searchQuery,
+    enabled: true,
+    excludeNodeId: activeNode?.id,
+  });
+  const remoteStackResults = useMemo(() => {
+    const out: Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>> = {};
+    for (const hit of remoteSearchHits) {
+      (out[hit.nodeId] ??= []).push({ file: hit.file, status: hit.status });
     }
-    const otherNodes = nodes.filter(n => n.id !== activeNode?.id && n.status !== 'offline');
-    if (otherNodes.length === 0) {
-      setRemoteStackResults({});
-      return;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setRemoteSearchLoading(true);
-      try {
-        const entries = await Promise.all(otherNodes.map(async (node) => {
-          const empty = [] as Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>;
-          try {
-            const [listRes, statusRes] = await Promise.all([
-              fetchForNode('/stacks', node.id, { signal: controller.signal }),
-              fetchForNode('/stacks/statuses', node.id, { signal: controller.signal }),
-            ]);
-            if (!listRes.ok) return [node.id, empty] as const;
-            const listData = await listRes.json();
-            const list: string[] = Array.isArray(listData) ? listData : [];
-            const statuses: Record<string, 'running' | 'exited' | 'unknown'> = {};
-            if (statusRes.ok) {
-              const raw = await statusRes.json();
-              for (const [key, val] of Object.entries(raw)) {
-                if (typeof val === 'string') {
-                  statuses[key] = val as 'running' | 'exited' | 'unknown';
-                } else if (val && typeof val === 'object' && 'status' in val) {
-                  statuses[key] = (val as StackStatusInfo).status;
-                }
-              }
-            }
-            const matches = list
-              .filter(f => f.toLowerCase().includes(query))
-              .map(file => ({ file, status: statuses[file] ?? 'unknown' as const }));
-            return [node.id, matches] as const;
-          } catch {
-            return [node.id, empty] as const;
-          }
-        }));
-        if (controller.signal.aborted) return;
-        const next: Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>> = {};
-        for (const [id, matches] of entries) {
-          if (matches.length > 0) next[id] = matches;
-        }
-        setRemoteStackResults(next);
-      } finally {
-        if (!controller.signal.aborted) setRemoteSearchLoading(false);
-      }
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [searchQuery, activeNode?.id, nodes]);
+    return out;
+  }, [remoteSearchHits]);
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
@@ -2143,7 +2084,13 @@ export default function EditorLayout() {
   ) : null;
 
   return (
+    <GlobalCommandPaletteProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+      <GlobalCommandPalette
+        navItems={navItems}
+        onNavigate={handleNavigate}
+        onSelectStack={loadFileOnNode}
+      />
       {/* Left Sidebar (Stacks) */}
       <StackSidebar
         isDarkMode={isDarkMode}
@@ -2196,6 +2143,7 @@ export default function EditorLayout() {
           onNavigate={handleNavigate}
           mobileNavOpen={mobileNavOpen}
           onMobileNavOpenChange={setMobileNavOpen}
+          search={<GlobalCommandPaletteTrigger />}
           notifications={
             <NotificationPanel
               notifications={notifications}
@@ -2911,5 +2859,6 @@ export default function EditorLayout() {
         onClose={() => setStackMisconfigScanId(null)}
       />
     </div>
+    </GlobalCommandPaletteProvider>
   );
 }
