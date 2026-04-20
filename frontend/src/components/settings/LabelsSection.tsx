@@ -26,7 +26,11 @@ import { CapabilityGate } from '../CapabilityGate';
 import { LabelDot } from '../LabelPill';
 import { LABEL_COLORS, MAX_LABELS_PER_NODE, type Label, type LabelColor } from '../label-types';
 
-export function LabelsSection() {
+interface LabelsSectionProps {
+    onLabelsChanged?: () => void;
+}
+
+export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
     const [labels, setLabels] = useState<Label[]>([]);
     const [loading, setLoading] = useState(true);
     const [assignmentCounts, setAssignmentCounts] = useState<Record<number, number>>({});
@@ -98,6 +102,7 @@ export function LabelsSection() {
             toast.success(`Label ${editingLabel ? 'updated' : 'created'}.`);
             setDialogOpen(false);
             fetchLabels();
+            onLabelsChanged?.();
         } catch (err: unknown) {
             toast.error((err as Error)?.message || 'Something went wrong.');
         } finally {
@@ -116,6 +121,7 @@ export function LabelsSection() {
             toast.success('Label deleted.');
             setDeleteTarget(null);
             fetchLabels();
+            onLabelsChanged?.();
         } catch (err: unknown) {
             toast.error((err as Error)?.message || 'Something went wrong.');
         }

@@ -20,7 +20,7 @@ import { springs } from '@/lib/motion';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { type Label as StackLabel } from './label-types';
+import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
@@ -597,7 +597,7 @@ export default function EditorLayout() {
     setStackStatuses(prev => ({ ...prev, [stackFile]: status }));
   };
 
-  const refreshLabels = async () => {
+  const refreshLabels = useCallback(async () => {
     if (!isPaid) return;
     try {
       const [labelsRes, assignmentsRes] = await Promise.all([
@@ -609,7 +609,7 @@ export default function EditorLayout() {
     } catch {
       // Labels are non-critical; fail silently
     }
-  };
+  }, [isPaid]);
 
   /**
    * Populate the per-stack "pending git source update" map. Runs on mount and
@@ -1902,6 +1902,37 @@ export default function EditorLayout() {
           toast.dismiss(loadingId);
         }
       },
+      createAndAssignLabel: async (name: string, color: LabelColor) => {
+        const loadingId = toast.loading('Creating label...');
+        try {
+          const createRes = await apiFetch('/labels', {
+            method: 'POST',
+            body: JSON.stringify({ name, color }),
+          });
+          if (!createRes.ok) {
+            const data = await createRes.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || 'Failed to create label.');
+          }
+          const created: StackLabel = await createRes.json();
+          const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
+          const newIds = [...currentIds, created.id];
+          const assignRes = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, {
+            method: 'PUT',
+            body: JSON.stringify({ labelIds: newIds }),
+          });
+          if (!assignRes.ok) {
+            const data = await assignRes.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || 'Failed to assign label.');
+          }
+          toast.success(`Label "${created.name}" created.`);
+          refreshLabels();
+        } catch (err: unknown) {
+          toast.error((err as Error)?.message || 'Failed to create label.');
+          throw err;
+        } finally {
+          toast.dismiss(loadingId);
+        }
+      },
       openLabelManager: () => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2844,6 +2875,7 @@ export default function EditorLayout() {
         isOpen={settingsModalOpen}
         onClose={() => { setSettingsModalOpen(false); setSettingsInitialSection('account'); }}
         initialSection={settingsInitialSection}
+        onLabelsChanged={refreshLabels}
       />
 
       {/* Stack Alert Sheet */}
