@@ -22,7 +22,7 @@ describe('TemplateService', () => {
         image: 'nginx:latest',
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('image: nginx:latest');
       expect(yaml).toContain('restart: unless-stopped');
       expect(yaml).not.toContain('ports:');
@@ -38,7 +38,7 @@ describe('TemplateService', () => {
         ports: ['80:80', '443:443/tcp'],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('ports:');
       expect(yaml).toContain('"80:80"');
       expect(yaml).toContain('"443:443/tcp"');
@@ -52,7 +52,7 @@ describe('TemplateService', () => {
         volumes: ['/host/data:/container/data'],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('volumes:');
       expect(yaml).toContain('/host/data:/container/data');
     });
@@ -65,7 +65,7 @@ describe('TemplateService', () => {
         volumes: ['/data'],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('- /data');
     });
 
@@ -77,7 +77,7 @@ describe('TemplateService', () => {
         volumes: [{ container: '/config', bind: './config' }],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('./config:/config');
     });
 
@@ -89,7 +89,7 @@ describe('TemplateService', () => {
         volumes: [{ container: '/app/data' }],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('./data:/app/data');
     });
 
@@ -101,7 +101,7 @@ describe('TemplateService', () => {
         volumes: [{ container: '/config', bind: './config', readonly: true }],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('./config:/config:ro');
     });
 
@@ -120,8 +120,8 @@ describe('TemplateService', () => {
         env: [],
       };
 
-      expect(service.generateComposeFromTemplate(withEnv)).toContain('env_file:');
-      expect(service.generateComposeFromTemplate(withoutEnv)).not.toContain('env_file:');
+      expect(service.generateComposeFromTemplate(withEnv, 'app')).toContain('env_file:');
+      expect(service.generateComposeFromTemplate(withoutEnv, 'app')).not.toContain('env_file:');
     });
 
     it('does not include env_file when env is undefined', () => {
@@ -131,7 +131,7 @@ describe('TemplateService', () => {
         image: 'test:latest',
       };
 
-      expect(service.generateComposeFromTemplate(template)).not.toContain('env_file:');
+      expect(service.generateComposeFromTemplate(template, 'app')).not.toContain('env_file:');
     });
 
     it('handles string volumes with options (e.g., host:container:ro)', () => {
@@ -142,7 +142,7 @@ describe('TemplateService', () => {
         volumes: ['/host/config:/config:ro'],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toContain('/host/config:/config:ro');
     });
 
@@ -154,7 +154,7 @@ describe('TemplateService', () => {
         volumes: [{ container: '' }],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       // Empty container means `continue` is hit, no volume line emitted
       expect(yaml).toContain('volumes:');
       // The volume header is added but no actual volume entry
@@ -172,9 +172,21 @@ describe('TemplateService', () => {
         env: [{ name: 'KEY', default: 'val' }],
       };
 
-      const yaml = service.generateComposeFromTemplate(template);
+      const yaml = service.generateComposeFromTemplate(template, 'app');
       expect(yaml).toMatch(/^services:\n/);
       expect(yaml).toContain('  app:');
+    });
+
+    it('uses the supplied service name as the compose service key', () => {
+      const template: Template = {
+        title: 'Plex',
+        description: 'Media server',
+        image: 'plex:latest',
+      };
+
+      const yaml = service.generateComposeFromTemplate(template, 'plex');
+      expect(yaml).toMatch(/^services:\n  plex:\n/);
+      expect(yaml).not.toContain('  app:');
     });
   });
 

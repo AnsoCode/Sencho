@@ -7405,7 +7405,7 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
     await fsService.createStack(stackName);
 
     // 2. Generate compose YAML and save
-    const composeYaml = templateService.generateComposeFromTemplate(template);
+    const composeYaml = templateService.generateComposeFromTemplate(template, stackName);
     await fsService.saveStackContent(stackName, composeYaml);
 
     // 3. Generate env string and save to default .env
