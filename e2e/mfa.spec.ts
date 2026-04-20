@@ -85,8 +85,8 @@ test.describe.serial('Two-factor authentication', () => {
     secret = startBody.secret;
     expect(secret).toMatch(/^[A-Z2-7]+$/); // base32 alphabet
 
-    // Step 1 (QR) -> Next
-    await page.getByRole('button', { name: /^Next$/ }).click();
+    // Step 1 (QR) -> Continue
+    await page.getByRole('button', { name: /^Continue$/ }).click();
 
     // Step 2 (Confirm): enter a fresh TOTP. The confirm step auto-submits on
     // the sixth digit, so no explicit click is required. Capture the backup
@@ -101,7 +101,7 @@ test.describe.serial('Two-factor authentication', () => {
     expect(backupCodes.length).toBe(10);
 
     // Step 3 (Backup codes) -> acknowledge.
-    await page.getByRole('button', { name: /saved these/i }).click();
+    await page.getByRole('button', { name: /^Done$/ }).click();
 
     // Card now shows the Enabled badge.
     await expect(page.getByText(/^Enabled$/)).toBeVisible();
@@ -125,10 +125,10 @@ test.describe.serial('Two-factor authentication', () => {
     await page.goto('/');
     await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-code').fill(backupCodes[5]);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-backup').fill(backupCodes[5]);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
 
     await openAccountSettings(page);
@@ -161,11 +161,11 @@ test.describe.serial('Two-factor authentication', () => {
     await page.goto('/');
     await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
 
     // fill() emits the final value in a single onChange, which at length === 6
     // schedules a submit via requestAnimationFrame. No explicit click.
-    await page.locator('#mfa-code').fill(totpNow(secret));
+    await page.locator('#mfa-otp').fill(totpNow(secret));
 
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
   });
@@ -180,10 +180,10 @@ test.describe.serial('Two-factor authentication', () => {
     expect(raw).toMatch(/^[A-Z0-9]{10}$/);
 
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-code').fill(raw);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-backup').fill(raw);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
   });
 
@@ -196,19 +196,19 @@ test.describe.serial('Two-factor authentication', () => {
 
     // First use: should succeed.
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-code').fill(code);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-backup').fill(code);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
 
     // Log out and try the same backup code again: should fail.
     await logout(page);
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-code').fill(code);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-backup').fill(code);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
 
     // Error should be visible and we should still be on the challenge screen.
     await expect(page.locator('.text-destructive')).toBeVisible();
@@ -218,9 +218,9 @@ test.describe.serial('Two-factor authentication', () => {
     // 30-second window against the one test #2 consumed, which the server
     // (correctly) rejects as a replay when the boundary falls the wrong
     // way. Backup codes are single-use and sidestep that blacklist.
-    await page.locator('#mfa-code').clear();
-    await page.locator('#mfa-code').fill(backupCodes[1]);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await page.locator('#mfa-backup').clear();
+    await page.locator('#mfa-backup').fill(backupCodes[1]);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
   });
 
@@ -232,16 +232,16 @@ test.describe.serial('Two-factor authentication', () => {
     await page.goto('/');
     await expect(page.locator('#username')).toBeVisible({ timeout: 10_000 });
     await fillLoginForm(page, TEST_USERNAME, TEST_PASSWORD);
-    await expect(page.getByRole('heading', { name: /Two-factor authentication/i })).toBeVisible();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-code').fill(backupCodes[2]);
-    await page.getByRole('button', { name: /Verify and sign in/i }).click();
+    await expect(page.getByRole('heading', { name: /^Verify$/ })).toBeVisible();
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-backup').fill(backupCodes[2]);
+    await page.getByRole('button', { name: /^Verify$/ }).click();
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
 
     await openAccountSettings(page);
     await page.getByRole('button', { name: /Disable 2FA/i }).click();
-    await page.getByRole('button', { name: /Use a backup code instead/i }).click();
-    await page.locator('#mfa-disable-code').fill(backupCodes[3]);
+    await page.getByRole('button', { name: /Use backup code/i }).click();
+    await page.locator('#mfa-disable-backup').fill(backupCodes[3]);
     await page.getByRole('button', { name: /^Disable$/ }).click();
 
     // Card flips back to the "Set up 2FA" call to action.
