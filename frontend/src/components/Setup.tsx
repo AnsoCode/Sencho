@@ -1,62 +1,76 @@
 import { useState } from 'react';
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ArrowRight, Loader2 } from 'lucide-react';
+import { AuthCanvas } from '@/components/auth/AuthCanvas';
+import { AuthStepHeader } from '@/components/auth/AuthStepHeader';
+import { ErrorRail } from '@/components/auth/ErrorRail';
 
 interface SetupProps {
   onComplete: () => void;
 }
 
-export function Setup({
-  onComplete,
-  className,
-  ...props
-}: SetupProps & React.ComponentPropsWithoutRef<"div">) {
+const INPUT_CLASS =
+  'h-11 bg-background/60 border-card-border font-sans text-base shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.25)] placeholder:text-stat-subtitle/60 focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-0';
+
+type Strength = { label: string; tone: 'weak' | 'fair' | 'strong' } | null;
+
+function gaugePassword(pw: string): Strength {
+  if (pw.length === 0) return null;
+  if (pw.length < 8) return { label: 'Weak', tone: 'weak' };
+  const classes =
+    Number(/[a-z]/.test(pw)) +
+    Number(/[A-Z]/.test(pw)) +
+    Number(/\d/.test(pw)) +
+    Number(/[^A-Za-z0-9]/.test(pw));
+  if (pw.length >= 12 && classes >= 3) return { label: 'Strong', tone: 'strong' };
+  return { label: 'Fair', tone: 'fair' };
+}
+
+export function Setup({ onComplete, className, ...props }: SetupProps & React.ComponentPropsWithoutRef<'div'>) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  const strength = gaugePassword(password);
+  const strengthClass =
+    strength?.tone === 'strong'
+      ? 'text-success'
+      : strength?.tone === 'fair'
+        ? 'text-warning'
+        : strength
+          ? 'text-destructive'
+          : '';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Client-side validation
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-
     if (username.length < 3) {
       setError('Username must be at least 3 characters');
       return;
     }
-
     if (password.length < 8) {
       setError('Password must be at least 8 characters');
       return;
     }
 
     setIsLoading(true);
-
     try {
       const response = await fetch('/api/auth/setup', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          username,
-          password,
-          confirmPassword,
-        }),
+        body: JSON.stringify({ username, password, confirmPassword }),
       });
-
       const data = await response.json();
-
       if (response.ok && data.success) {
         onComplete();
       } else {
@@ -70,98 +84,104 @@ export function Setup({
   };
 
   return (
-    <div className={cn("grid min-h-svh md:grid-cols-2", className)} {...props}>
-      {/* ── Left: Branding Panel (desktop only) ── */}
-      <div className="relative hidden md:flex flex-col items-center justify-center bg-zinc-950 overflow-hidden">
-        {/* Dot grid texture */}
-        <div
-          className="absolute inset-0 opacity-[0.15]"
-          style={{
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.7) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
-        />
-
-        {/* Branding content */}
-        <div className="relative z-10 flex flex-col items-center gap-6 px-12">
-          <img
-            src="/sencho-logo-dark.png"
-            alt="Sencho"
-            className="w-28 h-28"
-            draggable={false}
+    <div className={cn('relative', className)} {...props}>
+      <AuthCanvas
+        footer={
+          <div className="flex items-center justify-between">
+            <span>Console · First boot</span>
+            <span className="text-stat-subtitle/70">Empty database</span>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-7">
+          <AuthStepHeader
+            kicker="SENCHO · INITIALIZE"
+            hero="Cold start"
+            caption="Create the Admiral account to unlock the console."
           />
-          <div className="text-center">
-            <h1 className="text-4xl font-medium text-foreground tracking-tight">Sencho</h1>
-            <p className="text-base text-zinc-400 mt-2">Docker Compose Management</p>
-          </div>
-        </div>
 
-        {/* Brand accent line */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-brand" />
-      </div>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <Field id="username" label="Username">
+              <Input
+                id="username"
+                type="text"
+                placeholder="admin"
+                required
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </Field>
 
-      {/* ── Right: Form Panel ── */}
-      <div className="flex flex-col items-center justify-center bg-background px-6 py-12">
-        {/* Mobile logo header */}
-        <div className="flex items-center gap-2.5 mb-10 md:hidden">
-          <img src="/sencho-logo-light.png" alt="Sencho" className="w-8 h-8 dark:hidden" draggable={false} />
-          <img src="/sencho-logo-dark.png" alt="Sencho" className="w-8 h-8 hidden dark:block" draggable={false} />
-          <span className="text-lg font-semibold tracking-tight">Sencho</span>
-        </div>
-
-        <div className="w-full max-w-sm">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold tracking-tight">Create your account</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Set up the admin credentials for your Sencho instance
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-5">
-              <div className="grid gap-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  type="text"
-                  placeholder="admin"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="password"
+                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle"
+                >
+                  Password
+                </label>
+                {strength && (
+                  <span className={cn('font-mono text-[10px] uppercase tracking-[0.18em]', strengthClass)}>
+                    {strength.label}
+                  </span>
+                )}
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </div>
-              {error && (
-                <div className="text-sm text-red-500 text-center">
-                  {error}
-                </div>
-              )}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Setting up...' : 'Complete Setup'}
-              </Button>
+              <Input
+                id="password"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={INPUT_CLASS}
+              />
             </div>
+
+            <Field id="confirmPassword" label="Confirm password">
+              <Input
+                id="confirmPassword"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </Field>
+
+            {error && <ErrorRail>{error}</ErrorRail>}
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="h-11 w-full bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
+            >
+              {isLoading ? (
+                <><Loader2 className="animate-spin" strokeWidth={1.5} />Initializing</>
+              ) : (
+                <>Initialize console<ArrowRight strokeWidth={1.5} /></>
+              )}
+            </Button>
           </form>
         </div>
-      </div>
+      </AuthCanvas>
     </div>
   );
 }
+
+function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        htmlFor={id}
+        className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle"
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+

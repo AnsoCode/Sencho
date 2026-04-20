@@ -1,76 +1,98 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Loader2 } from 'lucide-react';
 import {
   BACKUP_CODE_DISPLAY_LENGTH,
   TOTP_LENGTH,
   normalizeBackupCodeInput,
   normalizeTotpInput,
 } from '@/lib/mfa';
+import { AuthCanvas } from '@/components/auth/AuthCanvas';
+import { AuthStepHeader } from '@/components/auth/AuthStepHeader';
+import { OtpDigitField } from '@/components/auth/OtpDigitField';
+import { ErrorRail } from '@/components/auth/ErrorRail';
 
-export function MfaChallenge({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<'div'>) {
+type FieldState = 'idle' | 'loading' | 'error' | 'success';
+
+function formatSeconds(total: number): string {
+  const mm = Math.floor(total / 60).toString().padStart(2, '0');
+  const ss = Math.floor(total % 60).toString().padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+export function MfaChallenge({ className, ...props }: React.ComponentPropsWithoutRef<'div'>) {
   const { submitMfa, cancelMfa } = useAuth();
-  // `display` is what the user sees in the input (with dash for backup codes);
-  // `raw` is the normalized value we send to the server.
   const [display, setDisplay] = useState('');
   const [raw, setRaw] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [fieldState, setFieldState] = useState<FieldState>('idle');
   const [useBackup, setUseBackup] = useState(false);
-  // Latch so auto-submit only fires once per full code entry: cleared on any
-  // edit that brings the input back below a full code.
+  const [retrySeconds, setRetrySeconds] = useState(0);
   const submittedRef = useRef(false);
+
+  useEffect(() => {
+    if (retrySeconds <= 0) return;
+    const id = window.setInterval(() => {
+      setRetrySeconds((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [retrySeconds]);
 
   const runSubmit = async (valueToSubmit: string) => {
     setError('');
-    setIsLoading(true);
+    setFieldState('loading');
     const result = await submitMfa(valueToSubmit, { isBackupCode: useBackup });
     if (!result.success) {
-      const retryNote = result.retryAfter ? ` (try again in ${Math.ceil(result.retryAfter / 60)} min)` : '';
-      setError((result.error || 'Verification failed') + retryNote);
+      if (result.retryAfter && result.retryAfter > 0) {
+        setRetrySeconds(Math.ceil(result.retryAfter));
+        setError('');
+      } else {
+        setError(result.error || 'Verification failed');
+      }
       setDisplay('');
       setRaw('');
+      setFieldState('error');
       submittedRef.current = false;
+      window.setTimeout(() => setFieldState('idle'), 600);
+      return;
     }
-    setIsLoading(false);
+    setFieldState('success');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLoading || !raw) return;
+    if (fieldState === 'loading' || !raw) return;
     submittedRef.current = true;
     void runSubmit(raw);
   };
 
-  const handleChange = (value: string) => {
-    if (useBackup) {
-      const next = normalizeBackupCodeInput(value);
-      setDisplay(next.display);
-      setRaw(next.raw);
-      if (next.raw.length < 10) submittedRef.current = false;
-      // Backup codes are longer and deliberate; do not auto-submit.
-      return;
-    }
+  const handleOtpChange = (value: string) => {
     const normalized = normalizeTotpInput(value);
     setDisplay(normalized);
     setRaw(normalized);
-    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (normalized.length < TOTP_LENGTH) {
+      submittedRef.current = false;
+      if (fieldState === 'error') setFieldState('idle');
+    }
     if (
       normalized.length === TOTP_LENGTH &&
-      !isLoading &&
+      fieldState !== 'loading' &&
       !submittedRef.current
     ) {
       submittedRef.current = true;
-      // Let the state update flush before firing so the spinner state lines
-      // up with the disabled button.
       requestAnimationFrame(() => { void runSubmit(normalized); });
     }
+  };
+
+  const handleBackupChange = (value: string) => {
+    const next = normalizeBackupCodeInput(value);
+    setDisplay(next.display);
+    setRaw(next.raw);
+    if (next.raw.length < 10) submittedRef.current = false;
+    if (fieldState === 'error') setFieldState('idle');
   };
 
   const handleToggleBackup = () => {
@@ -78,97 +100,135 @@ export function MfaChallenge({
     setDisplay('');
     setRaw('');
     setError('');
+    setFieldState('idle');
     submittedRef.current = false;
   };
 
+  const throttled = retrySeconds > 0;
+
   return (
-    <div className={cn('grid min-h-svh md:grid-cols-2', className)} {...props}>
-      {/* Branding panel (matches Login layout) */}
-      <div className="relative hidden md:flex flex-col items-center justify-center bg-zinc-950 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-[0.15]"
-          style={{
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.7) 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
-        />
-        <div className="relative z-10 flex flex-col items-center gap-6 px-12">
-          <img
-            src="/sencho-logo-dark.png"
-            alt="Sencho"
-            className="w-28 h-28"
-            draggable={false}
+    <div className={cn('relative', className)} {...props}>
+      <AuthCanvas
+        footer={
+          <div className="flex items-center justify-between">
+            <span>Console · Verify</span>
+            <button
+              type="button"
+              onClick={cancelMfa}
+              className="uppercase tracking-[0.18em] text-stat-subtitle/80 transition-colors hover:text-destructive"
+            >
+              Cancel · Sign out
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-7">
+          <AuthStepHeader
+            kicker={throttled ? 'SENCHO · THROTTLED' : 'SENCHO · VERIFY'}
+            hero={throttled ? formatSeconds(retrySeconds) : 'Verify'}
+            caption={
+              throttled
+                ? 'Too many attempts. Take a breath and try again shortly.'
+                : useBackup
+                  ? 'Enter one of your saved backup codes to continue.'
+                  : 'Enter the 6-digit code from your authenticator.'
+            }
           />
-          <div className="text-center">
-            <h1 className="text-4xl font-medium text-foreground tracking-tight">Sencho</h1>
-            <p className="text-base text-zinc-400 mt-2">Docker Compose Management</p>
-          </div>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-brand" />
-      </div>
 
-      {/* Form panel */}
-      <div className="flex flex-col items-center justify-center bg-background px-6 py-12">
-        <div className="flex items-center gap-2.5 mb-10 md:hidden">
-          <img src="/sencho-logo-light.png" alt="Sencho" className="w-8 h-8 dark:hidden" draggable={false} />
-          <img src="/sencho-logo-dark.png" alt="Sencho" className="w-8 h-8 hidden dark:block" draggable={false} />
-          <span className="text-lg font-semibold tracking-tight">Sencho</span>
-        </div>
-
-        <div className="w-full max-w-sm">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold tracking-tight">Two-factor authentication</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {useBackup
-                ? 'Enter one of your saved backup codes to continue.'
-                : 'Open your authenticator app and enter the 6-digit code.'}
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-5">
-              <div className="grid gap-2">
-                <Label htmlFor="mfa-code">{useBackup ? 'Backup code' : 'Verification code'}</Label>
+          {throttled ? (
+            <ThrottleTile seconds={retrySeconds} />
+          ) : useBackup ? (
+            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                  Backup code · 10 chars
+                </span>
                 <Input
-                  id="mfa-code"
+                  id="mfa-backup"
                   type="text"
-                  inputMode={useBackup ? 'text' : 'numeric'}
+                  inputMode="text"
                   autoComplete="one-time-code"
                   autoFocus
-                  required
-                  maxLength={useBackup ? BACKUP_CODE_DISPLAY_LENGTH : TOTP_LENGTH}
+                  maxLength={BACKUP_CODE_DISPLAY_LENGTH}
                   value={display}
-                  onChange={(e) => handleChange(e.target.value)}
-                  className="font-mono tabular-nums tracking-widest text-center"
-                  placeholder={useBackup ? 'ABCDE-FGHIJ' : '123456'}
+                  onChange={(e) => handleBackupChange(e.target.value)}
+                  placeholder="ABCDE-FGHIJ"
+                  className="h-12 bg-background/60 border-card-border text-center font-mono text-lg tabular-nums tracking-[0.3em] shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.25)] focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/40"
                 />
               </div>
-              {error && (
-                <div className="text-sm text-destructive text-center">
-                  {error}
-                </div>
-              )}
-              <Button type="submit" className="w-full" disabled={isLoading || !raw}>
-                {isLoading ? 'Verifying...' : 'Verify and sign in'}
+              {error && <ErrorRail>{error}</ErrorRail>}
+              <Button
+                type="submit"
+                disabled={fieldState === 'loading' || raw.length !== 10}
+                className="h-11 w-full bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
+              >
+                {fieldState === 'loading' ? (
+                  <><Loader2 className="animate-spin" strokeWidth={1.5} />Verifying</>
+                ) : (
+                  'Verify'
+                )}
               </Button>
-              <button
-                type="button"
-                className="text-sm text-muted-foreground hover:text-foreground text-center transition-colors"
-                onClick={handleToggleBackup}
-              >
-                {useBackup ? 'Use your authenticator app instead' : 'Use a backup code instead'}
-              </button>
-              <button
-                type="button"
-                className="text-sm text-muted-foreground/70 hover:text-foreground text-center transition-colors"
-                onClick={cancelMfa}
-              >
-                Cancel and sign out
-              </button>
+            </form>
+          ) : (
+            <div className="flex flex-col gap-5">
+              <OtpDigitField
+                id="mfa-otp"
+                value={display}
+                onChange={handleOtpChange}
+                state={fieldState}
+                disabled={fieldState === 'loading' || fieldState === 'success'}
+                autoFocus
+              />
+              {error && <ErrorRail>{error}</ErrorRail>}
             </div>
-          </form>
+          )}
+
+          <ModeToggle
+            useBackup={useBackup}
+            onToggle={handleToggleBackup}
+            disabled={fieldState === 'loading' || throttled}
+          />
         </div>
+      </AuthCanvas>
+    </div>
+  );
+}
+
+function ThrottleTile({ seconds }: { seconds: number }) {
+  return (
+    <div className="relative overflow-hidden rounded-md border border-warning/30 bg-warning/6 pl-4 pr-3 py-3">
+      <span className="absolute inset-y-0 left-0 w-[3px] bg-warning/70" aria-hidden />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-warning">Retry in</span>
+          <span className="font-mono text-2xl tabular-nums text-stat-value">{formatSeconds(seconds)}</span>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+          Rate limited
+        </span>
       </div>
     </div>
   );
 }
+
+function ModeToggle({
+  useBackup,
+  onToggle,
+  disabled,
+}: {
+  useBackup: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      className="self-start font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle transition-colors hover:text-brand disabled:opacity-50"
+    >
+      {useBackup ? '[ Use authenticator ]' : '[ Use backup code ]'}
+    </button>
+  );
+}
+

@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import {
@@ -20,6 +19,8 @@ import {
   normalizeBackupCodeInput,
   normalizeTotpInput,
 } from '@/lib/mfa';
+import { OtpDigitField } from '@/components/auth/OtpDigitField';
+import { ErrorRail } from '@/components/auth/ErrorRail';
 
 interface MfaDisableDialogProps {
   open: boolean;
@@ -28,13 +29,12 @@ interface MfaDisableDialogProps {
 }
 
 export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableDialogProps) {
-  // `display` is what the input shows (backup codes carry a dash after five chars);
-  // `raw` is the normalized value sent to the server.
   const [display, setDisplay] = useState('');
   const [raw, setRaw] = useState('');
   const [useBackup, setUseBackup] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [otpState, setOtpState] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
   const submittedRef = useRef(false);
 
   useEffect(() => {
@@ -43,12 +43,14 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
       setRaw('');
       setError('');
       setUseBackup(false);
+      setOtpState('idle');
       submittedRef.current = false;
     }
   }, [open]);
 
   const submitDisable = async (valueToSubmit: string) => {
     setError('');
+    setOtpState('loading');
     setLoading(true);
     try {
       const res = await apiFetch('/auth/mfa/disable', {
@@ -61,16 +63,20 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
         setError(data?.error || 'Could not disable two-factor authentication');
         setDisplay('');
         setRaw('');
+        setOtpState('error');
         submittedRef.current = false;
+        window.setTimeout(() => setOtpState('idle'), 600);
         return;
       }
       toast.success('Two-factor authentication disabled');
+      setOtpState('success');
       setDisplay('');
       setRaw('');
       onOpenChange(false);
       onDisabled();
     } catch (err) {
       setError((err as Error)?.message || 'Could not disable two-factor authentication');
+      setOtpState('error');
       submittedRef.current = false;
     } finally {
       setLoading(false);
@@ -79,19 +85,14 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
 
   const expectedLength = useBackup ? BACKUP_CODE_RAW_LENGTH : TOTP_LENGTH;
 
-  const handleCodeChange = (value: string) => {
-    if (useBackup) {
-      const next = normalizeBackupCodeInput(value);
-      setDisplay(next.display);
-      setRaw(next.raw);
-      // Never auto-submit a backup code; the action is destructive.
-      if (next.raw.length < BACKUP_CODE_RAW_LENGTH) submittedRef.current = false;
-      return;
-    }
+  const handleOtpChange = (value: string) => {
     const normalized = normalizeTotpInput(value);
     setDisplay(normalized);
     setRaw(normalized);
-    if (normalized.length < TOTP_LENGTH) submittedRef.current = false;
+    if (normalized.length < TOTP_LENGTH) {
+      submittedRef.current = false;
+      if (otpState === 'error') setOtpState('idle');
+    }
     if (
       normalized.length === TOTP_LENGTH &&
       !loading &&
@@ -102,11 +103,20 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
     }
   };
 
+  const handleBackupChange = (value: string) => {
+    const next = normalizeBackupCodeInput(value);
+    setDisplay(next.display);
+    setRaw(next.raw);
+    if (next.raw.length < BACKUP_CODE_RAW_LENGTH) submittedRef.current = false;
+    if (otpState === 'error') setOtpState('idle');
+  };
+
   const handleToggleBackup = () => {
     setUseBackup((v) => !v);
     setDisplay('');
     setRaw('');
     setError('');
+    setOtpState('idle');
     submittedRef.current = false;
   };
 
@@ -118,51 +128,74 @@ export function MfaDisableDialog({ open, onOpenChange, onDisabled }: MfaDisableD
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Disable two-factor authentication?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Your account will only be protected by a password. Anyone who obtains that password can sign in. Confirm with a current code to continue.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+      <AlertDialogContent className="max-w-md overflow-hidden p-0">
+        <div className="relative">
+          <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-destructive/70" />
 
-        <div className="flex flex-col gap-3">
-          <div className="grid gap-2">
-            <Label htmlFor="mfa-disable-code">{useBackup ? 'Backup code' : 'Verification code'}</Label>
-            <Input
-              id="mfa-disable-code"
-              type="text"
-              inputMode={useBackup ? 'text' : 'numeric'}
-              autoComplete="one-time-code"
-              maxLength={useBackup ? BACKUP_CODE_DISPLAY_LENGTH : TOTP_LENGTH}
-              value={display}
-              onChange={(e) => handleCodeChange(e.target.value)}
-              className="font-mono tabular-nums tracking-widest text-center"
-              placeholder={useBackup ? 'ABCDE-FGHIJ' : '123456'}
-            />
+          <AlertDialogHeader className="border-b border-card-border/60 px-6 pt-6 pb-4 text-left">
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-destructive">
+              SENCHO · MFA · DISABLE
+            </div>
+            <AlertDialogTitle className="mt-1 font-display text-[1.75rem] italic leading-tight text-stat-value">
+              Turn off two-factor
+            </AlertDialogTitle>
+            <AlertDialogDescription className="mt-2 text-sm leading-snug text-stat-subtitle">
+              Disabling 2FA removes this login layer. Your backup codes become invalid. Confirm with a current code to proceed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex flex-col gap-4 px-6 py-5">
+            {useBackup ? (
+              <div className="flex flex-col gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                  Backup code · 10 chars
+                </span>
+                <Input
+                  id="mfa-disable-backup"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  maxLength={BACKUP_CODE_DISPLAY_LENGTH}
+                  value={display}
+                  onChange={(e) => handleBackupChange(e.target.value)}
+                  placeholder="ABCDE-FGHIJ"
+                  className="h-12 bg-background/60 border-card-border text-center font-mono text-lg tabular-nums tracking-[0.3em] shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.25)] focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/40"
+                />
+              </div>
+            ) : (
+              <OtpDigitField
+                id="mfa-disable-code"
+                value={display}
+                onChange={handleOtpChange}
+                state={otpState}
+                disabled={loading || otpState === 'success'}
+                autoFocus
+              />
+            )}
+
+            <button
+              type="button"
+              onClick={handleToggleBackup}
+              className="self-start font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle transition-colors hover:text-brand"
+            >
+              {useBackup ? '[ Use authenticator ]' : '[ Use backup code ]'}
+            </button>
+
+            {error && <ErrorRail>{error}</ErrorRail>}
           </div>
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
-            onClick={handleToggleBackup}
-          >
-            {useBackup ? 'Use your authenticator app instead' : 'Use a backup code instead'}
-          </button>
-          {error && <div className="text-sm text-destructive">{error}</div>}
-        </div>
 
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-            disabled={loading || raw.length !== expectedLength}
-            onClick={handleDisableClick}
-          >
-            {loading ? 'Disabling...' : 'Disable'}
-          </Button>
-        </AlertDialogFooter>
+          <AlertDialogFooter className="border-t border-card-border/60 px-6 py-4">
+            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={loading || raw.length !== expectedLength}
+              onClick={handleDisableClick}
+            >
+              {loading ? 'Disabling...' : 'Disable'}
+            </Button>
+          </AlertDialogFooter>
+        </div>
       </AlertDialogContent>
     </AlertDialog>
   );
