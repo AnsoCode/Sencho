@@ -288,8 +288,8 @@ export class TemplateService {
         }
     }
 
-    public generateComposeFromTemplate(template: Template): string {
-        let yaml = `services:\n  app:\n`;
+    public generateComposeFromTemplate(template: Template, serviceName: string): string {
+        let yaml = `services:\n  ${serviceName}:\n`;
 
         if (template.image) {
             yaml += `    image: ${template.image}\n`;
