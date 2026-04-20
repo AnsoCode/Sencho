@@ -185,7 +185,7 @@ describe('TemplateService', () => {
       };
 
       const yaml = service.generateComposeFromTemplate(template, 'plex');
-      expect(yaml).toMatch(/^services:\n  plex:\n/);
+      expect(yaml).toMatch(/^services:\n {2}plex:\n/);
       expect(yaml).not.toContain('  app:');
     });
   });
