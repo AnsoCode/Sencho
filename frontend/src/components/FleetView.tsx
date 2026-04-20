@@ -22,13 +22,23 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from './PaidGate';
 import FleetSnapshots from './FleetSnapshots';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
-import { type Label as StackLabel } from './label-types';
+import { type Label as StackLabel, type LabelColor } from './label-types';
+
+interface FleetPaletteEntry {
+    key: string;
+    name: string;
+    color: LabelColor;
+}
+
+function labelPaletteKey(name: string, color: LabelColor): string {
+    return `${name.trim().toLowerCase()}|${color}`;
+}
 import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 import { formatVersion } from '@/lib/version';
 import { CursorProvider, Cursor, CursorFollow, CursorContainer } from '@/components/animate-ui/primitives/animate/cursor';
@@ -654,9 +664,9 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'topology'>('grid');
     const [prefs, setPrefs] = useState<FleetPreferences>(loadPreferences);
-    const [fleetLabels, setFleetLabels] = useState<StackLabel[]>([]);
-    const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<string, StackLabel[]>>({});
-    const [labelFilters, setLabelFilters] = useState<Set<number>>(new Set());
+    const [fleetPalette, setFleetPalette] = useState<FleetPaletteEntry[]>([]);
+    const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<number, Record<string, StackLabel[]>>>({});
+    const [labelFilters, setLabelFilters] = useState<Set<string>>(new Set());
     const { isPaid } = useLicense();
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
@@ -694,18 +704,38 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
     }, []);
 
-    const fetchLabels = useCallback(async () => {
-        if (!isPaid) return;
-        try {
-            const [labelsRes, assignmentsRes] = await Promise.all([
-                apiFetch('/labels', { localOnly: true }),
-                apiFetch('/labels/assignments', { localOnly: true }),
-            ]);
-            if (labelsRes.ok) setFleetLabels(await labelsRes.json());
-            if (assignmentsRes.ok) setFleetStackLabelMap(await assignmentsRes.json());
-        } catch {
-            // Non-critical
-        }
+    const fetchLabelsForNodes = useCallback(async (fleetNodes: FleetNode[]) => {
+        if (!isPaid || fleetNodes.length === 0) return;
+
+        const paletteMap = new Map<string, FleetPaletteEntry>();
+        const stackLabelMap: Record<number, Record<string, StackLabel[]>> = {};
+
+        await Promise.allSettled(fleetNodes.map(async (node) => {
+            if (node.status !== 'online') return;
+            try {
+                const [labelsRes, assignmentsRes] = await Promise.all([
+                    fetchForNode('/labels', node.id, { signal: AbortSignal.timeout(5000) }),
+                    fetchForNode('/labels/assignments', node.id, { signal: AbortSignal.timeout(5000) }),
+                ]);
+                if (labelsRes.ok) {
+                    const labels = await labelsRes.json() as StackLabel[];
+                    for (const l of labels) {
+                        const key = labelPaletteKey(l.name, l.color);
+                        if (!paletteMap.has(key)) {
+                            paletteMap.set(key, { key, name: l.name, color: l.color });
+                        }
+                    }
+                }
+                if (assignmentsRes.ok) {
+                    stackLabelMap[node.id] = await assignmentsRes.json() as Record<string, StackLabel[]>;
+                }
+            } catch {
+                // Node unreachable or slow: skip, other nodes still contribute.
+            }
+        }));
+
+        setFleetPalette(Array.from(paletteMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+        setFleetStackLabelMap(stackLabelMap);
     }, [isPaid]);
 
     const fetchUpdateStatus = useCallback(async () => {
@@ -814,9 +844,21 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
     useEffect(() => {
         fetchOverview();
-        fetchLabels();
         fetchUpdateStatus();
-    }, [fetchOverview, fetchLabels, fetchUpdateStatus]);
+    }, [fetchOverview, fetchUpdateStatus]);
+
+    // Refetch labels only when the set of online nodes actually changes,
+    // not on every `fetchOverview` tick (which mints a new `nodes` ref).
+    const onlineNodeKey = nodes
+        .filter(n => n.status === 'online')
+        .map(n => n.id)
+        .sort((a, b) => a - b)
+        .join(',');
+    useEffect(() => {
+        if (!isPaid || nodes.length === 0) return;
+        fetchLabelsForNodes(nodes);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isPaid, onlineNodeKey, fetchLabelsForNodes]);
 
     // Paid tier: auto-refresh every 30s
     useEffect(() => {
@@ -900,14 +942,16 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             // Critical filter
             if (prefs.filterCritical) filtered = filtered.filter(isCritical);
 
-            // Label filter
+            // Label filter: match by (name, color) palette key so equivalent
+            // labels across nodes behave as one filter.
             if (labelFilters.size > 0) {
-                filtered = filtered.filter(n =>
-                    n.stacks?.some(s => {
-                        const sLabels = fleetStackLabelMap[s] || [];
-                        return sLabels.some(l => labelFilters.has(l.id));
-                    })
-                );
+                filtered = filtered.filter(n => {
+                    const nodeStackLabels = fleetStackLabelMap[n.id] ?? {};
+                    return n.stacks?.some(s => {
+                        const sLabels = nodeStackLabels[s] ?? [];
+                        return sLabels.some(l => labelFilters.has(labelPaletteKey(l.name, l.color)));
+                    });
+                });
             }
 
             // Sort
@@ -1147,17 +1191,17 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         Critical Only
                                     </Button>
 
-                                    {fleetLabels.length > 0 && (
+                                    {fleetPalette.length > 0 && (
                                         <>
                                             <div className="w-px h-5 bg-border mx-1" />
                                             <MultiSelectCombobox
-                                                options={fleetLabels.map(l => ({ value: String(l.id), label: l.name, color: l.color }))}
-                                                selected={new Set(Array.from(labelFilters).map(String))}
-                                                onSelectionChange={(sel) => setLabelFilters(new Set(Array.from(sel).map(Number)))}
+                                                options={fleetPalette.map(p => ({ value: p.key, label: p.name, color: p.color }))}
+                                                selected={labelFilters}
+                                                onSelectionChange={setLabelFilters}
                                                 placeholder="Tags"
                                                 renderOption={(option) => (
                                                     <span className="flex items-center gap-1.5">
-                                                        <LabelDot color={option.color as StackLabel['color'] ?? 'slate'} />
+                                                        <LabelDot color={option.color as LabelColor ?? 'slate'} />
                                                         {option.label}
                                                     </span>
                                                 )}
@@ -1181,7 +1225,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                                 key={localNode.id}
                                                 node={localNode}
                                                 onNavigate={onNavigateToNode}
-                                                labelMap={fleetStackLabelMap}
+                                                labelMap={fleetStackLabelMap[localNode.id] ?? {}}
                                                 updateStatus={updateStatusMap.get(localNode.id)}
                                                 onUpdate={isPaid ? triggerNodeUpdate : undefined}
                                                 updatingNodeId={updatingNodeId}
@@ -1197,7 +1241,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                                     key={node.id}
                                                     node={node}
                                                     onNavigate={onNavigateToNode}
-                                                    labelMap={fleetStackLabelMap}
+                                                    labelMap={fleetStackLabelMap[node.id] ?? {}}
                                                     updateStatus={updateStatusMap.get(node.id)}
                                                     onUpdate={isPaid ? triggerNodeUpdate : undefined}
                                                     updatingNodeId={updatingNodeId}

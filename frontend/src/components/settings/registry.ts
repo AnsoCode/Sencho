@@ -158,11 +158,10 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         id: 'labels',
         group: 'advanced',
         label: 'Labels',
-        description: 'Shared labels for stacks, containers, and nodes.',
+        description: 'Per-node labels for stacks and containers.',
         keywords: ['labels', 'tags', 'palette', 'organisation'],
         tier: 'skipper',
-        scope: 'global',
-        hiddenOnRemote: true,
+        scope: 'node',
     },
     {
         id: 'security',
