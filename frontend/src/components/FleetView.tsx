@@ -3,7 +3,7 @@ import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
     Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
-    CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network,
+    CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network, SlidersHorizontal,
 } from 'lucide-react';
 import { FleetMasthead } from './fleet/FleetMasthead';
 import { FleetTopology } from './fleet/FleetTopology';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -39,6 +40,8 @@ interface FleetPaletteEntry {
 function labelPaletteKey(name: string, color: LabelColor): string {
     return `${name.trim().toLowerCase()}|${color}`;
 }
+
+const FILTER_SECTION_LABEL_CLASS = 'text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
 import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 import { formatVersion } from '@/lib/version';
 import { CursorProvider, Cursor, CursorFollow, CursorContainer } from '@/components/animate-ui/primitives/animate/cursor';
@@ -993,6 +996,18 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         critical: n.status === 'online' && isCritical(n),
     })), [processedNodes]);
 
+    const showPaidControls = isPaid && viewMode === 'grid';
+    const activeFilterCount =
+        (prefs.filterStatus !== 'all' ? 1 : 0) +
+        (prefs.filterType !== 'all' ? 1 : 0) +
+        (prefs.filterCritical ? 1 : 0) +
+        (labelFilters.size > 0 ? 1 : 0);
+    const clearFilters = useCallback(() => {
+        updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
+        setLabelFilters(new Set());
+    }, [updatePrefs]);
+    const allNodes = localNode ? [localNode, ...remoteNodes] : remoteNodes;
+
     return (
         <div className="h-full overflow-auto p-6">
             <FleetMasthead
@@ -1009,74 +1024,51 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 loading={loading}
             />
 
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-1 rounded-md border border-card-border bg-card p-0.5 shadow-card-bevel">
-                    <Button
-                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                        size="sm"
-                        className="h-7 text-xs px-2.5 gap-1.5"
-                        onClick={() => setViewMode('grid')}
-                        aria-pressed={viewMode === 'grid'}
-                    >
-                        <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        Grid
-                    </Button>
-                    <Button
-                        variant={viewMode === 'topology' ? 'default' : 'ghost'}
-                        size="sm"
-                        className="h-7 text-xs px-2.5 gap-1.5"
-                        onClick={() => setViewMode('topology')}
-                        aria-pressed={viewMode === 'topology'}
-                    >
-                        <Network className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        Topology
-                    </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                    {isPaid && (
+            <Tabs defaultValue="overview">
+                <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                    <TabsList>
+                        <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
+                            <TabsHighlightItem value="overview">
+                                <TabsTrigger value="overview">Overview</TabsTrigger>
+                            </TabsHighlightItem>
+                            {isPaid && (
+                                <TabsHighlightItem value="snapshots">
+                                    <TabsTrigger value="snapshots">
+                                        <Camera className="w-4 h-4 mr-1.5" />Snapshots
+                                    </TabsTrigger>
+                                </TabsHighlightItem>
+                            )}
+                        </TabsHighlight>
+                    </TabsList>
+                    <div className="flex items-center gap-2">
+                        {isPaid && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                    setShowUpdateModal(true);
+                                    setCheckingUpdates(true);
+                                    await fetchUpdateStatus();
+                                    setCheckingUpdates(false);
+                                }}
+                                className="gap-2"
+                            >
+                                <Search className="w-4 h-4" />
+                                Check Updates
+                            </Button>
+                        )}
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={async () => {
-                                setShowUpdateModal(true);
-                                setCheckingUpdates(true);
-                                await fetchUpdateStatus();
-                                setCheckingUpdates(false);
-                            }}
+                            onClick={() => fetchOverview(true)}
+                            disabled={refreshing}
                             className="gap-2"
                         >
-                            <Search className="w-4 h-4" />
-                            Check Updates
+                            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                            Refresh
                         </Button>
-                    )}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fetchOverview(true)}
-                        disabled={refreshing}
-                        className="gap-2"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </Button>
+                    </div>
                 </div>
-            </div>
-
-            <Tabs defaultValue="overview">
-                <TabsList>
-                    <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
-                        <TabsHighlightItem value="overview">
-                            <TabsTrigger value="overview">Overview</TabsTrigger>
-                        </TabsHighlightItem>
-                        {isPaid && (
-                            <TabsHighlightItem value="snapshots">
-                                <TabsTrigger value="snapshots">
-                                    <Camera className="w-4 h-4 mr-1.5" />Snapshots
-                                </TabsTrigger>
-                            </TabsHighlightItem>
-                        )}
-                    </TabsHighlight>
-                </TabsList>
 
                 <TabsContent value="overview">
                     {/* Loading State */}
@@ -1110,147 +1102,183 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     {/* Fleet Content */}
                     {!loading && nodes.length > 0 && (
                         <>
-                            {/* Paid: Search, Sort & Filter Toolbar */}
-                            {isPaid && viewMode === 'grid' && (
-                                <div className="flex flex-wrap items-center gap-3 mb-4">
-                                    {/* Search */}
-                                    <div className="relative flex-1 min-w-[200px] max-w-sm">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                                        <Input
-                                            placeholder="Search nodes or stacks..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="pl-9 h-9"
-                                        />
-                                    </div>
-
-                                    {/* Sort */}
-                                    <Combobox
-                                        options={[
-                                            { value: 'name', label: 'Name' },
-                                            { value: 'cpu', label: 'CPU Usage' },
-                                            { value: 'memory', label: 'Memory Usage' },
-                                            { value: 'containers', label: 'Containers' },
-                                            { value: 'status', label: 'Status' },
-                                        ]}
-                                        value={prefs.sortBy}
-                                        onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}
-                                        placeholder="Sort by..."
-                                    />
-
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-9 w-9 p-0"
-                                        onClick={() => updatePrefs({ sortDir: prefs.sortDir === 'asc' ? 'desc' : 'asc' })}
-                                        title={prefs.sortDir === 'asc' ? 'Ascending' : 'Descending'}
-                                    >
-                                        <ArrowUpDown className={`w-4 h-4 ${prefs.sortDir === 'desc' ? 'rotate-180' : ''} transition-transform`} />
-                                    </Button>
-
-                                    {/* Filter pills */}
-                                    <div className="flex items-center gap-1.5">
-                                        {(['all', 'online', 'offline'] as FilterStatus[]).map(status => (
-                                            <Button
-                                                key={status}
-                                                variant={prefs.filterStatus === status ? 'default' : 'outline'}
-                                                size="sm"
-                                                className="h-7 text-xs px-2.5"
-                                                onClick={() => updatePrefs({ filterStatus: status })}
-                                            >
-                                                {status === 'all' ? 'All' : status === 'online' ? (
-                                                    <><Play className="w-3 h-3 mr-1" />Online</>
-                                                ) : (
-                                                    <><Square className="w-3 h-3 mr-1" />Offline</>
-                                                )}
-                                            </Button>
-                                        ))}
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5">
-                                        {(['all', 'local', 'remote'] as FilterType[]).map(type => (
-                                            <Button
-                                                key={type}
-                                                variant={prefs.filterType === type ? 'default' : 'outline'}
-                                                size="sm"
-                                                className="h-7 text-xs px-2.5"
-                                                onClick={() => updatePrefs({ filterType: type })}
-                                            >
-                                                {type === 'all' ? 'All Types' : type.charAt(0).toUpperCase() + type.slice(1)}
-                                            </Button>
-                                        ))}
-                                    </div>
-
-                                    <Button
-                                        variant={prefs.filterCritical ? 'default' : 'outline'}
-                                        size="sm"
-                                        className="h-7 text-xs px-2.5"
-                                        onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
-                                    >
-                                        <AlertTriangle className="w-3 h-3 mr-1" />
-                                        Critical Only
-                                    </Button>
-
-                                    {fleetPalette.length > 0 && (
-                                        <>
-                                            <div className="w-px h-5 bg-border mx-1" />
-                                            <MultiSelectCombobox
-                                                options={fleetPalette.map(p => ({ value: p.key, label: p.name, color: p.color }))}
-                                                selected={labelFilters}
-                                                onSelectionChange={setLabelFilters}
-                                                placeholder="Tags"
-                                                renderOption={(option) => (
-                                                    <span className="flex items-center gap-1.5">
-                                                        <LabelDot color={option.color as LabelColor ?? 'slate'} />
-                                                        {option.label}
-                                                    </span>
-                                                )}
+                            {/* Overview Toolbar: Search, Sort, Filters, View Mode */}
+                            <div className="flex flex-wrap items-center gap-2 mb-4">
+                                {showPaidControls && (
+                                    <>
+                                        <div className="relative flex-1 min-w-[200px] max-w-sm">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                                            <Input
+                                                placeholder="Search nodes or stacks..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                className="pl-9 h-9"
                                             />
-                                        </>
-                                    )}
-                                </div>
-                            )}
+                                        </div>
+                                        <div className="w-40">
+                                            <Combobox
+                                                options={[
+                                                    { value: 'name', label: 'Name' },
+                                                    { value: 'cpu', label: 'CPU Usage' },
+                                                    { value: 'memory', label: 'Memory Usage' },
+                                                    { value: 'containers', label: 'Containers' },
+                                                    { value: 'status', label: 'Status' },
+                                                ]}
+                                                value={prefs.sortBy}
+                                                onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}
+                                                placeholder="Sort by..."
+                                            />
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-9 w-9 p-0 shrink-0"
+                                            onClick={() => updatePrefs({ sortDir: prefs.sortDir === 'asc' ? 'desc' : 'asc' })}
+                                            title={prefs.sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                                        >
+                                            <ArrowUpDown className={`w-4 h-4 ${prefs.sortDir === 'desc' ? 'rotate-180' : ''} transition-transform`} />
+                                        </Button>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    variant={activeFilterCount > 0 ? 'default' : 'outline'}
+                                                    size="sm"
+                                                    className="h-9 gap-2 shrink-0"
+                                                >
+                                                    <SlidersHorizontal className="w-4 h-4" />
+                                                    Filters
+                                                    {activeFilterCount > 0 && (
+                                                        <Badge variant="secondary" className="h-5 min-w-[1.25rem] px-1.5 text-[10px] tabular-nums">
+                                                            {activeFilterCount}
+                                                        </Badge>
+                                                    )}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent align="end" className="w-80 space-y-4">
+                                                <div className="space-y-1.5">
+                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Status</label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {(['all', 'online', 'offline'] as FilterStatus[]).map(status => (
+                                                            <Button
+                                                                key={status}
+                                                                variant={prefs.filterStatus === status ? 'default' : 'outline'}
+                                                                size="sm"
+                                                                className="h-7 text-xs px-2.5"
+                                                                onClick={() => updatePrefs({ filterStatus: status })}
+                                                            >
+                                                                {status === 'all' ? 'All' : status === 'online' ? (
+                                                                    <><Play className="w-3 h-3 mr-1" />Online</>
+                                                                ) : (
+                                                                    <><Square className="w-3 h-3 mr-1" />Offline</>
+                                                                )}
+                                                            </Button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Type</label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {(['all', 'local', 'remote'] as FilterType[]).map(type => (
+                                                            <Button
+                                                                key={type}
+                                                                variant={prefs.filterType === type ? 'default' : 'outline'}
+                                                                size="sm"
+                                                                className="h-7 text-xs px-2.5"
+                                                                onClick={() => updatePrefs({ filterType: type })}
+                                                            >
+                                                                {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1)}
+                                                            </Button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Severity</label>
+                                                    <Button
+                                                        variant={prefs.filterCritical ? 'default' : 'outline'}
+                                                        size="sm"
+                                                        className="h-7 text-xs px-2.5"
+                                                        onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
+                                                    >
+                                                        <AlertTriangle className="w-3 h-3 mr-1" />
+                                                        Critical Only
+                                                    </Button>
+                                                </div>
+                                                {fleetPalette.length > 0 && (
+                                                    <div className="space-y-1.5">
+                                                        <label className={FILTER_SECTION_LABEL_CLASS}>Tags</label>
+                                                        <MultiSelectCombobox
+                                                            options={fleetPalette.map(p => ({ value: p.key, label: p.name, color: p.color }))}
+                                                            selected={labelFilters}
+                                                            onSelectionChange={setLabelFilters}
+                                                            placeholder="Tags"
+                                                            renderOption={(option) => (
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <LabelDot color={option.color as LabelColor ?? 'slate'} />
+                                                                    {option.label}
+                                                                </span>
+                                                            )}
+                                                        />
+                                                    </div>
+                                                )}
+                                                {activeFilterCount > 0 && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="w-full h-8 text-xs"
+                                                        onClick={clearFilters}
+                                                    >
+                                                        Clear all filters
+                                                    </Button>
+                                                )}
+                                            </PopoverContent>
+                                        </Popover>
+                                    </>
+                                )}
 
-                            {/* Node Grid or Topology */}
+                                <div className="ml-auto flex items-center gap-1 rounded-md border border-card-border bg-card p-0.5 shadow-card-bevel shrink-0">
+                                    <Button
+                                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        className="h-8 text-xs px-2.5 gap-1.5"
+                                        onClick={() => setViewMode('grid')}
+                                        aria-pressed={viewMode === 'grid'}
+                                    >
+                                        <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                        Grid
+                                    </Button>
+                                    <Button
+                                        variant={viewMode === 'topology' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        className="h-8 text-xs px-2.5 gap-1.5"
+                                        onClick={() => setViewMode('topology')}
+                                        aria-pressed={viewMode === 'topology'}
+                                    >
+                                        <Network className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                        Topology
+                                    </Button>
+                                </div>
+                            </div>
+
                             {viewMode === 'topology' && processedNodes.length > 0 ? (
                                 <FleetTopology
                                     nodes={topologyNodes}
                                     onNodeClick={(id) => onNavigateToNode(id, '')}
                                 />
                             ) : processedNodes.length > 0 ? (
-                                <div className="space-y-4">
-                                    {localNode && (
-                                        <div className="grid grid-cols-1">
-                                            <NodeCard
-                                                key={localNode.id}
-                                                node={localNode}
-                                                onNavigate={onNavigateToNode}
-                                                labelMap={fleetStackLabelMap[localNode.id] ?? {}}
-                                                updateStatus={updateStatusMap.get(localNode.id)}
-                                                onUpdate={isPaid ? triggerNodeUpdate : undefined}
-                                                updatingNodeId={updatingNodeId}
-                                                onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
-                                                onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
-                                            />
-                                        </div>
-                                    )}
-                                    {remoteNodes.length > 0 && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                            {remoteNodes.map(node => (
-                                                <NodeCard
-                                                    key={node.id}
-                                                    node={node}
-                                                    onNavigate={onNavigateToNode}
-                                                    labelMap={fleetStackLabelMap[node.id] ?? {}}
-                                                    updateStatus={updateStatusMap.get(node.id)}
-                                                    onUpdate={isPaid ? triggerNodeUpdate : undefined}
-                                                    updatingNodeId={updatingNodeId}
-                                                    onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
-                                                    onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                                    {allNodes.map(node => (
+                                        <NodeCard
+                                            key={node.id}
+                                            node={node}
+                                            onNavigate={onNavigateToNode}
+                                            labelMap={fleetStackLabelMap[node.id] ?? {}}
+                                            updateStatus={updateStatusMap.get(node.id)}
+                                            onUpdate={isPaid ? triggerNodeUpdate : undefined}
+                                            updatingNodeId={updatingNodeId}
+                                            onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
+                                            onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
+                                        />
+                                    ))}
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -1263,8 +1291,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                         className="mt-3"
                                         onClick={() => {
                                             setSearchQuery('');
-                                            updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
-                                            setLabelFilters(new Set());
+                                            clearFilters();
                                         }}
                                     >
                                         <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
