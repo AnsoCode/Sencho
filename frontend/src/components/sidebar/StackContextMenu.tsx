@@ -1,13 +1,15 @@
-import type { ReactNode } from 'react';
-import { Check } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Check, Plus } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { LabelDot } from '@/components/LabelPill';
+import { MAX_LABELS_PER_NODE } from '@/components/label-types';
 import { cn } from '@/lib/utils';
 import type { MenuGroup, MenuItem, StackMenuCtx } from './sidebar-types';
 import { useStackMenuItems } from '@/hooks/useStackMenuItems';
+import { LabelInlineCreateForm } from './LabelInlineCreateForm';
 
 interface StackContextMenuProps {
   file: string;
@@ -27,32 +29,51 @@ function GroupHeader({ id }: { id: string }) {
 }
 
 function LabelsSub({ item, ctx }: { item: MenuItem; ctx: StackMenuCtx }) {
+  const [creating, setCreating] = useState(false);
   return (
-    <ContextMenuSub>
+    <ContextMenuSub onOpenChange={open => { if (!open) setCreating(false); }}>
       <ContextMenuSubTrigger>
         <item.icon className="h-4 w-4 mr-2" strokeWidth={1.5} />
         {item.label}
       </ContextMenuSubTrigger>
-      <ContextMenuSubContent className="min-w-[180px]">
-        {ctx.labels.length === 0 && (
-          <ContextMenuItem disabled>
-            <span className="text-xs text-muted-foreground">No labels yet</span>
-          </ContextMenuItem>
-        )}
-        {ctx.labels.map(label => {
-          const assigned = ctx.assignedLabelIds.includes(label.id);
-          return (
-            <ContextMenuItem key={label.id} onClick={() => ctx.toggleLabel(label.id)}>
-              <LabelDot color={label.color} />
-              <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
-              {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
+      <ContextMenuSubContent className="min-w-[200px]">
+        {creating ? (
+          <LabelInlineCreateForm
+            onSubmit={async (name, color) => {
+              await ctx.createAndAssignLabel(name, color);
+              setCreating(false);
+            }}
+            onCancel={() => setCreating(false)}
+          />
+        ) : (
+          <>
+            {ctx.labels.length === 0 && (
+              <ContextMenuItem disabled>
+                <span className="text-xs text-muted-foreground">No labels yet</span>
+              </ContextMenuItem>
+            )}
+            {ctx.labels.map(label => {
+              const assigned = ctx.assignedLabelIds.includes(label.id);
+              return (
+                <ContextMenuItem key={label.id} onClick={() => ctx.toggleLabel(label.id)}>
+                  <LabelDot color={label.color} />
+                  <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
+                  {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
+                </ContextMenuItem>
+              );
+            })}
+            <ContextMenuSeparator />
+            {ctx.labels.length < MAX_LABELS_PER_NODE && (
+              <ContextMenuItem onSelect={e => { e.preventDefault(); setCreating(true); }}>
+                <Plus className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} />
+                <span className="text-xs">New label</span>
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem onClick={ctx.openLabelManager}>
+              <span className="text-xs">Manage labels...</span>
             </ContextMenuItem>
-          );
-        })}
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={ctx.openLabelManager}>
-          <span className="text-xs">Manage labels...</span>
-        </ContextMenuItem>
+          </>
+        )}
       </ContextMenuSubContent>
     </ContextMenuSub>
   );

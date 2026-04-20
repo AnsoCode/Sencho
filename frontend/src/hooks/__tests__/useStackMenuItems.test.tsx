@@ -27,6 +27,7 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     pin: vi.fn(),
     unpin: vi.fn(),
     toggleLabel: vi.fn(),
+    createAndAssignLabel: vi.fn(),
     openLabelManager: vi.fn(),
     ...overrides,
   };

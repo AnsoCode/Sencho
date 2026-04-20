@@ -1,13 +1,16 @@
-import { MoreVertical, Check } from 'lucide-react';
+import { useState } from 'react';
+import { MoreVertical, Check, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LabelDot } from '@/components/LabelPill';
+import { MAX_LABELS_PER_NODE } from '@/components/label-types';
 import { cn } from '@/lib/utils';
 import type { MenuGroup, MenuItem, StackMenuCtx } from './sidebar-types';
 import { useStackMenuItems } from '@/hooks/useStackMenuItems';
+import { LabelInlineCreateForm } from './LabelInlineCreateForm';
 
 interface StackKebabMenuProps {
   file: string;
@@ -26,32 +29,51 @@ function GroupHeader({ id }: { id: string }) {
 }
 
 function LabelsSub({ item, ctx }: { item: MenuItem; ctx: StackMenuCtx }) {
+  const [creating, setCreating] = useState(false);
   return (
-    <DropdownMenuSub>
+    <DropdownMenuSub onOpenChange={open => { if (!open) setCreating(false); }}>
       <DropdownMenuSubTrigger>
         <item.icon className="h-4 w-4 mr-2" strokeWidth={1.5} />
         {item.label}
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="min-w-[180px]">
-        {ctx.labels.length === 0 && (
-          <DropdownMenuItem disabled>
-            <span className="text-xs text-muted-foreground">No labels yet</span>
-          </DropdownMenuItem>
-        )}
-        {ctx.labels.map(label => {
-          const assigned = ctx.assignedLabelIds.includes(label.id);
-          return (
-            <DropdownMenuItem key={label.id} onSelect={(e) => { e.preventDefault(); ctx.toggleLabel(label.id); }}>
-              <LabelDot color={label.color} />
-              <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
-              {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
+      <DropdownMenuSubContent className="min-w-[200px]">
+        {creating ? (
+          <LabelInlineCreateForm
+            onSubmit={async (name, color) => {
+              await ctx.createAndAssignLabel(name, color);
+              setCreating(false);
+            }}
+            onCancel={() => setCreating(false)}
+          />
+        ) : (
+          <>
+            {ctx.labels.length === 0 && (
+              <DropdownMenuItem disabled>
+                <span className="text-xs text-muted-foreground">No labels yet</span>
+              </DropdownMenuItem>
+            )}
+            {ctx.labels.map(label => {
+              const assigned = ctx.assignedLabelIds.includes(label.id);
+              return (
+                <DropdownMenuItem key={label.id} onSelect={(e) => { e.preventDefault(); ctx.toggleLabel(label.id); }}>
+                  <LabelDot color={label.color} />
+                  <span className="flex-1 font-mono text-[12px] ml-2">{label.name}</span>
+                  {assigned && <Check className="w-3.5 h-3.5 text-success ml-auto shrink-0" strokeWidth={1.5} />}
+                </DropdownMenuItem>
+              );
+            })}
+            <DropdownMenuSeparator />
+            {ctx.labels.length < MAX_LABELS_PER_NODE && (
+              <DropdownMenuItem onSelect={e => { e.preventDefault(); setCreating(true); }}>
+                <Plus className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} />
+                <span className="text-xs">New label</span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={ctx.openLabelManager}>
+              <span className="text-xs">Manage labels...</span>
             </DropdownMenuItem>
-          );
-        })}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={ctx.openLabelManager}>
-          <span className="text-xs">Manage labels...</span>
-        </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );

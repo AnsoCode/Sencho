@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { Label } from '../label-types';
+import type { Label, LabelColor } from '../label-types';
 
 export type MenuGroupId = 'inspect' | 'organize' | 'lifecycle' | 'destructive';
 
@@ -43,6 +43,7 @@ export interface StackMenuCtx {
   pin: () => void;
   unpin: () => void;
   toggleLabel: (labelId: number) => void;
+  createAndAssignLabel: (name: string, color: LabelColor) => Promise<void>;
   openLabelManager: () => void;
 }
 

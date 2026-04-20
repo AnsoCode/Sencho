@@ -63,9 +63,10 @@ interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     initialSection?: SectionId;
+    onLabelsChanged?: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, initialSection, onLabelsChanged }: SettingsModalProps) {
     const { activeNode } = useNodes();
     const { isAdmin } = useAuth();
     const { license, isPaid } = useLicense();
@@ -302,7 +303,7 @@ export function SettingsModal({ isOpen, onClose, initialSection }: SettingsModal
             case 'sso': return <SSOSection />;
             case 'api-tokens': return <ApiTokensSection />;
             case 'registries': return <RegistriesSection />;
-            case 'labels': return <LabelsSection />;
+            case 'labels': return <LabelsSection onLabelsChanged={onLabelsChanged} />;
             case 'system':
                 return (
                     <SystemSection
