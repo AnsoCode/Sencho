@@ -72,7 +72,12 @@ export function StackRow(props: StackRowProps) {
       )}
       {hasUpdate && (
         <RowTooltip
-          trigger={<span className="w-2 h-2 rounded-full bg-info animate-pulse" />}
+          trigger={(
+            <span className="relative inline-flex w-2 h-2 shrink-0">
+              <span className="absolute inset-0 rounded-full bg-update opacity-75 animate-ping" />
+              <span className="relative w-2 h-2 rounded-full bg-update" />
+            </span>
+          )}
           label="Update available"
         />
       )}
