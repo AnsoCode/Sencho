@@ -597,6 +597,7 @@ export default function EditorLayout() {
     setStackStatuses(prev => ({ ...prev, [stackFile]: status }));
   };
 
+  // Stable identity required: captured by buildMenuCtx's memoization and passed as a prop; unstable refs cause descendant re-render churn.
   const refreshLabels = useCallback(async () => {
     if (!isPaid) return;
     try {
