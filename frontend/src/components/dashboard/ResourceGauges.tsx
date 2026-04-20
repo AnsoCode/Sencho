@@ -88,8 +88,7 @@ export function ResourceGauges({ systemStats, cpuHistory, netHistory, historyEnd
             points={cpuHistory}
             stroke="var(--chart-1)"
             fill="var(--chart-1)"
-            peakColor="var(--chart-2)"
-            peakIndex={cpuPeakIndex >= 0 ? cpuPeakIndex : undefined}
+            showPeak={false}
           />
         </div>
       </div>
