@@ -29,10 +29,10 @@ The top of the page is a status masthead that summarises the state of the entire
 Below the masthead, switch between two layouts:
 
 - **Grid** (default): one card per node. The local node is pinned at the top with a cyan accent rail and a ★ Local badge so it is never confused with a remote.
-- **Topology**: a connection diagram with the local node on the left and remotes radiating to the right. Connector lines colour by link health (cyan when online, amber when critical, dashed rose when offline), and each node chip shows its status dot, CPU and memory readings. Click a node to jump to its details.
+- **Topology**: an interactive hub-and-spoke diagram with the local node on the left and remotes radiating to the right. Each node renders as a rack card with a status pill (Online, Critical, or Offline), a Local or Remote badge, CPU, memory, and disk bars, and a stack and running-container summary. The local node is framed with a cyan ring; critical nodes show a lightning icon; offline nodes are muted. Connector lines colour by link health (cyan when online, amber when critical, dashed when offline). Pan, zoom, drag nodes, and use the minimap to navigate large fleets. Click a node to jump to its details.
 
 <Frame>
-  <img src="/images/fleet-view/fleet-topology.png" alt="Fleet Topology view showing the local node on the left with a dashed connector to an offline remote" />
+  <img src="/images/fleet-view/fleet-topology.png" alt="Fleet Topology view showing the local node connected to a remote, each rendered as a rack card with CPU, memory, and disk bars" />
 </Frame>
 
 ### Tabs
