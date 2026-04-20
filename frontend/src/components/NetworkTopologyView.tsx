@@ -130,8 +130,9 @@ const nodeTypes: NodeTypes = {
 
 // React Flow's inline style objects cannot resolve CSS custom properties,
 // so raw oklch values are used here as a necessary escape hatch.
+const BRAND_COLOR = 'oklch(0.78 0.11 195)';
 const EDGE_COLORS = [
-    'oklch(0.75 0.08 192)', // brand teal
+    BRAND_COLOR,
     'oklch(0.70 0.10 150)', // green
     'oklch(0.70 0.10 280)', // purple
     'oklch(0.70 0.10 30)',  // orange
@@ -339,7 +340,7 @@ export default function NetworkTopologyView({ onContainerClick }: NetworkTopolog
                     <MiniMap
                         className="!bg-card !border-card-border !shadow-card-bevel"
                         nodeColor={(node) => {
-                            if (node.type === 'network') return 'oklch(0.75 0.08 192)';
+                            if (node.type === 'network') return BRAND_COLOR;
                             return 'oklch(0.50 0 0)';
                         }}
                         maskColor="oklch(0 0 0 / 0.2)"

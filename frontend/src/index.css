@@ -8,52 +8,52 @@
    LIGHT THEME
 ───────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(0.97 0 0);
-  --foreground: oklch(0.15 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0 0);
-  --popover: oklch(1 0 0 / 0.92);
-  --popover-foreground: oklch(0.15 0 0);
-  --primary: oklch(0.15 0 0);
-  --primary-foreground: oklch(1 0 0);
+  --background: oklch(0.97 0.005 80);
+  --foreground: oklch(0.15 0.005 80);
+  --card: oklch(1 0.003 80);
+  --card-foreground: oklch(0.15 0.005 80);
+  --popover: oklch(1 0.003 80 / 0.92);
+  --popover-foreground: oklch(0.15 0.005 80);
+  --primary: oklch(0.15 0.005 80);
+  --primary-foreground: oklch(1 0.003 80);
   --secondary: oklch(0 0 0 / 0.05);
-  --secondary-foreground: oklch(0.15 0 0);
+  --secondary-foreground: oklch(0.15 0.005 80);
   --muted: oklch(0 0 0 / 0.04);
   --muted-foreground: oklch(0.50 0 0);
   --accent: oklch(0 0 0 / 0.06);
-  --accent-foreground: oklch(0.15 0 0);
-  --destructive: oklch(0.6300 0.1900 23.0300);
-  --destructive-foreground: oklch(1 0 0);
+  --accent-foreground: oklch(0.15 0.005 80);
+  --destructive: oklch(0.63 0.18 20);
+  --destructive-foreground: oklch(1 0.003 80);
   --border: oklch(0 0 0 / 0.10);
-  --input: oklch(0.97 0 0);
-  --ring: oklch(0.50 0.14 200);
+  --input: oklch(0.97 0.005 80);
+  --ring: oklch(0.50 0.11 195);
 
-  /* Brand - technical cyan, the signature accent */
-  --brand: oklch(0.50 0.14 200);
-  --brand-foreground: oklch(1 0 0);
-  --brand-muted: oklch(0.50 0.14 200 / 0.12);
+  /* Brand: technical cyan, the signature accent */
+  --brand: oklch(0.50 0.11 195);
+  --brand-foreground: oklch(1 0.003 80);
+  --brand-muted: oklch(0.50 0.11 195 / 0.12);
 
-  /* Glass — frosted surface system */
-  --glass: oklch(1 0 0);
+  /* Glass: frosted surface system */
+  --glass: oklch(1 0.003 80);
   --glass-border: oklch(0 0 0 / 0.10);
   --glass-highlight: oklch(0 0 0 / 0.06);
 
   /* Semantic status colors */
-  --success: oklch(0.65 0.17 155);
-  --success-foreground: oklch(1 0 0);
-  --success-muted: oklch(0.65 0.17 155 / 0.12);
-  --warning: oklch(0.75 0.16 60);
+  --success: oklch(0.65 0.16 155);
+  --success-foreground: oklch(1 0.003 80);
+  --success-muted: oklch(0.65 0.16 155 / 0.12);
+  --warning: oklch(0.75 0.14 75);
   --warning-foreground: oklch(0.20 0 0);
-  --warning-muted: oklch(0.75 0.16 60 / 0.12);
+  --warning-muted: oklch(0.75 0.14 75 / 0.12);
   --info: oklch(0.62 0.14 250);
   --info-foreground: oklch(1 0 0);
   --info-muted: oklch(0.62 0.14 250 / 0.12);
   --update: oklch(0.62 0.22 320);
   --update-foreground: oklch(1 0 0);
   --update-muted: oklch(0.62 0.22 320 / 0.12);
-  --destructive-muted: oklch(0.63 0.19 23 / 0.12);
+  --destructive-muted: oklch(0.63 0.18 20 / 0.12);
 
-  /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
+  /* Charts: cyan leads as the primary data color, amber for peaks, rose for errors */
   --chart-1: var(--brand);
   --chart-2: var(--warning);
   --chart-3: var(--destructive);
@@ -65,27 +65,27 @@
   --data-peak: var(--warning);
 
   /* Sidebar */
-  --sidebar: oklch(0.98 0 0 / 0.80);
-  --sidebar-foreground: oklch(0.15 0 0);
-  --sidebar-primary: oklch(0.15 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar: oklch(0.98 0.005 80 / 0.80);
+  --sidebar-foreground: oklch(0.15 0.005 80);
+  --sidebar-primary: oklch(0.15 0.005 80);
+  --sidebar-primary-foreground: oklch(1 0.003 80);
   --sidebar-accent: oklch(0 0 0 / 0.06);
-  --sidebar-accent-foreground: oklch(0.15 0 0);
+  --sidebar-accent-foreground: oklch(0.15 0.005 80);
   --sidebar-border: oklch(0 0 0 / 0.10);
-  --sidebar-ring: oklch(0.50 0.14 200);
+  --sidebar-ring: oklch(0.50 0.11 195);
 
-  /* Stat hierarchy — text brightness tiers */
+  /* Stat hierarchy: text brightness tiers */
   --stat-value: oklch(0.15 0 0);
   --stat-title: oklch(0.40 0 0);
   --stat-subtitle: oklch(0.50 0 0);
   --stat-icon: oklch(0.60 0 0);
 
-  /* Card borders — directional lighting */
+  /* Card borders: directional lighting */
   --card-border: oklch(0 0 0 / 0.08);
   --card-border-top: oklch(0 0 0 / 0.12);
   --card-border-hover: oklch(0 0 0 / 0.15);
 
-  /* Label palette — ten raw hues preserved for existing assignments */
+  /* Label palette: ten raw hues preserved for existing assignments */
   --label-teal: oklch(0.55 0.12 192);
   --label-teal-bg: oklch(0.55 0.12 192 / 0.12);
   --label-blue: oklch(0.55 0.14 250);
@@ -107,7 +107,7 @@
   --label-slate: oklch(0.50 0.01 250);
   --label-slate-bg: oklch(0.50 0.01 250 / 0.12);
 
-  /* Semantic label roles — new labels should consume these */
+  /* Semantic label roles: new labels should consume these */
   --label-env: var(--label-teal);
   --label-env-bg: var(--label-teal-bg);
   --label-role: var(--label-blue);
@@ -132,7 +132,7 @@
   /* Shape */
   --radius: 0.5rem;
 
-  /* Shadows — subtle, glass depth comes from blur not shadow */
+  /* Shadows: subtle, glass depth comes from blur not shadow */
   --shadow-x: 0px;
   --shadow-y: 1px;
   --shadow-blur: 2px;
@@ -148,7 +148,7 @@
   --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.10), 0px 8px 10px -1px hsl(0 0% 0% / 0.10);
   --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.25);
 
-  /* Material simulation — inherent depth */
+  /* Material simulation: inherent depth */
   --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.04), 0 1px 2px 0 oklch(0 0 0 / 0.05);
   --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.04);
   --chrome-top-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.45);
@@ -184,52 +184,52 @@
    DARK THEME
 ───────────────────────────────────────────────────────────── */
 .dark {
-  --background: oklch(0.08 0 0);
-  --foreground: oklch(0.92 0 0);
-  --card: oklch(0.12 0 0);
-  --card-foreground: oklch(0.92 0 0);
-  --popover: oklch(0.14 0 0 / 0.82);
-  --popover-foreground: oklch(0.92 0 0);
-  --primary: oklch(1 0 0);
+  --background: oklch(0.08 0.003 80);
+  --foreground: oklch(0.94 0.01 80);
+  --card: oklch(0.14 0.005 80);
+  --card-foreground: oklch(0.94 0.01 80);
+  --popover: oklch(0.16 0.005 80 / 0.82);
+  --popover-foreground: oklch(0.94 0.01 80);
+  --primary: oklch(0.98 0.01 80);
   --primary-foreground: oklch(0.10 0 0);
-  --secondary: oklch(0.12 0 0);
-  --secondary-foreground: oklch(0.92 0 0);
-  --muted: oklch(0.12 0 0);
+  --secondary: oklch(0.14 0.005 80);
+  --secondary-foreground: oklch(0.94 0.01 80);
+  --muted: oklch(0.14 0.005 80);
   --muted-foreground: oklch(0.45 0 0);
   --accent: oklch(1 0 0 / 0.06);
-  --accent-foreground: oklch(0.92 0 0);
-  --destructive: oklch(0.6900 0.2000 23.9100);
-  --destructive-foreground: oklch(0.92 0 0);
+  --accent-foreground: oklch(0.94 0.01 80);
+  --destructive: oklch(0.72 0.18 20);
+  --destructive-foreground: oklch(0.94 0.01 80);
   --border: oklch(1 0 0 / 0.06);
-  --input: oklch(0.12 0 0);
-  --ring: oklch(0.75 0.08 192);
+  --input: oklch(0.14 0.005 80);
+  --ring: oklch(0.78 0.11 195);
 
-  /* Brand - desaturated teal accent */
-  --brand: oklch(0.75 0.08 192);
+  /* Brand: desaturated teal accent */
+  --brand: oklch(0.78 0.11 195);
   --brand-foreground: oklch(0.05 0 0);
-  --brand-muted: oklch(0.75 0.08 192 / 0.12);
+  --brand-muted: oklch(0.78 0.11 195 / 0.12);
 
-  /* Glass — solid surface system (no blur on static surfaces) */
-  --glass: oklch(0.12 0 0);
+  /* Glass: solid surface system (no blur on static surfaces) */
+  --glass: oklch(0.14 0.005 80);
   --glass-border: oklch(1 0 0 / 0.06);
   --glass-highlight: oklch(1 0 0 / 0.06);
 
   /* Semantic status colors */
-  --success: oklch(0.72 0.17 155);
+  --success: oklch(0.78 0.16 155);
   --success-foreground: oklch(0.10 0 0);
-  --success-muted: oklch(0.72 0.17 155 / 0.15);
-  --warning: oklch(0.80 0.16 60);
+  --success-muted: oklch(0.78 0.16 155 / 0.15);
+  --warning: oklch(0.82 0.14 75);
   --warning-foreground: oklch(0.10 0 0);
-  --warning-muted: oklch(0.80 0.16 60 / 0.15);
+  --warning-muted: oklch(0.82 0.14 75 / 0.15);
   --info: oklch(0.70 0.14 250);
   --info-foreground: oklch(0.10 0 0);
   --info-muted: oklch(0.70 0.14 250 / 0.15);
   --update: oklch(0.72 0.20 320);
   --update-foreground: oklch(0.10 0 0);
   --update-muted: oklch(0.72 0.20 320 / 0.15);
-  --destructive-muted: oklch(0.69 0.20 24 / 0.15);
+  --destructive-muted: oklch(0.72 0.18 20 / 0.15);
 
-  /* Charts — cyan leads as the primary data color, amber for peaks, rose for errors */
+  /* Charts: cyan leads as the primary data color, amber for peaks, rose for errors */
   --chart-1: var(--brand);
   --chart-2: var(--warning);
   --chart-3: var(--destructive);
@@ -241,27 +241,27 @@
   --data-peak: var(--warning);
 
   /* Sidebar */
-  --sidebar: oklch(0.08 0 0 / 0.80);
-  --sidebar-foreground: oklch(0.92 0 0);
-  --sidebar-primary: oklch(1 0 0);
+  --sidebar: oklch(0.08 0.003 80 / 0.80);
+  --sidebar-foreground: oklch(0.94 0.01 80);
+  --sidebar-primary: oklch(0.98 0.01 80);
   --sidebar-primary-foreground: oklch(0.10 0 0);
   --sidebar-accent: oklch(1 0 0 / 0.07);
-  --sidebar-accent-foreground: oklch(0.92 0 0);
+  --sidebar-accent-foreground: oklch(0.94 0.01 80);
   --sidebar-border: oklch(1 0 0 / 0.06);
-  --sidebar-ring: oklch(0.75 0.08 192);
+  --sidebar-ring: oklch(0.78 0.11 195);
 
-  /* Stat hierarchy — text brightness tiers */
+  /* Stat hierarchy: text brightness tiers */
   --stat-value: oklch(0.93 0 0);
   --stat-title: oklch(0.55 0 0);
   --stat-subtitle: oklch(0.45 0 0);
   --stat-icon: oklch(0.35 0 0);
 
-  /* Card borders — directional lighting */
+  /* Card borders: directional lighting */
   --card-border: oklch(1 0 0 / 0.07);
   --card-border-top: oklch(1 0 0 / 0.14);
   --card-border-hover: oklch(1 0 0 / 0.14);
 
-  /* Label palette — ten raw hues preserved for existing assignments */
+  /* Label palette: ten raw hues preserved for existing assignments */
   --label-teal: oklch(0.75 0.10 192);
   --label-teal-bg: oklch(0.75 0.10 192 / 0.15);
   --label-blue: oklch(0.72 0.12 250);
@@ -283,7 +283,7 @@
   --label-slate: oklch(0.65 0.01 250);
   --label-slate-bg: oklch(0.65 0.01 250 / 0.15);
 
-  /* Semantic label roles — new labels should consume these */
+  /* Semantic label roles: new labels should consume these */
   --label-env: var(--label-teal);
   --label-env-bg: var(--label-teal-bg);
   --label-role: var(--label-blue);
@@ -308,12 +308,12 @@
   /* Shape */
   --radius: 0.5rem;
 
-  /* Material simulation — inherent depth */
+  /* Material simulation: inherent depth */
   --card-bevel: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
   --button-inner-glow: inset 0 1px 0 0 oklch(1 0 0 / 0.06);
   --chrome-top-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
 
-  /* Shadows — near-zero, depth comes from surface tone */
+  /* Shadows: near-zero, depth comes from surface tone */
   --shadow-x: 0px;
   --shadow-y: 1px;
   --shadow-blur: 2px;
@@ -469,7 +469,7 @@ body.density-compact {
       oklch(0.25 0.05 250 / 0.15),
       transparent
     ),
-    oklch(0.08 0 0);
+    var(--background);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -533,7 +533,7 @@ body {
 }
 
 .glass-float {
-  background: oklch(0.12 0 0 / 0.82);
+  background: oklch(0.14 0.005 80 / 0.82);
   backdrop-filter: blur(10px) saturate(1.15);
   -webkit-backdrop-filter: blur(10px) saturate(1.15);
   border: 1px solid oklch(1 0 0 / 0.07);
