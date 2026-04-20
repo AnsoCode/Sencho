@@ -993,6 +993,9 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         status: n.status,
         cpuPercent: getNodeCpu(n),
         memPercent: getNodeMem(n),
+        diskPercent: getNodeDisk(n),
+        stackCount: n.stacks?.length ?? 0,
+        runningCount: n.stats?.active ?? 0,
         critical: n.status === 'online' && isCritical(n),
     })), [processedNodes]);
 
