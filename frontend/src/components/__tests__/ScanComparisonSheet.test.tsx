@@ -206,6 +206,51 @@ describe('ScanComparisonSheet', () => {
     expect(screen.queryByRole('button', { name: /Shared/ })).toBeNull();
   });
 
+  it('rewrites CVE primary_url to cve.org for CVE IDs', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({
+        added: [vuln({
+          vulnerability_id: 'CVE-2024-1234',
+          primary_url: 'https://avd.aquasec.com/nvd/CVE-2024-1234',
+        })],
+      })),
+    );
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    const link = await screen.findByRole('link', { name: 'CVE-2024-1234' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://www.cve.org/CVERecord?id=CVE-2024-1234',
+    );
+  });
+
+  it('tags CRITICAL net-positive delta chip with destructive tone', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({
+        added: [vuln({ vulnerability_id: 'CVE-C', severity: 'CRITICAL' })],
+      })),
+    );
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    const chip = await screen.findByLabelText('CRITICAL delta +1');
+    expect(chip).toHaveAttribute('data-tone', 'destructive');
+  });
+
+  it('tags HIGH net-positive delta chip with warning tone (not destructive)', async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, result({
+        added: [vuln({ vulnerability_id: 'CVE-H', severity: 'HIGH' })],
+      })),
+    );
+
+    render(<ScanComparisonSheet baselineScanId={1} currentScanId={2} onClose={() => {}} />);
+
+    const chip = await screen.findByLabelText('HIGH delta +1');
+    expect(chip).toHaveAttribute('data-tone', 'warning');
+  });
+
   it('reloads when the scan ids change', async () => {
     mockedFetch.mockResolvedValue(jsonResponse(200, result()));
 

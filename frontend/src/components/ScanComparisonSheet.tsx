@@ -26,6 +26,8 @@ import {
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { cn } from '@/lib/utils';
+import { cveUrl } from '@/lib/cveUrl';
+import { SEVERITY_ROW_TINT } from '@/lib/severityStyles';
 import { SeverityChip } from './VulnerabilityScanSheet';
 import type {
   ScanCompareResult,
@@ -63,9 +65,25 @@ function countBySeverity(rows: Array<{ severity: VulnSeverity }>): Record<VulnSe
   return counts;
 }
 
-function formatDelta(added: number, removed: number): { text: string; tone: 'success' | 'warning' | 'muted' } {
+type DeltaTone = 'success' | 'warning' | 'destructive' | 'muted';
+
+const DELTA_TONE_CLASS: Record<DeltaTone, string> = {
+  destructive: 'text-destructive border-destructive/40 bg-destructive/10',
+  warning: 'text-warning border-warning/40 bg-warning/10',
+  success: 'text-success border-success/40 bg-success/10',
+  muted: 'text-muted-foreground border-border bg-muted/30',
+};
+
+function formatDelta(
+  severity: VulnSeverity,
+  added: number,
+  removed: number,
+): { text: string; tone: DeltaTone } {
   const net = added - removed;
-  if (net > 0) return { text: `+${net}`, tone: 'warning' };
+  if (net > 0) {
+    const tone: DeltaTone = severity === 'CRITICAL' ? 'destructive' : 'warning';
+    return { text: `+${net}`, tone };
+  }
   if (net < 0) return { text: `${net}`, tone: 'success' };
   return { text: '0', tone: 'muted' };
 }
@@ -130,12 +148,13 @@ export function ScanComparisonSheet({
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="sm:max-w-4xl flex flex-col p-0">
-        <SheetHeader className="p-6 pb-4 border-b">
-          <SheetTitle className="flex items-center gap-2 pr-6">
-            <GitCompare className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
-            <span className="font-mono text-sm truncate">
-              Compare scans
-            </span>
+        <SheetHeader className="px-6 pt-6 pb-4 pr-14 border-b border-border space-y-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+            Scan comparison
+          </div>
+          <SheetTitle className="flex items-center gap-2 font-display italic text-2xl">
+            <GitCompare className="w-5 h-5 text-muted-foreground not-italic" strokeWidth={1.5} />
+            Diff
           </SheetTitle>
           <SheetDescription className="sr-only">
             Side-by-side comparison of two vulnerability scans showing added, removed, and unchanged findings.
@@ -154,15 +173,15 @@ export function ScanComparisonSheet({
             <div className="px-6 py-4 border-b space-y-3">
               <div className="flex items-center gap-3 text-xs font-mono tabular-nums">
                 <div className="flex-1 min-w-0">
-                  <div className="text-stat-subtitle uppercase tracking-wide text-[10px]">Baseline</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">Baseline</div>
                   <div className="text-stat-value truncate">{data.scanA.image_ref}</div>
-                  <div className="text-stat-subtitle">{new Date(data.scanA.scanned_at).toLocaleString()}</div>
+                  <div className="text-stat-subtitle tabular-nums">{new Date(data.scanA.scanned_at).toLocaleString()}</div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-stat-subtitle uppercase tracking-wide text-[10px]">Current</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">Current</div>
                   <div className="text-stat-value truncate">{data.scanB.image_ref}</div>
-                  <div className="text-stat-subtitle">{new Date(data.scanB.scanned_at).toLocaleString()}</div>
+                  <div className="text-stat-subtitle tabular-nums">{new Date(data.scanB.scanned_at).toLocaleString()}</div>
                 </div>
               </div>
 
@@ -191,23 +210,18 @@ export function ScanComparisonSheet({
               {addedCounts && removedCounts && (
                 <div className="flex flex-wrap gap-2">
                   {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as VulnSeverity[]).map((sev) => {
-                    const delta = formatDelta(addedCounts[sev], removedCounts[sev]);
-                    const toneClass =
-                      delta.tone === 'warning'
-                        ? 'text-warning border-warning/40 bg-warning/10'
-                        : delta.tone === 'success'
-                          ? 'text-success border-success/40 bg-success/10'
-                          : 'text-muted-foreground border-border bg-muted/30';
+                    const delta = formatDelta(sev, addedCounts[sev], removedCounts[sev]);
                     return (
                       <span
                         key={sev}
                         aria-label={`${sev} delta ${delta.text}`}
+                        data-tone={delta.tone}
                         className={cn(
-                          'inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-mono tabular-nums',
-                          toneClass,
+                          'inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs font-mono tabular-nums shadow-card-bevel',
+                          DELTA_TONE_CLASS[delta.tone],
                         )}
                       >
-                        <span className="uppercase tracking-wide text-[10px]">{sev}</span>
+                        <span className="uppercase tracking-[0.18em] text-[10px]">{sev}</span>
                         <span>{delta.text}</span>
                       </span>
                     );
@@ -297,24 +311,23 @@ export function ScanComparisonSheet({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[180px]">CVE</TableHead>
-                        <TableHead>Package</TableHead>
-                        <TableHead className="w-[100px]">Severity</TableHead>
-                        <TableHead className="w-[110px]">Status</TableHead>
+                        <TableHead className="w-[180px] text-[10px] uppercase tracking-[0.18em] font-mono text-stat-subtitle">CVE</TableHead>
+                        <TableHead className="text-[10px] uppercase tracking-[0.18em] font-mono text-stat-subtitle">Package</TableHead>
+                        <TableHead className="w-[100px] text-[10px] uppercase tracking-[0.18em] font-mono text-stat-subtitle">Severity</TableHead>
+                        <TableHead className="w-[110px] text-[10px] uppercase tracking-[0.18em] font-mono text-stat-subtitle">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {pageItems.map((v, idx) => {
-                        const baseRowClass =
-                          filter === 'added'
-                            ? 'bg-destructive/5'
-                            : filter === 'removed'
-                              ? 'bg-success/5'
-                              : 'opacity-70';
-                        const rowClass = cn(baseRowClass, v.suppressed && 'opacity-60');
+                        const href = cveUrl(v.vulnerability_id, v.primary_url);
+                        const rowClass = cn(
+                          SEVERITY_ROW_TINT[v.severity],
+                          filter === 'unchanged' && 'opacity-75',
+                          v.suppressed && 'opacity-60',
+                        );
                         return (
                           <TableRow key={`${v.vulnerability_id}-${v.pkg_name}-${idx}`} className={rowClass}>
-                            <TableCell className="font-mono text-xs">
+                            <TableCell className="font-mono text-xs tabular-nums">
                               <span className="inline-flex items-center gap-1.5">
                                 {v.suppressed && (
                                   <ShieldOff
@@ -323,9 +336,9 @@ export function ScanComparisonSheet({
                                     aria-label="Suppressed"
                                   />
                                 )}
-                                {v.primary_url ? (
+                                {href ? (
                                   <a
-                                    href={v.primary_url}
+                                    href={href}
                                     target="_blank"
                                     rel="noreferrer noopener"
                                     className="hover:underline"
