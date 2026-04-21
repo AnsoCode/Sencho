@@ -806,7 +806,7 @@ class TrivyService {
         try {
             const { env, cleanup } = await this.buildEnv();
             try {
-                const args = ['config', '--format', 'json', '--quiet', '--no-progress', resolved];
+                const args = ['config', '--format', 'json', '--quiet', resolved];
                 const { stdout } = await execFileAsync(binary, args, {
                     env,
                     timeout: SCAN_TIMEOUT_MS,
