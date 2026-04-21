@@ -12,11 +12,20 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SegmentedControl } from '@/components/ui/segmented-control';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { NotificationItem } from './dashboard/types';
 import type { Node } from '@/context/NodeContext';
 
+const NODE_FILTER_ALL = 'all' as const;
 type NotifFilter = 'all' | 'unread' | 'alerts';
+type NodeFilter = typeof NODE_FILTER_ALL | number;
 
 type LevelConfig = {
     icon: LucideIcon;
@@ -77,10 +86,16 @@ function formatRelative(ms: number): string {
     return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function applyFilter(items: NotificationItem[], filter: NotifFilter): NotificationItem[] {
-    if (filter === 'unread') return items.filter((n) => !n.is_read);
-    if (filter === 'alerts') return items.filter((n) => n.level === 'warning' || n.level === 'error');
-    return items;
+function applyFilter(
+    items: NotificationItem[],
+    filter: NotifFilter,
+    nodeFilter: NodeFilter,
+): NotificationItem[] {
+    let result = items;
+    if (filter === 'unread') result = result.filter((n) => !n.is_read);
+    else if (filter === 'alerts') result = result.filter((n) => n.level === 'warning' || n.level === 'error');
+    if (nodeFilter !== NODE_FILTER_ALL) result = result.filter((n) => n.nodeId === nodeFilter);
+    return result;
 }
 
 interface NotificationPanelProps {
@@ -101,6 +116,7 @@ export function NotificationPanel({
     onNavigate,
 }: NotificationPanelProps) {
     const [filter, setFilter] = useState<NotifFilter>('all');
+    const [nodeFilter, setNodeFilter] = useState<NodeFilter>(NODE_FILTER_ALL);
     const [open, setOpen] = useState(false);
 
     const unreadCount = useMemo(
@@ -114,7 +130,20 @@ export function NotificationPanel({
         return ids;
     }, [nodes]);
 
-    const filtered = useMemo(() => applyFilter(notifications, filter), [notifications, filter]);
+    const showNodeFilter = nodes.length > 1;
+
+    // Derive the effective filter at render time so a removed node falls back
+    // to "all" without needing a state-syncing effect (which the
+    // react-hooks/set-state-in-effect rule forbids).
+    const effectiveNodeFilter: NodeFilter =
+        nodeFilter === NODE_FILTER_ALL || nodes.some((n) => n.id === nodeFilter)
+            ? nodeFilter
+            : NODE_FILTER_ALL;
+
+    const filtered = useMemo(
+        () => applyFilter(notifications, filter, effectiveNodeFilter),
+        [notifications, filter, effectiveNodeFilter],
+    );
     const groups = useMemo(() => groupByDay(filtered), [filtered]);
 
     const filterOptions = useMemo(
@@ -205,7 +234,35 @@ export function NotificationPanel({
                 </div>
 
                 {/* Filter segment */}
-                <div className="flex items-center justify-end border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
+                <div
+                    className={cn(
+                        'flex items-center gap-2 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]',
+                        showNodeFilter ? 'justify-between' : 'justify-end',
+                    )}
+                >
+                    {showNodeFilter ? (
+                        <Select
+                            value={effectiveNodeFilter === NODE_FILTER_ALL ? NODE_FILTER_ALL : String(effectiveNodeFilter)}
+                            onValueChange={(v) => setNodeFilter(v === NODE_FILTER_ALL ? NODE_FILTER_ALL : Number(v))}
+                        >
+                            <SelectTrigger
+                                aria-label="Filter by node"
+                                className="h-7 w-[140px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={NODE_FILTER_ALL} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                                    All nodes
+                                </SelectItem>
+                                {nodes.map((n) => (
+                                    <SelectItem key={n.id} value={String(n.id)} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                                        {n.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : null}
                     <SegmentedControl
                         value={filter}
                         options={filterOptions}
