@@ -1,0 +1,283 @@
+---
+title: Security
+description: Automate scan policies, CVE suppressions, and vulnerability scans from CI. Includes the deploy 409 response shape and admin bypass flow.
+---
+
+The Security API lets you manage scan policies, CVE suppressions, and trigger vulnerability scans from CI pipelines and automation scripts. Every endpoint in this reference is intended for external automation; internal frontend-only endpoints (finding listings, SARIF downloads) are not documented here.
+
+All endpoints require [Bearer token authentication](/api-reference/overview#authentication) and most are gated to Skipper or Admiral. See the per-endpoint **License** row for details.
+
+## Scan policies
+
+Scan policies define severity thresholds that Sencho evaluates on every post-deploy and scheduled scan. When a policy has `block_on_deploy=1`, a matching deploy is rejected at the pre-flight stage with an HTTP 409 response. See [Deploy Enforcement](/features/deploy-enforcement) for the full flow.
+
+Writes are admin-only and rejected on replica nodes (policies are managed on the control instance and replicate fleet-wide).
+
+### List policies
+
+**`GET /api/security/policies`**
+
+**License:** Skipper or Admiral
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  https://your-sencho-instance:3000/api/security/policies
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": 1,
+    "name": "prod-high-gate",
+    "node_id": null,
+    "node_identity": null,
+    "stack_pattern": "prod-*",
+    "max_severity": "HIGH",
+    "block_on_deploy": 1,
+    "enabled": 1,
+    "replicated_from_control": 0,
+    "created_at": 1745107200000,
+    "updated_at": 1745107200000
+  }
+]
+```
+
+### Create policy
+
+**`POST /api/security/policies`**
+
+**License:** Skipper or Admiral · **Role:** Admin
+
+| Field | Type | Required | Description |
+|-------|------|:--------:|-------------|
+| `name` | string | yes | Human-readable name shown in the UI. |
+| `stack_pattern` | string or `null` | no | Glob against stack names (e.g. `prod-*`). `null` matches every stack. |
+| `max_severity` | string | yes | One of `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. A scan whose highest finding meets or exceeds this severity triggers the policy. |
+| `block_on_deploy` | `0` or `1` | yes | When `1`, pre-flight violations reject deploys with HTTP 409. When `0`, post-deploy and scheduled scans dispatch warning alerts instead. |
+| `enabled` | `0` or `1` | no | Defaults to `1`. Disabled policies are never evaluated. |
+| `node_id` | number or `null` | no | Scope the policy to one node. `null` applies the policy fleet-wide. |
+
+```bash
+curl -X POST https://your-sencho-instance:3000/api/security/policies \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-high-gate",
+    "stack_pattern": "prod-*",
+    "max_severity": "HIGH",
+    "block_on_deploy": 1,
+    "enabled": 1
+  }'
+```
+
+**Response:** `201 Created` with the full policy object.
+
+**Errors:**
+
+- `400` `max_severity must be CRITICAL, HIGH, MEDIUM, or LOW`
+- `400` `Policy name is required`
+- `403` when called on a replica node
+
+### Update policy
+
+**`PUT /api/security/policies/{id}`**
+
+**License:** Skipper or Admiral · **Role:** Admin
+
+Any of the create fields can be updated individually. Omitted fields are left unchanged.
+
+```bash
+curl -X PUT https://your-sencho-instance:3000/api/security/policies/1 \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "block_on_deploy": 0 }'
+```
+
+**Response:** `200 OK` with the updated policy.
+
+**Errors:** `400 Invalid policy id`, `404 Policy not found`, `403` on replicas.
+
+### Delete policy
+
+**`DELETE /api/security/policies/{id}`**
+
+**License:** Skipper or Admiral · **Role:** Admin
+
+```bash
+curl -X DELETE https://your-sencho-instance:3000/api/security/policies/1 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+**Response:** `200 OK` `{"success": true}`. The call is idempotent; deleting a non-existent id returns the same shape.
+
+## CVE suppressions
+
+Suppressions let you mark individual CVEs as acknowledged so scan reads, comparisons, and exports downgrade them to a dimmed state. See [CVE Suppressions](/features/cve-suppressions) for the full flow.
+
+### List suppressions
+
+**`GET /api/security/suppressions`**
+
+**License:** Skipper or Admiral
+
+Response rows include an `active` boolean computed from the `expires_at` timestamp.
+
+```json
+[
+  {
+    "id": 3,
+    "cve_id": "CVE-2024-12345",
+    "pkg_name": "openssl",
+    "image_pattern": "alpine:*",
+    "reason": "Awaiting upstream patch. Reviewed by security on 2026-04-10.",
+    "created_by": "ops@example.com",
+    "created_at": 1744000000000,
+    "expires_at": 1746592000000,
+    "replicated_from_control": 0,
+    "active": true
+  }
+]
+```
+
+### Create suppression
+
+**`POST /api/security/suppressions`**
+
+**License:** Skipper or Admiral · **Role:** Admin
+
+| Field | Type | Required | Description |
+|-------|------|:--------:|-------------|
+| `cve_id` | string | yes | `CVE-YYYY-NNNN` or `GHSA-xxxx-xxxx-xxxx` format. |
+| `pkg_name` | string or `null` | no | Package name to narrow the scope (e.g. `openssl`). `null` suppresses every package match. |
+| `image_pattern` | string or `null` | no | Glob against image references. `null` applies fleet-wide. |
+| `reason` | string | yes | Required justification, up to 2000 characters. Surfaced on every dimmed row. |
+| `expires_at` | number or `null` | no | Unix timestamp in milliseconds. `null` for an indefinite suppression. |
+
+```bash
+curl -X POST https://your-sencho-instance:3000/api/security/suppressions \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cve_id": "CVE-2024-12345",
+    "pkg_name": "openssl",
+    "image_pattern": "alpine:*",
+    "reason": "Awaiting upstream patch.",
+    "expires_at": 1746592000000
+  }'
+```
+
+**Response:** `201 Created` with the full suppression.
+
+**Errors:** `400` on invalid shape (missing `reason`, malformed `cve_id`, over-length fields), `409` when a suppression already exists for the same `(cve_id, pkg_name, image_pattern)` triple, `403` on replicas.
+
+### Delete suppression
+
+**`DELETE /api/security/suppressions/{id}`**
+
+**License:** Skipper or Admiral · **Role:** Admin
+
+```bash
+curl -X DELETE https://your-sencho-instance:3000/api/security/suppressions/3 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+## Vulnerability scans
+
+### Trigger a scan
+
+**`POST /api/security/scan`**
+
+**License:** Community for vulnerability-only scans. Skipper or Admiral when `scanners` includes `secret`. · **Role:** Admin
+
+Accepts an image reference and starts an asynchronous scan. The response returns immediately with a `scanId` that you can poll.
+
+| Field | Type | Required | Description |
+|-------|------|:--------:|-------------|
+| `imageRef` | string | yes | Image reference Trivy will scan (must match Sencho's validator; `/`, `:`, `@`, alphanumerics, `-`, `_`, `.`). |
+| `stackName` | string | no | Associates the scan with a stack for display purposes. |
+| `force` | boolean | no | Default `false`. When `true`, ignores the 24-hour digest cache and runs Trivy again. |
+| `scanners` | `["vuln"]` or `["vuln","secret"]` | no | Omit for vuln-only. `secret` requires Skipper or Admiral. |
+
+```bash
+curl -X POST https://your-sencho-instance:3000/api/security/scan \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "imageRef": "nginx:1.27" }'
+```
+
+**Response:** `202 Accepted` `{ "scanId": 142 }`. The scan continues in the background.
+
+**Errors:** `400 imageRef is required`, `400 Invalid imageRef format`, `409 Already scanning this image`, `503 Trivy is not available on this host`.
+
+### List scans
+
+**`GET /api/security/scans`**
+
+**License:** Community
+
+Supports filters: `imageRef`, `imageRefLike`, `status`, `limit`, `offset`. Response is paginated with `total` and `scans` fields.
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  "https://your-sencho-instance:3000/api/security/scans?imageRefLike=nginx&limit=20"
+```
+
+## Stack deploy with policy
+
+Every stack deploy endpoint evaluates the scan policy gate before `docker compose up` runs. When a policy blocks the deploy, the endpoint returns HTTP 409.
+
+**Affected endpoints:** `POST /api/stacks/{stackName}/deploy`, `POST /api/stacks/{stackName}/update`, `POST /api/stacks/{stackName}/recreate`, `POST /api/stacks/from-git`, `POST /api/stacks/git-source/{sourceId}/apply`, `POST /api/stacks/deploy-template`.
+
+### Blocked-deploy response
+
+HTTP 409 Conflict. The response body is parseable JSON so CI pipelines can branch on it:
+
+```json
+{
+  "error": "Policy \"prod-high-gate\" blocked deploy: 2 image(s) exceed HIGH",
+  "policy": {
+    "id": 3,
+    "name": "prod-high-gate",
+    "maxSeverity": "HIGH"
+  },
+  "violations": [
+    {
+      "imageRef": "myapp:v1",
+      "severity": "CRITICAL",
+      "criticalCount": 2,
+      "highCount": 5,
+      "scanId": 142
+    },
+    {
+      "imageRef": "nginx:1.14",
+      "severity": "HIGH",
+      "criticalCount": 0,
+      "highCount": 3,
+      "scanId": 143
+    }
+  ]
+}
+```
+
+### Bypassing a block
+
+Admins can bypass the gate on a per-deploy basis by passing `?ignorePolicy=true` on the deploy URL. The flag is only honored when the calling session resolves to an admin user; API tokens with read-only or deploy-only scope cannot bypass a policy.
+
+```bash
+curl -X POST "https://your-sencho-instance:3000/api/stacks/myapp/deploy?ignorePolicy=true" \
+  -H "Authorization: Bearer ADMIN_API_TOKEN"
+```
+
+Every bypass is recorded in the [Audit Log](/features/audit-log) with the originating path and method, the actor's username, the policy name, and the list of bypassed images.
+
+**Response when bypass is honored:** `200 OK` with the normal deploy success payload and `bypassedPolicy: true`.
+
+**Response when bypass is denied:** the original `409 Conflict` payload is returned (the caller was not admin, or the token scope disallowed bypass).
+
+### Fail-open when Trivy is missing
+
+If Trivy is not installed on the target node, the gate fails open: the deploy proceeds with an HTTP 200 response and Sencho dispatches a warning notification `Pre-deploy scan for "<stack>" skipped: Trivy not installed on this node`. This keeps teams from being locked out when the scanner binary is unavailable.
+
+Install Trivy on the affected node to enforce the policy; see [Installing Trivy](/operations/trivy-setup).

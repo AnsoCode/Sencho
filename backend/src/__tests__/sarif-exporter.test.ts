@@ -39,6 +39,7 @@ function mkScan(overrides: Partial<VulnerabilityScan> = {}): VulnerabilityScan {
         status: 'completed',
         error: null,
         stack_context: null,
+        policy_evaluation: null,
         ...overrides,
     };
 }

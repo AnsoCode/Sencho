@@ -77,7 +77,7 @@ import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLev
 import SelfUpdateService from './services/SelfUpdateService';
 import TrivyService, { SbomFormat, DIGEST_CACHE_TTL_MS } from './services/TrivyService';
 import TrivyInstaller from './services/TrivyInstaller';
-import { severityRank } from './utils/severity';
+import { enforcePolicyPreDeploy } from './services/PolicyEnforcement';
 import { validateImageRef } from './utils/image-ref';
 import { applySuppressions } from './utils/suppression-filter';
 import { generateSarif } from './services/SarifExporter';
@@ -1610,6 +1610,58 @@ const requireScheduledTaskTier = (action: string, req: Request, res: Response): 
   return requireAdmiral(req, res);
 };
 
+/**
+ * Build the bypass-context options for `enforcePolicyPreDeploy` from a route
+ * request. Centralizes the "bypass requires admin + ignorePolicy=true" rule
+ * and the audit-log attribution fields so every call site is consistent.
+ *
+ * Bypass requires `?ignorePolicy=true` AND `req.user.role === 'admin'`. The
+ * `stack:deploy` permission alone is not sufficient for bypass because the
+ * `deployer` role has that permission for day-to-day deploys.
+ */
+function buildPolicyGateOptions(
+  req: Request,
+  overrides: { bypass?: boolean; actor?: string } = {},
+): { bypass: boolean; actor: string; ip: string; auditMethod: string; auditPath: string } {
+  const defaultBypass = req.query.ignorePolicy === 'true' && req.user?.role === 'admin';
+  return {
+    bypass: overrides.bypass ?? defaultBypass,
+    actor: overrides.actor ?? req.user?.username ?? 'unknown',
+    ip: (req.ip ?? req.socket.remoteAddress ?? '') as string,
+    auditMethod: req.method,
+    auditPath: req.originalUrl || req.url,
+  };
+}
+
+/**
+ * Run the pre-deploy policy gate for a route handler.
+ *
+ * Returns true if the deploy may proceed (allow, bypass, or no matching
+ * policy). Returns false if the route has already sent an HTTP 409; callers
+ * must return immediately in that case.
+ */
+async function runPolicyGate(
+  req: Request,
+  res: Response,
+  stackName: string,
+  nodeId: number,
+): Promise<boolean> {
+  const gate = await enforcePolicyPreDeploy(stackName, nodeId, buildPolicyGateOptions(req));
+  if (!gate.ok) {
+    res.status(409).json({
+      error: `Policy "${gate.policy?.name}" blocked deploy: ${gate.violations.length} image(s) exceed ${gate.policy?.max_severity}`,
+      policy: gate.policy && {
+        id: gate.policy.id,
+        name: gate.policy.name,
+        maxSeverity: gate.policy.max_severity,
+      },
+      violations: gate.violations,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function triggerPostDeployScan(
   stackName: string,
   nodeId: number,
@@ -1629,7 +1681,6 @@ async function triggerPostDeployScan(
     if (imageRefs.size === 0) return;
 
     const db = DatabaseService.getInstance();
-    const policy = db.getMatchingPolicy(nodeId, stackName, FleetSyncService.getSelfIdentity());
 
     for (const imageRef of imageRefs) {
       try {
@@ -1638,23 +1689,15 @@ async function triggerPostDeployScan(
           const cached = db.getLatestScanByDigest(digest, 'vuln');
           if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) continue;
         }
+        // Blocking enforcement has already run in enforcePolicyPreDeploy.
+        // The post-deploy scan persists a fresh drift result and `finishScan`
+        // attaches a PolicyEvaluation, which the UI surfaces as a banner.
         const scan = await svc.runScanAndPersist(imageRef, nodeId, 'deploy', stackName);
 
         if (scan.critical_count > 0 || scan.high_count > 0) {
           NotificationService.getInstance().dispatchAlert(
             scan.critical_count > 0 ? 'error' : 'warning',
             `Vulnerability scan for ${imageRef}: ${scan.critical_count} critical, ${scan.high_count} high`,
-            stackName,
-          );
-        }
-
-        if (
-          policy &&
-          severityRank(scan.highest_severity) >= severityRank(policy.max_severity)
-        ) {
-          NotificationService.getInstance().dispatchAlert(
-            policy.block_on_deploy ? 'error' : 'warning',
-            `Policy "${policy.name}" triggered for ${imageRef}: ${scan.highest_severity} exceeds ${policy.max_severity}`,
             stackName,
           );
         }
@@ -4322,6 +4365,16 @@ app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Res
       for (const stackName of validStacks) {
         try {
           if (action === 'deploy') {
+            const gate = await enforcePolicyPreDeploy(
+              stackName,
+              req.nodeId,
+              buildPolicyGateOptions(req),
+            );
+            if (!gate.ok) {
+              const blockedMsg = `Policy "${gate.policy?.name}" blocked deploy: ${gate.violations.length} image(s) exceed ${gate.policy?.max_severity}`;
+              results.push({ stackName, success: false, error: blockedMsg });
+              continue;
+            }
             await ComposeService.getInstance(req.nodeId).deployStack(stackName, undefined, false);
           } else {
             const dockerController = DockerController.getInstance(req.nodeId);
@@ -4916,13 +4969,22 @@ app.post('/api/stacks/from-git', async (req: Request, res: Response) => {
     let deployed = false;
     let deployError: string | undefined;
     if (deploy_now === true) {
-      try {
-        await ComposeService.getInstance(req.nodeId).deployStack(stack_name);
-        deployed = true;
-        invalidateNodeCaches(req.nodeId);
-      } catch (e) {
-        deployError = getErrorMessage(e, 'Deploy failed');
-        console.error(`[Stacks] Deploy after create-from-git failed for ${stack_name}:`, deployError);
+      const gate = await enforcePolicyPreDeploy(
+        stack_name,
+        req.nodeId,
+        buildPolicyGateOptions(req),
+      );
+      if (!gate.ok) {
+        deployError = `Policy "${gate.policy?.name}" blocked deploy: ${gate.violations.length} image(s) exceed ${gate.policy?.max_severity}`;
+      } else {
+        try {
+          await ComposeService.getInstance(req.nodeId).deployStack(stack_name);
+          deployed = true;
+          invalidateNodeCaches(req.nodeId);
+        } catch (e) {
+          deployError = getErrorMessage(e, 'Deploy failed');
+          console.error(`[Stacks] Deploy after create-from-git failed for ${stack_name}:`, deployError);
+        }
       }
     }
 
@@ -5087,6 +5149,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
+    if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Deploy starting', { stackName, atomic, nodeId: req.nodeId });
@@ -5223,6 +5286,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
+    if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Update starting', { stackName, atomic, nodeId: req.nodeId });
@@ -7423,6 +7487,16 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
 
     // 4. Deploy the stack with atomic rollback
     try {
+      if (!(await runPolicyGate(req, res, stackName, req.nodeId))) {
+        // Gate blocked: clean up the files we just wrote so the user can
+        // retry after remediating the vulnerable image.
+        try {
+          await fsService.deleteStack(stackName);
+        } catch (cleanupErr) {
+          console.error(`[Templates] Cleanup after policy block failed for ${stackName}:`, cleanupErr);
+        }
+        return;
+      }
       const atomic = LicenseService.getInstance().getTier() === 'paid';
       await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
       invalidateNodeCaches(req.nodeId);
@@ -7650,6 +7724,25 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
           } else {
             results.push(`Stack "${stackName}": all images up to date.`);
           }
+          continue;
+        }
+
+        // Auto-update is a background action initiated by the scheduler. A
+        // policy bypass is never appropriate here: if updated images fail
+        // the gate, skip this stack and raise a notification so an operator
+        // can review before retrying manually.
+        const autoUpdateGate = await enforcePolicyPreDeploy(
+          stackName,
+          req.nodeId,
+          buildPolicyGateOptions(req, {
+            bypass: false,
+            actor: `auto-update:${req.user?.username ?? 'scheduler'}`,
+          }),
+        );
+        if (!autoUpdateGate.ok) {
+          const blockedMsg = `Policy "${autoUpdateGate.policy?.name}" blocked auto-update: ${autoUpdateGate.violations.length} image(s) exceed ${autoUpdateGate.policy?.max_severity}`;
+          NotificationService.getInstance().dispatchAlert('warning', blockedMsg, stackName);
+          results.push(`Stack "${stackName}": ${blockedMsg}`);
           continue;
         }
 

@@ -29,6 +29,7 @@ import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Checkbox } from './ui/checkbox';
 import { GitSourceFields, type ApplyMode } from './stack/GitSourceFields';
+import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
@@ -179,6 +180,8 @@ export default function EditorLayout() {
   const { status: trivy } = useTrivyStatus();
   const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
+  const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
+  const [policyBypassing, setPolicyBypassing] = useState(false);
   const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
   const copiedDigestTimerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -1261,31 +1264,35 @@ export default function EditorLayout() {
     }
   };
 
-  const deployStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, 'deploy');
+  const runDeploy = async (stackName: string, stackFile: string, ignorePolicy: boolean): Promise<void> => {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/deploy`, {
-        method: 'POST',
-      });
+      const path = ignorePolicy
+        ? `/stacks/${stackName}/deploy?ignorePolicy=true`
+        : `/stacks/${stackName}/deploy`;
+      const response = await apiFetch(path, { method: 'POST' });
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Deploy failed');
+        const rawBody = await response.text();
+        if (response.status === 409) {
+          let parsed: PolicyBlockPayload | null = null;
+          try { parsed = JSON.parse(rawBody) as PolicyBlockPayload; } catch { /* not JSON */ }
+          if (parsed && parsed.policy && Array.isArray(parsed.violations)) {
+            setPolicyBlock({ stackName, payload: parsed });
+            if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
+            toast.error(`Deploy blocked by policy "${parsed.policy.name}"`);
+            return;
+          }
+        }
+        throw new Error(rawBody || 'Deploy failed');
       }
-      toast.success("Stack deployed successfully!");
-      // Refresh containers after deploy
+      setPolicyBlock(null);
+      toast.success(ignorePolicy ? 'Stack deployed (policy bypassed).' : 'Stack deployed successfully!');
       if (selectedFile === stackFile) {
         const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
         const conts = await containersRes.json();
         setContainers(Array.isArray(conts) ? conts : []);
       }
-      // Refresh backup info
       if (isPaid) {
         try {
           const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
@@ -1297,8 +1304,37 @@ export default function EditorLayout() {
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       const msg = (error as Error).message || 'Failed to deploy stack';
       toast.error(isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
+    }
+  };
+
+  const deployStack = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedFile || isStackBusy(selectedFile)) return;
+    const stackFile = selectedFile;
+    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
+    setStackAction(stackFile, 'deploy');
+    try {
+      await runDeploy(stackName, stackFile, false);
     } finally {
       clearStackAction(stackFile);
+      refreshStacks(true);
+    }
+  };
+
+  const bypassPolicyAndDeploy = async () => {
+    if (!policyBlock) return;
+    const stackFile = `${policyBlock.stackName}.yml`;
+    const existingFile = selectedFile && selectedFile.startsWith(policyBlock.stackName + '.')
+      ? selectedFile
+      : stackFile;
+    setPolicyBypassing(true);
+    setStackAction(existingFile, 'deploy');
+    try {
+      await runDeploy(policyBlock.stackName, existingFile, true);
+    } finally {
+      setPolicyBypassing(false);
+      clearStackAction(existingFile);
       refreshStacks(true);
     }
   };
@@ -2843,6 +2879,17 @@ export default function EditorLayout() {
         isOpen={alertSheetOpen}
         onClose={() => setAlertSheetOpen(false)}
         stackName={alertSheetStack}
+      />
+
+      {/* Pre-deploy policy block */}
+      <PolicyBlockDialog
+        open={policyBlock !== null}
+        payload={policyBlock?.payload ?? null}
+        stackName={policyBlock?.stackName ?? ''}
+        canBypass={isAdmin}
+        bypassing={policyBypassing}
+        onClose={() => setPolicyBlock(null)}
+        onBypass={bypassPolicyAndDeploy}
       />
 
       {/* Stack Auto-Heal Sheet */}

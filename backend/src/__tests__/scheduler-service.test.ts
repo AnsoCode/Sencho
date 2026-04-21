@@ -52,6 +52,7 @@ const {
     skipped: 0,
     failed: 0,
     severity: { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 },
+    violations: [],
   }),
 }));
 
@@ -842,6 +843,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
         low: opts.low ?? 0,
         unknown: opts.unknown ?? 0,
       },
+      violations: [],
     };
   }
 

@@ -14,6 +14,7 @@ import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { disableCapability, enableCapability } from './CapabilityRegistry';
 import TrivyInstaller, { type TrivySource } from './TrivyInstaller';
+import { FleetSyncService } from './FleetSyncService';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 import { SEVERITY_ORDER } from '../utils/severity';
@@ -85,11 +86,24 @@ export interface ScanAllNodeImagesSeverityTotals {
     unknown: number;
 }
 
+export interface ScanAllNodeImagesViolation {
+    imageRef: string;
+    scanId: number;
+    severity: VulnSeverity;
+    policyName: string;
+    maxSeverity: VulnSeverity;
+}
+
 export interface ScanAllNodeImagesResult {
     scanned: number;
     skipped: number;
     failed: number;
     severity: ScanAllNodeImagesSeverityTotals;
+    /**
+     * Policy violations observed across the freshly-scanned or cached rows.
+     * The scheduler uses this to dispatch alerts without re-querying the DB.
+     */
+    violations: ScanAllNodeImagesViolation[];
 }
 
 export interface TrivyVulnerability {
@@ -725,6 +739,27 @@ class TrivyService {
             );
             const stored = db.getVulnerabilityScan(scanId);
             if (!stored) throw new Error('Scan vanished after write');
+            // Evaluate against matching policy and persist the result so the
+            // UI can render a violation banner without re-running the match.
+            // This runs for every trigger (manual, deploy, deploy-preflight,
+            // scheduled, drift) so downstream surfaces stay consistent.
+            try {
+                const evaluation = db.evaluateScanAgainstPolicies(
+                    nodeId,
+                    stored,
+                    FleetSyncService.getSelfIdentity(),
+                );
+                if (evaluation) {
+                    db.setScanPolicyEvaluation(scanId, evaluation);
+                    stored.policy_evaluation = JSON.stringify(evaluation);
+                }
+            } catch (err) {
+                // Never fail the scan because policy evaluation stumbled.
+                console.warn(
+                    `[Trivy] policy evaluation failed for scanId=${scanId}:`,
+                    getErrorMessage(err, 'unknown error'),
+                );
+            }
             diag(
                 `finishScan: scanId=${scanId} completed vulns=${result.totalVulnerabilities} secrets=${result.secretCount} highest=${result.highestSeverity ?? 'none'} durationMs=${result.metadata.scanDurationMs}`,
             );
@@ -750,6 +785,29 @@ class TrivyService {
     ): Promise<VulnerabilityScan> {
         const scanId = this.beginScan(imageRef, nodeId, triggeredBy, stackContext, opts.scanners);
         return this.finishScan(scanId, imageRef, nodeId, opts);
+    }
+
+    /**
+     * Scan a single image for the pre-deploy policy gate.
+     *
+     * Reuses the 24h digest cache (useCache=true) so repeat deploys of a
+     * known-safe image do not pay full scan cost. Only runs the vulnerability
+     * scanner (secrets/misconfig are irrelevant to the gate and add latency).
+     * The scan is persisted as a normal row with triggered_by=deploy-preflight
+     * so the history and compare views continue to work unchanged.
+     */
+    async scanImagePreflight(
+        imageRef: string,
+        nodeId: number,
+        stackName: string | null,
+    ): Promise<VulnerabilityScan> {
+        return this.runScanAndPersist(
+            imageRef,
+            nodeId,
+            'deploy-preflight',
+            stackName,
+            { useCache: true, scanners: ['vuln'] },
+        );
     }
 
     /**
@@ -871,6 +929,22 @@ class TrivyService {
                 );
                 const stored = db.getVulnerabilityScan(scanId);
                 if (!stored) throw new Error('Scan vanished after write');
+                try {
+                    const evaluation = db.evaluateScanAgainstPolicies(
+                        nodeId,
+                        stored,
+                        FleetSyncService.getSelfIdentity(),
+                    );
+                    if (evaluation) {
+                        db.setScanPolicyEvaluation(scanId, evaluation);
+                        stored.policy_evaluation = JSON.stringify(evaluation);
+                    }
+                } catch (err) {
+                    console.warn(
+                        `[Trivy] policy evaluation failed for stack scanId=${scanId}:`,
+                        getErrorMessage(err, 'unknown error'),
+                    );
+                }
                 return stored;
             } finally {
                 cleanup();
@@ -906,6 +980,7 @@ class TrivyService {
         let failed = 0;
         const severity = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 };
         const countedDigests = new Set<string>();
+        const violations: ScanAllNodeImagesViolation[] = [];
 
         const addSeverity = (row: VulnerabilityScan | null): void => {
             if (!row) return;
@@ -914,6 +989,28 @@ class TrivyService {
             severity.medium += row.medium_count;
             severity.low += row.low_count;
             severity.unknown += row.unknown_count;
+        };
+
+        const collectViolation = (row: VulnerabilityScan | null): void => {
+            if (!row || !row.policy_evaluation) return;
+            try {
+                const parsed = JSON.parse(row.policy_evaluation) as {
+                    violated: boolean;
+                    policyName: string;
+                    maxSeverity: VulnSeverity;
+                };
+                if (parsed.violated) {
+                    violations.push({
+                        imageRef: row.image_ref,
+                        scanId: row.id,
+                        severity: row.highest_severity ?? 'UNKNOWN',
+                        policyName: parsed.policyName,
+                        maxSeverity: parsed.maxSeverity,
+                    });
+                }
+            } catch {
+                // Ignore malformed evaluation JSON; presence is informational.
+            }
         };
 
         for (const ref of imageRefs) {
@@ -926,12 +1023,14 @@ class TrivyService {
                     if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) {
                         skipped++;
                         addSeverity(cached);
+                        collectViolation(cached);
                         countedDigests.add(digest);
                         continue;
                     }
                 }
                 const fresh = await this.runScanAndPersist(ref, nodeId, triggeredBy, null);
                 addSeverity(fresh);
+                collectViolation(fresh);
                 scanned++;
                 if (digest) countedDigests.add(digest);
             } catch (err) {
@@ -940,7 +1039,7 @@ class TrivyService {
             }
             await new Promise((r) => setTimeout(r, 300));
         }
-        return { scanned, skipped, failed, severity };
+        return { scanned, skipped, failed, severity, violations };
     }
 
     async generateSBOM(imageRef: string, format: SbomFormat): Promise<string> {

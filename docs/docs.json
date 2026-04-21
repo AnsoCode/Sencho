@@ -120,6 +120,7 @@
               "features/api-tokens",
               "features/private-registries",
               "features/vulnerability-scanning",
+              "features/deploy-enforcement",
               "features/cve-suppressions",
               "features/auto-update-policies",
               "features/auto-heal-policies",
@@ -158,6 +159,7 @@
         "openapi": "openapi.yaml",
         "pages": [
           "api-reference/overview",
+          "api-reference/security",
           {
             "group": "Health & Meta",
             "pages": [
