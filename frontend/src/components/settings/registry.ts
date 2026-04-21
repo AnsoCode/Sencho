@@ -131,7 +131,7 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         description: 'In-app toasts and browser push for stack, container, and system events.',
         keywords: ['toasts', 'push', 'events', 'alerts', 'inbox'],
         tier: null,
-        scope: 'global',
+        scope: 'node',
     },
     {
         id: 'notification-routing',
@@ -170,9 +170,8 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         description: 'Image scanning, suppressions, and posture defaults.',
         keywords: ['scan', 'cve', 'trivy', 'suppressions', 'hardening'],
         tier: 'skipper',
-        scope: 'global',
+        scope: 'node',
         adminOnly: true,
-        hiddenOnRemote: true,
     },
     {
         id: 'developer',
@@ -190,8 +189,7 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         description: 'Template registry URL and featured-catalog source.',
         keywords: ['templates', 'registry', 'catalog', 'featured'],
         tier: null,
-        scope: 'global',
-        hiddenOnRemote: true,
+        scope: 'node',
     },
     {
         id: 'support',

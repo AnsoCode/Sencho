@@ -170,12 +170,12 @@ describe('DatabaseService - cleanupOldNotifications', () => {
     const oldTimestamp = Date.now() - 60 * 24 * 60 * 60 * 1000; // 60 days ago
     const recentTimestamp = Date.now() - 1 * 24 * 60 * 60 * 1000; // 1 day ago
 
-    db.addNotificationHistory({ level: 'info', message: 'old notification', timestamp: oldTimestamp });
-    db.addNotificationHistory({ level: 'info', message: 'recent notification', timestamp: recentTimestamp });
+    db.addNotificationHistory(0, { level: 'info', message: 'old notification', timestamp: oldTimestamp });
+    db.addNotificationHistory(0, { level: 'info', message: 'recent notification', timestamp: recentTimestamp });
 
     db.cleanupOldNotifications(30);
 
-    const history = db.getNotificationHistory(200);
+    const history = db.getNotificationHistory(0, 200);
     const old = history.find((n: any) => n.message === 'old notification');
     const recent = history.find((n: any) => n.message === 'recent notification');
     expect(old).toBeUndefined();
@@ -223,7 +223,7 @@ describe('DatabaseService - notification history cap', () => {
   it('auto-prunes to 100 entries when adding notifications', () => {
     // Insert 105 notifications
     for (let i = 0; i < 105; i++) {
-      db.addNotificationHistory({
+      db.addNotificationHistory(0, {
         level: 'info',
         message: `cap-test-${i}`,
         timestamp: Date.now() + i,
@@ -231,23 +231,23 @@ describe('DatabaseService - notification history cap', () => {
     }
 
     // The table should have at most 100 rows
-    const all = db.getNotificationHistory(200);
+    const all = db.getNotificationHistory(0, 200);
     expect(all.length).toBeLessThanOrEqual(100);
   });
 
   it('keeps the most recent entries after pruning', () => {
     // Clear all first
-    db.deleteAllNotifications();
+    db.deleteAllNotifications(0);
 
     for (let i = 0; i < 105; i++) {
-      db.addNotificationHistory({
+      db.addNotificationHistory(0, {
         level: 'info',
         message: `order-test-${i}`,
         timestamp: Date.now() + i * 10,
       });
     }
 
-    const all = db.getNotificationHistory(200);
+    const all = db.getNotificationHistory(0, 200);
     // The newest entries should survive (ordered DESC by timestamp)
     expect(all[0].message).toContain('order-test-');
     // The oldest entries (0-4) should have been pruned

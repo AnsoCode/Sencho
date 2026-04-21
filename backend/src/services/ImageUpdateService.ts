@@ -281,8 +281,10 @@ export class ImageUpdateService {
                 } catch (e) {
                     console.error(`[ImageUpdateService] Failed to dispatch update notification for "${stackName}":`, e);
                     // Direct DB write to avoid recursing through dispatchAlert if it is what failed.
+                    // Key on the local default: the iterated `nodeId` may be a remote's id in the
+                    // control plane's DB, and the UI never queries that row (it proxies instead).
                     try {
-                        db.addNotificationHistory({
+                        db.addNotificationHistory(NodeRegistry.getInstance().getDefaultNodeId(), {
                             level: 'error',
                             message: `[Node: ${nodeName}] Failed to notify about image updates for stack "${stackName}": ${getErrorMessage(e, String(e))}`,
                             timestamp: Date.now(),

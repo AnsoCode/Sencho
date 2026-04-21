@@ -83,6 +83,22 @@ Click the **calendar icon** on any node row to jump directly to the Schedules vi
 
 When a node is deleted, all scheduled tasks and update status data associated with it are automatically cleaned up.
 
+## What Settings apply per node
+
+When you select a remote node in the node picker, the Settings hub filters to the panels that control that specific instance. Values saved here never cross over to other nodes.
+
+| Panel | Scope | Notes |
+|-------|:-----:|-------|
+| Appearance | Per browser | Density and theme preferences are stored in your browser, not on the node. |
+| System Limits | Per node | Host CPU, RAM, disk, and crash-loop thresholds for the selected node. |
+| Notifications | Per node | Discord, Slack, and Webhook channels fire from the node that detects the event. |
+| Labels | Per node | Stack and container label palettes. |
+| Security | Per node | Trivy install, update, and scanner status. Scan policies and CVE suppressions are managed on the control node and apply fleet-wide. |
+| Developer | Per node | Retention windows for metrics and logs, plus Developer Mode. |
+| App Store | Per node | Template registry URL for the selected node's catalog. |
+
+Panels that manage control-plane concerns (Account, License, Users, SSO, API Tokens, Registries, Nodes, Routing, Webhooks) are hidden when a remote node is active.
+
 ## License enforcement across nodes
 
 When you have a paid license (Skipper or Admiral) on your primary instance, all remote nodes automatically inherit that license tier for proxied requests. You do not need to activate a license on each remote node separately.

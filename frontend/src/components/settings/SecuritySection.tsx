@@ -30,6 +30,7 @@ import { PaidGate } from '@/components/PaidGate';
 import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info } from 'lucide-react';
 import type { FleetRole, ScanPolicy, VulnSeverity } from '@/types/security';
 import { useLicense } from '@/context/LicenseContext';
+import { useNodes } from '@/context/NodeContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { SuppressionsPanel } from './SuppressionsPanel';
 
@@ -85,6 +86,8 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
 
   const { license } = useLicense();
   const isAdmiral = isPaid && license?.variant === 'admiral';
+  const { activeNode } = useNodes();
+  const isRemote = activeNode?.type === 'remote';
   const { status: trivy, updateCheck, refresh: refreshTrivy, refreshUpdateCheck } = useTrivyStatus();
   const [trivyBusy, setTrivyBusy] = useState<null | 'install' | 'update' | 'uninstall' | 'auto-update'>(null);
   const [uninstallConfirm, setUninstallConfirm] = useState(false);
@@ -100,7 +103,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     setTrivyBusy(op);
     const toastId = toast.loading(loading);
     try {
-      const res = await apiFetch(path, { method, localOnly: true });
+      const res = await apiFetch(path, { method });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error || `Trivy ${op} failed`);
@@ -127,7 +130,6 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     try {
       const res = await apiFetch('/security/trivy-auto-update', {
         method: 'PUT',
-        localOnly: true,
         body: JSON.stringify({ enabled }),
       });
       if (!res.ok) {
@@ -158,11 +160,17 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   };
 
   useEffect(() => {
-    if (isPaid) fetchPolicies();
-    else setLoading(false);
-  }, [isPaid]);
+    if (!isPaid) { setLoading(false); return; }
+    if (isRemote) { setPolicies([]); setLoading(false); return; }
+    fetchPolicies();
+  }, [isPaid, isRemote]);
 
   useEffect(() => {
+    void refreshTrivy();
+  }, [activeNode?.id, refreshTrivy]);
+
+  useEffect(() => {
+    if (isRemote) return;
     let cancelled = false;
     (async () => {
       try {
@@ -177,7 +185,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isRemote]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -267,7 +275,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
 
   return (
     <div className="space-y-6">
-      {!isReplica && (
+      {!isRemote && !isReplica && (
         <div className="flex justify-end">
           <Button size="sm" onClick={openCreate}>
             <Plus className="w-4 h-4 mr-1.5" />
@@ -276,7 +284,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         </div>
       )}
 
-      {isReplica && (
+      {!isRemote && isReplica && (
         <div
           role="status"
           aria-live="polite"
@@ -367,14 +375,30 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         )}
       </div>
 
-      {loading && (
+      {isRemote && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-start gap-2 rounded-lg border border-card-border bg-muted/30 px-4 py-3"
+        >
+          <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5} aria-hidden="true" />
+          <div className="text-sm">
+            <div className="font-medium">Scanner is per-node</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Trivy is installed independently on each Sencho instance. Scan policies and CVE suppressions are managed on the control node.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isRemote && loading && (
         <div className="space-y-3">
           <Skeleton className="h-20 w-full rounded-lg" />
           <Skeleton className="h-20 w-full rounded-lg" />
         </div>
       )}
 
-      {!loading && policies.length === 0 && (
+      {!isRemote && !loading && policies.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <ShieldCheck className="w-10 h-10 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground">No scan policies configured.</p>
@@ -384,7 +408,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         </div>
       )}
 
-      {!loading &&
+      {!isRemote && !loading &&
         policies.map((policy) => (
           <div key={policy.id} className="border border-glass-border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -436,7 +460,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
           </div>
         ))}
 
-      <SuppressionsPanel isReplica={isReplica} />
+      {!isRemote && <SuppressionsPanel isReplica={isReplica} />}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

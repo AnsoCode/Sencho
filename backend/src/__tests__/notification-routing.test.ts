@@ -35,6 +35,17 @@ vi.mock('../services/DatabaseService', () => ({
   },
 }));
 
+// NodeRegistry is consulted to resolve this instance's default node id so
+// internal dispatch writes land on the same key the middleware sets for user
+// requests. Mock it to a fixed id so assertions are deterministic.
+vi.mock('../services/NodeRegistry', () => ({
+  NodeRegistry: {
+    getInstance: () => ({
+      getDefaultNodeId: () => 1,
+    }),
+  },
+}));
+
 // Spy on global fetch for webhook dispatch verification
 const mockFetch = vi.fn().mockResolvedValue({ ok: true });
 vi.stubGlobal('fetch', mockFetch);
@@ -210,7 +221,7 @@ describe('NotificationService - routing logic', () => {
 
     await svc.dispatchAlert('info', 'Should be logged');
 
-    expect(mockAddNotificationHistory).toHaveBeenCalledWith({
+    expect(mockAddNotificationHistory).toHaveBeenCalledWith(1, {
       level: 'info',
       message: 'Should be logged',
       timestamp: expect.any(Number),
@@ -225,7 +236,7 @@ describe('NotificationService - routing logic', () => {
 
     await svc.dispatchAlert('warning', 'Restarted', 'my-app', 'my-app-web-1');
 
-    expect(mockAddNotificationHistory).toHaveBeenCalledWith({
+    expect(mockAddNotificationHistory).toHaveBeenCalledWith(1, {
       level: 'warning',
       message: 'Restarted',
       timestamp: expect.any(Number),

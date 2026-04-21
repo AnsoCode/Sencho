@@ -449,6 +449,7 @@ export class DatabaseService {
         this.migrateNotificationHistoryContext();
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
+        this.migrateAgentsAndNotificationsNodeId();
     }
 
     public static getInstance(): DatabaseService {
@@ -466,6 +467,7 @@ export class DatabaseService {
         this.db.exec(`
       CREATE TABLE IF NOT EXISTS agents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id INTEGER NOT NULL DEFAULT 0,
         type TEXT NOT NULL,
         url TEXT NOT NULL,
         enabled INTEGER DEFAULT 0
@@ -489,6 +491,7 @@ export class DatabaseService {
 
       CREATE TABLE IF NOT EXISTS notification_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id INTEGER NOT NULL DEFAULT 0,
         level TEXT NOT NULL,
         message TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
@@ -1115,32 +1118,59 @@ export class DatabaseService {
         tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
     }
 
+    private migrateAgentsAndNotificationsNodeId(): void {
+        const tryAddColumn = (table: string, col: string, def: string) => {
+            try {
+                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+            } catch {
+                /* column already present */
+            }
+        };
+        tryAddColumn('agents', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        tryAddColumn('notification_history', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        const tryIndex = (sql: string, label: string) => {
+            try {
+                this.db.prepare(sql).run();
+            } catch (e) {
+                console.warn(`[DatabaseService] Could not create ${label}:`, (e as Error).message);
+            }
+        };
+        tryIndex(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_node_type ON agents(node_id, type)',
+            'agents(node_id, type) unique index',
+        );
+        tryIndex(
+            'CREATE INDEX IF NOT EXISTS idx_notif_history_node_timestamp ON notification_history(node_id, timestamp DESC)',
+            'notification_history(node_id, timestamp) index',
+        );
+    }
+
     // --- Agents ---
 
-    public getAgents(): Agent[] {
-        const stmt = this.db.prepare('SELECT * FROM agents');
-        return stmt.all().map((row: any) => ({
+    public getAgents(nodeId: number): Agent[] {
+        const stmt = this.db.prepare('SELECT * FROM agents WHERE node_id = ?');
+        return stmt.all(nodeId).map((row: any) => ({
             ...row,
             enabled: row.enabled === 1
         }));
     }
 
-    public getEnabledAgents(): Agent[] {
-        const stmt = this.db.prepare('SELECT * FROM agents WHERE enabled = 1');
-        return stmt.all().map((row: any) => ({
+    public getEnabledAgents(nodeId: number): Agent[] {
+        const stmt = this.db.prepare('SELECT * FROM agents WHERE node_id = ? AND enabled = 1');
+        return stmt.all(nodeId).map((row: any) => ({
             ...row,
             enabled: row.enabled === 1
         }));
     }
 
-    public upsertAgent(agent: Agent): void {
-        const existing = this.db.prepare('SELECT id FROM agents WHERE type = ?').get(agent.type) as any;
+    public upsertAgent(nodeId: number, agent: Agent): void {
+        const existing = this.db.prepare('SELECT id FROM agents WHERE node_id = ? AND type = ?').get(nodeId, agent.type) as any;
         if (existing) {
-            const stmt = this.db.prepare('UPDATE agents SET url = ?, enabled = ? WHERE type = ?');
-            stmt.run(agent.url, agent.enabled ? 1 : 0, agent.type);
+            const stmt = this.db.prepare('UPDATE agents SET url = ?, enabled = ? WHERE node_id = ? AND type = ?');
+            stmt.run(agent.url, agent.enabled ? 1 : 0, nodeId, agent.type);
         } else {
-            const stmt = this.db.prepare('INSERT INTO agents (type, url, enabled) VALUES (?, ?, ?)');
-            stmt.run(agent.type, agent.url, agent.enabled ? 1 : 0);
+            const stmt = this.db.prepare('INSERT INTO agents (node_id, type, url, enabled) VALUES (?, ?, ?, ?)');
+            stmt.run(nodeId, agent.type, agent.url, agent.enabled ? 1 : 0);
         }
     }
 
@@ -1370,9 +1400,9 @@ export class DatabaseService {
 
     // --- Notification History ---
 
-    public getNotificationHistory(limit = 50): NotificationHistory[] {
-        const stmt = this.db.prepare('SELECT * FROM notification_history ORDER BY timestamp DESC LIMIT ?');
-        return stmt.all(limit).map((row: any) => ({
+    public getNotificationHistory(nodeId: number, limit = 50): NotificationHistory[] {
+        const stmt = this.db.prepare('SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?');
+        return stmt.all(nodeId, limit).map((row: any) => ({
             ...row,
             is_read: row.is_read === 1,
             stack_name: row.stack_name ?? undefined,
@@ -1380,11 +1410,12 @@ export class DatabaseService {
         }));
     }
 
-    public addNotificationHistory(notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
+    public addNotificationHistory(nodeId: number, notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare(
-            'INSERT INTO notification_history (level, message, timestamp, is_read, stack_name, container_name) VALUES (?, ?, ?, 0, ?, ?)'
+            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name) VALUES (?, ?, ?, ?, 0, ?, ?)'
         );
         const result = stmt.run(
+            nodeId,
             notification.level,
             notification.message,
             notification.timestamp,
@@ -1392,12 +1423,12 @@ export class DatabaseService {
             notification.container_name ?? null
         );
 
-        this.db.exec(`
+        this.db.prepare(`
       DELETE FROM notification_history
-      WHERE id NOT IN (
-        SELECT id FROM notification_history ORDER BY timestamp DESC LIMIT 100
+      WHERE node_id = ? AND id NOT IN (
+        SELECT id FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT 100
       )
-    `);
+    `).run(nodeId, nodeId);
 
         return {
             id: result.lastInsertRowid as number,
@@ -1410,19 +1441,19 @@ export class DatabaseService {
         };
     }
 
-    public markAllNotificationsRead(): void {
-        const stmt = this.db.prepare('UPDATE notification_history SET is_read = 1');
-        stmt.run();
+    public markAllNotificationsRead(nodeId: number): void {
+        const stmt = this.db.prepare('UPDATE notification_history SET is_read = 1 WHERE node_id = ?');
+        stmt.run(nodeId);
     }
 
-    public deleteNotification(id: number): void {
-        const stmt = this.db.prepare('DELETE FROM notification_history WHERE id = ?');
-        stmt.run(id);
+    public deleteNotification(nodeId: number, id: number): void {
+        const stmt = this.db.prepare('DELETE FROM notification_history WHERE node_id = ? AND id = ?');
+        stmt.run(nodeId, id);
     }
 
-    public deleteAllNotifications(): void {
-        const stmt = this.db.prepare('DELETE FROM notification_history');
-        stmt.run();
+    public deleteAllNotifications(nodeId: number): void {
+        const stmt = this.db.prepare('DELETE FROM notification_history WHERE node_id = ?');
+        stmt.run(nodeId);
     }
 
     public updateNotificationDispatchError(id: number, error: string): void {
