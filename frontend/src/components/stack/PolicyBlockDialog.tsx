@@ -1,0 +1,116 @@
+import { ShieldAlert } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { SeverityChip } from '@/components/VulnerabilityScanSheet';
+import type { VulnSeverity } from '@/types/security';
+
+export interface PolicyBlockViolation {
+  imageRef: string;
+  severity: VulnSeverity | string;
+  criticalCount: number;
+  highCount: number;
+  scanId: number;
+}
+
+export interface PolicyBlockPayload {
+  error: string;
+  policy: { id: number; name: string; maxSeverity: string } | null;
+  violations: PolicyBlockViolation[];
+}
+
+interface PolicyBlockDialogProps {
+  open: boolean;
+  payload: PolicyBlockPayload | null;
+  stackName: string;
+  canBypass: boolean;
+  bypassing: boolean;
+  onClose: () => void;
+  onBypass: () => void;
+}
+
+const KNOWN_SEVERITIES: VulnSeverity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'];
+
+function normalizeSeverity(value: string): VulnSeverity {
+  const upper = value.toUpperCase();
+  return (KNOWN_SEVERITIES as string[]).includes(upper) ? (upper as VulnSeverity) : 'UNKNOWN';
+}
+
+export function PolicyBlockDialog({
+  open,
+  payload,
+  stackName,
+  canBypass,
+  bypassing,
+  onClose,
+  onBypass,
+}: PolicyBlockDialogProps) {
+  const policyName = payload?.policy?.name ?? 'policy';
+  const maxSeverity = payload?.policy?.maxSeverity ?? '';
+  const violations = payload?.violations ?? [];
+
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <AlertDialogContent className="sm:max-w-xl">
+        <AlertDialogHeader>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle flex items-center gap-2">
+            <ShieldAlert className="h-3.5 w-3.5 text-destructive" aria-hidden />
+            Policy block · {stackName}
+          </div>
+          <AlertDialogTitle>Deploy blocked by security policy</AlertDialogTitle>
+          <AlertDialogDescription>
+            Policy <span className="font-medium text-foreground">{policyName}</span> blocks deploys
+            when any image meets or exceeds <span className="font-medium text-foreground">{maxSeverity}</span>.
+            The following {violations.length === 1 ? 'image' : `${violations.length} images`} triggered the block.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="border border-glass-border bg-card/60 shadow-card-bevel divide-y divide-glass-border">
+          {violations.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-muted-foreground">
+              No violation details were returned. Check the scan history for this stack for more context.
+            </div>
+          ) : (
+            violations.map((v) => (
+              <div key={`${v.imageRef}-${v.scanId}`} className="px-4 py-3 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="font-mono text-sm truncate">{v.imageRef}</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle tabular-nums">
+                    {v.criticalCount} critical &middot; {v.highCount} high
+                  </div>
+                </div>
+                <SeverityChip severity={normalizeSeverity(String(v.severity))} />
+              </div>
+            ))
+          )}
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onClose}>Close</AlertDialogCancel>
+          {canBypass ? (
+            <Button
+              variant="destructive"
+              disabled={bypassing}
+              onClick={(e) => {
+                e.preventDefault();
+                onBypass();
+              }}
+            >
+              {bypassing ? 'Deploying…' : 'Deploy anyway'}
+            </Button>
+          ) : (
+            <AlertDialogAction disabled>Admin required to bypass</AlertDialogAction>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}

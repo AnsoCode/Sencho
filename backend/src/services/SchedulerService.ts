@@ -659,7 +659,17 @@ export class SchedulerService {
             console.log(
                 `[SchedulerService:debug] executeScan summary: scanned=${summary.scanned} skipped=${summary.skipped} failed=${summary.failed} ` +
                 `critical=${summary.severity.critical} high=${summary.severity.high} medium=${summary.severity.medium} ` +
-                `low=${summary.severity.low} unknown=${summary.severity.unknown} durationMs=${Date.now() - scanStart}`,
+                `low=${summary.severity.low} unknown=${summary.severity.unknown} violations=${summary.violations.length} durationMs=${Date.now() - scanStart}`,
+            );
+        }
+
+        // Scheduled scans never auto-quarantine; violations surface as alerts
+        // so an operator can review and remediate. One alert per violation so
+        // the notification panel keeps per-image granularity.
+        for (const v of summary.violations ?? []) {
+            NotificationService.getInstance().dispatchAlert(
+                'warning',
+                `Policy "${v.policyName}" violated by ${v.imageRef}: ${v.severity} exceeds ${v.maxSeverity}`,
             );
         }
 

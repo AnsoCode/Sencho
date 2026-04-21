@@ -11,6 +11,7 @@ import { NodeRegistry } from './NodeRegistry';
 import { RegistryService } from './RegistryService';
 
 import { isDebugEnabled } from '../utils/debug';
+import { isPathWithinBase, isValidStackName } from '../utils/validation';
 
 /**
  * ComposeService - local docker compose CLI execution.
@@ -406,5 +407,57 @@ export class ComposeService {
     } catch (error) {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
     }
+  }
+
+  /**
+   * Enumerate image references declared in a stack's compose file.
+   *
+   * Used by the pre-deploy policy gate to decide which images to scan before
+   * `docker compose up` runs. Path traversal is guarded against the node's
+   * compose base directory; missing / unreadable compose files or `.env`
+   * interpolation failures surface as a rejected Promise so the gate can
+   * block the deploy rather than silently allow it.
+   */
+  public async listStackImages(stackName: string): Promise<string[]> {
+    if (!isValidStackName(stackName)) {
+      throw new Error('Invalid stack path');
+    }
+    const stackDir = path.resolve(this.baseDir, stackName);
+    if (!isPathWithinBase(stackDir, this.baseDir) || path.resolve(this.baseDir) === stackDir) {
+      throw new Error('Invalid stack path');
+    }
+    const stdout = await this.captureCompose(['config', '--images'], stackDir);
+    const seen = new Set<string>();
+    const images: string[] = [];
+    for (const raw of stdout.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('sha256:')) continue;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      images.push(line);
+    }
+    return images;
+  }
+
+  private captureCompose(args: string[], cwd: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('docker', ['compose', ...args], {
+        cwd,
+        env: {
+          ...process.env,
+          PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+      child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+      child.on('error', (err) => reject(err));
+      child.on('close', (code) => {
+        if (code === 0) resolve(stdout);
+        else reject(new Error(stderr.trim() || `docker compose ${args.join(' ')} failed with code ${code}`));
+      });
+    });
   }
 }

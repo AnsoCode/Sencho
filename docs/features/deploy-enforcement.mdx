@@ -1,0 +1,95 @@
+---
+title: "Deploy Enforcement"
+description: "Block deploys that violate a scan policy before docker compose up runs, with an admin bypass path and full audit trail."
+---
+
+Deploy enforcement is the pre-flight half of Sencho's vulnerability workflow. When a [scan policy](/features/vulnerability-scanning#scan-policies) with **Block on deploy** enabled matches a stack, Sencho scans every image referenced by the stack's compose file before starting any container. If any image meets or exceeds the policy's severity threshold, the deploy is rejected and the compose stack is never brought up. Detection always continues post-deploy (and on schedule), so images that develop new vulnerabilities after the initial deploy still surface through alerts.
+
+<Note>
+  Deploy enforcement requires a **Skipper** or **Admiral** license. Policies on Community are evaluation-only and cannot block deploys.
+</Note>
+
+## How enforcement runs
+
+Sencho applies the pre-flight gate on every code path that starts a compose stack:
+
+- **Deploy** and **Redeploy** from the stack page
+- **Update** (re-pull + redeploy)
+- **Deploy from Git source** and **Apply** on a managed git source
+- **Template deploy** from the App Store
+- **Recreate** from the stack actions menu
+
+On every one of these actions, Sencho:
+
+1. Looks up the most specific enabled policy that matches the stack on the target node.
+2. If the policy has **Block on deploy** off, lets the deploy proceed and evaluates the post-deploy scan against the policy for alerting.
+3. If **Block on deploy** is on, enumerates the stack's images with `docker compose config --images`, runs a pre-flight Trivy scan against each one, and compares the highest severity in each scan against the policy threshold.
+4. If every image is below the threshold, the deploy proceeds exactly as before. A post-deploy drift scan still runs in the background.
+5. If any image violates the threshold, the deploy is rejected with HTTP `409 Conflict` and the stack never starts. The UI opens a dialog listing the offending images.
+
+Pre-flight scans use the same 24-hour digest cache as on-demand scans, so the second deploy of the same image does not pay the full scan time.
+
+## What the block dialog shows
+
+<Frame>
+  <img src="/images/vulnerability-scanning/deploy-blocked-dialog.png" alt="AlertDialog shown when a deploy is blocked, listing the policy name and the offending images with severity chips" />
+</Frame>
+
+The dialog shows:
+
+- The policy that fired, with its max severity.
+- Every image that violated the threshold, with its severity chip and the counts of critical and high findings.
+- A **Close** button that dismisses the dialog without deploying.
+- A **Deploy anyway** button when the current user is an admin (see bypass below); the button is disabled and relabeled **Admin required to bypass** for non-admin roles.
+
+Clicking a violation row's severity chip takes you to the scan details sheet for that image, where you can review every finding and decide whether to upgrade the base image or [suppress](/features/cve-suppressions) a specific CVE.
+
+## Bypassing a block
+
+Blocks can be overridden by admins on a per-deploy basis. The button is only visible when:
+
+- The current user has the `admin` role.
+- The deploy came from the UI (the bypass flag is ignored when the caller role is not admin server-side, so non-admin sessions cannot forge the header).
+
+Every bypass is recorded in the [Audit Log](/features/audit-log) with:
+
+- `method` and `path` of the originating request (so you can tell whether the bypass came from a deploy, update, template, or git-apply call).
+- `username` of the admin who bypassed.
+- A `policy.bypass` summary with the stack name, policy name, violation count, and the list of image references that were bypassed.
+
+API callers can pass `?ignorePolicy=true` on any deploy endpoint to request a bypass. The flag is only honored when the token's session resolves to an admin user; API tokens without admin scope cannot bypass a policy. See the [Security API reference](/api-reference/security#bypassing-a-block) for the exact request shape.
+
+## Drift detection keeps running
+
+Deploy enforcement prevents a new deploy from introducing known vulnerabilities at the front door. Long-running stacks whose images were clean at deploy time can still develop new CVEs as upstream feeds update. Two surfaces catch this:
+
+- **Post-deploy scans** run automatically on every successful deploy (whether the pre-flight gate was tripped or not). When a post-deploy scan violates an enabled policy, Sencho dispatches a warning alert and the scan details sheet shows a policy-violation banner.
+- **[Scheduled fleet scans](/features/vulnerability-scanning#scheduled-fleet-scans)** re-scan every image on a node at a cron schedule you pick. Any scan that violates a matching policy produces the same warning alert and banner, so you never need to babysit running stacks.
+
+Neither drift mechanism blocks, stops, or quarantines a running stack automatically. The gate is intentionally limited to deploy time.
+
+## FAQ
+
+**CI pipelines feel slower after I enabled a block policy.**
+
+Only the first deploy of a new image pays the full Trivy runtime. Sencho caches scan results by image digest for 24 hours, so repeat deploys of the same image hit the cache in under a second. For greenfield CI where every deploy ships a new image tag, budget 30 to 120 seconds per image on the first deploy depending on image size and whether Trivy's vulnerability database is already seeded on the node.
+
+**The gate let a deploy through even though I have a block policy.**
+
+Check the following in order:
+
+1. Open **Settings → Security** on the target node and confirm Trivy is installed. Sencho fails open when Trivy is missing, dispatching a warning alert instead of blocking. [Install Trivy](/operations/trivy-setup) to enforce the policy.
+2. Confirm the policy is enabled and the stack pattern matches the stack name. `prod-*` matches `prod-api` but not `production-api`. An empty pattern matches every stack on the node.
+3. Check the highest severity in the latest scan for each image. If no image reached the threshold, the gate correctly allowed the deploy.
+
+**A deploy is blocked and I cannot bypass as a non-admin.**
+
+Only users with the `admin` role can bypass a block. Ask an admin to review the violations and either bypass the single deploy, upgrade the base image, or suppress the offending CVE with an expiry.
+
+**The block dialog mentions an image I do not recognize.**
+
+Pre-flight enumerates images via `docker compose config --images`, which expands any `extends`, `env_file`, or variable substitution in the compose file. An image pulled by a dependency you did not author may appear in the list. Review the stack's compose file and confirm the reference.
+
+**I want a block policy that only applies to a subset of my fleet.**
+
+Combine two mechanisms: scope the policy to a specific node (policies scoped to a node win over global ones) and tighten the stack pattern glob. For example, a policy with `stack_pattern=prod-*` scoped to your production node fires only on `prod-*` stacks deployed to that node.

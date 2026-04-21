@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { CryptoService } from './CryptoService';
+import { isSeverityAtLeast } from '../utils/severity';
 
 export interface Agent {
     id?: number;
@@ -309,7 +310,22 @@ export interface NotificationRoute {
 
 export type VulnSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
 export type VulnScanStatus = 'in_progress' | 'completed' | 'failed';
-export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy';
+export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy' | 'deploy-preflight';
+
+/**
+ * Decision recorded when a scan is evaluated against the matching policy.
+ * Persisted as JSON on `vulnerability_scans.policy_evaluation` so the UI
+ * can surface a banner on the scan details sheet without re-running the
+ * match. `violated=false` rows exist too (informational), which is why
+ * presence of the field does not mean "blocked".
+ */
+export interface PolicyEvaluation {
+    policyId: number;
+    policyName: string;
+    maxSeverity: VulnSeverity;
+    violated: boolean;
+    evaluatedAt: number;
+}
 
 export interface VulnerabilityScan {
     id: number;
@@ -335,6 +351,21 @@ export interface VulnerabilityScan {
     status: VulnScanStatus;
     error: string | null;
     stack_context: string | null;
+    // JSON-encoded PolicyEvaluation; null if never evaluated.
+    policy_evaluation: string | null;
+}
+
+export function parsePolicyEvaluation(raw: string | null | undefined): PolicyEvaluation | null {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as PolicyEvaluation;
+        if (typeof parsed.policyId !== 'number' || typeof parsed.policyName !== 'string') {
+            return null;
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
 }
 
 export interface VulnerabilityDetail {
@@ -450,6 +481,7 @@ export class DatabaseService {
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
         this.migrateAgentsAndNotificationsNodeId();
+        this.migratePolicyEvaluationColumn();
     }
 
     public static getInstance(): DatabaseService {
@@ -1143,6 +1175,16 @@ export class DatabaseService {
             'CREATE INDEX IF NOT EXISTS idx_notif_history_node_timestamp ON notification_history(node_id, timestamp DESC)',
             'notification_history(node_id, timestamp) index',
         );
+    }
+
+    private migratePolicyEvaluationColumn(): void {
+        try {
+            this.db
+                .prepare('ALTER TABLE vulnerability_scans ADD COLUMN policy_evaluation TEXT')
+                .run();
+        } catch {
+            /* column already present */
+        }
     }
 
     // --- Agents ---
@@ -2451,7 +2493,9 @@ export class DatabaseService {
     // --- Vulnerability Scans ---
 
     public createVulnerabilityScan(
-        scan: Omit<VulnerabilityScan, 'id'>,
+        scan: Omit<VulnerabilityScan, 'id' | 'policy_evaluation'> & {
+            policy_evaluation?: string | null;
+        },
     ): number {
         const stmt = this.db.prepare(
             `INSERT INTO vulnerability_scans (
@@ -2460,8 +2504,8 @@ export class DatabaseService {
                 low_count, unknown_count, fixable_count,
                 secret_count, misconfig_count, scanners_used,
                 highest_severity, os_info, trivy_version, scan_duration_ms,
-                triggered_by, status, error, stack_context
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                triggered_by, status, error, stack_context, policy_evaluation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         );
         const result = stmt.run(
             scan.node_id,
@@ -2486,6 +2530,7 @@ export class DatabaseService {
             scan.status,
             scan.error,
             scan.stack_context,
+            scan.policy_evaluation ?? null,
         );
         return result.lastInsertRowid as number;
     }
@@ -2500,7 +2545,7 @@ export class DatabaseService {
             'medium_count', 'low_count', 'unknown_count', 'fixable_count',
             'secret_count', 'misconfig_count', 'scanners_used',
             'highest_severity', 'os_info', 'trivy_version', 'scan_duration_ms',
-            'triggered_by', 'status', 'error', 'stack_context',
+            'triggered_by', 'status', 'error', 'stack_context', 'policy_evaluation',
         ]);
         const fields: string[] = [];
         const values: unknown[] = [];
@@ -3036,6 +3081,45 @@ export class DatabaseService {
             return 0;
         });
         return scoped[0];
+    }
+
+    /**
+     * Evaluate a completed scan against the matching policy for its node and
+     * stack context. Returns the evaluation that should be persisted to the
+     * scan row, or null when no policy matches.
+     *
+     * The result is informational. `violated=false` means a policy matched
+     * but the scan was within limits; the UI surfaces a banner only when
+     * `violated=true`. Blocking enforcement lives in the pre-deploy gate.
+     */
+    public evaluateScanAgainstPolicies(
+        nodeId: number,
+        scan: VulnerabilityScan,
+        selfIdentity: string,
+    ): PolicyEvaluation | null {
+        const policy = this.getMatchingPolicy(nodeId, scan.stack_context, selfIdentity);
+        if (!policy) return null;
+        return {
+            policyId: policy.id,
+            policyName: policy.name,
+            maxSeverity: policy.max_severity,
+            violated: isSeverityAtLeast(scan.highest_severity, policy.max_severity),
+            evaluatedAt: Date.now(),
+        };
+    }
+
+    /**
+     * Persist a PolicyEvaluation onto a scan row. Pass null to clear.
+     * Encoded as JSON so consumers round-trip through parsePolicyEvaluation().
+     */
+    public setScanPolicyEvaluation(
+        scanId: number,
+        evaluation: PolicyEvaluation | null,
+    ): void {
+        const json = evaluation ? JSON.stringify(evaluation) : null;
+        this.db
+            .prepare('UPDATE vulnerability_scans SET policy_evaluation = ? WHERE id = ?')
+            .run(json, scanId);
     }
 
     // --- Fleet Sync Status ---
