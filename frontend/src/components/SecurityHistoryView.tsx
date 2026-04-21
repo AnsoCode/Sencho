@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -16,7 +22,6 @@ import {
   ChevronLeft,
   ChevronRight,
   GitCompare,
-  History,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -55,7 +60,12 @@ function groupByImage(scans: VulnerabilityScan[]): GroupedScans[] {
   return groups;
 }
 
-export function SecurityHistoryView() {
+interface SecurityHistoryViewProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export function SecurityHistoryView({ open, onClose }: SecurityHistoryViewProps) {
   const { isPaid } = useLicense();
   const { isAdmin } = useAuth();
   const { activeNode } = useNodes();
@@ -91,14 +101,24 @@ export function SecurityHistoryView() {
     }
   }, []);
 
-  useEffect(() => {
-    load(page, search);
-  }, [load, page, search, activeNode?.id]);
+  const lastNodeIdRef = useRef<number | null>(activeNode?.id ?? null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
+    const id = activeNode?.id ?? null;
+    if (lastNodeIdRef.current === id) return;
+    lastNodeIdRef.current = id;
     setSelected([]);
     setPage(0);
+    setReloadToken((t) => t + 1);
   }, [activeNode?.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    load(page, search);
+    // reloadToken bumps when the active node changes even if page/search
+    // happen to match the previous values, so the fetch re-runs exactly once.
+  }, [open, load, page, search, reloadToken]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -135,14 +155,14 @@ export function SecurityHistoryView() {
   const compareDisabled = selected.length !== 2;
 
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-auto">
-      <Card className="rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <History className="w-5 h-5" strokeWidth={1.5} />
-              <CardTitle>Scan History</CardTitle>
-            </div>
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <SheetContent className="sm:max-w-4xl flex flex-col p-0 gap-0">
+        <SheetHeader className="px-6 pt-6 pb-4 pr-14 border-b border-border space-y-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+            Security · Node {activeNode?.name ?? '-'}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <SheetTitle className="font-display italic text-2xl">Scan history</SheetTitle>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -176,11 +196,11 @@ export function SecurityHistoryView() {
               </Button>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
+          <SheetDescription className="text-sm text-muted-foreground">
             Completed vulnerability scans on this node, grouped by image. Select two to compare.
-          </p>
-        </CardHeader>
-        <CardContent>
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 flex flex-col px-6 py-4 overflow-hidden">
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
@@ -233,7 +253,7 @@ export function SecurityHistoryView() {
               </div>
             </div>
           ) : (
-            <ScrollArea className="max-h-[70vh]">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="space-y-5 pr-2">
                 {groups.map((group) => (
                   <div key={group.image_ref}>
@@ -311,22 +331,22 @@ export function SecurityHistoryView() {
               </div>
             </ScrollArea>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      <ScanComparisonSheet
-        baselineScanId={compareIds?.[0] ?? null}
-        currentScanId={compareIds?.[1] ?? null}
-        onClose={() => setCompareIds(null)}
-      />
+        <ScanComparisonSheet
+          baselineScanId={compareIds?.[0] ?? null}
+          currentScanId={compareIds?.[1] ?? null}
+          onClose={() => setCompareIds(null)}
+        />
 
-      <VulnerabilityScanSheet
-        scanId={inspectScanId}
-        onClose={() => setInspectScanId(null)}
-        canGenerateSbom={isPaid}
-        canCompare={false}
-        canManageSuppressions={isPaid && isAdmin}
-      />
-    </div>
+        <VulnerabilityScanSheet
+          scanId={inspectScanId}
+          onClose={() => setInspectScanId(null)}
+          canGenerateSbom={isPaid}
+          canCompare={false}
+          canManageSuppressions={isPaid && isAdmin}
+        />
+      </SheetContent>
+    </Sheet>
   );
 }

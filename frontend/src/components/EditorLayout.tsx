@@ -318,7 +318,8 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'security-history'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
+  const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
@@ -428,10 +429,14 @@ export default function EditorLayout() {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<SenchoNavigateDetail>).detail;
-      if (detail?.view) {
-        setActiveView(detail.view);
+      if (!detail?.view) return;
+      if (detail.view === 'security-history') {
+        setSecurityHistoryOpen(true);
         setFilterNodeId(detail.nodeId ?? null);
+        return;
       }
+      setActiveView(detail.view);
+      setFilterNodeId(detail.nodeId ?? null);
     };
     window.addEventListener(SENCHO_NAVIGATE_EVENT, handler);
     return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
@@ -2732,8 +2737,6 @@ export default function EditorLayout() {
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
               <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
             </CapabilityGate>
-          ) : activeView === 'security-history' ? (
-            <SecurityHistoryView />
           ) : (
             <HomeDashboard
               onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
@@ -2915,6 +2918,12 @@ export default function EditorLayout() {
       <VulnerabilityScanSheet
         scanId={stackMisconfigScanId}
         onClose={() => setStackMisconfigScanId(null)}
+      />
+
+      {/* Scan history overlay */}
+      <SecurityHistoryView
+        open={securityHistoryOpen}
+        onClose={() => setSecurityHistoryOpen(false)}
       />
     </div>
     </GlobalCommandPaletteProvider>
