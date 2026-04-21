@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.63.0](https://github.com/AnsoCode/Sencho/compare/v0.62.0...v0.63.0) (2026-04-21)
+
+
+### Added
+
+* **auth:** redesign login, MFA, and setup surfaces with cockpit voice ([#714](https://github.com/AnsoCode/Sencho/issues/714)) ([0a01980](https://github.com/AnsoCode/Sencho/commit/0a0198013d714d2e06acaef4414cc03a29062065))
+* **design-system:** retune oklch tokens to cozy-pebble palette ([#709](https://github.com/AnsoCode/Sencho/issues/709)) ([2b499cb](https://github.com/AnsoCode/Sencho/commit/2b499cb2c95fab0a348b18f1d973c3dd2d4c3d8c))
+* **fleet:** aggregate labels across nodes and allow remote edits ([#710](https://github.com/AnsoCode/Sencho/issues/710)) ([a41af47](https://github.com/AnsoCode/Sencho/commit/a41af47ff3506afd4fa51b11e390308fd41daf44))
+* **fleet:** interactive topology with ReactFlow hub-and-spoke layout ([#713](https://github.com/AnsoCode/Sencho/issues/713)) ([d95e154](https://github.com/AnsoCode/Sencho/commit/d95e154aeb57310d3486d540c9b3087c10afafe6))
+* **fleet:** reorganize overview page for clarity and density ([#712](https://github.com/AnsoCode/Sencho/issues/712)) ([6f132b7](https://github.com/AnsoCode/Sencho/commit/6f132b7ffe93132d9c296f53ebdaf5084706341a))
+* **notifications:** add per-node filter and 60s refetch safety net ([#717](https://github.com/AnsoCode/Sencho/issues/717)) ([3e1fb76](https://github.com/AnsoCode/Sencho/commit/3e1fb76bd0c7b8bce66a556618bbae96473af82f))
+* **search:** add global Ctrl+K command palette ([#711](https://github.com/AnsoCode/Sencho/issues/711)) ([856de35](https://github.com/AnsoCode/Sencho/commit/856de35a52a4e17c18b337a296112d529b1a9406))
+* **security:** enforce scan policies as a pre-deploy gate ([#719](https://github.com/AnsoCode/Sencho/issues/719)) ([661b9c6](https://github.com/AnsoCode/Sencho/commit/661b9c638b7b7dc4e11d86d36edaf2cab6e1bf75))
+* **security:** polish scan sheets, fix CVE links, surface policy violations ([#721](https://github.com/AnsoCode/Sencho/issues/721)) ([12c2b37](https://github.com/AnsoCode/Sencho/commit/12c2b37510b5f364ee42f582edcbb8fb655c269b))
+* **settings:** surface security, notifications, and app store on remote nodes ([#716](https://github.com/AnsoCode/Sencho/issues/716)) ([08f57c7](https://github.com/AnsoCode/Sencho/commit/08f57c714146d4fe533b82e1011a18d86cd957a1))
+* **sidebar:** cockpit redesign with grouped stacks and activity footer ([#702](https://github.com/AnsoCode/Sencho/issues/702)) ([370b67d](https://github.com/AnsoCode/Sencho/commit/370b67d7ec5f8f5ee1d8df81bdd4a892c0c0c9d5))
+* **sidebar:** inline label create, live sync, and kebab submenu parity ([#706](https://github.com/AnsoCode/Sencho/issues/706)) ([75370d8](https://github.com/AnsoCode/Sencho/commit/75370d8fce8c0d9669f957a54db8e6e145ce5804))
+* **ui:** redesign global logs as cockpit surface ([#699](https://github.com/AnsoCode/Sencho/issues/699)) ([b95442c](https://github.com/AnsoCode/Sencho/commit/b95442c8f7c0a69b53893382f9cafdbbea44efcf))
+* **ui:** redesign host console as cockpit surface ([#701](https://github.com/AnsoCode/Sencho/issues/701)) ([490c89c](https://github.com/AnsoCode/Sencho/commit/490c89c049f7d379ef8a72e36970638807163683))
+
+
+### Fixed
+
+* **app-store:** use stack name as compose service key ([#704](https://github.com/AnsoCode/Sencho/issues/704)) ([9f861e0](https://github.com/AnsoCode/Sencho/commit/9f861e00721a71c615a6478b24aec2b8087b2fc7))
+* **dashboard:** remove peak indicator dot from CPU sparkline ([#705](https://github.com/AnsoCode/Sencho/issues/705)) ([5f2d678](https://github.com/AnsoCode/Sencho/commit/5f2d67848cda077edbde349ce07ed261ff743e3d))
+* **security:** convert scan history from full page to sheet overlay ([#720](https://github.com/AnsoCode/Sencho/issues/720)) ([e4fdb1c](https://github.com/AnsoCode/Sencho/commit/e4fdb1cd6c32016a646bf23d3e4ae3d5fafe4e02))
+* **sidebar:** distinct fuchsia notification dot for update indicator ([#708](https://github.com/AnsoCode/Sencho/issues/708)) ([c7dfde4](https://github.com/AnsoCode/Sencho/commit/c7dfde4b79eb5110d7d5420002a0631151401645))
+* **trivy:** remove unsupported --no-progress flag from `trivy config` ([#718](https://github.com/AnsoCode/Sencho/issues/718)) ([aa10db1](https://github.com/AnsoCode/Sencho/commit/aa10db1d09261741faf5b2f8cd6a64436facf2f6))
+* **ui:** raise toast z-index above dialog overlays ([#715](https://github.com/AnsoCode/Sencho/issues/715)) ([a42cc5b](https://github.com/AnsoCode/Sencho/commit/a42cc5bf03a971ebb21fc516363a11b362053793))
+
 ## [0.62.0](https://github.com/AnsoCode/Sencho/compare/v0.61.0...v0.62.0) (2026-04-19)
 
 
