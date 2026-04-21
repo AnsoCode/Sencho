@@ -81,6 +81,7 @@ vi.mock('../services/NodeRegistry', () => ({
   NodeRegistry: {
     getInstance: () => ({
       getComposeDir: () => '/tmp/compose',
+      getDefaultNodeId: () => 1,
     }),
   },
 }));
@@ -436,7 +437,7 @@ services:
 
     await (service as any).checkNode(1, 'local', fakeDb());
 
-    expect(mockAddNotificationHistory).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAddNotificationHistory).toHaveBeenCalledWith(1, expect.objectContaining({
       level: 'error',
       message: expect.stringContaining('webhook timeout'),
     }));

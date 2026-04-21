@@ -135,8 +135,10 @@ The alert panel shows a blue info banner when you are configuring alerts on a re
 
 ### Setup checklist for remote alerts
 
-1. On the **remote** Sencho instance, go to **Settings > Notifications** and configure at least one channel
-2. From your **primary** instance, switch to the remote node
+You can configure a remote node's notification channels directly from the control plane:
+
+1. From your **primary** instance, switch to the remote node using the node picker
+2. Open **Settings > Notifications** and configure the remote's Discord, Slack, or Webhook channels. Values saved here apply only to the selected node.
 3. Right-click a stack and select **Alerts** to create rules
 4. The remote instance handles monitoring and notification delivery independently
 

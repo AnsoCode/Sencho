@@ -3,10 +3,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLicense } from '@/context/LicenseContext';
-import { RefreshCw, Database, Info } from 'lucide-react';
+import { RefreshCw, Database } from 'lucide-react';
 import type { PatchableSettings } from './types';
 
 interface DeveloperSectionProps {
@@ -15,7 +13,6 @@ interface DeveloperSectionProps {
     onSave: () => Promise<void>;
     isSaving: boolean;
     isLoading: boolean;
-    isRemote: boolean;
 }
 
 function SettingsSkeleton() {
@@ -32,29 +29,11 @@ function SettingsSkeleton() {
     );
 }
 
-export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, isLoading, isRemote }: DeveloperSectionProps) {
+export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, isLoading }: DeveloperSectionProps) {
     const { isPaid, license } = useLicense();
 
     return (
         <div className="space-y-6">
-            {isRemote && (
-                <div className="flex justify-end">
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Badge variant="secondary" className="text-xs cursor-help">
-                                    <Info className="w-3 h-3 mr-1" />
-                                    Always Local
-                                </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="max-w-[220px] text-center">
-                                These settings control this Sencho instance's UI behaviour and are never synced to remote nodes.
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
-                </div>
-            )}
-
             {isLoading ? <SettingsSkeleton /> : (
                 <>
                     <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">

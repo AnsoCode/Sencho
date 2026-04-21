@@ -1,4 +1,5 @@
 import { DatabaseService, NotificationHistory } from './DatabaseService';
+import { NodeRegistry } from './NodeRegistry';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
 
@@ -45,8 +46,11 @@ export class NotificationService {
         stackName?: string,
         containerName?: string,
     ) {
-        // 1. Log to history and get the full inserted record (with id)
-        const notification = this.dbService.addNotificationHistory({
+        // Internal writes use the middleware default so they share a row key
+        // with user-initiated requests; otherwise the UI and monitors split
+        // between different node_id buckets.
+        const localNodeId = NodeRegistry.getInstance().getDefaultNodeId();
+        const notification = this.dbService.addNotificationHistory(localNodeId, {
             level,
             message,
             timestamp: Date.now(),
@@ -84,8 +88,8 @@ export class NotificationService {
             }
         }
 
-        // 4. Fall back to global agents
-        const agents = this.dbService.getEnabledAgents();
+        // 4. Fall back to this instance's agents (keyed by this instance's default node id).
+        const agents = this.dbService.getEnabledAgents(localNodeId);
         if (agents.length === 0) {
             if (isDebugEnabled()) console.log('[Notify:diag] No routes or agents matched; skipping external dispatch');
             return;

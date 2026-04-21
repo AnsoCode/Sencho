@@ -326,7 +326,6 @@ export function SettingsModal({ isOpen, onClose, initialSection, onLabelsChanged
                         onSave={saveDeveloperSettings}
                         isSaving={isSavingDeveloper}
                         isLoading={isSettingsLoading}
-                        isRemote={isRemote}
                     />
                 );
             case 'nodes': return <NodeManager />;

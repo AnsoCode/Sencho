@@ -5572,7 +5572,8 @@ function validateHttpsUrl(value: unknown): string | null {
 
 app.get('/api/agents', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const agents = DatabaseService.getInstance().getAgents();
+    const nodeId = req.nodeId ?? 0;
+    const agents = DatabaseService.getInstance().getAgents(nodeId);
     res.json(agents);
   } catch (error) {
     console.error('Failed to fetch agents:', error);
@@ -5594,7 +5595,8 @@ app.post('/api/agents', authMiddleware, async (req: Request, res: Response) => {
       res.status(400).json({ error: 'enabled must be a boolean' });
       return;
     }
-    DatabaseService.getInstance().upsertAgent({ type, url, enabled });
+    const nodeId = req.nodeId ?? 0;
+    DatabaseService.getInstance().upsertAgent(nodeId, { type, url, enabled });
     console.log(`[Agents] Agent ${type} updated`);
     if (isDebugEnabled()) console.log(`[Agents:diag] Agent ${type} upsert: enabled=${enabled}`);
     res.json({ success: true });
@@ -5846,7 +5848,8 @@ app.get('/api/auto-heal/policies/:id/history', authMiddleware, (req: Request, re
 
 app.get('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const history = DatabaseService.getInstance().getNotificationHistory();
+    const nodeId = req.nodeId ?? 0;
+    const history = DatabaseService.getInstance().getNotificationHistory(nodeId);
     res.json(history);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch notifications' });
@@ -5855,7 +5858,8 @@ app.get('/api/notifications', authMiddleware, async (req: Request, res: Response
 
 app.post('/api/notifications/read', authMiddleware, async (req: Request, res: Response) => {
   try {
-    DatabaseService.getInstance().markAllNotificationsRead();
+    const nodeId = req.nodeId ?? 0;
+    DatabaseService.getInstance().markAllNotificationsRead(nodeId);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to mark notifications read' });
@@ -5866,7 +5870,8 @@ app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: R
   try {
     const id = parseInt(req.params.id as string, 10);
     if (isNaN(id)) { res.status(400).json({ error: 'Invalid notification ID' }); return; }
-    DatabaseService.getInstance().deleteNotification(id);
+    const nodeId = req.nodeId ?? 0;
+    DatabaseService.getInstance().deleteNotification(nodeId, id);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete notification' });
@@ -5875,7 +5880,8 @@ app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: R
 
 app.delete('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
   try {
-    DatabaseService.getInstance().deleteAllNotifications();
+    const nodeId = req.nodeId ?? 0;
+    DatabaseService.getInstance().deleteAllNotifications(nodeId);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to clear notifications' });
