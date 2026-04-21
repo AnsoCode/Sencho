@@ -106,7 +106,7 @@ afterEach(() => vi.clearAllMocks());
 describe('SecurityHistoryView', () => {
   it('fetches completed scans on mount with server-driven pagination params', async () => {
     mockedFetch.mockResolvedValue(listResponse([scan()]));
-    render(<SecurityHistoryView />);
+    render(<SecurityHistoryView open onClose={vi.fn()} />);
     await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
     const url = mockedFetch.mock.calls[0][0] as string;
     expect(url).toMatch(/^\/security\/scans\?/);
@@ -118,7 +118,7 @@ describe('SecurityHistoryView', () => {
   it('advances offset when the user pages forward', async () => {
     mockedFetch.mockResolvedValue(listResponse([scan()], 250));
     const user = userEvent.setup();
-    render(<SecurityHistoryView />);
+    render(<SecurityHistoryView open onClose={vi.fn()} />);
 
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
 
@@ -135,11 +135,11 @@ describe('SecurityHistoryView', () => {
 
   it('re-fetches when activeNode.id changes', async () => {
     mockedFetch.mockResolvedValue(listResponse([scan()]));
-    const { rerender } = render(<SecurityHistoryView />);
+    const { rerender } = render(<SecurityHistoryView open onClose={vi.fn()} />);
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
 
     nodesState.activeNode = { id: 2 };
-    rerender(<SecurityHistoryView key="remount-signal" />);
+    rerender(<SecurityHistoryView key="remount-signal" open onClose={vi.fn()} />);
     await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
   });
 
@@ -152,7 +152,7 @@ describe('SecurityHistoryView', () => {
       ]),
     );
     const user = userEvent.setup();
-    render(<SecurityHistoryView />);
+    render(<SecurityHistoryView open onClose={vi.fn()} />);
 
     const checkboxes = await screen.findAllByRole('checkbox');
     expect(checkboxes).toHaveLength(3);
@@ -175,7 +175,7 @@ describe('SecurityHistoryView', () => {
       ]),
     );
     const user = userEvent.setup();
-    render(<SecurityHistoryView />);
+    render(<SecurityHistoryView open onClose={vi.fn()} />);
 
     const checkboxes = await screen.findAllByRole('checkbox');
     await user.click(checkboxes[0]);
@@ -188,6 +188,29 @@ describe('SecurityHistoryView', () => {
     expect(last?.currentScanId).toBe(10);
   });
 
+  it('does not fetch when closed', async () => {
+    mockedFetch.mockResolvedValue(listResponse([scan()]));
+    render(<SecurityHistoryView open={false} onClose={vi.fn()} />);
+
+    // Flush any microtasks; the fetch guard returns synchronously so no
+    // timer delay is required.
+    await Promise.resolve();
+    expect(mockedFetch).not.toHaveBeenCalled();
+  });
+
+  it('fires onClose when Escape is pressed and does not fetch again', async () => {
+    mockedFetch.mockResolvedValue(listResponse([scan()]));
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<SecurityHistoryView open onClose={onClose} />);
+
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('disables Compare button for community tier', async () => {
     licenseState.isPaid = false;
     mockedFetch.mockResolvedValue(
@@ -197,7 +220,7 @@ describe('SecurityHistoryView', () => {
       ]),
     );
     const user = userEvent.setup();
-    render(<SecurityHistoryView />);
+    render(<SecurityHistoryView open onClose={vi.fn()} />);
 
     const checkboxes = await screen.findAllByRole('checkbox');
     await user.click(checkboxes[0]);
