@@ -20,7 +20,7 @@ import httpProxy from 'http-proxy';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { HostTerminalService } from './services/HostTerminalService';
-import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType } from './services/DatabaseService';
+import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, parsePolicyEvaluation, type VulnerabilityScan } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { AutoHealService } from './services/AutoHealService';
@@ -7946,6 +7946,13 @@ app.post('/api/security/scan/stack', authMiddleware, async (req: Request, res: R
   }
 });
 
+function shapeScanForResponse(scan: VulnerabilityScan): Omit<VulnerabilityScan, 'policy_evaluation'> & {
+  policy_evaluation: ReturnType<typeof parsePolicyEvaluation>;
+} {
+  const { policy_evaluation, ...rest } = scan;
+  return { ...rest, policy_evaluation: parsePolicyEvaluation(policy_evaluation) };
+}
+
 app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => {
   try {
     const imageRef = typeof req.query.imageRef === 'string' ? req.query.imageRef : undefined;
@@ -7967,7 +7974,7 @@ app.get('/api/security/scans', authMiddleware, (req: Request, res: Response) => 
       limit,
       offset,
     });
-    res.json(result);
+    res.json({ ...result, items: result.items.map(shapeScanForResponse) });
   } catch (error) {
     console.error('[Security] Failed to list scans:', error);
     res.status(500).json({ error: 'Failed to list scans' });
@@ -7983,7 +7990,7 @@ app.get('/api/security/scans/:scanId', authMiddleware, (req: Request, res: Respo
   if (!scan || scan.node_id !== req.nodeId) {
     res.status(404).json({ error: 'Scan not found' }); return;
   }
-  res.json(scan);
+  res.json(shapeScanForResponse(scan));
 });
 
 app.get(

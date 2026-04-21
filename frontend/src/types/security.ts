@@ -1,6 +1,13 @@
 export type VulnSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
 export type VulnScanStatus = 'in_progress' | 'completed' | 'failed';
-export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy';
+export type VulnScanTrigger = 'manual' | 'scheduled' | 'deploy' | 'deploy-preflight';
+
+export interface ScanPolicyEvaluation {
+  policyId: number;
+  policyName: string;
+  maxSeverity: VulnSeverity;
+  violated: boolean;
+}
 
 export type TrivySource = 'managed' | 'host' | 'none';
 
@@ -43,6 +50,7 @@ export interface VulnerabilityScan {
   status: VulnScanStatus;
   error: string | null;
   stack_context: string | null;
+  policy_evaluation?: ScanPolicyEvaluation | null;
 }
 
 export interface SecretFinding {

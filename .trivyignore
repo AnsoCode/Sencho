@@ -35,6 +35,23 @@
 # release.
 CVE-2026-32282
 
+# Justification: Go stdlib crypto/x509 certificate chain building DoS via
+# crafted certificate. Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose)
+# runtimes. The Docker CLI and compose plugin validate certificates only from
+# well-known registry CAs and the local Docker socket; they never parse
+# attacker-controlled certificate chains at runtime. Blocked on upstream Go
+# rebuild; revisit on next CLI/Compose release.
+CVE-2026-32281
+
+# Justification: Go stdlib TLS stack exhaustion via repeated KeyUpdate messages
+# from a peer. Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose) runtimes.
+# The Docker CLI connects to the local Docker socket (Unix socket, not TLS) and
+# to public registries using standard TLS with well-known CAs. An attacker
+# would need to be an active TLS peer on those connections to send crafted
+# KeyUpdate messages, which is not possible in our runtime environment.
+# Blocked on upstream Go rebuild; revisit on next CLI/Compose release.
+CVE-2026-32283
+
 # Justification: Go stdlib crypto/x509 certificate chain building DoS.
 # Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose) runtimes as above.
 # The Docker CLI and compose plugin do not perform x509 chain validation
