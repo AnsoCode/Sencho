@@ -817,6 +817,17 @@ export default function EditorLayout() {
     }
   };
 
+  // Safety-net poll: reconciles the list every 60s so events missed during a
+  // WebSocket reconnect backoff still appear without a manual refresh. The ref
+  // indirection keeps the interval pinned to the latest closure even though
+  // fetchNotifications is redefined on every render.
+  const fetchNotificationsRef = useRef(fetchNotifications);
+  fetchNotificationsRef.current = fetchNotifications;
+  useEffect(() => {
+    const id = setInterval(() => { fetchNotificationsRef.current(); }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const fetchImageUpdates = async () => {
     try {
       const res = await apiFetch('/image-updates');
