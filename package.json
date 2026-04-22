@@ -22,6 +22,6 @@
   "homepage": "https://github.com/AnsoCode/Sencho#readme",
   "devDependencies": {
     "@playwright/test": "^1.59.1",
-    "otplib": "^12.0.1"
+    "otplib": "^13.4.0"
   }
 }
