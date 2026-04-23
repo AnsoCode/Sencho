@@ -1,8 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import compression from 'compression';
-import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork, type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
@@ -53,12 +49,11 @@ import {
   COOKIE_NAME,
   MFA_PENDING_COOKIE_NAME,
   MFA_PENDING_SCOPE,
-  MFA_PENDING_TTL_MS,
   STATS_CACHE_TTL_MS,
   SYSTEM_STATS_CACHE_TTL_MS,
   STACK_STATUSES_CACHE_TTL_MS,
 } from './helpers/constants';
-import { isSecureRequest, getCookieOptions } from './helpers/cookies';
+import { isSecureRequest } from './helpers/cookies';
 import {
   ROLE_PERMISSIONS,
   checkPermission,
@@ -78,18 +73,21 @@ import {
   triggerPostDeployScan,
 } from './helpers/policyGate';
 import {
-  globalApiLimiter,
-  pollingLimiter,
   webhookTriggerLimiter,
   authRateLimiter,
   ssoRateLimiter,
   trivyInstallLimiter,
 } from './middleware/rateLimiters';
-import { conditionalJsonParser } from './middleware/jsonParser';
-import { nodeContextMiddleware } from './middleware/nodeContext';
-import { createAuthGate, auditLog } from './middleware/authGate';
+import { authGate, auditLog } from './middleware/authGate';
 import { enforceApiTokenScope } from './middleware/apiTokenScope';
 import { errorHandler } from './middleware/errorHandler';
+import { createApp } from './app';
+import {
+  authMiddleware,
+  issueSessionCookie,
+  issueMfaPendingCookie,
+  clearMfaPendingCookie,
+} from './middleware/auth';
 
 /**
  * Invalidate the per-node caches affected by a stack/container mutation so
@@ -136,101 +134,13 @@ const _origEmitWarning = process.emitWarning.bind(process);
   _origEmitWarning(warning, ...args);
 };
 
-const app = express();
+// Build the Express app with the canonical middleware pipeline (steps 1-9 of
+// the order documented in app.ts). Steps 10-16 (authGate, auditLog,
+// apiTokenScope, remote proxy, routes, static, errorHandler) are registered
+// below as routes and handlers are extracted in later phases.
+const app = createApp();
 
 // FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
-
-// Middleware
-
-// Trust the first reverse proxy (nginx, Traefik, etc.) for correct req.protocol,
-// req.ip, and secure cookie detection behind a proxy.
-app.set('trust proxy', 1);
-
-// Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
-// crossOriginEmbedderPolicy: disabled - Monaco editor workers lack COEP headers.
-// hsts: disabled - HSTS must only be set when the app is served over HTTPS.
-//   Enabling it over HTTP permanently breaks browser access for 1 year.
-// contentSecurityPolicy.upgradeInsecureRequests: explicitly set to null.
-//   Helmet 8 merges custom directives with its defaults, which include this
-//   directive. It tells browsers to silently upgrade all HTTP sub-resource fetches
-//   to HTTPS. On a plain-HTTP self-hosted deployment (the common case) this causes
-//   every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR, producing a blank page.
-//   Setting null is the Helmet 8 API to remove a default directive.
-app.use(helmet({
-  crossOriginEmbedderPolicy: false,
-  // COOP is only meaningful over HTTPS. Over HTTP the browser logs a warning
-  // and ignores it, creating noise in the console with no security benefit.
-  crossOriginOpenerPolicy: false,
-  // Origin-Agent-Cluster is only meaningful over HTTPS. Over plain HTTP the
-  // browser logs a warning and ignores it. Disabling removes console noise.
-  originAgentCluster: false,
-  hsts: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      baseUri: ["'self'"],
-      fontSrc: ["'self'", 'https:', 'data:'],
-      formAction: ["'self'"],
-      frameAncestors: ["'self'"],
-      // img-src: 'https:' is required for App Store template icons hosted on
-      // external registries (e.g. raw.githubusercontent.com).
-      imgSrc: ["'self'", 'data:', 'https:'],
-      objectSrc: ["'none'"],
-      scriptSrc: ["'self'"],
-      scriptSrcAttr: ["'none'"],
-      styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
-      // connect-src: explicit 'self' covers same-origin fetch/XHR/WebSocket.
-      // ws: and wss: are included for WebSocket connections in any scheme context.
-      connectSrc: ["'self'", 'ws:', 'wss:'],
-      // worker-src: Monaco editor creates Web Workers via blob: URLs for language
-      // services (syntax highlighting, intellisense). Without blob: they silently fail.
-      workerSrc: ["'self'", 'blob:'],
-      // Helmet 8 merges custom directives with its defaults, which include
-      // upgrade-insecure-requests. Setting it to null explicitly removes it.
-      // On plain-HTTP self-hosted deployments (the common case) this directive
-      // causes every JS/CSS asset to fail with ERR_SSL_PROTOCOL_ERROR → blank page.
-      upgradeInsecureRequests: null,
-    },
-  },
-}));
-
-// CORS - in production restrict to the configured frontend origin.
-// In development, mirror the request origin so Vite's dev server works.
-const corsOrigin = process.env.NODE_ENV === 'production'
-  ? (process.env.FRONTEND_URL || false)
-  : true;
-
-app.use(cors({
-  origin: corsOrigin,
-  credentials: true,
-}));
-
-// Gzip JSON and HTML responses. SSE streams (Content-Type: text/event-stream)
-// MUST NOT be compressed because compression buffers output and would delay
-// event delivery until a flush, breaking live log and status streams.
-app.use(compression({
-  filter: (req: Request, res: Response) => {
-    const ct = res.getHeader('Content-Type');
-    if (typeof ct === 'string' && ct.includes('text/event-stream')) {
-      return false;
-    }
-    return compression.filter(req, res);
-  },
-}));
-
-// Cookie parser must run before rate limiters so the hybrid key generator
-// can read req.cookies for per-user rate limit bucketing.
-app.use(cookieParser());
-
-// Tiered rate limiting (see middleware/rateLimiters.ts for the full tier model).
-app.use('/api/', globalApiLimiter);
-app.use('/api/', pollingLimiter);
-
-// Parse JSON on local requests; preserve the raw stream for remote proxy forwarding.
-app.use(conditionalJsonParser);
-
-// Resolve req.nodeId and short-circuit requests to deleted nodes.
-app.use(nodeContextMiddleware);
 
 // WebSocket proxy server for forwarding remote node WS connections
 const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
@@ -238,177 +148,6 @@ wsProxyServer.on('error', (err, _req, socket: any) => {
   console.error('[WS Proxy] Error:', err.message);
   try { socket?.destroy(); } catch { }
 });
-
-// Authentication Middleware
-// Accepts both cookie auth (browser sessions) and Bearer token auth (Sencho-to-Sencho proxy).
-// Bearer token is evaluated first: node-to-node proxy calls always carry a Bearer token and
-// should never be shadowed by a stale or cross-instance cookie.
-const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const cookieToken = req.cookies[COOKIE_NAME];
-  const bearerToken = req.headers.authorization?.startsWith('Bearer ')
-    ? req.headers.authorization.slice(7)
-    : null;
-  const token = bearerToken || cookieToken;
-
-  if (!token) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-
-  try {
-    const settings = DatabaseService.getInstance().getGlobalSettings();
-    const jwtSecret = settings.auth_jwt_secret;
-    if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; role?: string; scope?: string; tv?: number; user_id?: number; sso?: boolean };
-
-    if (isDebugEnabled()) console.log('[Auth:diag] Token type:', bearerToken ? 'bearer' : 'cookie', 'scope:', decoded.scope || 'user-session');
-
-    // API token path: scope-based programmatic access
-    if (decoded.scope === 'api_token') {
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const apiToken = DatabaseService.getInstance().getApiTokenByHash(tokenHash);
-      if (!apiToken || apiToken.revoked_at) {
-        if (isDebugEnabled()) console.log('[Auth:diag] API token rejected: not found or revoked');
-        res.status(401).json({ error: 'API token not found or revoked' });
-        return;
-      }
-      if (apiToken.expires_at && apiToken.expires_at < Date.now()) {
-        if (isDebugEnabled()) console.log('[Auth:diag] API token rejected: expired');
-        res.status(401).json({ error: 'API token has expired' });
-        return;
-      }
-      DatabaseService.getInstance().updateApiTokenLastUsed(apiToken.id);
-      const creator = DatabaseService.getInstance().getUserById(apiToken.user_id);
-      const roleMap: Record<string, UserRole> = {
-        'read-only': 'viewer',
-        'deploy-only': 'deployer',
-        'full-admin': 'admin',
-      };
-      req.user = { username: creator?.username || `api-token:${apiToken.name}`, role: roleMap[apiToken.scope] || 'viewer', userId: apiToken.user_id };
-      req.apiTokenScope = apiToken.scope as 'read-only' | 'deploy-only' | 'full-admin';
-      if (isDebugEnabled()) console.log('[Auth:diag] API token authenticated:', { scope: apiToken.scope, user: creator?.username, tokenName: apiToken.name });
-      next();
-      return;
-    }
-
-    // Partial-auth session: a password/SSO credential has verified, but the
-    // TOTP second factor is still required. Such a token can only be used to
-    // complete the MFA challenge or to abort the flow by logging out. Every
-    // other route must reject it so no privileged action is reachable before
-    // the second factor clears.
-    if (decoded.scope === MFA_PENDING_SCOPE) {
-      const allowedPath = req.path === '/api/auth/login/mfa' || req.path === '/api/auth/logout';
-      if (!allowedPath) {
-        res.status(403).json({ error: 'Two-factor authentication required', code: 'MFA_PENDING' });
-        return;
-      }
-      req.mfaPendingUserId = typeof decoded.user_id === 'number' ? decoded.user_id : undefined;
-      req.mfaPendingSso = decoded.sso === true;
-      next();
-      return;
-    }
-
-    // Node proxy tokens: Sencho-to-Sencho communication, not user sessions.
-    // Handle before user resolution since proxy tokens have no username.
-    // pilot_tunnel scope is the equivalent credential for pilot-agent-mode
-    // nodes; it arrives on requests the primary forwarded through a tunnel
-    // after the primary itself re-signed/trusted them. Same tier-header trust
-    // rules apply.
-    if (decoded.scope === 'node_proxy' || decoded.scope === 'pilot_tunnel') {
-      req.user = { username: 'node-proxy', role: 'admin', userId: 0 };
-
-      // Distributed License Enforcement: trust tier headers only from authenticated node proxy requests.
-      // Browser sessions and API tokens cannot set these; only a valid node_proxy JWT (signed with
-      // this instance's JWT secret) unlocks the trusted path.
-      const tierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
-      const variantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
-      if (isLicenseTier(tierHeader)) {
-        req.proxyTier = normalizeTier(tierHeader);
-      }
-      if (isLicenseVariant(variantHeader)) {
-        req.proxyVariant = normalizeVariant(variantHeader);
-      } else if (variantHeader === '') {
-        req.proxyVariant = null;
-      }
-      next();
-      return;
-    }
-
-    // User session tokens: resolve against the database for up-to-date role and existence checks.
-    const dbUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
-
-    // User must exist in the database (rejects deleted users immediately)
-    if (!dbUser) {
-      res.status(401).json({ error: 'User account no longer exists' });
-      return;
-    }
-
-    // Token version check: rejects sessions after password change, role change, or admin reset.
-    // Pre-migration tokens (no tv claim) are accepted for backward compat and expire within 24h.
-    if (decoded.tv !== undefined && dbUser.token_version !== decoded.tv) {
-      if (isDebugEnabled()) console.log('[Auth:diag] Token version mismatch for:', decoded.username, 'jwt:', decoded.tv, 'db:', dbUser.token_version);
-      console.log('[Auth] Session rejected: token version mismatch for:', decoded.username);
-      res.status(401).json({ error: 'Session invalidated. Please log in again.' });
-      return;
-    }
-
-    if (isDebugEnabled()) console.log('[Auth:diag] User resolved:', dbUser.username, 'role:', dbUser.role, 'tv:', dbUser.token_version);
-
-    // Use the DB role (not the JWT role) so role changes take effect immediately
-    req.user = { username: dbUser.username, role: dbUser.role as UserRole, userId: dbUser.id };
-
-    next();
-  } catch (err) {
-    console.error('[Auth] Token validation failed:', (err as Error).message);
-    res.status(401).json({ error: 'Invalid or expired token' });
-    return;
-  }
-};
-
-/** Sign a session JWT and set it as an httpOnly cookie. */
-function issueSessionCookie(
-  res: Response,
-  req: Request,
-  user: { username: string; role: string; token_version: number },
-  jwtSecret: string,
-): void {
-  const token = jwt.sign(
-    { username: user.username, role: user.role, tv: user.token_version },
-    jwtSecret,
-    { expiresIn: '24h' },
-  );
-  res.cookie(COOKIE_NAME, token, getCookieOptions(req));
-}
-
-/**
- * Sign a short-lived `mfa_pending` JWT and set it as an httpOnly cookie. This
- * represents the partial-auth session that exists between password (or SSO)
- * success and TOTP verification. The scope is enforced in `authMiddleware`, so
- * this cookie cannot be used to reach any route other than
- * `/api/auth/login/mfa` or `/api/auth/logout`.
- */
-function issueMfaPendingCookie(
-  res: Response,
-  req: Request,
-  user: { id: number; username: string },
-  jwtSecret: string,
-  opts: { sso?: boolean } = {},
-): void {
-  const token = jwt.sign(
-    { scope: MFA_PENDING_SCOPE, user_id: user.id, username: user.username, sso: opts.sso === true },
-    jwtSecret,
-    { expiresIn: Math.floor(MFA_PENDING_TTL_MS / 1000) },
-  );
-  res.cookie(MFA_PENDING_COOKIE_NAME, token, {
-    ...getCookieOptions(req),
-    maxAge: MFA_PENDING_TTL_MS,
-  });
-}
-
-/** Clear the partial-auth cookie. Called on successful MFA verification and on logout. */
-function clearMfaPendingCookie(res: Response, req: Request): void {
-  res.clearCookie(MFA_PENDING_COOKIE_NAME, getCookieOptions(req));
-}
 
 // Captured at boot. Exposed via /api/health and /api/meta so the Fleet update overlay
 // can distinguish a brand-new process from the old one still mid-pull.
@@ -1277,7 +1016,7 @@ app.put('/api/auth/mfa/sso-bypass', authMiddleware, (req: Request, res: Response
 });
 
 // Auth gate on all /api/* routes (exempts /auth/* and webhook triggers).
-app.use('/api', createAuthGate(authMiddleware));
+app.use('/api', authGate);
 
 // Audit-log every mutating /api/* action (POST/PUT/DELETE/PATCH).
 app.use('/api', auditLog);

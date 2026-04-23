@@ -3,26 +3,21 @@ import { DatabaseService } from '../services/DatabaseService';
 import { isDebugEnabled } from '../utils/debug';
 import { getAuditSummary } from '../utils/audit-summaries';
 import { WEBHOOK_TRIGGER_RE } from '../helpers/routePatterns';
+import { authMiddleware } from './auth';
 
 /**
- * Build the `/api/*` auth gate. Mounted at `/api`, so paths it sees are
- * already stripped of the `/api` prefix. Exempts `/auth/*` (setup, login,
- * SSO: handled by their own routes) and webhook triggers (authenticated
- * via HMAC, not session).
- *
- * Takes `authMiddleware` as a dependency instead of importing it so this
- * file does not pin the monolith's auth lifecycle. Phase 2 extracts
- * `authMiddleware` into its own module.
+ * `/api/*` auth gate. Mounted at `/api`, so paths it sees are already
+ * stripped of the `/api` prefix. Exempts `/auth/*` (setup, login, SSO:
+ * handled by their own routes) and webhook triggers (authenticated via
+ * HMAC, not session).
  */
-export function createAuthGate(authMiddleware: RequestHandler): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (req.path.startsWith('/auth/') || WEBHOOK_TRIGGER_RE.test(req.path)) {
-      next();
-      return;
-    }
-    authMiddleware(req, res, next);
-  };
-}
+export const authGate: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
+  if (req.path.startsWith('/auth/') || WEBHOOK_TRIGGER_RE.test(req.path)) {
+    next();
+    return;
+  }
+  authMiddleware(req, res, next);
+};
 
 /**
  * Audit-logging middleware. Records every mutating `/api/*` action for

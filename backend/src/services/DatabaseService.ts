@@ -238,6 +238,13 @@ export interface AuditLogEntry {
 
 export type ApiTokenScope = 'read-only' | 'deploy-only' | 'full-admin';
 
+/** Map an API token's scope to the synthesized user role used during request authorization. */
+export const API_TOKEN_SCOPE_TO_ROLE: Record<ApiTokenScope, UserRole> = {
+    'read-only': 'viewer',
+    'deploy-only': 'deployer',
+    'full-admin': 'admin',
+};
+
 export interface ApiToken {
     id: number;
     token_hash: string;
