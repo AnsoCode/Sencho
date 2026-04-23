@@ -1,5 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
-import WebSocket, { WebSocketServer } from 'ws';
+import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import DockerController, { globalDockerNetwork, type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
 import type Dockerode from 'dockerode';
@@ -10,11 +9,7 @@ import crypto from 'crypto';
 // @ts-ignore - composerize lacks proper type definitions
 import composerize from 'composerize';
 import si from 'systeminformation';
-import http from 'http';
-import httpProxy from 'http-proxy';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
-import { HostTerminalService } from './services/HostTerminalService';
 import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, parsePolicyEvaluation, type VulnerabilityScan } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
@@ -27,9 +22,9 @@ import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
 import { PilotTunnelManager } from './services/PilotTunnelManager';
-import { encodeJsonFrame as encodePilotJsonFrame, PROTOCOL_VERSION as PILOT_PROTOCOL_VERSION, PilotCloseCode } from './pilot/protocol';
+import { PilotCloseCode } from './pilot/protocol';
 import { FleetSyncService } from './services/FleetSyncService';
-import { LicenseService, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
+import { LicenseService } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { MfaService } from './services/MfaService';
@@ -88,6 +83,12 @@ import {
   issueMfaPendingCookie,
   clearMfaPendingCookie,
 } from './middleware/auth';
+import { createRemoteProxyMiddleware } from './proxy/remoteNodeProxy';
+import { createServer } from './server';
+import { attachUpgrade } from './websocket/upgradeHandler';
+import { getTerminalWs } from './websocket/generic';
+import { FleetUpdateTrackerService } from './services/FleetUpdateTrackerService';
+import { mintConsoleSession } from './helpers/consoleSession';
 
 /**
  * Invalidate the per-node caches affected by a stack/container mutation so
@@ -141,13 +142,6 @@ const _origEmitWarning = process.emitWarning.bind(process);
 const app = createApp();
 
 // FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
-
-// WebSocket proxy server for forwarding remote node WS connections
-const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
-wsProxyServer.on('error', (err, _req, socket: any) => {
-  console.error('[WS Proxy] Error:', err.message);
-  try { socket?.destroy(); } catch { }
-});
 
 // Captured at boot. Exposed via /api/health and /api/meta so the Fleet update overlay
 // can distinguish a brand-new process from the old one still mid-pull.
@@ -383,7 +377,7 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
       res.status(500).json({ error: 'No JWT secret configured on this instance.' });
       return;
     }
-    // Default 1-year expiry — admin should rotate tokens periodically
+    // Default 1-year expiry; admin should rotate tokens periodically.
     const token = jwt.sign({ scope: 'node_proxy' }, jwtSecret, { expiresIn: '365d' });
     res.json({ token });
   } catch (error: any) {
@@ -1141,20 +1135,8 @@ app.post('/api/system/update', (req: Request, res: Response): void => {
 
 // --- Fleet Overview (local-only, aggregates all nodes) ---
 
-// In-memory tracker for remote node updates (transient — lost on gateway restart)
-interface UpdateTracker {
-  status: 'updating' | 'completed' | 'timeout' | 'failed';
-  startedAt: number;
-  previousVersion: string | null;
-  error?: string;
-  /** Process start time of the remote node before the update was triggered. */
-  previousProcessStart: number | null;
-  /** True when the node became unreachable at least once during the update window. */
-  wasOffline: boolean;
-  /** Timestamp when the tracker transitioned to a terminal state (completed/failed/timeout). */
-  resolvedAt?: number;
-}
-const updateTracker = new Map<number, UpdateTracker>();
+// In-memory tracker for remote node updates (transient; lost on gateway restart).
+const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
@@ -1177,24 +1159,6 @@ async function getCompareTarget(gatewayVersion: string | null) {
     console.debug('[Fleet:debug] Compare target resolved:', { gatewayVersion, latestVersion, using: result.compareVersion, valid: result.compareValid });
   }
   return result;
-}
-
-function createTracker(
-  status: UpdateTracker['status'],
-  previousVersion: string | null,
-  previousProcessStart: number | null,
-  error?: string,
-): UpdateTracker {
-  const now = Date.now();
-  return {
-    status, startedAt: now, previousVersion, previousProcessStart, wasOffline: false, error,
-    resolvedAt: status !== 'updating' ? now : undefined,
-  };
-}
-
-/** Transition a tracker to a terminal state, setting resolvedAt automatically. */
-function resolveTracker(tracker: UpdateTracker, status: 'completed' | 'failed' | 'timeout', error?: string): UpdateTracker {
-  return { ...tracker, status, resolvedAt: Date.now(), error };
 }
 
 interface FleetNodeOverview {
@@ -1444,7 +1408,7 @@ app.get('/api/fleet/node/:nodeId/stacks/:stackName/containers', authMiddleware, 
   }
 });
 
-// Fleet Update Status — returns version comparison and active update status for all nodes
+// Fleet Update Status: returns version comparison and active update status for all nodes.
 app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
   if (!requirePaid(_req, res)) return;
   try {
@@ -1485,12 +1449,12 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
           if (elapsed > UPDATE_TIMEOUT_MS) {
             // Final timeout (5 min)
             if (debug) console.debug('[Fleet:debug] Node', node.id, 'timed out after', Math.round(elapsed / 1000) + 's');
-            updateTracker.set(node.id, resolveTracker(tracker, 'timeout', UPDATE_TIMEOUT_MSG));
+            updateTracker.set(node.id, updateTracker.resolve(tracker, 'timeout', UPDATE_TIMEOUT_MSG));
           } else if (node.type === 'remote') {
             if (remoteUpdateError) {
               // Remote reported a pull failure via /api/meta
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'reported pull failure:', remoteUpdateError);
-              updateTracker.set(node.id, resolveTracker(tracker, 'failed', remoteUpdateError));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'failed', remoteUpdateError));
             } else if (!remoteOnline) {
               // Node is unreachable (restarting); record that it went offline
               if (!tracker.wasOffline) {
@@ -1500,7 +1464,7 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
             } else if (version !== tracker.previousVersion) {
               // Signal 1: Version changed (or version now resolvable after being unknown)
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 1 (version changed):', tracker.previousVersion, '->', version);
-              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'completed'));
             } else if (
               remoteStartedAt !== null &&
               tracker.previousProcessStart !== null &&
@@ -1508,11 +1472,11 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
             ) {
               // Signal 2: Process restarted (startedAt changed)
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 2 (process restarted):', tracker.previousProcessStart, '->', remoteStartedAt);
-              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'completed'));
             } else if (tracker.wasOffline && remoteOnline) {
               // Signal 3: Node went offline and is back online (container was recreated)
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 3 (offline then online)');
-              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'completed'));
             } else if (
               elapsed > 15_000 &&
               isValidVersion(version) &&
@@ -1523,11 +1487,11 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
               // Catches fast restarts where the 5s polling interval misses the offline window
               // and startedAt hasn't been observed to change yet.
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'completed via signal 4 (version >= compare target):', version, '>=', compareVersion);
-              updateTracker.set(node.id, resolveTracker(tracker, 'completed'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'completed'));
             } else if (elapsed > EARLY_FAIL_MS) {
               // Heuristic: node never went offline and nothing changed after 3 min
               if (debug) console.debug('[Fleet:debug] Node', node.id, 'early fail after', Math.round(elapsed / 1000) + 's - no signals detected');
-              updateTracker.set(node.id, resolveTracker(tracker, 'failed', 'Update may have failed. The node is still running and its version has not changed.'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'failed', 'Update may have failed. The node is still running and its version has not changed.'));
             }
           } else if (node.type === 'local') {
             // Local node has only two failure signals: an explicit pull/spawn error,
@@ -1538,12 +1502,12 @@ app.get('/api/fleet/update-status', authMiddleware, async (_req: Request, res: R
             const localError = selfUpdate.getLastError();
             if (localError) {
               if (debug) console.debug('[Fleet:debug] Local node', node.id, 'update failed:', localError);
-              updateTracker.set(node.id, resolveTracker(tracker, 'failed', localError));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'failed', localError));
               selfUpdate.clearLastError();
             } else if (elapsed > EARLY_FAIL_MS) {
               // Helper container likely failed silently. Surface failure before the 5 min timeout.
               if (debug) console.debug('[Fleet:debug] Local node', node.id, 'early fail after', Math.round(elapsed / 1000) + 's');
-              updateTracker.set(node.id, resolveTracker(tracker, 'failed', 'Local update did not complete. The container may not have restarted; check Docker logs on the host.'));
+              updateTracker.set(node.id, updateTracker.resolve(tracker, 'failed', 'Local update did not complete. The container may not have restarted; check Docker logs on the host.'));
             }
           }
         }
@@ -1617,7 +1581,7 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
     const existing = updateTracker.get(nodeId);
     if (existing?.status === 'updating') {
       if (Date.now() - existing.startedAt > UPDATE_TIMEOUT_MS) {
-        updateTracker.set(nodeId, resolveTracker(existing, 'timeout', UPDATE_TIMEOUT_MSG));
+        updateTracker.set(nodeId, updateTracker.resolve(existing, 'timeout', UPDATE_TIMEOUT_MSG));
       } else {
         res.status(409).json({ error: 'Update already in progress for this node.' });
         return;
@@ -1638,7 +1602,7 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
         res.status(503).json({ error: 'Self-update unavailable on the local node.' });
         return;
       }
-      updateTracker.set(nodeId, createTracker('updating', getSenchoVersion(), null));
+      updateTracker.set(nodeId, updateTracker.create('updating', getSenchoVersion(), null));
       scheduleLocalUpdate(res, 'Update initiated on local node. The server will restart shortly.');
       return;
     }
@@ -1676,19 +1640,19 @@ app.post('/api/fleet/nodes/:nodeId/update', authMiddleware, async (req: Request,
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       const errorMsg = (err as Record<string, string>)?.error || 'Remote node rejected update request.';
-      updateTracker.set(nodeId, createTracker('failed', meta.version, meta.startedAt, errorMsg));
+      updateTracker.set(nodeId, updateTracker.create('failed', meta.version, meta.startedAt, errorMsg));
       res.status(502).json({ error: errorMsg });
       return;
     }
 
-    updateTracker.set(nodeId, createTracker('updating', meta.version, meta.startedAt));
+    updateTracker.set(nodeId, updateTracker.create('updating', meta.version, meta.startedAt));
     res.status(202).json({ message: `Update initiated on ${node.name}.` });
   } catch (error) {
     console.error('[Fleet] Node update error:', error);
     const errorMsg = (error as Error)?.message || 'Failed to trigger node update.';
     const failedNodeId = parseInt(req.params.nodeId as string, 10);
     if (!isNaN(failedNodeId)) {
-      updateTracker.set(failedNodeId, createTracker('failed', null, null, errorMsg));
+      updateTracker.set(failedNodeId, updateTracker.create('failed', null, null, errorMsg));
     }
     res.status(500).json({ error: 'Failed to trigger node update.' });
   }
@@ -1738,7 +1702,7 @@ app.post('/api/fleet/update-all', authMiddleware, async (req: Request, res: Resp
         signal: AbortSignal.timeout(10000),
       });
       if (response.ok) {
-        updateTracker.set(node.id, createTracker('updating', meta.version, meta.startedAt));
+        updateTracker.set(node.id, updateTracker.create('updating', meta.version, meta.startedAt));
         return { name: node.name, triggered: true };
       }
       return { name: node.name, triggered: false };
@@ -1786,7 +1750,7 @@ app.delete('/api/fleet/update-status', authMiddleware, async (req: Request, res:
   if (req.query.recheck === 'true') {
     await getLatestVersion(true);
   }
-  for (const [nodeId, tracker] of updateTracker) {
+  for (const [nodeId, tracker] of updateTracker.entries()) {
     if (tracker.status === 'timeout' || tracker.status === 'failed' || tracker.status === 'completed') {
       updateTracker.delete(nodeId);
     }
@@ -2115,7 +2079,7 @@ app.post('/api/fleet/snapshots/:id/restore', authMiddleware, async (req: Request
       try {
         await fsService.backupStackFiles(stackName);
       } catch (e) {
-        // Stack may not exist yet before first restore — that's ok
+        // Stack may not exist yet before first restore; that is ok.
         console.warn(`[Fleet Snapshot] Pre-restore backup failed for stack "${stackName}" (may not exist yet):`, (e as Error).message);
       }
 
@@ -2739,588 +2703,19 @@ app.get('/api/permissions/me', authMiddleware, (req: Request, res: Response): vo
   }
 });
 
-// Remote Node HTTP Proxy - single global instance.
-// Previously, createProxyMiddleware was called inside the request handler on every API
-// call, spawning a new proxy instance (and http-proxy server) each time. This caused:
-//   - MaxListenersExceededWarning: repeated 'close' listeners added to [Server]
-//   - DEP0060: util._extend called on every http-proxy initialisation
-// Fix: create ONE instance at startup; use the router option to resolve the
-// target URL dynamically per request without constructing new listeners.
-const remoteNodeProxy = createProxyMiddleware<Request, Response>({
-  target: 'http://localhost:0', // placeholder - overridden per-request by router
-  changeOrigin: true,
-  router: (req) => {
-    const node = NodeRegistry.getInstance().getNode(req.nodeId);
-    return node?.api_url?.replace(/\/$/, '');
-  },
-  // When mounted at app.use('/api/', ...), Express strips the '/api/' prefix from
-  // req.url before the middleware sees it. Re-add it so the remote Sencho instance
-  // receives the full path (e.g. '/stats' becomes '/api/stats').
-  pathRewrite: (path) => '/api' + path,
-  on: {
-    proxyReq: (proxyReq, req) => {
-      const node = NodeRegistry.getInstance().getNode(req.nodeId);
-      // Strip headers that must not reach the remote instance:
-      // - x-node-id: remote Sencho treats all requests as local
-      // - cookie: the browser's sencho_token is signed with THIS instance's JWT secret;
-      //   the remote would try to verify it with its own secret and return 401.
-      //   Authentication is handled exclusively via the Bearer token below.
-      proxyReq.removeHeader('x-node-id');
-      proxyReq.removeHeader('cookie');
-      if (node?.api_token) {
-        proxyReq.setHeader('Authorization', `Bearer ${node.api_token}`);
-      }
-      // Distributed License Enforcement: assert the main instance's license tier to the
-      // remote node so tier-gated routes honor the main's license instead of the node's local
-      // (likely Community) tier. The remote's authMiddleware only trusts these headers when the
-      // request carries a valid node_proxy JWT.
-      const proxyLs = LicenseService.getInstance();
-      proxyReq.setHeader(PROXY_TIER_HEADER, proxyLs.getTier());
-      proxyReq.setHeader(PROXY_VARIANT_HEADER, proxyLs.getVariant() || '');
-      // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
-      // doesn't reject the request with 404 ("Node X not found") - the remote
-      // has no record of the gateway's node IDs and should treat the request
-      // as local. This affects endpoints like EventSource /api/containers/:id/logs
-      // that pass nodeId as a query param rather than the x-node-id header.
-      if (proxyReq.path.includes('nodeId=')) {
-        const [pathname, qs] = proxyReq.path.split('?');
-        const params = new URLSearchParams(qs || '');
-        params.delete('nodeId');
-        const newQs = params.toString();
-        proxyReq.path = pathname + (newQs ? `?${newQs}` : '');
-      }
-      // Body forwarding: the conditional json parser (see top of file) skips
-      // parsing for remote requests, so req's raw stream is intact and
-      // http-proxy's req.pipe(proxyReq) forwards the body automatically.
-      // No manual body rewriting needed here.
-    },
-    proxyRes: (proxyRes) => {
-      // Mark every response forwarded from a remote node with a sentinel header.
-      // The frontend (apiFetch / fetchForNode) checks this before firing the
-      // global 'sencho-unauthorized' event: a 401 from a remote means the stored
-      // api_token for that node is invalid - not that the user's own session
-      // expired. Without this distinction, any node with a bad token causes an
-      // immediate logout loop.
-      proxyRes.headers['x-sencho-proxy'] = '1';
-    },
-    error: (err, _req, proxyRes) => {
-      console.error('[Proxy] Remote node error:', (err as Error).message);
-      // proxyRes can be either a ServerResponse (HTTP) or a raw Socket (WS/TCP errors).
-      // Only attempt to send an HTTP 502 if it is a proper ServerResponse with a
-      // headersSent flag - otherwise silently drop (the socket will be destroyed).
-      const res = proxyRes as any;
-      if (typeof res?.headersSent === 'boolean' && !res.headersSent && typeof res.status === 'function') {
-        res.status(502).json({
-          error: 'Remote node is unreachable. Check the API URL and ensure Sencho is running on that host.'
-        });
-      }
-    },
-  },
-});
+// Remote Node HTTP Proxy (see proxy/remoteNodeProxy.ts). Mounted here after
+// authGate + auditLog + apiTokenScope so local Sencho enforces auth first;
+// the proxy then takes over for remote-targeted requests.
+app.use('/api/', createRemoteProxyMiddleware());
 
-// Intercepts all /api/ requests for remote Distributed API nodes and forwards them
-// to the target Sencho instance. Node management and auth routes always execute locally.
-app.use('/api/', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || req.path.startsWith('/nodes') || req.path.startsWith('/license') || req.path.startsWith('/fleet') || req.path.startsWith('/webhooks') || req.path.startsWith('/meta')) {
-    next();
-    return;
-  }
+// HTTP server + WebSocket servers (see server.ts for shape).
+const { server, wss, pilotTunnelWss } = createServer(app);
 
-  const node = NodeRegistry.getInstance().getNode(req.nodeId);
-  if (!node || node.type !== 'remote') {
-    next();
-    return;
-  }
+// Dispatch WebSocket upgrades (see websocket/upgradeHandler.ts for the full
+// dispatch order). Also wires the main wss's connection handler for
+// container-exec / streamStats actions.
+attachUpgrade(server, { wss, pilotTunnelWss });
 
-  if (!node.api_url || !node.api_token) {
-    res.status(503).json({
-      error: `Remote node "${node.name}" has no API URL or token configured. Update it in Settings → Nodes.`
-    });
-    return;
-  }
-
-  remoteNodeProxy(req, res, next);
-});
-
-// Create HTTP server for WebSocket upgrade handling
-const server = http.createServer(app);
-
-// WebSocket server with authentication
-const wss = new WebSocketServer({ noServer: true });
-
-// Dedicated WS server for accepting inbound pilot-agent tunnels. Agents dial
-// /api/pilot/tunnel; the handshake verifies a pilot_enroll or pilot_tunnel
-// JWT, then hands the socket off to PilotTunnelManager.
-const pilotTunnelWss = new WebSocketServer({ noServer: true });
-
-let terminalWs: WebSocket | null = null;
-
-// Notification push - set of authenticated browser clients subscribed to real-time alerts
-const notificationSubscribers = new Set<WebSocket>();
-NotificationService.getInstance().setBroadcaster((notification) => {
-  if (notificationSubscribers.size === 0) return;
-  const msg = JSON.stringify({ type: 'notification', payload: notification });
-  for (const ws of notificationSubscribers) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-    }
-  }
-});
-
-/**
- * Handle a pilot-agent tunnel upgrade. Accepts either:
- *   - pilot_enroll (15m, one-time): consume the enrollment row, mint a
- *     long-lived pilot_tunnel token, send it back in a ctrl enroll_ack frame.
- *   - pilot_tunnel (365d): accept the socket directly.
- * In both cases, the accepted WebSocket is handed to PilotTunnelManager.
- */
-async function handlePilotTunnelUpgrade(
-  req: import('http').IncomingMessage,
-  socket: import('stream').Duplex,
-  head: Buffer,
-): Promise<void> {
-  const reject = (status: number, message: string) => {
-    try { socket.write(`HTTP/1.1 ${status} ${message}\r\n\r\n`); } catch { /* ignore */ }
-    try { socket.destroy(); } catch { /* ignore */ }
-  };
-
-  const authHeader = req.headers['authorization'];
-  const header = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return reject(401, 'Unauthorized');
-
-  const db = DatabaseService.getInstance();
-  const jwtSecret = db.getGlobalSettings().auth_jwt_secret;
-  if (!jwtSecret) return reject(500, 'Internal Server Error');
-
-  let decoded: { scope?: string; nodeId?: number; enrollNonce?: string };
-  try {
-    decoded = jwt.verify(token, jwtSecret) as typeof decoded;
-  } catch {
-    return reject(401, 'Unauthorized');
-  }
-
-  if (decoded.scope !== 'pilot_enroll' && decoded.scope !== 'pilot_tunnel') {
-    return reject(403, 'Forbidden');
-  }
-  if (typeof decoded.nodeId !== 'number') return reject(400, 'Bad Request');
-
-  const node = db.getNode(decoded.nodeId);
-  if (!node || node.type !== 'remote' || node.mode !== 'pilot_agent') {
-    return reject(404, 'Not Found');
-  }
-
-  let mintedTunnelToken: string | null = null;
-  if (decoded.scope === 'pilot_enroll') {
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const row = db.consumePilotEnrollment(tokenHash);
-    if (!row || row.node_id !== decoded.nodeId) {
-      return reject(401, 'Unauthorized');
-    }
-    mintedTunnelToken = jwt.sign(
-      { scope: 'pilot_tunnel', nodeId: decoded.nodeId },
-      jwtSecret,
-      { expiresIn: '365d' },
-    );
-  }
-
-  const agentVersionHeader = req.headers['x-sencho-agent-version'];
-  const agentVersion = Array.isArray(agentVersionHeader) ? agentVersionHeader[0] : agentVersionHeader;
-
-  pilotTunnelWss.handleUpgrade(req, socket, head, async (ws) => {
-    try {
-      ws.send(encodePilotJsonFrame({
-        t: 'hello',
-        version: PILOT_PROTOCOL_VERSION,
-        role: 'primary',
-      }));
-      if (mintedTunnelToken) {
-        ws.send(encodePilotJsonFrame({
-          t: 'ctrl',
-          op: 'enroll_ack',
-          payload: { token: mintedTunnelToken, nodeId: decoded.nodeId },
-        }));
-      }
-    } catch {
-      try { ws.close(1011, 'hello failed'); } catch { /* ignore */ }
-      return;
-    }
-
-    try {
-      await PilotTunnelManager.getInstance().registerTunnel(decoded.nodeId!, ws, agentVersion);
-    } catch (err) {
-      console.error('[Pilot] Failed to register tunnel:', (err as Error).message);
-      try { ws.close(1011, 'registration failed'); } catch { /* ignore */ }
-    }
-  });
-}
-
-// Handle WebSocket upgrade with JWT authentication
-server.on('upgrade', async (req, socket, head) => {
-  // Pilot-agent tunnel ingress: agents dial /api/pilot/tunnel and present
-  // either a short-lived pilot_enroll token (consumed once) or a long-lived
-  // pilot_tunnel token. Handled independently of user/session auth because
-  // these are machine credentials and carry no cookies.
-  try {
-    const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    if (reqUrl.pathname === '/api/pilot/tunnel') {
-      await handlePilotTunnelUpgrade(req, socket, head);
-      return;
-    }
-  } catch {
-    // URL parse error falls through to the normal flow, which will reject.
-  }
-
-  // Parse cookies from the upgrade request
-  const cookieHeader = req.headers.cookie || '';
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map(c => c.trim().split('=')).filter(([k, v]) => k && v)
-  );
-
-  // Accept either cookie auth (browser sessions) or Bearer token auth (node-to-node WS proxy)
-  const cookieToken = cookies[COOKIE_NAME];
-  const authHeader = req.headers['authorization'] as string | undefined;
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  // Prefer Bearer over cookie: node-to-node proxy upgrades carry a Bearer token and must
-  // not be shadowed by a browser cookie signed with a different instance's JWT secret.
-  const token = bearerToken || cookieToken;
-
-  if (!token) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  try {
-    const settings = DatabaseService.getInstance().getGlobalSettings();
-    const jwtSecret = settings.auth_jwt_secret;
-    if (!jwtSecret) throw new Error('No JWT secret');
-    const decoded = jwt.verify(token, jwtSecret) as { username?: string; scope?: string; role?: string; tv?: number };
-
-    // Node proxy tokens are machine-to-machine credentials and must never be granted
-    // interactive terminal access (host console or container exec).
-    const isProxyToken = decoded.scope === 'node_proxy';
-
-    // API token scope enforcement for WebSocket connections
-    let wsApiTokenScope: string | null = null;
-    if (decoded.scope === 'api_token') {
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const apiToken = DatabaseService.getInstance().getApiTokenByHash(tokenHash);
-      if (!apiToken || apiToken.revoked_at) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      if (apiToken.expires_at && apiToken.expires_at < Date.now()) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      DatabaseService.getInstance().updateApiTokenLastUsed(apiToken.id);
-      wsApiTokenScope = apiToken.scope;
-    }
-
-    // For user session tokens (no scope), resolve against DB for up-to-date role and
-    // token_version checks. This mirrors what authMiddleware does for HTTP requests.
-    // Scoped tokens (api_token, node_proxy, console_session) skip this: they are
-    // validated by their own logic above or by the gateway that issued them.
-    let wsResolvedUser: { username: string; role: UserRole; token_version: number } | undefined;
-    if (!decoded.scope && decoded.username) {
-      const dbUser = DatabaseService.getInstance().getUserByUsername(decoded.username);
-      if (!dbUser) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      if (decoded.tv !== undefined && dbUser.token_version !== decoded.tv) {
-        console.log('[Auth] WS session rejected: token version mismatch for:', decoded.username);
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      wsResolvedUser = { username: dbUser.username, role: dbUser.role as UserRole, token_version: dbUser.token_version };
-    }
-
-    const url = req.url || '';
-    const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname;
-
-    // Gate WebSocket paths by API token scope
-    if (wsApiTokenScope) {
-      const isLogPath = /^\/api\/stacks\/[^/]+\/logs$/.test(pathname);
-      const isNotifPath = pathname === '/ws/notifications';
-      if (wsApiTokenScope === 'read-only' || wsApiTokenScope === 'deploy-only') {
-        if (!isLogPath && !isNotifPath) {
-          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      }
-    }
-
-    // Resolve node context from query param
-    const nodeIdParam = parsedUrl.searchParams.get('nodeId');
-    const nodeId = nodeIdParam ? parseInt(nodeIdParam, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-    const node = NodeRegistry.getInstance().getNode(nodeId);
-
-    // Notification push channel - local only when no remote nodeId is specified.
-    // When a nodeId pointing to a remote node is provided, fall through to the
-    // proxy block below so the browser subscribes to that remote node's push stream.
-    if (pathname === '/ws/notifications' && (!node || node.type !== 'remote')) {
-      const notifWss = new WebSocketServer({ noServer: true });
-      notifWss.handleUpgrade(req, socket, head, (ws) => {
-        notifWss.close();
-        notificationSubscribers.add(ws);
-        ws.on('close', () => notificationSubscribers.delete(ws));
-        ws.on('error', () => { notificationSubscribers.delete(ws); ws.terminate(); });
-      });
-      return;
-    }
-
-    // Remote Node WebSocket Proxy - forward the entire WS connection to the remote Sencho instance
-    if (node && node.type === 'remote' && node.api_url && node.api_token) {
-      const wsTarget = node.api_url.replace(/\/$/, '').replace(/^https?/, (m) => m === 'https' ? 'wss' : 'ws');
-
-      // Interactive console paths (host console / container exec) are guarded on the remote by
-      // an isProxyToken check that rejects the long-lived api_token (scope: 'node_proxy').
-      // Exchange it for a short-lived console_session token before forwarding so the remote
-      // allows the connection while keeping the guard intact for direct api_token access.
-      const isInteractiveConsolePath = pathname === '/api/system/host-console' || pathname === '/ws';
-      let bearerTokenForProxy = node.api_token;
-      if (isInteractiveConsolePath) {
-        try {
-          const ls = LicenseService.getInstance();
-          const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${node.api_token}`,
-              [PROXY_TIER_HEADER]: ls.getTier(),
-              [PROXY_VARIANT_HEADER]: ls.getVariant() || '',
-            },
-          });
-          if (tokenRes.ok) {
-            const data = await tokenRes.json() as { token?: string };
-            if (typeof data.token === 'string') bearerTokenForProxy = data.token;
-          } else {
-            console.error(`[WS Proxy] Remote console-token request failed: ${tokenRes.status}`);
-            socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-        } catch (e) {
-          console.error('[WS Proxy] Failed to fetch remote console token:', (e as Error).message);
-          socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      }
-
-      req.headers['authorization'] = `Bearer ${bearerTokenForProxy}`;
-      delete req.headers['x-node-id'];
-      // Strip the browser's session cookie - it is signed by this instance's JWT secret and
-      // would fail verification on the remote. Auth is handled exclusively via the Bearer token.
-      delete req.headers['cookie'];
-      // Distributed License Enforcement: assert the main's license tier on proxied WS connections.
-      const wsLs = LicenseService.getInstance();
-      req.headers[PROXY_TIER_HEADER] = wsLs.getTier();
-      req.headers[PROXY_VARIANT_HEADER] = wsLs.getVariant() || '';
-      // Strip nodeId from the forwarded URL so the remote treats the request as a local one.
-      // The remote has no record of the gateway's nodeId, so leaving it would cause unnecessary
-      // fallback logic. Removing it lets the remote default cleanly to its own local node.
-      const fwdUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
-      fwdUrl.searchParams.delete('nodeId');
-      req.url = fwdUrl.pathname + (fwdUrl.searchParams.toString() ? `?${fwdUrl.searchParams.toString()}` : '');
-      wsProxyServer.ws(req, socket, head, { target: wsTarget });
-      return;
-    }
-
-    // Local node handling
-    const logsMatch = pathname.match(/^\/api\/stacks\/([^/]+)\/logs$/);
-    const hostConsoleMatch = pathname.match(/^\/api\/system\/host-console/);
-
-    if (logsMatch) {
-      // Dedicated stack logs WebSocket - uses Supervisor loop for persistent logs
-      const logsWss = new WebSocketServer({ noServer: true });
-      logsWss.handleUpgrade(req, socket, head, (ws) => {
-        // Close the per-connection server immediately after the upgrade is complete.
-        // The wss instance is only needed to negotiate the handshake; keeping it open
-        // would accumulate listeners and allocate memory for every connection.
-        logsWss.close();
-        const stackName = decodeURIComponent(logsMatch[1]);
-        if (!isValidStackName(stackName)) {
-          ws.send('Error: Invalid stack name\r\n');
-          ws.close();
-          return;
-        }
-        try {
-          if (isDebugEnabled()) console.debug('[Stacks:debug] WS log stream opened', { stackName, nodeId });
-          ws.on('close', () => {
-            if (isDebugEnabled()) console.debug('[Stacks:debug] WS log stream closed', { stackName, nodeId });
-          });
-          ComposeService.getInstance(nodeId).streamLogs(stackName, ws);
-        } catch (error) {
-          console.error('[Stacks] Failed to stream logs:', error);
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(`Error streaming logs: ${(error as Error).message}\n`);
-          }
-        }
-      });
-    } else if (hostConsoleMatch) {
-      // Node proxy tokens must not access interactive host terminals
-      if (isProxyToken) {
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      // RBAC gate: only users with 'system:console' permission may access the host console.
-      // Console_session tokens are pre-validated by the gateway's requireAdmin() middleware,
-      // so they skip this check. API tokens are already blocked by the scope gate above.
-      const isConsoleSession = decoded.scope === 'console_session';
-      if (!isConsoleSession) {
-        const userRole = wsResolvedUser?.role;
-        if (!userRole || !ROLE_PERMISSIONS[userRole]?.includes('system:console')) {
-          console.log('[HostConsole] Access denied: insufficient permissions', { username: wsResolvedUser?.username || decoded.username, role: userRole });
-          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      }
-      // Admiral license gate: host console requires Admiral (paid + team variant).
-      // For proxied connections (console_session tokens), trust the tier headers sent by the gateway;
-      // for direct connections, check the local LicenseService.
-      const consoleTierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
-      const consoleVariantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
-      const ls = LicenseService.getInstance();
-      const consoleTier = (isConsoleSession && isLicenseTier(consoleTierHeader))
-        ? normalizeTier(consoleTierHeader)
-        : ls.getTier();
-      const consoleVariant = (isConsoleSession && consoleVariantHeader !== undefined && isLicenseVariant(consoleVariantHeader))
-        ? normalizeVariant(consoleVariantHeader)
-        : ls.getVariant();
-      if (consoleTier !== 'paid' || consoleVariant !== 'admiral') {
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      const consoleUsername = wsResolvedUser?.username || decoded.username || 'console_session';
-      const stackParam = parsedUrl.searchParams.get('stack');
-      console.log('[HostConsole] WebSocket upgrade accepted', { username: consoleUsername, nodeId, stack: stackParam || '(root)' });
-      const hostConsoleWss = new WebSocketServer({ noServer: true });
-      hostConsoleWss.handleUpgrade(req, socket, head, (ws) => {
-        hostConsoleWss.close();
-        let targetDirectory = '';
-        try {
-          const baseDir = FileSystemService.getInstance(nodeId).getBaseDir();
-          if (stackParam) {
-            const resolved = path.resolve(baseDir, stackParam);
-            if (!resolved.startsWith(path.resolve(baseDir))) {
-              ws.send('Error: Invalid stack path\r\n');
-              ws.close();
-              return;
-            }
-            targetDirectory = resolved;
-          } else {
-            targetDirectory = baseDir;
-          }
-        } catch (e) {
-          targetDirectory = FileSystemService.getInstance(NodeRegistry.getInstance().getDefaultNodeId()).getBaseDir();
-        }
-        try {
-          HostTerminalService.spawnTerminal(ws, targetDirectory, consoleUsername);
-        } catch (error) {
-          console.error('[HostConsole] Unhandled spawn error:', { user: consoleUsername, error: (error as Error).message });
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('Error: Failed to start terminal session.\r\n');
-            ws.close();
-          }
-        }
-      });
-    } else {
-      // Generic terminal WebSocket (container exec)
-      // Node proxy tokens must not access interactive container terminals
-      if (isProxyToken) {
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      // Admin enforcement: container exec requires admin role.
-      // console_session tokens are already admin-gated at creation time.
-      // API tokens reaching this point have full-admin scope (read-only/deploy-only blocked above).
-      if (!decoded.scope) {
-        // User session token: verify admin role against the database (not the JWT)
-        // so role changes take effect immediately, matching authMiddleware behavior.
-        const execUser = decoded.username ? DatabaseService.getInstance().getUserByUsername(decoded.username) : undefined;
-        if (!execUser) {
-          console.warn('[Exec] User account not found:', decoded.username);
-          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-        if (decoded.tv !== undefined && execUser.token_version !== decoded.tv) {
-          console.warn('[Exec] Session invalidated (token version mismatch):', decoded.username);
-          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-        if (execUser.role !== 'admin') {
-          console.warn('[Exec] Non-admin user rejected:', decoded.username);
-          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-          socket.destroy();
-          return;
-        }
-      }
-      if (isDebugEnabled()) console.debug('[Exec:diag] WS upgrade for exec path', { nodeId, username: decoded.username, scope: decoded.scope || 'user-session' });
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
-    }
-  } catch (error) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-});
-
-wss.on('connection', (ws) => {
-  console.log('WebSocket connected');
-
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message.toString());
-
-      // Only handle 'action'-based messages at the global level.
-      // 'type'-based messages (input, resize, ping) are handled by the
-      // per-session listener registered inside execContainer's closure.
-      if (!data.action) return;
-
-      if (data.action === 'connectTerminal') {
-        terminalWs = ws;
-      } else if (data.action === 'streamStats') {
-        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-        // When a WS is proxied from a gateway to this remote instance, the nodeId in the
-        // message belongs to the gateway's DB and won't resolve locally. Fall back to local.
-        let nodeId = requestedId;
-        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).streamStats(data.containerId, ws).catch((err: Error) => {
-          console.error('[WS] streamStats error:', err.message);
-          if (ws.readyState === WebSocket.OPEN) ws.close();
-        });
-      } else if (data.action === 'execContainer') {
-        // Handle container exec for bash access
-        // Input, resize, and cleanup are handled inside execContainer's closure
-        const requestedId = data.nodeId ? parseInt(data.nodeId, 10) : NodeRegistry.getInstance().getDefaultNodeId();
-        let nodeId = requestedId;
-        try { NodeRegistry.getInstance().getDocker(requestedId); } catch { nodeId = NodeRegistry.getInstance().getDefaultNodeId(); }
-        DockerController.getInstance(nodeId).execContainer(data.containerId, ws).catch((err: Error) => {
-          console.error('[WS] execContainer error:', err.message);
-          if (ws.readyState === WebSocket.OPEN) ws.close();
-        });
-      }
-    } catch (error) {
-      // Malformed JSON - ignore silently
-    }
-  });
-});
 
 // API Routes (all protected by authMiddleware)
 
@@ -4350,7 +3745,7 @@ app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) =>
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Deploy starting', { stackName, atomic, nodeId: req.nodeId });
     const t0 = Date.now();
-    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), atomic);
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Deploy completed: ${stackName}`);
     if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
@@ -4374,7 +3769,7 @@ app.post('/api/stacks/:stackName/down', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
   try {
-    await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', terminalWs || undefined);
+    await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', getTerminalWs());
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Down completed: ${stackName}`);
     res.json({ status: 'Command started' });
@@ -4487,7 +3882,7 @@ app.post('/api/stacks/:stackName/update', async (req: Request, res: Response) =>
     const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Update starting', { stackName, atomic, nodeId: req.nodeId });
     const t0 = Date.now();
-    await ComposeService.getInstance(req.nodeId).updateStack(stackName, terminalWs || undefined, atomic);
+    await ComposeService.getInstance(req.nodeId).updateStack(stackName, getTerminalWs(), atomic);
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Update completed: ${stackName}`);
@@ -4521,7 +3916,7 @@ app.post('/api/stacks/:stackName/rollback', async (req: Request, res: Response) 
     console.log(`[Stacks] Rollback initiated: ${stackName}`);
     await fsSvc.restoreStackFiles(stackName);
     // Re-deploy with restored files (non-atomic to avoid loops)
-    await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, false);
+    await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), false);
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Rollback completed: ${stackName}`);
     res.json({ message: 'Stack rolled back successfully.' });
@@ -5350,14 +4745,7 @@ app.post('/api/system/console-token', authMiddleware, (req: Request, res: Respon
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const settings = DatabaseService.getInstance().getGlobalSettings();
-    const jwtSecret = settings.auth_jwt_secret;
-    if (!jwtSecret) {
-      res.status(500).json({ error: 'No JWT secret configured' });
-      return;
-    }
-    const consoleToken = jwt.sign({ scope: 'console_session' }, jwtSecret, { expiresIn: '60s' });
-    res.json({ token: consoleToken });
+    res.json({ token: mintConsoleSession() });
   } catch (error) {
     console.error('Failed to issue console token:', error);
     res.status(500).json({ error: 'Failed to issue console token' });
@@ -6694,7 +6082,7 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
         return;
       }
       const atomic = LicenseService.getInstance().getTier() === 'paid';
-      await ComposeService.getInstance(req.nodeId).deployStack(stackName, terminalWs || undefined, atomic);
+      await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), atomic);
       invalidateNodeCaches(req.nodeId);
       console.log(`[Templates] Deploy completed: ${stackName}`);
       res.json({ success: true, message: 'Template deployed successfully' });

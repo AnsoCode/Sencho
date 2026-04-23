@@ -26,7 +26,7 @@ import './types/express';
  *   10. authGate (at /api)                -- registered in index.ts (before Phase 4 finishes)
  *   11. auditLog (at /api)                -- registered in index.ts
  *   12. enforceApiTokenScope (at /api)    -- registered in index.ts
- *   13. remote HTTP proxy                 -- Phase 3
+ *   13. createRemoteProxyMiddleware       -- proxy/remoteNodeProxy.ts, registered in index.ts
  *   14. routes                            -- registered in index.ts (moves to routes/* in Phase 4)
  *   15. static serving + SPA fallback     -- registered in index.ts (moves here in Phase 5)
  *   16. errorHandler                      -- registered in index.ts
