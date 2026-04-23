@@ -1,3 +1,4 @@
+import WebSocket from 'ws';
 import { DatabaseService, NotificationHistory } from './DatabaseService';
 import { NodeRegistry } from './NodeRegistry';
 import { isDebugEnabled } from '../utils/debug';
@@ -12,7 +13,7 @@ const ALLOWED_CHANNEL_TYPES = new Set(['discord', 'slack', 'webhook']);
 export class NotificationService {
     private static instance: NotificationService;
     private dbService: DatabaseService;
-    private broadcaster: ((notification: NotificationHistory) => void) | null = null;
+    private readonly subscribers = new Set<WebSocket>();
 
     private constructor() {
         this.dbService = DatabaseService.getInstance();
@@ -25,9 +26,30 @@ export class NotificationService {
         return NotificationService.instance;
     }
 
-    /** Wire up the WebSocket push function after the WS server is initialised. */
-    public setBroadcaster(fn: (notification: NotificationHistory) => void): void {
-        this.broadcaster = fn;
+    /**
+     * Register a WebSocket as a live-notification subscriber. Returns an
+     * unsubscribe function the caller should invoke on `'close'` / `'error'`
+     * (callers may guard against double-unsubscribe themselves; the Set
+     * handles repeated deletes safely either way).
+     */
+    public subscribe(ws: WebSocket): () => void {
+        this.subscribers.add(ws);
+        return () => this.subscribers.delete(ws);
+    }
+
+    public getSubscriberCount(): number {
+        return this.subscribers.size;
+    }
+
+    /** Push a `{type,payload}` envelope to every currently-open subscriber. */
+    private broadcastToSubscribers(notification: NotificationHistory): void {
+        if (this.subscribers.size === 0) return;
+        const msg = JSON.stringify({ type: 'notification', payload: notification });
+        for (const ws of this.subscribers) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+            }
+        }
     }
 
     /**
@@ -59,9 +81,7 @@ export class NotificationService {
         });
 
         // 2. Push to connected browser clients via WebSocket
-        if (this.broadcaster) {
-            this.broadcaster(notification);
-        }
+        this.broadcastToSubscribers(notification);
 
         // 3. Check notification routing rules if a stack context is available
         const errors: string[] = [];
