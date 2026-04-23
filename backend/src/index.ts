@@ -2,7 +2,6 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import WebSocket, { WebSocketServer } from 'ws';
 import jwt from 'jsonwebtoken';
@@ -78,6 +77,19 @@ import {
   runPolicyGate,
   triggerPostDeployScan,
 } from './helpers/policyGate';
+import {
+  globalApiLimiter,
+  pollingLimiter,
+  webhookTriggerLimiter,
+  authRateLimiter,
+  ssoRateLimiter,
+  trivyInstallLimiter,
+} from './middleware/rateLimiters';
+import { conditionalJsonParser } from './middleware/jsonParser';
+import { nodeContextMiddleware } from './middleware/nodeContext';
+import { createAuthGate, auditLog } from './middleware/authGate';
+import { enforceApiTokenScope } from './middleware/apiTokenScope';
+import { errorHandler } from './middleware/errorHandler';
 
 /**
  * Invalidate the per-node caches affected by a stack/container mutation so
@@ -210,206 +222,14 @@ app.use(compression({
 // can read req.cookies for per-user rate limit bucketing.
 app.use(cookieParser());
 
-// ── Rate Limiting ─────────────────────────────────────────────────────────────
-//
-// Tiered rate limiting to prevent UX lockouts while maintaining security:
-//   Tier 0/1 (Polling):  High-frequency GET endpoints exempt from global limit,
-//                         with a 300/min safety net to prevent resource exhaustion.
-//   Tier W   (Webhooks): CI/CD webhook triggers at 500/min (shared datacenter IPs).
-//   Tier 2   (Standard): All other endpoints at 200/min (raised from 100).
-//   Tier 3   (Auth):     Strict brute-force protection (5-10 attempts / 15min).
-//
-// Enterprise adaptations:
-//   - Internal node-to-node traffic (node_proxy JWTs) bypasses all rate limiters.
-//   - Authenticated requests are keyed by user ID (not IP) to prevent shared
-//     NAT/VPN environments from pooling rate limit budgets.
-
-/** Read-only GET endpoints polled at high frequency by the dashboard/fleet UI. */
-const POLLING_EXEMPT_PATHS = new Set([
-  '/meta', '/health', '/stats', '/system/stats',
-  '/stacks/statuses', '/metrics/historical',
-  '/auth/status', '/auth/sso/providers', '/license',
-]);
-
-const WEBHOOK_TRIGGER_RE = /^\/webhooks\/\d+\/trigger$/;
-
-/**
- * Returns true if the request bears a node_proxy Bearer token.
- * Uses jwt.decode() (no signature verification) to avoid crypto overhead on the
- * hot path; authMiddleware performs full verification downstream. Worst case for
- * a forged token: it skips the rate limiter but is still rejected by auth.
- * Result is memoized on the request object so the two sequential limiters
- * don't repeat the work.
- */
-function isNodeProxyRequest(req: Request): boolean {
-  const cached = (req as any)._isNodeProxy;
-  if (cached !== undefined) return cached;
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) {
-    (req as any)._isNodeProxy = false;
-    return false;
-  }
-  try {
-    const decoded = jwt.decode(auth.slice(7)) as { scope?: string } | null;
-    const result = decoded?.scope === 'node_proxy';
-    (req as any)._isNodeProxy = result;
-    return result;
-  } catch {
-    (req as any)._isNodeProxy = false;
-    return false;
-  }
-}
-
-/**
- * Hybrid rate limit key: uses the JWT username/sub claim for authenticated
- * requests (per-user budgets) and falls back to IP for unauthenticated ones.
- * Uses jwt.decode() (no verification) to avoid double-verification cost;
- * authMiddleware handles signature checks downstream.
- */
-function rateLimitKeyGenerator(req: Request): string {
-  const cookie = req.cookies?.[COOKIE_NAME];
-  if (cookie) {
-    try {
-      const decoded = jwt.decode(cookie) as { username?: string } | null;
-      if (decoded?.username) return `user:${decoded.username}`;
-    } catch { /* fall through to IP */ }
-  }
-  const auth = req.headers.authorization;
-  if (auth?.startsWith('Bearer ')) {
-    try {
-      const decoded = jwt.decode(auth.slice(7)) as { username?: string; sub?: string } | null;
-      if (decoded?.username) return `user:${decoded.username}`;
-      if (decoded?.sub) return `user:${decoded.sub}`;
-    } catch { /* fall through to IP */ }
-  }
-  return ipKeyGenerator(req.ip || 'unknown');
-}
-
-/** Shared config for all rate limiters (1-minute window, standard headers). */
-const rateLimitBase = {
-  windowMs: 60 * 1000,
-  standardHeaders: true,
-  legacyHeaders: false,
-} as const;
-
-// Tier 2: Global API rate limiter. Skips polling endpoints (Tier 0/1), webhook
-// triggers (Tier W), and internal node-to-node traffic (node_proxy).
-const globalApiLimiter = rateLimit({
-  ...rateLimitBase,
-  max: process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.API_RATE_LIMIT || '200', 10)
-    : 1000,
-  keyGenerator: rateLimitKeyGenerator,
-  message: { error: 'Too many requests. Please try again shortly.' },
-  skip: (req: Request) => {
-    if (req.method === 'GET' && POLLING_EXEMPT_PATHS.has(req.path)) return true;
-    if (req.method === 'POST' && WEBHOOK_TRIGGER_RE.test(req.path)) return true;
-    if (isNodeProxyRequest(req)) return true;
-    return false;
-  },
-});
-
+// Tiered rate limiting (see middleware/rateLimiters.ts for the full tier model).
 app.use('/api/', globalApiLimiter);
-
-// Tier 0/1: Polling safety net. Applies only to polling-exempt endpoints to
-// prevent resource exhaustion from runaway or malicious polling.
-const pollingLimiter = rateLimit({
-  ...rateLimitBase,
-  max: process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.API_POLLING_RATE_LIMIT || '300', 10)
-    : 3000,
-  keyGenerator: rateLimitKeyGenerator,
-  message: { error: 'Too many polling requests. Please try again shortly.' },
-  skip: (req: Request) => {
-    if (isNodeProxyRequest(req)) return true;
-    return !(req.method === 'GET' && POLLING_EXEMPT_PATHS.has(req.path));
-  },
-});
-
 app.use('/api/', pollingLimiter);
 
-// Tier W: Webhook trigger limiter. Applied inline on the trigger route handler.
-// CI/CD platforms (GitHub Actions, GitLab runners) often share datacenter IPs,
-// so a higher ceiling prevents dropped deployments during burst activity.
-const webhookTriggerLimiter = rateLimit({
-  ...rateLimitBase,
-  max: process.env.NODE_ENV === 'production' ? 500 : 5000,
-  message: { error: 'Too many webhook triggers. Please try again shortly.' },
-});
+// Parse JSON on local requests; preserve the raw stream for remote proxy forwarding.
+app.use(conditionalJsonParser);
 
-// JSON body parser that also captures the raw bytes for HMAC verification.
-const jsonParser = express.json({
-  verify: (req, _res, buf) => {
-    (req as unknown as { rawBody: Buffer }).rawBody = buf;
-  },
-});
-
-// Conditionally parse JSON bodies. Remote proxy requests must NOT have their body
-// consumed here: express.json() drains the IncomingMessage stream into req.body
-// and http-proxy then pipes an already-ended stream to the remote server.
-// When Node.js pipes an ended readable it calls process.nextTick(dest.end()),
-// which fires *before* the proxyReq socket event, so any attempt to write the
-// body inside the proxyReq handler results in "write after end" and the request
-// hangs. Solution: skip JSON parsing for remote-targeted /api/ requests so the
-// raw stream flows through the proxy intact.
-app.use((req: Request, res: Response, next: NextFunction): void => {
-  const nodeIdHeader = req.headers['x-node-id'];
-  if (nodeIdHeader) {
-    const nodeId = parseInt(nodeIdHeader as string, 10);
-    const node = NodeRegistry.getInstance().getNode(nodeId);
-    if (
-      node?.type === 'remote' &&
-      req.path.startsWith('/api/') &&
-      !req.path.startsWith('/api/auth/') &&
-      !req.path.startsWith('/api/nodes') &&
-      !req.path.startsWith('/api/license') &&
-      !req.path.startsWith('/api/fleet') &&
-      !req.path.startsWith('/api/webhooks') &&
-      !req.path.startsWith('/api/meta')
-    ) {
-      // Preserve body stream for proxy piping
-      next();
-      return;
-    }
-  }
-  jsonParser(req, res, next);
-});
-
-// Node Context Middleware
-const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const nodeIdHeader = req.headers['x-node-id'] as string;
-  const nodeIdQuery = req.query.nodeId as string;
-  if (nodeIdHeader) {
-    req.nodeId = parseInt(nodeIdHeader, 10);
-  } else if (nodeIdQuery) {
-    req.nodeId = parseInt(nodeIdQuery, 10);
-  } else {
-    req.nodeId = NodeRegistry.getInstance().getDefaultNodeId();
-  }
-
-  // Intercept requests to deleted nodes to prevent downstream errors.
-  // /api/nodes is intentionally exempt: it must always be reachable so the
-  // frontend can re-sync after a node is deleted (otherwise a stale x-node-id
-  // in localStorage causes an unrecoverable 404 loop).
-  if (
-    req.path.startsWith('/api/') &&
-    !req.path.startsWith('/api/auth/') &&
-    !req.path.startsWith('/api/nodes') &&
-    !req.path.startsWith('/api/license') &&
-    !req.path.startsWith('/api/fleet') &&
-    !req.path.startsWith('/api/webhooks') &&
-    !req.path.startsWith('/api/meta')
-  ) {
-    const node = DatabaseService.getInstance().getNode(req.nodeId);
-    if (!node) {
-      res.status(404).json({ error: `Node with id ${req.nodeId} not found or was deleted.` });
-      return;
-    }
-  }
-
-  next();
-};
-
+// Resolve req.nodeId and short-circuit requests to deleted nodes.
 app.use(nodeContextMiddleware);
 
 // WebSocket proxy server for forwarding remote node WS connections
@@ -589,17 +409,6 @@ function issueMfaPendingCookie(
 function clearMfaPendingCookie(res: Response, req: Request): void {
   res.clearCookie(MFA_PENDING_COOKIE_NAME, getCookieOptions(req));
 }
-
-// Rate limiter for auth endpoints - prevents brute-force attacks.
-// Production: 5 attempts per 15-minute window per IP.
-// Development: 100 attempts (so E2E tests and local tooling are not blocked).
-const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 5 : 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
-});
 
 // Captured at boot. Exposed via /api/health and /api/meta so the Fleet update overlay
 // can distinguish a brand-new process from the old one still mid-pull.
@@ -847,14 +656,6 @@ app.post('/api/auth/generate-node-token', authMiddleware, async (req: Request, r
 
 // Seed SSO config from environment variables on startup
 SSOService.getInstance().seedFromEnv();
-
-const ssoRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 10 : 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many SSO attempts. Please try again later.' },
-});
 
 /** Derive the OAuth callback base URL from SSO_CALLBACK_URL or the request Host header, with injection validation. */
 function getSSOBaseUrl(req: Request, res: Response): string | null {
@@ -1475,54 +1276,11 @@ app.put('/api/auth/mfa/sso-bypass', authMiddleware, (req: Request, res: Response
   }
 });
 
-// Apply authentication middleware to all /api/* routes except /api/auth/*
-app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
-  if (req.path.startsWith('/auth/') || /^\/webhooks\/\d+\/trigger$/.test(req.path)) {
-    next();
-    return;
-  }
-  authMiddleware(req, res, next);
-});
+// Auth gate on all /api/* routes (exempts /auth/* and webhook triggers).
+app.use('/api', createAuthGate(authMiddleware));
 
-// Audit logging middleware - records all mutating API actions for Admiral accountability.
-// Runs for POST/PUT/DELETE/PATCH on /api/* routes. Uses res.on('finish') to capture status code.
-import { getAuditSummary } from './utils/audit-summaries';
-
-app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
-  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    next();
-    return;
-  }
-
-  const username = req.user?.username || 'unknown';
-  const nodeId = req.nodeId ?? null;
-  const forwarded = req.headers['x-forwarded-for'];
-  const xff = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '';
-  const ip = req.ip || xff || '';
-  const apiPath = req.path;
-
-  res.on('finish', () => {
-    try {
-      if (isDebugEnabled()) {
-        console.log(`[Audit:diag] ${req.method} /api${apiPath} by=${username} status=${res.statusCode} node=${nodeId ?? 'local'} ip=${ip}`);
-      }
-      DatabaseService.getInstance().insertAuditLog({
-        timestamp: Date.now(),
-        username,
-        method: req.method,
-        path: `/api${apiPath}`,
-        status_code: res.statusCode,
-        node_id: nodeId,
-        ip_address: ip,
-        summary: getAuditSummary(req.method, apiPath),
-      });
-    } catch (err) {
-      console.error('[Audit] Failed to write audit log:', err);
-    }
-  });
-
-  next();
-});
+// Audit-log every mutating /api/* action (POST/PUT/DELETE/PATCH).
+app.use('/api', auditLog);
 
 // --- License Routes (local-only, never proxied) ---
 
@@ -1537,48 +1295,6 @@ const requireBody = (req: Request, res: Response): boolean => {
 function isSqliteUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE';
 }
-
-// Scope enforcement for API tokens - restricts which endpoints a token can reach.
-const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
-  /^\/api\/stacks\/[^/]+\/deploy$/,
-  /^\/api\/stacks\/[^/]+\/down$/,
-  /^\/api\/stacks\/[^/]+\/restart$/,
-  /^\/api\/stacks\/[^/]+\/stop$/,
-  /^\/api\/stacks\/[^/]+\/start$/,
-  /^\/api\/stacks\/[^/]+\/update$/,
-];
-
-const enforceApiTokenScope = (req: Request, res: Response, next: NextFunction): void => {
-  const scope = req.apiTokenScope;
-  if (!scope) { next(); return; } // Not an API token request
-  if (isDebugEnabled()) console.log('[ApiTokenScope:diag]', req.method, req.path, 'scope:', scope);
-  if (scope === 'full-admin') { next(); return; }
-
-  if (scope === 'read-only') {
-    if (req.method !== 'GET') {
-      if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', req.method, req.path, 'scope:', scope);
-      res.status(403).json({ error: 'API token scope "read-only" only allows GET requests.', code: 'SCOPE_DENIED' });
-      return;
-    }
-    next();
-    return;
-  }
-
-  if (scope === 'deploy-only') {
-    if (req.method === 'GET') { next(); return; }
-    const fullPath = `/api${req.path}`;
-    if (req.method === 'POST' && DEPLOY_ALLOWED_PATTERNS.some(p => p.test(fullPath))) {
-      next();
-      return;
-    }
-    if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', req.method, req.path, 'scope:', scope);
-    res.status(403).json({ error: 'API token scope "deploy-only" does not allow this action.', code: 'SCOPE_DENIED' });
-    return;
-  }
-
-  if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied: unknown scope', req.method, req.path, 'scope:', scope);
-  res.status(403).json({ error: 'Unknown API token scope.', code: 'SCOPE_DENIED' });
-};
 
 app.use('/api', enforceApiTokenScope);
 
@@ -7516,14 +7232,6 @@ app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: R
 // Vulnerability Scanning Routes
 // =========================
 
-const trivyInstallLimiter = rateLimit({
-  ...rateLimitBase,
-  windowMs: 10 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 5 : 50,
-  keyGenerator: rateLimitKeyGenerator,
-  message: { error: 'Too many install requests. Try again later.' },
-});
-
 app.get('/api/security/trivy-status', authMiddleware, (_req: Request, res: Response) => {
   const svc = TrivyService.getInstance();
   const installer = TrivyInstaller.getInstance();
@@ -8551,6 +8259,9 @@ if (process.env.NODE_ENV === 'production') {
     }
   });
 }
+
+// Central error handler: must be registered after all routes and static.
+app.use(errorHandler);
 
 // Start server with migration
 let mfaReplayPurgeTimer: NodeJS.Timeout | null = null;
