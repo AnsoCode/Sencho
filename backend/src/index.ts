@@ -34,7 +34,7 @@ import { NodeRegistry } from './services/NodeRegistry';
 import { PilotTunnelManager } from './services/PilotTunnelManager';
 import { encodeJsonFrame as encodePilotJsonFrame, PROTOCOL_VERSION as PILOT_PROTOCOL_VERSION, PilotCloseCode } from './pilot/protocol';
 import { FleetSyncService } from './services/FleetSyncService';
-import { LicenseService, type LicenseTier, type LicenseVariant, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
+import { LicenseService, isLicenseTier, isLicenseVariant, normalizeTier, normalizeVariant, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './services/LicenseService';
 import { WebhookService } from './services/WebhookService';
 import { SSOService } from './services/SSOService';
 import { MfaService } from './services/MfaService';
@@ -60,7 +60,6 @@ import {
   STACK_STATUSES_CACHE_TTL_MS,
 } from './helpers/constants';
 import { isSecureRequest, getCookieOptions } from './helpers/cookies';
-import { isProxyExemptPath } from './helpers/proxyExemptPaths';
 import {
   ROLE_PERMISSIONS,
   checkPermission,
@@ -101,7 +100,7 @@ import { getErrorMessage } from './utils/errors';
 import { captureLocalNodeFiles, captureRemoteNodeFiles, SnapshotNodeData } from './utils/snapshot-capture';
 import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
-import TrivyService, { SbomFormat, DIGEST_CACHE_TTL_MS } from './services/TrivyService';
+import TrivyService, { SbomFormat } from './services/TrivyService';
 import TrivyInstaller from './services/TrivyInstaller';
 import { enforcePolicyPreDeploy } from './services/PolicyEnforcement';
 import { validateImageRef } from './utils/image-ref';

@@ -4,6 +4,7 @@ import type { LicenseTier, LicenseVariant } from '../services/LicenseService';
 // Extend Express Request type for user and node context.
 // This file is imported for its side effects only (ambient declaration).
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- Express type augmentation requires namespace syntax
   namespace Express {
     interface Request {
       user?: { username: string; role: UserRole; userId: number };
