@@ -45,14 +45,40 @@ import { CacheService } from './services/CacheService';
 import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
 import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, repoHost as gitRepoHost } from './services/GitSourceService';
 import { sendGitSourceError } from './utils/gitSourceHttp';
-
-// ── Hot-path cache TTLs ────────────────────────────────────────────────
-// Short TTLs collapse concurrent polling pressure across browser tabs and
-// overlapping service samplers without introducing noticeable UI staleness.
-// Keys are per-node: "stats:<nodeId>", "system-stats:<nodeId>", "stack-statuses:<nodeId>".
-const STATS_CACHE_TTL_MS = 2_000;
-const SYSTEM_STATS_CACHE_TTL_MS = 3_000;
-const STACK_STATUSES_CACHE_TTL_MS = 3_000;
+import './types/express';
+import {
+  PORT,
+  MIN_PASSWORD_LENGTH,
+  VALID_LABEL_COLORS,
+  MAX_LABELS_PER_NODE,
+  COOKIE_NAME,
+  MFA_PENDING_COOKIE_NAME,
+  MFA_PENDING_SCOPE,
+  MFA_PENDING_TTL_MS,
+  STATS_CACHE_TTL_MS,
+  SYSTEM_STATS_CACHE_TTL_MS,
+  STACK_STATUSES_CACHE_TTL_MS,
+} from './helpers/constants';
+import { isSecureRequest, getCookieOptions } from './helpers/cookies';
+import { isProxyExemptPath } from './helpers/proxyExemptPaths';
+import {
+  ROLE_PERMISSIONS,
+  checkPermission,
+  requirePermission,
+  type PermissionAction,
+} from './middleware/permissions';
+import {
+  requirePaid,
+  requireAdmiral,
+  requireAdmin,
+  requireNodeProxy,
+  requireScheduledTaskTier,
+} from './middleware/tierGates';
+import {
+  buildPolicyGateOptions,
+  runPolicyGate,
+  triggerPostDeployScan,
+} from './helpers/policyGate';
 
 /**
  * Invalidate the per-node caches affected by a stack/container mutation so
@@ -99,32 +125,9 @@ const _origEmitWarning = process.emitWarning.bind(process);
   _origEmitWarning(warning, ...args);
 };
 
-const MIN_PASSWORD_LENGTH = 8;
-const VALID_LABEL_COLORS = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'] as const;
-const MAX_LABELS_PER_NODE = 50;
 const app = express();
-const PORT = 3000;
 
 // FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
-
-// Cookie settings
-const COOKIE_NAME = 'sencho_token';
-const MFA_PENDING_COOKIE_NAME = 'sencho_mfa_pending';
-const MFA_PENDING_SCOPE = 'mfa_pending';
-const MFA_PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutes to complete the challenge
-
-// Helper to determine if request is secure (HTTPS or behind a proxy that terminates SSL)
-const isSecureRequest = (req: Request): boolean => {
-  return req.secure || req.headers['x-forwarded-proto'] === 'https';
-};
-
-// Helper to get cookie options dynamically per-request
-const getCookieOptions = (req: Request) => ({
-  httpOnly: true,
-  secure: isSecureRequest(req),
-  sameSite: 'strict' as const,
-  maxAge: 24 * 60 * 60 * 1000, // 24 hours
-});
 
 // Middleware
 
@@ -409,26 +412,6 @@ const nodeContextMiddleware = (req: Request, res: Response, next: NextFunction) 
 };
 
 app.use(nodeContextMiddleware);
-
-// Extend Express Request type for user and node
-declare global {
-  namespace Express {
-    interface Request {
-      user?: { username: string; role: UserRole; userId: number };
-      nodeId: number;
-      apiTokenScope?: 'read-only' | 'deploy-only' | 'full-admin';
-      rawBody?: Buffer;
-      /** License tier asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
-      proxyTier?: LicenseTier;
-      /** License variant asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
-      proxyVariant?: LicenseVariant;
-      /** User ID carried by a scoped `mfa_pending` token. Only set while the user is completing the MFA challenge. */
-      mfaPendingUserId?: number;
-      /** True when the pending MFA session originated from an SSO login (LDAP or OIDC) rather than a password login. */
-      mfaPendingSso?: boolean;
-    }
-  }
-}
 
 // WebSocket proxy server for forwarding remote node WS connections
 const wsProxyServer = httpProxy.createProxyServer({ changeOrigin: true });
@@ -1544,54 +1527,6 @@ app.use('/api', (req: Request, res: Response, next: NextFunction): void => {
 
 // --- License Routes (local-only, never proxied) ---
 
-// Paid feature guard: returns false and sends 403 if not on a paid tier (Skipper or Admiral).
-// Checks req.proxyTier first (set by authMiddleware for trusted node proxy requests),
-// falling back to the local LicenseService tier for direct access.
-const requirePaid = (req: Request, res: Response): boolean => {
-  const tier = req.proxyTier !== undefined ? req.proxyTier : LicenseService.getInstance().getTier();
-  if (tier !== 'paid') {
-    res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
-    return false;
-  }
-  return true;
-};
-
-// Admiral feature guard: requires paid tier with team variant.
-// Checks req.proxyTier/proxyVariant first (set by authMiddleware for trusted node proxy
-// requests), falling back to the local LicenseService for direct access.
-const requireAdmiral = (req: Request, res: Response): boolean => {
-  const ls = LicenseService.getInstance();
-  const tier = req.proxyTier !== undefined ? req.proxyTier : ls.getTier();
-  const variant = req.proxyVariant !== undefined ? req.proxyVariant : ls.getVariant();
-  if (tier !== 'paid') {
-    res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
-    return false;
-  }
-  if (variant !== 'admiral') {
-    res.status(403).json({ error: 'This feature requires a Sencho Admiral license.', code: 'ADMIRAL_REQUIRED' });
-    return false;
-  }
-  return true;
-};
-
-const requireAdmin = (req: Request, res: Response): boolean => {
-  if (req.user?.role !== 'admin') {
-    res.status(403).json({ error: 'Admin access required.', code: 'ADMIN_REQUIRED' });
-    return false;
-  }
-  return true;
-};
-
-// Only accept calls from a sibling Sencho using its node_proxy Bearer token.
-// Browser sessions, API tokens, and console tokens are all rejected.
-const requireNodeProxy = (req: Request, res: Response): boolean => {
-  if (req.user?.username !== 'node-proxy') {
-    res.status(403).json({ error: 'Node proxy authentication required.', code: 'NODE_PROXY_REQUIRED' });
-    return false;
-  }
-  return true;
-};
-
 const requireBody = (req: Request, res: Response): boolean => {
   if (!req.body || typeof req.body !== 'object') {
     res.status(400).json({ error: 'Request body is required' });
@@ -1602,199 +1537,6 @@ const requireBody = (req: Request, res: Response): boolean => {
 
 function isSqliteUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE';
-}
-
-// Tier gate for scheduled tasks: 'update' and 'scan' actions require Skipper+, everything else requires Admiral.
-const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
-  if (action === 'update' || action === 'scan') return requirePaid(req, res);
-  return requireAdmiral(req, res);
-};
-
-/**
- * Build the bypass-context options for `enforcePolicyPreDeploy` from a route
- * request. Centralizes the "bypass requires admin + ignorePolicy=true" rule
- * and the audit-log attribution fields so every call site is consistent.
- *
- * Bypass requires `?ignorePolicy=true` AND `req.user.role === 'admin'`. The
- * `stack:deploy` permission alone is not sufficient for bypass because the
- * `deployer` role has that permission for day-to-day deploys.
- */
-function buildPolicyGateOptions(
-  req: Request,
-  overrides: { bypass?: boolean; actor?: string } = {},
-): { bypass: boolean; actor: string; ip: string; auditMethod: string; auditPath: string } {
-  const defaultBypass = req.query.ignorePolicy === 'true' && req.user?.role === 'admin';
-  return {
-    bypass: overrides.bypass ?? defaultBypass,
-    actor: overrides.actor ?? req.user?.username ?? 'unknown',
-    ip: (req.ip ?? req.socket.remoteAddress ?? '') as string,
-    auditMethod: req.method,
-    auditPath: req.originalUrl || req.url,
-  };
-}
-
-/**
- * Run the pre-deploy policy gate for a route handler.
- *
- * Returns true if the deploy may proceed (allow, bypass, or no matching
- * policy). Returns false if the route has already sent an HTTP 409; callers
- * must return immediately in that case.
- */
-async function runPolicyGate(
-  req: Request,
-  res: Response,
-  stackName: string,
-  nodeId: number,
-): Promise<boolean> {
-  const gate = await enforcePolicyPreDeploy(stackName, nodeId, buildPolicyGateOptions(req));
-  if (!gate.ok) {
-    res.status(409).json({
-      error: `Policy "${gate.policy?.name}" blocked deploy: ${gate.violations.length} image(s) exceed ${gate.policy?.max_severity}`,
-      policy: gate.policy && {
-        id: gate.policy.id,
-        name: gate.policy.name,
-        maxSeverity: gate.policy.max_severity,
-      },
-      violations: gate.violations,
-    });
-    return false;
-  }
-  return true;
-}
-
-async function triggerPostDeployScan(
-  stackName: string,
-  nodeId: number,
-): Promise<void> {
-  const svc = TrivyService.getInstance();
-  if (!svc.isTrivyAvailable()) return;
-  try {
-    const docker = DockerController.getInstance(nodeId).getDocker();
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { label: [`com.docker.compose.project=${stackName}`] },
-    });
-    const imageRefs = new Set<string>();
-    for (const c of containers as Array<{ Image?: string }>) {
-      if (c.Image && !c.Image.startsWith('sha256:')) imageRefs.add(c.Image);
-    }
-    if (imageRefs.size === 0) return;
-
-    const db = DatabaseService.getInstance();
-
-    for (const imageRef of imageRefs) {
-      try {
-        const digest = await svc.getImageDigest(imageRef, nodeId);
-        if (digest) {
-          const cached = db.getLatestScanByDigest(digest, 'vuln');
-          if (cached && Date.now() - cached.scanned_at < DIGEST_CACHE_TTL_MS) continue;
-        }
-        // Blocking enforcement has already run in enforcePolicyPreDeploy.
-        // The post-deploy scan persists a fresh drift result and `finishScan`
-        // attaches a PolicyEvaluation, which the UI surfaces as a banner.
-        const scan = await svc.runScanAndPersist(imageRef, nodeId, 'deploy', stackName);
-
-        if (scan.critical_count > 0 || scan.high_count > 0) {
-          NotificationService.getInstance().dispatchAlert(
-            scan.critical_count > 0 ? 'error' : 'warning',
-            `Vulnerability scan for ${imageRef}: ${scan.critical_count} critical, ${scan.high_count} high`,
-            stackName,
-          );
-        }
-      } catch (err) {
-        const message = (err as Error).message;
-        console.error(`[Security] Post-deploy scan failed for ${imageRef}:`, message);
-        NotificationService.getInstance().dispatchAlert(
-          'warning',
-          `Post-deploy scan failed for ${imageRef} (${stackName}): ${message}`,
-          stackName,
-        );
-      }
-    }
-  } catch (err) {
-    console.error(`[Security] triggerPostDeployScan error for ${stackName}:`, (err as Error).message);
-  }
-}
-
-// --- Scoped RBAC Permission Engine (Admiral) ---
-
-type PermissionAction =
-  | 'stack:read' | 'stack:edit' | 'stack:deploy' | 'stack:create' | 'stack:delete'
-  | 'node:read' | 'node:manage'
-  | 'system:settings' | 'system:users' | 'system:license' | 'system:webhooks'
-  | 'system:tokens' | 'system:console' | 'system:audit' | 'system:registries';
-
-const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
-  admin: [
-    'stack:read', 'stack:edit', 'stack:deploy', 'stack:create', 'stack:delete',
-    'node:read', 'node:manage',
-    'system:settings', 'system:users', 'system:license', 'system:webhooks',
-    'system:tokens', 'system:console', 'system:audit', 'system:registries',
-  ],
-  'node-admin': [
-    'stack:read', 'stack:edit', 'stack:deploy', 'stack:create', 'stack:delete',
-    'node:read', 'node:manage',
-  ],
-  deployer: [
-    'stack:read', 'stack:deploy',
-  ],
-  viewer: [
-    'stack:read', 'node:read',
-  ],
-  auditor: [
-    'stack:read', 'node:read', 'system:audit',
-  ],
-};
-
-/**
- * Core permission resolver. Checks if the current user can perform `action` on an optional resource.
- * 1. Admin → always true (backward compat)
- * 2. Check global role permissions
- * 3. If resource specified AND Admiral → check scoped role_assignments
- */
-function checkPermission(
-  req: Request,
-  action: PermissionAction,
-  resourceType?: ResourceType,
-  resourceId?: string,
-): boolean {
-  if (!req.user) return false;
-
-  const globalRole = req.user.role;
-
-  if (isDebugEnabled()) console.log('[RBAC:diag] checkPermission:', action, 'user:', req.user.username, 'globalRole:', globalRole, 'resource:', resourceType, resourceId);
-
-  // Admins always have full access
-  if (globalRole === 'admin') return true;
-
-  // Check if the user's global role grants this action
-  if (ROLE_PERMISSIONS[globalRole]?.includes(action)) return true;
-
-  // Scoped assignments only apply when a resource is specified and license is Admiral
-  if (!resourceType || !resourceId) return false;
-  const variant = req.proxyVariant !== undefined ? req.proxyVariant : LicenseService.getInstance().getVariant();
-  if (variant !== 'admiral') return false;
-
-  const assignments = DatabaseService.getInstance().getRoleAssignments(req.user.userId, resourceType, resourceId);
-  if (isDebugEnabled()) console.log('[RBAC:diag] Scoped assignments found:', assignments.length, 'for user:', req.user.userId);
-  for (const assignment of assignments) {
-    if (ROLE_PERMISSIONS[assignment.role]?.includes(action)) return true;
-  }
-
-  return false;
-}
-
-/** Generic permission guard — sends 403 if denied. */
-function requirePermission(
-  req: Request,
-  res: Response,
-  action: PermissionAction,
-  resourceType?: ResourceType,
-  resourceId?: string,
-): boolean {
-  if (checkPermission(req, action, resourceType, resourceId)) return true;
-  res.status(403).json({ error: 'Permission denied.', code: 'PERMISSION_DENIED' });
-  return false;
 }
 
 // Scope enforcement for API tokens - restricts which endpoints a token can reach.
