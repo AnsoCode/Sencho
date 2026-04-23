@@ -1,0 +1,26 @@
+import type { UserRole, ApiTokenScope } from '../services/DatabaseService';
+import type { LicenseTier, LicenseVariant } from '../services/LicenseService';
+
+// Extend Express Request type for user and node context.
+// This file is imported for its side effects only (ambient declaration).
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- Express type augmentation requires namespace syntax
+  namespace Express {
+    interface Request {
+      user?: { username: string; role: UserRole; userId: number };
+      nodeId: number;
+      apiTokenScope?: ApiTokenScope;
+      rawBody?: Buffer;
+      /** License tier asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
+      proxyTier?: LicenseTier;
+      /** License variant asserted by the main instance on proxied requests. Only set for trusted node_proxy tokens. */
+      proxyVariant?: LicenseVariant;
+      /** User ID carried by a scoped `mfa_pending` token. Only set while the user is completing the MFA challenge. */
+      mfaPendingUserId?: number;
+      /** True when the pending MFA session originated from an SSO login (LDAP or OIDC) rather than a password login. */
+      mfaPendingSso?: boolean;
+    }
+  }
+}
+
+export {};
