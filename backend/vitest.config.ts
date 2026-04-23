@@ -9,10 +9,11 @@ export default defineConfig({
     // Each test file gets its own worker so singletons are fresh between files.
     pool: 'forks',
     // Timeout generous for DB init and HTTP calls.
-    testTimeout: 15_000,
-    // beforeAll hooks that import the full Express stack can exceed the
-    // default 10s hook timeout under CPU contention from parallel fork workers.
-    hookTimeout: 15_000,
+    testTimeout: 30_000,
+    // Every test file dynamic-imports the full Express stack; each fork pays
+    // TypeScript transformation cost and can take tens of seconds under
+    // CPU contention when all 64 fork workers run at once.
+    hookTimeout: 45_000,
     // Sequential within each file (DB state is shared per file).
     sequence: { concurrent: false },
   },
