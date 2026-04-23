@@ -45,6 +45,31 @@ Right-click any stack (or open the kebab that appears on hover) for its context 
   <img src="/images/sidebar/sidebar-context-menu.png" alt="Grouped stack context menu" />
 </Frame>
 
+## Keyboard shortcuts
+
+Every action in the context menu has a keyboard shortcut. Shortcuts fire on the currently selected stack and are blocked when a text input is focused or the command palette is open.
+
+### Lifecycle
+
+| Shortcut | Action | Condition |
+|----------|--------|-----------|
+| <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Deploy | Stack is stopped |
+| <kbd>Ctrl</kbd>+<kbd>.</kbd> | Stop | Stack is running |
+| <kbd>Ctrl</kbd>+<kbd>R</kbd> | Restart | Stack is running |
+| <kbd>Ctrl</kbd>+<kbd>↑</kbd> | Update images | Stack is running |
+| <kbd>Ctrl</kbd>+<kbd>Backspace</kbd> | Delete | Stack exists |
+
+On macOS, use <kbd>Cmd</kbd> in place of <kbd>Ctrl</kbd>.
+
+### Inspect and organize
+
+| Key | Action |
+|-----|--------|
+| <kbd>A</kbd> | Open alerts sheet |
+| <kbd>H</kbd> | Open auto-heal sheet (Skipper and above) |
+| <kbd>U</kbd> | Check for image updates |
+| <kbd>P</kbd> | Pin or unpin the stack |
+
 ## Activity footer
 
 The footer shows the most recent stack lifecycle event within the last hour. Click it to jump to the global activity log. When nothing has happened recently, the footer reads **IDLE**.
