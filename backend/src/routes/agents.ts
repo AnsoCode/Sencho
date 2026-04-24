@@ -3,14 +3,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { authMiddleware } from '../middleware/auth';
 import { requireAdmin } from '../middleware/tierGates';
 import { isDebugEnabled } from '../utils/debug';
-
-const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
-
-function validateHttpsUrl(value: unknown): string | null {
-  if (!value || typeof value !== 'string' || !value.startsWith('https://')) return 'must be a valid HTTPS URL';
-  try { new URL(value); } catch { return 'is not a valid URL'; }
-  return null;
-}
+import { NOTIFICATION_CHANNEL_TYPES, validateHttpsUrl } from '../helpers/notificationChannels';
 
 export const agentsRouter = Router();
 

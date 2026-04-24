@@ -6,7 +6,6 @@ import { ComposeService } from './services/ComposeService';
 import crypto from 'crypto';
 import path from 'path';
 import { DatabaseService, parsePolicyEvaluation, type VulnerabilityScan } from './services/DatabaseService';
-import { NotificationService } from './services/NotificationService';
 import { MonitorService } from './services/MonitorService';
 import { AutoHealService } from './services/AutoHealService';
 import { DockerEventManager } from './services/DockerEventManager';
@@ -19,7 +18,6 @@ import { PilotTunnelManager } from './services/PilotTunnelManager';
 import { PilotCloseCode } from './pilot/protocol';
 import { FleetSyncService } from './services/FleetSyncService';
 import { LicenseService } from './services/LicenseService';
-import { SSOService } from './services/SSOService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CacheService } from './services/CacheService';
@@ -55,7 +53,6 @@ import { createServer } from './server';
 import { attachUpgrade } from './websocket/upgradeHandler';
 import { getTerminalWs } from './websocket/generic';
 import { FleetUpdateTrackerService } from './services/FleetUpdateTrackerService';
-import { mintConsoleSession } from './helpers/consoleSession';
 import { invalidateNodeCaches } from './helpers/cacheInvalidation';
 import { metaRouter } from './routes/meta';
 import { authRouter } from './routes/auth';
@@ -77,6 +74,10 @@ import { scheduledTasksRouter } from './routes/scheduledTasks';
 import { agentsRouter } from './routes/agents';
 import { metricsRouter } from './routes/metrics';
 import { imageUpdatesRouter, autoUpdateRouter } from './routes/imageUpdates';
+import { autoHealRouter } from './routes/autoHeal';
+import { notificationsRouter, notificationRoutesRouter } from './routes/notifications';
+import { consoleRouter } from './routes/console';
+import { ssoConfigRouter } from './routes/ssoConfig';
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
@@ -87,7 +88,6 @@ import { enforcePolicyPreDeploy } from './services/PolicyEnforcement';
 import { validateImageRef } from './utils/image-ref';
 import { applySuppressions } from './utils/suppression-filter';
 import { generateSarif } from './services/SarifExporter';
-import { z } from 'zod';
 import { isValidStackName, isValidRemoteUrl, isPathWithinBase, isValidCidr, isValidIPv4, isValidDockerResourceId } from './utils/validation';
 import YAML from 'yaml';
 import { promises as fsPromises } from 'fs';
@@ -155,6 +155,11 @@ app.use('/api/agents', agentsRouter);
 app.use('/api', metricsRouter);
 app.use('/api/image-updates', imageUpdatesRouter);
 app.use('/api/auto-update', autoUpdateRouter);
+app.use('/api/auto-heal', autoHealRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/notification-routes', notificationRoutesRouter);
+app.use('/api/system', consoleRouter);
+app.use('/api/sso/config', ssoConfigRouter);
 
 // Symbols still consumed by inline security and node routes still living in
 // index.ts. These will move with their route groups in a later slice.
@@ -959,503 +964,6 @@ app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => 
 });
 
 
-// --- Notification & Alerting Routes ---
-
-const NOTIFICATION_CHANNEL_TYPES = ['discord', 'slack', 'webhook'] as const;
-
-/** Trim, deduplicate, and drop empty entries from a stack_patterns array. */
-const cleanStackPatterns = (patterns: string[]): string[] =>
-  [...new Set(patterns.map(p => p.trim()).filter(Boolean))];
-
-/** Validate that a string is a well-formed HTTPS URL. Returns an error string or null. */
-function validateHttpsUrl(value: unknown): string | null {
-  if (!value || typeof value !== 'string' || !value.startsWith('https://')) return 'must be a valid HTTPS URL';
-  try { new URL(value); } catch { return 'is not a valid URL'; }
-  return null;
-}
-
-const AutoHealPolicyCreateSchema = z.object({
-  stack_name: z.string().min(1).max(255),
-  service_name: z.string().min(1).max(255).nullable().optional(),
-  unhealthy_duration_mins: z.coerce.number().int().min(1).max(1440),
-  cooldown_mins: z.coerce.number().int().min(1).max(1440).default(5),
-  max_restarts_per_hour: z.coerce.number().int().min(1).max(60).default(3),
-  auto_disable_after_failures: z.coerce.number().int().min(1).max(100).default(5),
-});
-const AutoHealPolicyUpdateSchema = AutoHealPolicyCreateSchema.partial().omit({ stack_name: true });
-
-// ─── Auto-Heal Policies ───────────────────────────────────────────────────────
-
-app.get('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
-  const stackName = typeof req.query.stackName === 'string' ? req.query.stackName : undefined;
-  try {
-    res.json(DatabaseService.getInstance().getAutoHealPolicies(stackName));
-  } catch (err) {
-    console.error('[AutoHeal] Failed to list policies:', err instanceof Error ? err.message : err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/auto-heal/policies', authMiddleware, (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
-  const parsed = AutoHealPolicyCreateSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    return;
-  }
-  const { stack_name, service_name, unhealthy_duration_mins, cooldown_mins, max_restarts_per_hour, auto_disable_after_failures } = parsed.data;
-  const now = Date.now();
-  try {
-    const policy = DatabaseService.getInstance().addAutoHealPolicy({
-      stack_name,
-      service_name: service_name ?? null,
-      unhealthy_duration_mins,
-      cooldown_mins,
-      max_restarts_per_hour,
-      auto_disable_after_failures,
-      enabled: 1,
-      consecutive_failures: 0,
-      last_fired_at: 0,
-      created_at: now,
-      updated_at: now,
-    });
-    res.status(201).json(policy);
-  } catch (err) {
-    console.error('[AutoHeal] Failed to create policy:', err instanceof Error ? err.message : err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.patch('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
-  const parsed = AutoHealPolicyUpdateSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    return;
-  }
-  try {
-    const db = DatabaseService.getInstance();
-    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
-    db.updateAutoHealPolicy(id, parsed.data);
-    res.json(db.getAutoHealPolicy(id));
-  } catch (err) {
-    console.error('[AutoHeal] Failed to update policy:', err instanceof Error ? err.message : err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.delete('/api/auto-heal/policies/:id', authMiddleware, (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
-  try {
-    const db = DatabaseService.getInstance();
-    if (!db.getAutoHealPolicy(id)) { res.status(404).json({ error: 'Policy not found' }); return; }
-    db.deleteAutoHealPolicy(id);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[AutoHeal] Failed to delete policy:', err instanceof Error ? err.message : err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/auto-heal/policies/:id/history', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
-  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 100);
-  try {
-    res.json(DatabaseService.getInstance().getAutoHealHistory(id, limit));
-  } catch (err) {
-    console.error('[AutoHeal] Failed to fetch history:', err instanceof Error ? err.message : err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const nodeId = req.nodeId ?? 0;
-    const history = DatabaseService.getInstance().getNotificationHistory(nodeId);
-    res.json(history);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-});
-
-app.post('/api/notifications/read', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const nodeId = req.nodeId ?? 0;
-    DatabaseService.getInstance().markAllNotificationsRead(nodeId);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to mark notifications read' });
-  }
-});
-
-app.delete('/api/notifications/:id', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid notification ID' }); return; }
-    const nodeId = req.nodeId ?? 0;
-    DatabaseService.getInstance().deleteNotification(nodeId, id);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete notification' });
-  }
-});
-
-app.delete('/api/notifications', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const nodeId = req.nodeId ?? 0;
-    DatabaseService.getInstance().deleteAllNotifications(nodeId);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to clear notifications' });
-  }
-});
-
-app.post('/api/notifications/test', authMiddleware, async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { type, url } = req.body;
-    if (!type || !NOTIFICATION_CHANNEL_TYPES.includes(type)) {
-      res.status(400).json({ error: `type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
-      return;
-    }
-    const urlErr = validateHttpsUrl(url);
-    if (urlErr) { res.status(400).json({ error: `url ${urlErr}` }); return; }
-    await NotificationService.getInstance().testDispatch(type, url);
-    res.json({ success: true });
-  } catch (error: unknown) {
-    res.status(500).json({ error: 'Test failed', details: getErrorMessage(error, String(error)) });
-  }
-});
-
-// --- Notification Routes (Admiral) ---
-
-app.get('/api/notification-routes', authMiddleware, (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const routes = DatabaseService.getInstance().getNotificationRoutes();
-    res.json(routes);
-  } catch (error) {
-    console.error('Failed to fetch notification routes:', error);
-    res.status(500).json({ error: 'Failed to fetch notification routes' });
-  }
-});
-
-app.post('/api/notification-routes', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
-
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      res.status(400).json({ error: 'Name is required' });
-      return;
-    }
-    if (name.trim().length > 100) {
-      res.status(400).json({ error: 'Name must be 100 characters or fewer' });
-      return;
-    }
-    if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
-      res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
-      return;
-    }
-    const cleanedPatterns = cleanStackPatterns(stack_patterns);
-    if (cleanedPatterns.length === 0) {
-      res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
-      return;
-    }
-    if (!NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
-      res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
-      return;
-    }
-    const channelUrlErr = validateHttpsUrl(channel_url);
-    if (channelUrlErr) { res.status(400).json({ error: `channel_url ${channelUrlErr}` }); return; }
-    if (priority !== undefined && (typeof priority !== 'number' || !Number.isFinite(priority))) {
-      res.status(400).json({ error: 'priority must be a finite number' });
-      return;
-    }
-
-    const now = Date.now();
-    const route = DatabaseService.getInstance().createNotificationRoute({
-      name: name.trim(),
-      stack_patterns: cleanedPatterns,
-      channel_type,
-      channel_url: channel_url.trim(),
-      priority: typeof priority === 'number' ? priority : 0,
-      enabled: enabled !== false,
-      created_at: now,
-      updated_at: now,
-    });
-    console.log(`[Routes] Route "${route.name}" created (id=${route.id})`);
-    if (isDebugEnabled()) console.log(`[Routes:diag] Route "${route.name}" created with patterns=[${cleanedPatterns}], channel=${channel_type}`);
-    res.status(201).json(route);
-  } catch (error) {
-    console.error('Failed to create notification route:', error);
-    res.status(500).json({ error: 'Failed to create notification route' });
-  }
-});
-
-app.put('/api/notification-routes/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
-
-    const existing = DatabaseService.getInstance().getNotificationRoute(id);
-    if (!existing) { res.status(404).json({ error: 'Route not found' }); return; }
-
-    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
-
-    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
-      res.status(400).json({ error: 'Name must be a non-empty string' });
-      return;
-    }
-    if (name !== undefined && name.trim().length > 100) {
-      res.status(400).json({ error: 'Name must be 100 characters or fewer' });
-      return;
-    }
-    let cleanedPatterns: string[] | undefined;
-    if (stack_patterns !== undefined) {
-      if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
-        res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
-        return;
-      }
-      cleanedPatterns = cleanStackPatterns(stack_patterns);
-      if (cleanedPatterns.length === 0) {
-        res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
-        return;
-      }
-    }
-    if (channel_type !== undefined && !NOTIFICATION_CHANNEL_TYPES.includes(channel_type)) {
-      res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
-      return;
-    }
-    if (channel_url !== undefined) {
-      const urlErr = validateHttpsUrl(channel_url);
-      if (urlErr) { res.status(400).json({ error: `channel_url ${urlErr}` }); return; }
-    }
-    if (priority !== undefined && (typeof priority !== 'number' || !Number.isFinite(priority))) {
-      res.status(400).json({ error: 'priority must be a finite number' });
-      return;
-    }
-    if (enabled !== undefined && typeof enabled !== 'boolean') {
-      res.status(400).json({ error: 'enabled must be a boolean' });
-      return;
-    }
-
-    const updates: Record<string, unknown> = { updated_at: Date.now() };
-    if (name !== undefined) updates.name = name.trim();
-    if (cleanedPatterns !== undefined) updates.stack_patterns = cleanedPatterns;
-    if (channel_type !== undefined) updates.channel_type = channel_type;
-    if (channel_url !== undefined) updates.channel_url = channel_url.trim();
-    if (priority !== undefined) updates.priority = priority;
-    if (enabled !== undefined) updates.enabled = enabled;
-
-    DatabaseService.getInstance().updateNotificationRoute(id, updates);
-    const updated = DatabaseService.getInstance().getNotificationRoute(id);
-    console.log(`[Routes] Route ${id} updated`);
-    if (isDebugEnabled()) console.log(`[Routes:diag] Route ${id} update fields: ${Object.keys(updates).filter(k => k !== 'updated_at')}`);
-    res.json(updated);
-  } catch (error) {
-    console.error('Failed to update notification route:', error);
-    res.status(500).json({ error: 'Failed to update notification route' });
-  }
-});
-
-app.delete('/api/notification-routes/:id', authMiddleware, (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
-
-    const changes = DatabaseService.getInstance().deleteNotificationRoute(id);
-    if (changes === 0) { res.status(404).json({ error: 'Route not found' }); return; }
-    console.log(`[Routes] Route ${id} deleted`);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Failed to delete notification route:', error);
-    res.status(500).json({ error: 'Failed to delete notification route' });
-  }
-});
-
-app.post('/api/notification-routes/:id/test', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid route ID' }); return; }
-
-    const route = DatabaseService.getInstance().getNotificationRoute(id);
-    if (!route) { res.status(404).json({ error: 'Route not found' }); return; }
-
-    if (isDebugEnabled()) console.log(`[Routes:diag] Test dispatch for route ${id} (${route.channel_type} -> ${route.channel_url})`);
-    await NotificationService.getInstance().testDispatch(route.channel_type, route.channel_url);
-    res.json({ success: true });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Test failed', details: msg });
-  }
-});
-
-// Issue a short-lived console session token for WebSocket proxy delegation.
-// When the gateway needs to proxy an interactive terminal (host console or container exec)
-// to a remote node, it calls this endpoint (authenticated with the long-lived api_token)
-// to receive a short-lived token. The remote's WS upgrade handler allows 'console_session'
-// tokens through its isProxyToken guard, keeping the long-lived api_token off interactive paths.
-app.post('/api/system/console-token', authMiddleware, (req: Request, res: Response): void => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot generate console tokens.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    res.json({ token: mintConsoleSession() });
-  } catch (error) {
-    console.error('Failed to issue console token:', error);
-    res.status(500).json({ error: 'Failed to issue console token' });
-  }
-});
-
-// --- SSO Config Routes (admin, local-only) ---
-
-app.get('/api/sso/config', (req: Request, res: Response): void => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const configs = DatabaseService.getInstance().getSSOConfigs();
-    const result = configs.map(c => {
-      const parsed = JSON.parse(c.config_json);
-      // Strip encrypted secrets from response
-      delete parsed.ldapBindPassword;
-      delete parsed.oidcClientSecret;
-      return { ...parsed, provider: c.provider, enabled: c.enabled === 1 };
-    });
-    res.json(result);
-  } catch (error) {
-    console.error('[SSO] Failed to fetch SSO configs:', error);
-    res.status(500).json({ error: 'Failed to fetch SSO configuration' });
-  }
-});
-
-app.get('/api/sso/config/:provider', (req: Request, res: Response): void => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const config = SSOService.getInstance().getProviderConfig(String(req.params.provider));
-    if (!config) {
-      res.status(404).json({ error: 'Provider not configured' });
-      return;
-    }
-    // Strip encrypted secrets
-    const result = { ...config };
-    delete result.ldapBindPassword;
-    delete result.oidcClientSecret;
-    res.json(result);
-  } catch (error) {
-    console.error('[SSO] Failed to fetch SSO config:', error);
-    res.status(500).json({ error: 'Failed to fetch SSO configuration' });
-  }
-});
-
-app.put('/api/sso/config/:provider', (req: Request, res: Response): void => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const provider = String(req.params.provider);
-    const validProviders = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta', 'oidc_custom'];
-    if (!validProviders.includes(provider)) {
-      res.status(400).json({ error: 'Invalid SSO provider' });
-      return;
-    }
-    const config = { ...req.body, provider } as import('./services/SSOService').SSOProviderConfig;
-
-    // Validate required fields when enabling a provider
-    if (config.enabled) {
-      const missing: string[] = [];
-      if (provider === 'ldap') {
-        if (!config.ldapUrl?.trim()) missing.push('Server URL');
-        if (!config.ldapSearchBase?.trim()) missing.push('Search Base');
-      } else {
-        if (!config.oidcClientId?.trim()) missing.push('Client ID');
-        if ((provider === 'oidc_okta' || provider === 'oidc_custom') && !config.oidcIssuerUrl?.trim()) missing.push('Issuer URL');
-      }
-      if (missing.length > 0) {
-        res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
-        return;
-      }
-    }
-
-    SSOService.getInstance().saveProviderConfig(config);
-    console.log(`[SSO] Config updated: ${provider} ${config.enabled ? 'enabled' : 'disabled'}`);
-    res.json({ success: true, message: 'SSO configuration saved' });
-  } catch (error) {
-    console.error('[SSO] Failed to save SSO config:', error);
-    res.status(500).json({ error: 'Failed to save SSO configuration' });
-  }
-});
-
-app.delete('/api/sso/config/:provider', (req: Request, res: Response): void => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const deletedProvider = String(req.params.provider);
-    SSOService.getInstance().deleteProviderConfig(deletedProvider);
-    console.log(`[SSO] Config deleted: ${deletedProvider}`);
-    res.json({ success: true, message: 'SSO configuration deleted' });
-  } catch (error) {
-    console.error('[SSO] Failed to delete SSO config:', error);
-    res.status(500).json({ error: 'Failed to delete SSO configuration' });
-  }
-});
-
-app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): Promise<void> => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot access SSO configuration.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const provider = String(req.params.provider);
-    if (provider === 'ldap') {
-      const result = await SSOService.getInstance().testLdapConnection();
-      res.json(result);
-    } else {
-      const result = await SSOService.getInstance().testOidcDiscovery(provider);
-      res.json(result);
-    }
-  } catch (error) {
-    console.error('[SSO] Connection test failed:', error);
-    res.status(500).json({ success: false, error: 'Connection test failed' });
-  }
-});
-
-
-// --- Scheduled Operations Routes (Admiral, admin-only, local-only) ---
 
 
 // --- Private Registry Routes (Admiral, admin-only, local-only) ---
