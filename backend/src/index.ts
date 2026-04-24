@@ -28,10 +28,7 @@ import {
   STACK_STATUSES_CACHE_TTL_MS,
 } from './helpers/constants';
 import { requirePermission } from './middleware/permissions';
-import {
-  requirePaid,
-  requireAdmin,
-} from './middleware/tierGates';
+import { requirePaid } from './middleware/tierGates';
 import {
   buildPolicyGateOptions,
   runPolicyGate,
@@ -76,6 +73,7 @@ import { registriesRouter } from './routes/registries';
 import { systemMaintenanceRouter } from './routes/systemMaintenance';
 import { templatesRouter } from './routes/templates';
 import { securityRouter } from './routes/security';
+import { containersRouter, portsRouter } from './routes/containers';
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
@@ -157,6 +155,8 @@ app.use('/api/registries', registriesRouter);
 app.use('/api/system', systemMaintenanceRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/security', securityRouter);
+app.use('/api/containers', containersRouter);
+app.use('/api/ports', portsRouter);
 
 // Symbol still consumed by inline node routes still living in index.ts.
 // Will move with the node route group in a later slice.
@@ -178,28 +178,6 @@ attachUpgrade(server, { wss, pilotTunnelWss });
 
 // API Routes (all protected by authMiddleware)
 
-app.get('/api/containers', async (req: Request, res: Response) => {
-  try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getRunningContainers();
-    res.json(containers);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch containers' });
-  }
-});
-
-app.get('/api/ports/in-use', async (req: Request, res: Response) => {
-  try {
-    const fsService = FileSystemService.getInstance(req.nodeId);
-    const stacks = await fsService.getStacks();
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const portsInUse = await dockerController.getPortsInUse(stacks);
-    res.json(portsInUse);
-  } catch (error) {
-    console.error('[Ports] Failed to fetch ports in use:', error);
-    res.status(500).json({ error: 'Failed to fetch ports in use' });
-  }
-});
 
 
 // Stack Routes - Updated to use stackName (directory name) instead of filename
@@ -686,57 +664,6 @@ app.get('/api/stacks/:stackName/services', async (req: Request, res: Response) =
   }
 });
 
-app.get('/api/containers/:id/logs', async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id as string;
-    const dockerController = DockerController.getInstance(req.nodeId);
-    // Pass both req and res so we can listen for the client disconnect
-    await dockerController.streamContainerLogs(id, req, res);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to initialize log stream' });
-  }
-});
-
-app.post('/api/containers/:id/start', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const id = req.params.id as string;
-    const dockerController = DockerController.getInstance(req.nodeId);
-    await dockerController.startContainer(id);
-    invalidateNodeCaches(req.nodeId);
-    res.json({ message: 'Container started' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to start container' });
-  }
-});
-
-app.post('/api/containers/:id/stop', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const id = req.params.id as string;
-    const dockerController = DockerController.getInstance(req.nodeId);
-    await dockerController.stopContainer(id);
-    invalidateNodeCaches(req.nodeId);
-    res.json({ message: 'Container stopped' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to stop container' });
-  }
-});
-
-app.post('/api/containers/:id/restart', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const id = req.params.id as string;
-    const dockerController = DockerController.getInstance(req.nodeId);
-    await dockerController.restartContainer(id);
-    invalidateNodeCaches(req.nodeId);
-    res.json({ message: 'Container restarted' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to restart container' });
-  }
-});
-
-// End of legacy container routes
 app.post('/api/stacks/:stackName/deploy', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
