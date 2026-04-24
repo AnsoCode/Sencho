@@ -1,9 +1,7 @@
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import DockerController from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
-import crypto from 'crypto';
 import path from 'path';
 import { DatabaseService } from './services/DatabaseService';
 import { MonitorService } from './services/MonitorService';
@@ -12,12 +10,9 @@ import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { UpdatePreviewService } from './services/UpdatePreviewService';
 import { NodeRegistry } from './services/NodeRegistry';
-import { PilotTunnelManager } from './services/PilotTunnelManager';
-import { PilotCloseCode } from './pilot/protocol';
 import { LicenseService } from './services/LicenseService';
 import { SchedulerService } from './services/SchedulerService';
 import { CacheService } from './services/CacheService';
-import { CAPABILITIES, getSenchoVersion, fetchRemoteMeta, type RemoteMeta } from './services/CapabilityRegistry';
 import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, repoHost as gitRepoHost } from './services/GitSourceService';
 import { sendGitSourceError } from './utils/gitSourceHttp';
 import './types/express';
@@ -38,12 +33,10 @@ import { authGate, auditLog } from './middleware/authGate';
 import { enforceApiTokenScope } from './middleware/apiTokenScope';
 import { errorHandler } from './middleware/errorHandler';
 import { createApp } from './app';
-import { authMiddleware } from './middleware/auth';
 import { createRemoteProxyMiddleware } from './proxy/remoteNodeProxy';
 import { createServer } from './server';
 import { attachUpgrade } from './websocket/upgradeHandler';
 import { getTerminalWs } from './websocket/generic';
-import { FleetUpdateTrackerService } from './services/FleetUpdateTrackerService';
 import { invalidateNodeCaches } from './helpers/cacheInvalidation';
 import { metaRouter } from './routes/meta';
 import { authRouter } from './routes/auth';
@@ -74,13 +67,14 @@ import { systemMaintenanceRouter } from './routes/systemMaintenance';
 import { templatesRouter } from './routes/templates';
 import { securityRouter } from './routes/security';
 import { containersRouter, portsRouter } from './routes/containers';
+import { nodesRouter } from './routes/nodes';
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
 import SelfUpdateService from './services/SelfUpdateService';
 import TrivyService from './services/TrivyService';
 import { enforcePolicyPreDeploy } from './services/PolicyEnforcement';
-import { isValidStackName, isValidRemoteUrl, isPathWithinBase } from './utils/validation';
+import { isValidStackName, isPathWithinBase } from './utils/validation';
 import YAML from 'yaml';
 
 // Suppress [DEP0060] DeprecationWarning emitted by http-proxy@1.18.1 which calls
@@ -157,10 +151,7 @@ app.use('/api/templates', templatesRouter);
 app.use('/api/security', securityRouter);
 app.use('/api/containers', containersRouter);
 app.use('/api/ports', portsRouter);
-
-// Symbol still consumed by inline node routes still living in index.ts.
-// Will move with the node route group in a later slice.
-const updateTracker = FleetUpdateTrackerService.getInstance();
+app.use('/api/nodes', nodesRouter);
 
 // Remote Node HTTP Proxy (see proxy/remoteNodeProxy.ts). Mounted here after
 // authGate + auditLog + apiTokenScope so local Sencho enforces auth first;
@@ -874,340 +865,6 @@ app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => 
     res.status(500).json({ error: message });
   }
 });
-
-
-// =========================
-// Node Management API
-// =========================
-
-
-// List all nodes
-app.get('/api/nodes', async (req: Request, res: Response) => {
-  try {
-    const nodes = DatabaseService.getInstance().getNodes();
-    res.json(nodes);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch nodes' });
-  }
-});
-
-// Per-node scheduling + update summary (must be before :id route)
-app.get('/api/nodes/scheduling-summary', authMiddleware, (_req: Request, res: Response) => {
-  try {
-    const db = DatabaseService.getInstance();
-    const scheduleSummary = db.getNodeSchedulingSummary();
-    const updateSummary = db.getNodeUpdateSummary();
-
-    const result: Record<number, {
-      active_tasks: number;
-      auto_update_enabled: boolean;
-      next_run_at: number | null;
-      stacks_with_updates: number;
-    }> = {};
-
-    for (const s of scheduleSummary) {
-      result[s.node_id] = {
-        active_tasks: s.active_tasks,
-        auto_update_enabled: s.auto_update_enabled === 1,
-        next_run_at: s.next_run_at,
-        stacks_with_updates: 0,
-      };
-    }
-    for (const u of updateSummary) {
-      if (result[u.node_id]) {
-        result[u.node_id].stacks_with_updates = u.stacks_with_updates;
-      } else {
-        result[u.node_id] = {
-          active_tasks: 0,
-          auto_update_enabled: false,
-          next_run_at: null,
-          stacks_with_updates: u.stacks_with_updates,
-        };
-      }
-    }
-
-    res.json(result);
-  } catch (error) {
-    console.error('Failed to fetch node scheduling summary:', error);
-    res.status(500).json({ error: 'Failed to fetch node scheduling summary' });
-  }
-});
-
-// Get a specific node
-app.get('/api/nodes/:id', async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id as string);
-    const node = DatabaseService.getInstance().getNode(id);
-    if (!node) {
-      return res.status(404).json({ error: 'Node not found' });
-    }
-    res.json(node);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch node' });
-  }
-});
-
-// Create a new node
-app.post('/api/nodes', async (req: Request, res: Response) => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requirePermission(req, res, 'node:manage')) return;
-  try {
-    const { name, type, compose_dir, is_default, api_url, api_token, mode } = req.body;
-
-    if (!name || typeof name !== 'string') {
-      return res.status(400).json({ error: 'Node name is required' });
-    }
-    if (!type || !['local', 'remote'].includes(type)) {
-      return res.status(400).json({ error: 'Node type must be "local" or "remote"' });
-    }
-
-    const resolvedMode: 'proxy' | 'pilot_agent' = type === 'remote' && mode === 'pilot_agent' ? 'pilot_agent' : 'proxy';
-
-    if (type === 'remote' && resolvedMode === 'proxy') {
-      if (!api_url || typeof api_url !== 'string') {
-        return res.status(400).json({ error: 'API URL is required for proxy-mode remote nodes' });
-      }
-      const urlCheck = isValidRemoteUrl(api_url);
-      if (!urlCheck.valid) {
-        return res.status(400).json({ error: urlCheck.reason });
-      }
-    }
-
-    const id = DatabaseService.getInstance().addNode({
-      name,
-      type,
-      compose_dir: compose_dir || '/app/compose',
-      is_default: is_default || false,
-      api_url: resolvedMode === 'pilot_agent' ? '' : (api_url || ''),
-      api_token: resolvedMode === 'pilot_agent' ? '' : (api_token || ''),
-      mode: resolvedMode,
-    });
-
-    // Notify subscribers (e.g. DockerEventManager) so a new local node gets
-    // its event stream spun up immediately, not on next restart.
-    NodeRegistry.getInstance().notifyNodeAdded(id);
-
-    let enrollment: ReturnType<typeof mintPilotEnrollment> | null = null;
-    if (resolvedMode === 'pilot_agent') {
-      enrollment = mintPilotEnrollment(id, req);
-    }
-
-    const isPlainHttp = resolvedMode === 'proxy' && type === 'remote' && api_url && api_url.startsWith('http://');
-    res.json({
-      success: true,
-      id,
-      ...(enrollment && { enrollment }),
-      ...(isPlainHttp && {
-        warning: 'This node uses plain HTTP. Use HTTPS or a VPN for connections over the public internet.'
-      })
-    });
-  } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint')) {
-      return res.status(409).json({ error: 'A node with that name already exists' });
-    }
-    console.error('Failed to create node:', error);
-    res.status(500).json({ error: error.message || 'Failed to create node' });
-  }
-});
-
-/**
- * Mint a fresh 15-minute, single-use enrollment token for a pilot-mode node.
- * Stores a sha256 hash in pilot_enrollments so the token itself is never
- * recoverable from the DB. The returned `dockerRun` string is a copy-paste
- * starter command the admin runs on the remote host.
- */
-function mintPilotEnrollment(nodeId: number, req: Request): { token: string; expiresAt: number; dockerRun: string } {
-  const db = DatabaseService.getInstance();
-  const jwtSecret = db.getGlobalSettings().auth_jwt_secret;
-  if (!jwtSecret) throw new Error('JWT secret not configured');
-
-  const ttlSeconds = 15 * 60;
-  const expiresAt = Date.now() + ttlSeconds * 1000;
-  const enrollNonce = crypto.randomUUID();
-  const token = jwt.sign(
-    { scope: 'pilot_enroll', nodeId, enrollNonce },
-    jwtSecret,
-    { expiresIn: ttlSeconds },
-  );
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  db.createPilotEnrollment(nodeId, tokenHash, expiresAt);
-
-  const forwardedProto = req.headers['x-forwarded-proto'];
-  const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-  const protocol = protoHeader || req.protocol || 'http';
-  const host = req.get('host') || 'localhost:3000';
-  const primaryUrl = `${protocol}://${host}`;
-
-  const dockerRun =
-    `docker run -d --restart=unless-stopped --name sencho-agent ` +
-    `-v /var/run/docker.sock:/var/run/docker.sock ` +
-    `-v sencho-agent-data:/app/data ` +
-    `-v /opt/docker/sencho:/app/compose ` +
-    `-e SENCHO_MODE=pilot ` +
-    `-e SENCHO_PRIMARY_URL=${primaryUrl} ` +
-    `-e SENCHO_ENROLL_TOKEN=${token} ` +
-    `saelix/sencho:latest`;
-
-  return { token, expiresAt, dockerRun };
-}
-
-// Regenerate an enrollment token for an existing pilot-mode node. Used when
-// the first token expired before the agent was started, or when the agent
-// container was lost and needs to re-enroll from scratch.
-app.post('/api/nodes/:id/pilot/enroll', async (req: Request, res: Response) => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  const nodeIdStr = req.params.id as string;
-  if (!requirePermission(req, res, 'node:manage', 'node', nodeIdStr)) return;
-  try {
-    const nodeId = parseInt(nodeIdStr, 10);
-    if (!Number.isFinite(nodeId)) {
-      return res.status(400).json({ error: 'Invalid node id' });
-    }
-    const node = DatabaseService.getInstance().getNode(nodeId);
-    if (!node) return res.status(404).json({ error: 'Node not found' });
-    if (node.type !== 'remote' || node.mode !== 'pilot_agent') {
-      return res.status(400).json({ error: 'Enrollment only applies to pilot-agent nodes' });
-    }
-    // Close any existing tunnel so the re-enrolling agent cleanly replaces it.
-    PilotTunnelManager.getInstance().closeTunnel(nodeId, PilotCloseCode.EnrollmentRegenerated, 'enrollment regenerated');
-    const enrollment = mintPilotEnrollment(nodeId, req);
-    res.json({ success: true, enrollment });
-  } catch (error: any) {
-    console.error('Failed to regenerate pilot enrollment:', error);
-    res.status(500).json({ error: error.message || 'Failed to regenerate enrollment' });
-  }
-});
-
-// Update a node
-app.put('/api/nodes/:id', async (req: Request, res: Response) => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  const nodeId = req.params.id as string;
-  if (!requirePermission(req, res, 'node:manage', 'node', nodeId)) return;
-  try {
-    const id = parseInt(nodeId);
-    const updates = req.body;
-
-    if (updates.api_url !== undefined && updates.api_url !== '') {
-      const urlCheck = isValidRemoteUrl(updates.api_url);
-      if (!urlCheck.valid) {
-        return res.status(400).json({ error: urlCheck.reason });
-      }
-    }
-
-    DatabaseService.getInstance().updateNode(id, updates);
-
-    // Evict cached Docker connection so it reconnects with new config
-    NodeRegistry.getInstance().evictConnection(id);
-    NodeRegistry.getInstance().notifyNodeUpdated(id);
-
-    const isPlainHttp = updates.api_url && updates.api_url.startsWith('http://');
-    res.json({
-      success: true,
-      ...(isPlainHttp && {
-        warning: 'This node uses plain HTTP. Use HTTPS or a VPN for connections over the public internet.'
-      })
-    });
-  } catch (error: any) {
-    console.error('Failed to update node:', error);
-    res.status(500).json({ error: error.message || 'Failed to update node' });
-  }
-});
-
-// Delete a node
-app.delete('/api/nodes/:id', async (req: Request, res: Response) => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage nodes.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  const nodeIdParam = req.params.id as string;
-  if (!requirePermission(req, res, 'node:manage', 'node', nodeIdParam)) return;
-  try {
-    const id = parseInt(nodeIdParam);
-    DatabaseService.getInstance().deleteNode(id);
-    NodeRegistry.getInstance().evictConnection(id);
-    NodeRegistry.getInstance().notifyNodeRemoved(id);
-    CacheService.getInstance().invalidate(`${REMOTE_META_NAMESPACE}:${id}`);
-    updateTracker.delete(id);
-    res.json({ success: true });
-  } catch (error: unknown) {
-    console.error('Failed to delete node:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to delete node' });
-  }
-});
-
-// Test connection to a node
-app.post('/api/nodes/:id/test', async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id as string);
-    const result = await NodeRegistry.getInstance().testConnection(id);
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message || 'Connection test failed' });
-  }
-});
-
-// Fetch capability metadata for a specific node. For local nodes, returns this
-// instance's capabilities directly. For remote nodes, relays GET /api/meta from
-// the remote Sencho instance. Backend-side cache (via CacheService) shields
-// against rate limit contention on the remote and serves stale data on
-// transient failures. Keys are "remote-meta:<nodeId>" so we can invalidate by
-// namespace when a node is deleted.
-const REMOTE_META_NAMESPACE = 'remote-meta';
-const REMOTE_META_CACHE_TTL = 3 * 60 * 1000;
-
-app.get('/api/nodes/:id/meta', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id as string);
-    const node = DatabaseService.getInstance().getNode(id);
-    if (!node) {
-      res.status(404).json({ error: 'Node not found' });
-      return;
-    }
-
-    if (node.type === 'local') {
-      res.json({ version: getSenchoVersion(), capabilities: CAPABILITIES });
-      return;
-    }
-
-    const baseUrl = node.api_url?.replace(/\/$/, '');
-    if (!baseUrl || !node.api_token) {
-      res.json({ version: null, capabilities: [] });
-      return;
-    }
-
-    const cacheKey = `${REMOTE_META_NAMESPACE}:${id}`;
-    const meta = await CacheService.getInstance().getOrFetch<RemoteMeta>(
-      cacheKey,
-      REMOTE_META_CACHE_TTL,
-      async () => {
-        const fetched = await fetchRemoteMeta(baseUrl, node.api_token!);
-        // A successful fetch always includes a version; null version means the
-        // remote was unreachable. Throw so CacheService serves stale on error
-        // instead of caching an empty result.
-        if (fetched.version === null) {
-          throw new Error('Remote meta fetch returned null version');
-        }
-        return fetched;
-      },
-    );
-
-    res.json(meta);
-  } catch (error: unknown) {
-    console.error('Failed to fetch node meta:', error);
-    const message = getErrorMessage(error, 'Failed to fetch node metadata');
-    res.status(500).json({ error: message });
-  }
-});
-
 
 // Serve static files in production (for Docker deployment)
 if (process.env.NODE_ENV === 'production') {
