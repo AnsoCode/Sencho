@@ -6,8 +6,6 @@ import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-// @ts-ignore - composerize lacks proper type definitions
-import composerize from 'composerize';
 import si from 'systeminformation';
 import path from 'path';
 import { DatabaseService, Node, AuthProvider, ScheduledTask, UserRole, ResourceType, parsePolicyEvaluation, type VulnerabilityScan } from './services/DatabaseService';
@@ -17,7 +15,6 @@ import { AutoHealService } from './services/AutoHealService';
 import { DockerEventManager } from './services/DockerEventManager';
 import { ImageUpdateService } from './services/ImageUpdateService';
 import { UpdatePreviewService } from './services/UpdatePreviewService';
-import { annotateEntries, computeAuditStats, HISTORY_WINDOW_MS } from './services/AuditAnomalyService';
 import { templateService } from './services/TemplateService';
 import { ErrorParser } from './utils/ErrorParser';
 import { NodeRegistry } from './services/NodeRegistry';
@@ -32,15 +29,13 @@ import { CryptoService } from './services/CryptoService';
 import { SchedulerService } from './services/SchedulerService';
 import { RegistryService } from './services/RegistryService';
 import { CacheService } from './services/CacheService';
-import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, getActiveCapabilities, type RemoteMeta } from './services/CapabilityRegistry';
+import { CAPABILITIES, getSenchoVersion, isValidVersion, fetchRemoteMeta, type RemoteMeta } from './services/CapabilityRegistry';
 import { GitSourceService, GitSourceError, sweepStaleTempDirs as sweepStaleGitTempDirs, repoHost as gitRepoHost } from './services/GitSourceService';
 import { sendGitSourceError } from './utils/gitSourceHttp';
 import './types/express';
 import {
   PORT,
   MIN_PASSWORD_LENGTH,
-  VALID_LABEL_COLORS,
-  MAX_LABELS_PER_NODE,
   COOKIE_NAME,
   MFA_PENDING_COOKIE_NAME,
   MFA_PENDING_SCOPE,
@@ -50,10 +45,8 @@ import {
 } from './helpers/constants';
 import { isSecureRequest } from './helpers/cookies';
 import {
-  ROLE_PERMISSIONS,
   checkPermission,
   requirePermission,
-  type PermissionAction,
 } from './middleware/permissions';
 import {
   requirePaid,
@@ -89,21 +82,15 @@ import { attachUpgrade } from './websocket/upgradeHandler';
 import { getTerminalWs } from './websocket/generic';
 import { FleetUpdateTrackerService } from './services/FleetUpdateTrackerService';
 import { mintConsoleSession } from './helpers/consoleSession';
-
-/**
- * Invalidate the per-node caches affected by a stack/container mutation so
- * the next dashboard poll shows fresh state instead of stale reads. Called
- * from every endpoint that changes the Docker or filesystem state.
- *
- * Also drops the global `project-name-map` since stack writes (create, delete,
- * rename, compose edits) can reshape the on-disk layout used to build it.
- */
-function invalidateNodeCaches(nodeId: number): void {
-  const cache = CacheService.getInstance();
-  cache.invalidate(`stats:${nodeId}`);
-  cache.invalidate(`stack-statuses:${nodeId}`);
-  cache.invalidate('project-name-map');
-}
+import { invalidateNodeCaches } from './helpers/cacheInvalidation';
+import { metaRouter } from './routes/meta';
+import { licenseRouter, systemUpdateRouter, scheduleLocalUpdate } from './routes/license';
+import { permissionsRouter } from './routes/permissions';
+import { convertRouter } from './routes/convert';
+import { alertsRouter } from './routes/alerts';
+import { labelsRouter, stackLabelsRouter } from './routes/labels';
+import { apiTokensRouter } from './routes/apiTokens';
+import { auditLogRouter } from './routes/auditLog';
 
 import { isDebugEnabled } from './utils/debug';
 import { getLatestVersion } from './utils/version-check';
@@ -143,26 +130,8 @@ const app = createApp();
 
 // FileSystemService and ComposeService are instantiated per-request via .getInstance(nodeId)
 
-// Captured at boot. Exposed via /api/health and /api/meta so the Fleet update overlay
-// can distinguish a brand-new process from the old one still mid-pull.
-const processStartedAt = Date.now();
-
-// Public health endpoint - no auth required (used by Docker HEALTHCHECK and uptime monitors)
-app.get('/api/health', (_req: Request, res: Response): void => {
-  res.json({ status: 'ok', uptime: process.uptime(), startedAt: processStartedAt });
-});
-
-// Public meta endpoint - returns this instance's version and supported capabilities.
-// No auth required (like /health). Used by remote nodes during connection tests.
-app.get('/api/meta', (_req: Request, res: Response): void => {
-  const updateError = SelfUpdateService.getInstance().getLastError();
-  res.json({
-    version: getSenchoVersion(),
-    capabilities: getActiveCapabilities(),
-    startedAt: processStartedAt,
-    ...(updateError ? { updateError } : {}),
-  });
-});
+// Public /api/health and /api/meta (no auth). Mounted before authGate.
+app.use('/api', metaRouter);
 
 // Auth Routes (no authentication required)
 
@@ -1015,123 +984,21 @@ app.use('/api', authGate);
 // Audit-log every mutating /api/* action (POST/PUT/DELETE/PATCH).
 app.use('/api', auditLog);
 
-// --- License Routes (local-only, never proxied) ---
-
-const requireBody = (req: Request, res: Response): boolean => {
-  if (!req.body || typeof req.body !== 'object') {
-    res.status(400).json({ error: 'Request body is required' });
-    return false;
-  }
-  return true;
-};
-
-function isSqliteUniqueViolation(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && (error as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE';
-}
-
 app.use('/api', enforceApiTokenScope);
 
-app.get('/api/license', (_req: Request, res: Response): void => {
-  try {
-    const info = LicenseService.getInstance().getLicenseInfo();
-    res.json(info);
-  } catch (error) {
-    console.error('[License] Error getting license info:', error);
-    res.status(500).json({ error: 'Failed to retrieve license information' });
-  }
-});
-
-app.post('/api/license/activate', async (req: Request, res: Response): Promise<void> => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage licenses.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { license_key } = req.body;
-    if (!license_key || typeof license_key !== 'string') {
-      res.status(400).json({ error: 'A valid license key is required' });
-      return;
-    }
-    const result = await LicenseService.getInstance().activate(license_key.trim());
-    if (result.success) {
-      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
-    } else {
-      res.status(400).json({ error: result.error });
-    }
-  } catch (error) {
-    console.error('[License] Activation error:', error);
-    res.status(500).json({ error: 'License activation failed' });
-  }
-});
-
-app.post('/api/license/deactivate', async (_req: Request, res: Response): Promise<void> => {
-  if (_req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage licenses.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(_req, res)) return;
-  try {
-    const result = await LicenseService.getInstance().deactivate();
-    if (result.success) {
-      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
-    } else {
-      res.status(500).json({ error: result.error });
-    }
-  } catch (error) {
-    console.error('[License] Deactivation error:', error);
-    res.status(500).json({ error: 'License deactivation failed' });
-  }
-});
-
-app.post('/api/license/validate', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const result = await LicenseService.getInstance().validate();
-    res.json({ ...result, license: LicenseService.getInstance().getLicenseInfo() });
-  } catch (error) {
-    console.error('[License] Validation error:', error);
-    res.status(500).json({ error: 'License validation failed' });
-  }
-});
-
-app.get('/api/license/billing-portal', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const result = await LicenseService.getInstance().getBillingPortalUrl();
-    if ('error' in result) {
-      res.status(404).json({ error: result.error });
-      return;
-    }
-    res.json({ url: result.url });
-  } catch (error) {
-    console.error('[License] Billing portal error:', error);
-    res.status(500).json({ error: 'Failed to retrieve billing portal URL' });
-  }
-});
-
-// --- Self-Update ---
-
-/** Respond 202 and trigger the "last breath" self-update after the response flushes. */
-function scheduleLocalUpdate(res: Response, message: string): void {
-  res.status(202).json({ message });
-  res.on('finish', () => {
-    setTimeout(() => {
-      // Defense in depth: triggerUpdate records its own errors into lastUpdateError,
-      // but guard against an unexpected throw becoming an unhandled rejection.
-      SelfUpdateService.getInstance().triggerUpdate().catch((err) => {
-        console.error('[SelfUpdate] Unexpected error during triggerUpdate:', err);
-      });
-    }, 500);
-  });
-}
-
-app.post('/api/system/update', (req: Request, res: Response): void => {
-  if (!requireAdmin(req, res)) return;
-  if (!SelfUpdateService.getInstance().isAvailable()) {
-    res.status(503).json({ error: 'Self-update unavailable. Sencho must be deployed via Docker Compose.' });
-    return;
-  }
-  scheduleLocalUpdate(res, 'Update initiated. The server will restart shortly.');
-});
+// Phase 4A-1 route mounts. These live behind authGate + auditLog +
+// apiTokenScope but ahead of any group still inlined below. As each
+// remaining group gets extracted the inline block comes out and a new
+// app.use slots in here.
+app.use('/api/license', licenseRouter);
+app.use('/api/system', systemUpdateRouter);
+app.use('/api/permissions', permissionsRouter);
+app.use('/api/convert', convertRouter);
+app.use('/api/alerts', alertsRouter);
+app.use('/api/labels', labelsRouter);
+app.use('/api/stacks', stackLabelsRouter);
+app.use('/api/api-tokens', apiTokensRouter);
+app.use('/api/audit-log', auditLogRouter);
 
 // --- Fleet Overview (local-only, aggregates all nodes) ---
 
@@ -2670,39 +2537,6 @@ app.delete('/api/users/:id/roles/:assignId', authMiddleware, (req: Request, res:
   }
 });
 
-// Return the current user's effective permissions (any authenticated user)
-app.get('/api/permissions/me', authMiddleware, (req: Request, res: Response): void => {
-  try {
-    if (!req.user) {
-      res.status(401).json({ error: 'Not authenticated' });
-      return;
-    }
-
-    const db = DatabaseService.getInstance();
-    const globalRole = req.user.role;
-    const globalPermissions = ROLE_PERMISSIONS[globalRole] || [];
-    const assignments = db.getAllRoleAssignments(req.user.userId);
-
-    const scopedPermissions: Record<string, PermissionAction[]> = {};
-    for (const a of assignments) {
-      const key = `${a.resource_type}:${a.resource_id}`;
-      const perms = ROLE_PERMISSIONS[a.role] || [];
-      const existing = scopedPermissions[key] || [];
-      scopedPermissions[key] = [...new Set([...existing, ...perms])];
-    }
-
-    res.json({
-      globalRole,
-      globalPermissions,
-      scopedPermissions,
-      isAdmiral: LicenseService.getInstance().getVariant() === 'admiral',
-    });
-  } catch (error) {
-    console.error('[Permissions] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch permissions' });
-  }
-});
-
 // Remote Node HTTP Proxy (see proxy/remoteNodeProxy.ts). Mounted here after
 // authGate + auditLog + apiTokenScope so local Sencho enforces auth first;
 // the proxy then takes over for remote-targeted requests.
@@ -2742,263 +2576,6 @@ app.get('/api/ports/in-use', async (req: Request, res: Response) => {
   }
 });
 
-// --- Label Routes (Skipper+) ---
-
-app.get('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  try {
-    const nodeId = req.nodeId ?? 0;
-    const labels = DatabaseService.getInstance().getLabels(nodeId);
-    if (isDebugEnabled()) console.debug('[Labels:debug] List labels: nodeId=', nodeId, 'count=', labels.length);
-    res.json(labels);
-  } catch (error) {
-    console.error('[Labels] List error:', error);
-    res.status(500).json({ error: 'Failed to list labels' });
-  }
-});
-
-app.post('/api/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  if (!requireBody(req, res)) return;
-  try {
-    const nodeId = req.nodeId ?? 0;
-    const { name, color } = req.body;
-
-    if (!name || typeof name !== 'string' || name.trim().length === 0 || name.length > 30) {
-      res.status(400).json({ error: 'name is required and must be 1-30 characters' });
-      return;
-    }
-    if (!/^[a-zA-Z0-9 -]+$/.test(name)) {
-      res.status(400).json({ error: 'name may only contain letters, numbers, spaces, and hyphens' });
-      return;
-    }
-    if (!color || !(VALID_LABEL_COLORS as readonly string[]).includes(color)) {
-      res.status(400).json({ error: `color must be one of: ${VALID_LABEL_COLORS.join(', ')}` });
-      return;
-    }
-
-    const db = DatabaseService.getInstance();
-    if (db.getLabelCount(nodeId) >= MAX_LABELS_PER_NODE) {
-      res.status(409).json({ error: `Maximum of ${MAX_LABELS_PER_NODE} labels per node reached` });
-      return;
-    }
-
-    if (isDebugEnabled()) console.debug('[Labels:debug] Create label:', { nodeId, name: name.trim(), color });
-    const label = db.createLabel(nodeId, name.trim(), color);
-    if (isDebugEnabled()) console.debug('[Labels:debug] Created label:', label.id);
-    res.status(201).json(label);
-  } catch (error: unknown) {
-    if (isSqliteUniqueViolation(error)) {
-      res.status(409).json({ error: 'A label with that name already exists' });
-      return;
-    }
-    console.error('[Labels] Create error:', error);
-    res.status(500).json({ error: 'Failed to create label' });
-  }
-});
-
-app.get('/api/labels/assignments', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  try {
-    const nodeId = req.nodeId ?? 0;
-    const db = DatabaseService.getInstance();
-    const assignments = db.getLabelsForStacks(nodeId);
-
-    // Opportunistic cleanup: only scan the filesystem when there are assignments to validate
-    const assignedStacks = Object.keys(assignments);
-    if (assignedStacks.length > 0) {
-      const fsStacks = await FileSystemService.getInstance(nodeId).getStacks();
-      const fsSet = new Set(fsStacks);
-      const staleNames = assignedStacks.filter(name => !fsSet.has(name));
-      if (staleNames.length > 0) {
-        db.cleanupStaleAssignments(nodeId, fsStacks);
-        for (const name of staleNames) {
-          delete assignments[name];
-        }
-        if (isDebugEnabled()) console.debug('[Labels:debug] Cleaned up stale assignments:', staleNames);
-      }
-    }
-
-    if (isDebugEnabled()) console.debug('[Labels:debug] Assignments: nodeId=', nodeId, 'stacks=', Object.keys(assignments).length);
-    res.json(assignments);
-  } catch (error) {
-    console.error('[Labels] Assignments error:', error);
-    res.status(500).json({ error: 'Failed to fetch label assignments' });
-  }
-});
-
-app.put('/api/labels/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  if (!requireBody(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
-    const nodeId = req.nodeId ?? 0;
-    const { name, color } = req.body;
-
-    if (name !== undefined) {
-      if (typeof name !== 'string' || name.trim().length === 0 || name.length > 30) {
-        res.status(400).json({ error: 'name must be 1-30 characters' });
-        return;
-      }
-      if (!/^[a-zA-Z0-9 -]+$/.test(name)) {
-        res.status(400).json({ error: 'name may only contain letters, numbers, spaces, and hyphens' });
-        return;
-      }
-    }
-    if (color !== undefined && !(VALID_LABEL_COLORS as readonly string[]).includes(color)) {
-      res.status(400).json({ error: `color must be one of: ${VALID_LABEL_COLORS.join(', ')}` });
-      return;
-    }
-
-    if (isDebugEnabled()) console.debug('[Labels:debug] Update label:', { id, nodeId, name: name?.trim(), color });
-    const updated = DatabaseService.getInstance().updateLabel(id, nodeId, {
-      name: name?.trim(),
-      color,
-    });
-    if (!updated) {
-      res.status(404).json({ error: 'Label not found' });
-      return;
-    }
-    res.json(updated);
-  } catch (error: unknown) {
-    if (isSqliteUniqueViolation(error)) {
-      res.status(409).json({ error: 'A label with that name already exists' });
-      return;
-    }
-    console.error('[Labels] Update error:', error);
-    res.status(500).json({ error: 'Failed to update label' });
-  }
-});
-
-app.delete('/api/labels/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
-    const nodeId = req.nodeId ?? 0;
-    if (isDebugEnabled()) console.debug('[Labels:debug] Delete label:', { id, nodeId });
-    DatabaseService.getInstance().deleteLabel(id, nodeId);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[Labels] Delete error:', error);
-    res.status(500).json({ error: 'Failed to delete label' });
-  }
-});
-
-app.put('/api/stacks/:stackName/labels', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  if (!requireBody(req, res)) return;
-  try {
-    const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      res.status(400).json({ error: 'Invalid stack name' });
-      return;
-    }
-    const nodeId = req.nodeId ?? 0;
-    const { labelIds } = req.body;
-
-    if (!Array.isArray(labelIds) || !labelIds.every((id: unknown) => typeof id === 'number')) {
-      res.status(400).json({ error: 'labelIds must be an array of numbers' });
-      return;
-    }
-
-    if (isDebugEnabled()) console.debug('[Labels:debug] Set stack labels:', { stackName, nodeId, labelIds });
-    DatabaseService.getInstance().setStackLabels(stackName, nodeId, labelIds);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[Labels] Set stack labels error:', error);
-    res.status(500).json({ error: 'Failed to set stack labels' });
-  }
-});
-
-const activeBulkActions = new Set<string>();
-
-app.post('/api/labels/:id/action', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-  if (!requireAdmin(req, res)) return;
-  if (!requireBody(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
-    const { action } = req.body;
-    const validActions = ['deploy', 'stop', 'restart'];
-    if (!action || !validActions.includes(action)) {
-      res.status(400).json({ error: `action must be one of: ${validActions.join(', ')}` });
-      return;
-    }
-
-    const nodeId = req.nodeId ?? 0;
-
-    const label = DatabaseService.getInstance().getLabel(id, nodeId);
-    if (!label) {
-      res.status(404).json({ error: 'Label not found' });
-      return;
-    }
-
-    const lockKey = `bulk:${nodeId}`;
-    if (activeBulkActions.has(lockKey)) {
-      res.status(429).json({ error: 'A bulk action is already running for this node. Please wait.' });
-      return;
-    }
-    activeBulkActions.add(lockKey);
-
-    try {
-      const stackNames = DatabaseService.getInstance().getStacksForLabel(id, nodeId);
-      const fsStacks = await FileSystemService.getInstance(nodeId).getStacks();
-      const fsStackNames = new Set(fsStacks);
-      const validStacks = stackNames.filter(name => fsStackNames.has(name));
-
-      if (isDebugEnabled()) console.debug('[Labels:debug] Bulk action start:', { id, action, nodeId, totalLabeled: stackNames.length, validStacks: validStacks.length });
-
-      const results: { stackName: string; success: boolean; error?: string }[] = [];
-
-      for (const stackName of validStacks) {
-        try {
-          if (action === 'deploy') {
-            const gate = await enforcePolicyPreDeploy(
-              stackName,
-              req.nodeId,
-              buildPolicyGateOptions(req),
-            );
-            if (!gate.ok) {
-              const blockedMsg = `Policy "${gate.policy?.name}" blocked deploy: ${gate.violations.length} image(s) exceed ${gate.policy?.max_severity}`;
-              results.push({ stackName, success: false, error: blockedMsg });
-              continue;
-            }
-            await ComposeService.getInstance(req.nodeId).deployStack(stackName, undefined, false);
-          } else {
-            const dockerController = DockerController.getInstance(req.nodeId);
-            const containers = await dockerController.getContainersByStack(stackName);
-            if (action === 'stop') {
-              await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
-            } else {
-              await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
-            }
-          }
-          results.push({ stackName, success: true });
-        } catch (err: unknown) {
-          results.push({ stackName, success: false, error: (err as Error)?.message || 'Unknown error' });
-        }
-      }
-
-      const succeeded = results.filter(r => r.success).length;
-      const failed = results.length - succeeded;
-      console.log(`[Labels] Bulk ${action} on label ${id}: ${validStacks.length} stacks (${succeeded} succeeded, ${failed} failed)`);
-      if (isDebugEnabled()) console.debug('[Labels:debug] Bulk action complete:', { id, action, total: results.length, succeeded, failed });
-
-      if (succeeded > 0) {
-        invalidateNodeCaches(req.nodeId);
-      }
-      res.json({ results });
-    } finally {
-      activeBulkActions.delete(lockKey);
-    }
-  } catch (error) {
-    console.error('[Labels] Bulk action error:', error);
-    res.status(500).json({ error: 'Failed to execute bulk action' });
-  }
-});
 
 // Stack Routes - Updated to use stackName (directory name) instead of filename
 
@@ -3944,48 +3521,6 @@ app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => 
   }
 });
 
-// Docker Run to Compose converter endpoint.
-// Accepts a raw `docker run ...` command and returns the equivalent compose
-// YAML as a string. Authenticated, input-validated, and resilient to
-// composerize throws / malformed output.
-const MAX_DOCKER_RUN_LENGTH = 8192;
-app.post('/api/convert', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { dockerRun } = req.body ?? {};
-  if (typeof dockerRun !== 'string') {
-    res.status(400).json({ error: 'dockerRun must be a string' });
-    return;
-  }
-  const trimmed = dockerRun.trim();
-  if (trimmed.length === 0) {
-    res.status(400).json({ error: 'dockerRun command is required' });
-    return;
-  }
-  if (trimmed.length > MAX_DOCKER_RUN_LENGTH) {
-    res.status(400).json({ error: `dockerRun command is too long (max ${MAX_DOCKER_RUN_LENGTH} characters)` });
-    return;
-  }
-  if (trimmed.includes('\0')) {
-    res.status(400).json({ error: 'dockerRun command contains invalid characters' });
-    return;
-  }
-
-  let yaml: unknown;
-  try {
-    yaml = composerize(trimmed);
-  } catch (error) {
-    console.error('Conversion error:', error);
-    res.status(422).json({ error: 'Could not parse command. Check syntax and supported flags.' });
-    return;
-  }
-
-  if (typeof yaml !== 'string' || !yaml.includes('services:')) {
-    console.warn('Converter produced unexpected output for input:', trimmed.slice(0, 200));
-    res.status(422).json({ error: 'Could not parse command. Check syntax and supported flags.' });
-    return;
-  }
-
-  res.json({ yaml });
-});
 
 // Get all containers stats for dashboard.
 // Cached per-node for 2s to collapse multi-tab polling pressure. Invalidated
@@ -4349,27 +3884,6 @@ app.patch('/api/settings', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/alerts', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    let stackName = req.query.stackName as string | undefined;
-    if (Array.isArray(stackName)) stackName = stackName[0] as string;
-
-    const alerts = DatabaseService.getInstance().getStackAlerts(stackName);
-    res.json(alerts);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch alerts' });
-  }
-});
-
-const AlertCreateSchema = z.object({
-  stack_name: z.string().min(1).max(255),
-  metric: z.enum(['cpu_percent', 'memory_percent', 'memory_mb', 'net_rx', 'net_tx', 'restart_count']),
-  operator: z.enum(['>', '>=', '<', '<=', '==']),
-  threshold: z.number().min(0),
-  duration_mins: z.coerce.number().int().min(0).max(1440),
-  cooldown_mins: z.coerce.number().int().min(0).max(10080),
-});
-
 const AutoHealPolicyCreateSchema = z.object({
   stack_name: z.string().min(1).max(255),
   service_name: z.string().min(1).max(255).nullable().optional(),
@@ -4379,33 +3893,6 @@ const AutoHealPolicyCreateSchema = z.object({
   auto_disable_after_failures: z.coerce.number().int().min(1).max(100).default(5),
 });
 const AutoHealPolicyUpdateSchema = AutoHealPolicyCreateSchema.partial().omit({ stack_name: true });
-
-app.post('/api/alerts', authMiddleware, async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  const parsed = AlertCreateSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: 'Invalid alert data', details: parsed.error.flatten().fieldErrors });
-    return;
-  }
-  try {
-    const created = DatabaseService.getInstance().addStackAlert(parsed.data);
-    res.status(201).json(created);
-  } catch (error) {
-    console.error('Failed to add alert:', error);
-    res.status(500).json({ error: 'Failed to add alert' });
-  }
-});
-
-app.delete('/api/alerts/:id', authMiddleware, async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    DatabaseService.getInstance().deleteStackAlert(id);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete alert' });
-  }
-});
 
 // ─── Auto-Heal Policies ───────────────────────────────────────────────────────
 
@@ -4877,238 +4364,6 @@ app.post('/api/sso/config/:provider/test', async (req: Request, res: Response): 
   }
 });
 
-// --- Audit Log Routes (Admiral, local-only) ---
-
-app.get('/api/audit-log', async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
-  if (!requirePermission(req, res, 'system:audit')) return;
-
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const username = req.query.username as string | undefined;
-    const method = req.query.method as string | undefined;
-    const search = req.query.search as string | undefined;
-    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
-    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
-    const withAnomalies = req.query.with_anomalies === '1';
-
-    if (isDebugEnabled()) {
-      console.log(`[Audit:diag] Query: page=${page} limit=${limit} username=${username || '-'} method=${method || '-'} search=${search || '-'}`);
-    }
-    const db = DatabaseService.getInstance();
-    const result = db.getAuditLogs({ page, limit, username, method, from, to, search });
-
-    if (withAnomalies && result.entries.length > 0) {
-      const now = Date.now();
-      const historyFrom = now - HISTORY_WINDOW_MS;
-      const oldestInPage = result.entries.reduce(
-        (min, e) => Math.min(min, e.timestamp),
-        result.entries[0].timestamp
-      );
-      const history = db.getAuditLogsInRange(historyFrom, oldestInPage);
-      res.json({ ...result, entries: annotateEntries(result.entries, history, now) });
-      return;
-    }
-    res.json(result);
-  } catch (error) {
-    console.error('[AuditLog] Failed to fetch audit log:', error);
-    res.status(500).json({ error: 'Failed to fetch audit log' });
-  }
-});
-
-app.get('/api/audit-log/stats', async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
-  if (!requirePermission(req, res, 'system:audit')) return;
-
-  try {
-    const now = Date.now();
-    const db = DatabaseService.getInstance();
-    const cutoff24h = now - 24 * 60 * 60 * 1000;
-    const cutoff7d = now - 7 * 24 * 60 * 60 * 1000;
-    const last30d = db.getAuditLogsInRange(now - HISTORY_WINDOW_MS, now);
-    const last7d = last30d.filter(e => e.timestamp >= cutoff7d);
-    const last24h = last7d.filter(e => e.timestamp >= cutoff24h);
-    res.json(computeAuditStats({ now, last24h, last7d, last30d }));
-  } catch (error) {
-    console.error('[AuditLog] Failed to compute audit stats:', error);
-    res.status(500).json({ error: 'Failed to compute audit stats' });
-  }
-});
-
-app.get('/api/audit-log/export', async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
-  if (!requirePermission(req, res, 'system:audit')) return;
-
-  try {
-    const format = (req.query.format as string) === 'csv' ? 'csv' : 'json';
-    const username = req.query.username as string | undefined;
-    const method = req.query.method as string | undefined;
-    const search = req.query.search as string | undefined;
-    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
-    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
-
-    if (isDebugEnabled()) {
-      console.log(`[Audit:diag] Export: format=${format} filters=${JSON.stringify({ username, method, search, from, to })}`);
-    }
-    const result = DatabaseService.getInstance().getAuditLogs({ page: 1, limit: 10000, username, method, from, to, search });
-    const timestamp = new Date().toISOString().slice(0, 10);
-
-    if (format === 'json') {
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${timestamp}.json"`);
-      res.json(result.entries);
-    } else {
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${timestamp}.csv"`);
-
-      const csvEscape = (val: string | number | null): string => {
-        if (val === null || val === undefined) return '';
-        const str = String(val);
-        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-          return `"${str.replace(/"/g, '""')}"`;
-        }
-        return str;
-      };
-
-      const headers = ['id', 'timestamp', 'username', 'method', 'path', 'status_code', 'node_id', 'ip_address', 'summary'];
-      const rows = result.entries.map(e =>
-        headers.map(h => csvEscape(e[h as keyof typeof e])).join(',')
-      );
-      res.send([headers.join(','), ...rows].join('\n'));
-    }
-  } catch (error) {
-    console.error('[AuditLog] Export failed:', error);
-    res.status(500).json({ error: 'Failed to export audit log' });
-  }
-});
-
-// --- API Token Routes (Admiral, admin-only, local-only) ---
-
-app.post('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const { name, scope, expires_in } = req.body;
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      res.status(400).json({ error: 'Token name is required.' });
-      return;
-    }
-    if (name.trim().length > 100) {
-      res.status(400).json({ error: 'Token name must be 100 characters or fewer.' });
-      return;
-    }
-    const validScopes = ['read-only', 'deploy-only', 'full-admin'];
-    if (!scope || !validScopes.includes(scope)) {
-      res.status(400).json({ error: `Scope must be one of: ${validScopes.join(', ')}` });
-      return;
-    }
-    const validExpiry = [30, 60, 90, 365];
-    if (expires_in !== undefined && expires_in !== null && !validExpiry.includes(expires_in)) {
-      res.status(400).json({ error: `expires_in must be one of: ${validExpiry.join(', ')} (days), or null for no expiry.` });
-      return;
-    }
-    const expiresAt = typeof expires_in === 'number' ? Date.now() + expires_in * 24 * 60 * 60 * 1000 : null;
-
-    const settings = DatabaseService.getInstance().getGlobalSettings();
-    const jwtSecret = settings.auth_jwt_secret;
-    if (!jwtSecret) {
-      res.status(500).json({ error: 'No JWT secret configured.' });
-      return;
-    }
-
-    const db = DatabaseService.getInstance();
-    const user = db.getUserByUsername(req.user!.username);
-    if (!user) {
-      res.status(500).json({ error: 'User not found.' });
-      return;
-    }
-
-    const activeCount = db.getActiveApiTokenCountByUser(user.id);
-    if (activeCount >= 25) {
-      res.status(400).json({ error: 'Maximum of 25 active API tokens per user.' });
-      return;
-    }
-
-    if (db.getActiveApiTokenByNameAndUser(name.trim(), user.id)) {
-      res.status(409).json({ error: 'An active token with this name already exists.' });
-      return;
-    }
-
-    // JWT ceiling exceeds the longest user-selectable expiry (365d) so the DB check is always tighter
-    const API_TOKEN_JWT_CEILING = '400d';
-    const rawToken = jwt.sign({ scope: 'api_token', sub: user.username, jti: crypto.randomUUID() }, jwtSecret, { expiresIn: API_TOKEN_JWT_CEILING });
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    const id = db.addApiToken({
-      token_hash: tokenHash,
-      name: name.trim(),
-      scope: scope as 'read-only' | 'deploy-only' | 'full-admin',
-      user_id: user.id,
-      created_at: Date.now(),
-      expires_at: expiresAt,
-    });
-
-    if (isDebugEnabled()) console.log('[ApiTokens:diag] Token created:', { name: name.trim(), scope, expires_in, user: req.user!.username });
-    res.status(201).json({ id, token: rawToken });
-  } catch (error) {
-    console.error('[ApiTokens] Create error:', error);
-    res.status(500).json({ error: 'Failed to create API token' });
-  }
-});
-
-app.get('/api/api-tokens', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
-    if (!user) { res.status(500).json({ error: 'User not found.' }); return; }
-    const tokens = DatabaseService.getInstance().getApiTokensByUser(user.id);
-    // Never expose token hashes to the client
-    const sanitized = tokens.map(({ token_hash: _hash, ...rest }) => rest);
-    res.json(sanitized);
-  } catch (error) {
-    console.error('[ApiTokens] List error:', error);
-    res.status(500).json({ error: 'Failed to list API tokens' });
-  }
-});
-
-app.delete('/api/api-tokens/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (req.apiTokenScope) {
-    res.status(403).json({ error: 'API tokens cannot manage other API tokens.', code: 'SCOPE_DENIED' });
-    return;
-  }
-  if (!requireAdmin(req, res)) return;
-  if (!requireAdmiral(req, res)) return;
-  try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid token ID.' }); return; }
-
-    const apiToken = DatabaseService.getInstance().getApiTokenById(id);
-    if (!apiToken) { res.status(404).json({ error: 'API token not found.' }); return; }
-
-    const user = DatabaseService.getInstance().getUserByUsername(req.user!.username);
-    if (!user || apiToken.user_id !== user.id) {
-      res.status(403).json({ error: 'You can only revoke your own tokens.' });
-      return;
-    }
-
-    DatabaseService.getInstance().revokeApiToken(id);
-    if (isDebugEnabled()) console.log('[ApiTokens:diag] Token revoked:', { id, name: apiToken.name, user: req.user!.username });
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[ApiTokens] Revoke error:', error);
-    res.status(500).json({ error: 'Failed to revoke API token' });
-  }
-});
 
 // --- Scheduled Operations Routes (Admiral, admin-only, local-only) ---
 
