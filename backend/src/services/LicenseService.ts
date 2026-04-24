@@ -123,7 +123,6 @@ interface LemonSqueezyValidationResponse {
 const LEMON_SQUEEZY_API = 'https://api.lemonsqueezy.com/v1/licenses';
 const VALIDATION_INTERVAL_MS = 72 * 60 * 60 * 1000; // 72 hours
 const OFFLINE_GRACE_DAYS = 30;
-const TRIAL_DURATION_DAYS = 14;
 
 export class LicenseService {
     private static instance: LicenseService;
@@ -140,8 +139,9 @@ export class LicenseService {
 
     /**
      * Initialize the license service on startup.
-     * Ensures an instance ID exists and starts the 14-day trial on first boot.
-     * Also starts periodic validation for active licenses.
+     * Ensures an instance ID exists and starts periodic validation for active licenses.
+     * Fresh installs land on Community; trials are issued by Lemon Squeezy via the
+     * hosted checkout (email + card required) and activated locally by pasting the key.
      */
     public initialize(): void {
         const db = DatabaseService.getInstance();
@@ -149,16 +149,6 @@ export class LicenseService {
         // Generate persistent instance ID on first boot
         if (!db.getSystemState('instance_id')) {
             db.setSystemState('instance_id', crypto.randomUUID());
-        }
-
-        // Start 14-day trial on first boot (no license_status means fresh install)
-        const currentStatus = db.getSystemState('license_status');
-        if (!currentStatus) {
-            const trialEnd = new Date();
-            trialEnd.setDate(trialEnd.getDate() + TRIAL_DURATION_DAYS);
-            db.setSystemState('license_status', 'trial');
-            db.setSystemState('license_valid_until', trialEnd.toISOString());
-            console.log(`[License] 14-day Skipper trial started. Expires: ${trialEnd.toISOString()}`);
         }
 
         this.startPeriodicValidation();
@@ -235,7 +225,8 @@ export class LicenseService {
 
     /**
      * Get the license variant (skipper or admiral) from stored metadata.
-     * Trial licenses default to "skipper"; Admiral features require an Admiral license.
+     * Trial and active licenses both resolve via Lemon Squeezy metadata stored by activate();
+     * trial-granted variant is whatever Lemon Squeezy returned for the trial variant.
      *
      * Self-healing: on every call, cross-checks the stored variant_type against what
      * resolveVariantType() produces from the current product/variant names. If they
@@ -244,9 +235,6 @@ export class LicenseService {
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
-        const status = db.getSystemState('license_status');
-        if (status === 'trial') return 'skipper';
-
         const variantName = db.getSystemState('license_variant_name');
         const productName = db.getSystemState('license_product_name') || undefined;
         const storedType = db.getSystemState('license_variant_type');
