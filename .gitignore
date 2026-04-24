@@ -68,3 +68,6 @@ backend/src/generated/version.ts
 # Local-only projects (separate repos)
 demo-video/
 website/
+
+# Internal engineering docs (not published)
+docs/internal/
