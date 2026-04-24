@@ -7,6 +7,8 @@ export const PORT = 3000;
 
 // Password policy
 export const MIN_PASSWORD_LENGTH = 8;
+/** bcrypt cost factor. 10 is current Sencho default; roughly ~75ms/hash on modern hardware. */
+export const BCRYPT_SALT_ROUNDS = 10;
 
 // Labels
 export const VALID_LABEL_COLORS = ['teal', 'blue', 'purple', 'rose', 'amber', 'green', 'orange', 'pink', 'cyan', 'slate'] as const;
@@ -19,6 +21,12 @@ export const SESSION_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const MFA_PENDING_COOKIE_NAME = 'sencho_mfa_pending';
 export const MFA_PENDING_SCOPE = 'mfa_pending';
 export const MFA_PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutes to complete the challenge
+
+// MFA replay-prevention: recently-used codes are blacklisted for
+// MFA_REPLAY_TTL_MS to block replay within a single 30-second TOTP window
+// (plus drift tolerance). A periodic purge keeps the table bounded.
+export const MFA_REPLAY_TTL_MS = 120 * 1000;
+export const MFA_REPLAY_PURGE_INTERVAL_MS = 60 * 1000;
 
 // Hot-path cache TTLs.
 // Short TTLs collapse concurrent polling pressure across browser tabs and
