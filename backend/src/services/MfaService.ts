@@ -2,6 +2,9 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { authenticator } from 'otplib';
 import { HashAlgorithms } from '@otplib/core';
+import { DatabaseService } from './DatabaseService';
+import { MFA_REPLAY_TTL_MS, MFA_REPLAY_PURGE_INTERVAL_MS } from '../helpers/constants';
+import { isDebugEnabled } from '../utils/debug';
 
 // Configure otplib for the default TOTP contract we present to users:
 //   - 6 digits
@@ -27,6 +30,41 @@ export interface BackupVerifyResult {
 }
 
 export class MfaService {
+    private static instance: MfaService;
+    private purgeTimer: NodeJS.Timeout | null = null;
+
+    public static getInstance(): MfaService {
+        if (!MfaService.instance) MfaService.instance = new MfaService();
+        return MfaService.instance;
+    }
+
+    /**
+     * Start the periodic purge of used-MFA-code rows. The replay blacklist
+     * holds (user, code, window) tuples for the last ~2 minutes; older rows
+     * are safe to drop. Idempotent: calling start() twice is a no-op.
+     */
+    public start(): void {
+        if (this.purgeTimer) return;
+        this.purgeTimer = setInterval(() => {
+            try {
+                const deleted = DatabaseService.getInstance().purgeOldMfaCodes(Date.now() - MFA_REPLAY_TTL_MS);
+                if (isDebugEnabled() && deleted > 0) {
+                    console.log('[MFA:diag] replay purge deleted=', deleted);
+                }
+            } catch (err) {
+                console.warn('[MFA] Replay purge failed:', (err as Error).message);
+            }
+        }, MFA_REPLAY_PURGE_INTERVAL_MS);
+        this.purgeTimer.unref();
+    }
+
+    public stop(): void {
+        if (this.purgeTimer) {
+            clearInterval(this.purgeTimer);
+            this.purgeTimer = null;
+        }
+    }
+
     /**
      * Generate a fresh base32 TOTP secret ready for `buildOtpauthUri` and
      * `verifyTotp`. Each user should receive a unique secret.
