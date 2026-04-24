@@ -198,3 +198,19 @@ export function issueMfaPendingCookie(
 export function clearMfaPendingCookie(res: Response, req: Request): void {
   res.clearCookie(MFA_PENDING_COOKIE_NAME, getCookieOptions(req));
 }
+
+/**
+ * Re-issue the session cookie after bumping `token_version`. Routes that
+ * call `bumpTokenVersion` (password change, MFA enrol, MFA disable) use this
+ * so the caller stays signed in after their previous cookie is invalidated.
+ * No-ops silently when the JWT secret is missing or the user has been
+ * deleted mid-request.
+ */
+export function reissueSessionAfterTokenBump(req: Request, res: Response, userId: number): void {
+  const db = DatabaseService.getInstance();
+  const refreshed = db.getUserById(userId);
+  const settings = db.getGlobalSettings();
+  if (refreshed && settings.auth_jwt_secret) {
+    issueSessionCookie(res, req, refreshed, settings.auth_jwt_secret);
+  }
+}
