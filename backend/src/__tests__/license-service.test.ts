@@ -38,9 +38,16 @@ function setLicenseState(overrides: Record<string, string>) {
 }
 
 describe('LicenseService.getVariant()', () => {
-  it('returns "skipper" for trial licenses', () => {
+  it('returns null for trial status with no stored variant metadata', () => {
+    // Trial status without LS-issued variant metadata resolves to null; a real
+    // LS-issued trial would carry variant_name and resolve through the normal path.
     setLicenseState({ license_status: 'trial' });
-    expect(svc.getVariant()).toBe('skipper');
+    expect(svc.getVariant()).toBeNull();
+  });
+
+  it('returns "admiral" for trial with LS-stored Admiral variant metadata', () => {
+    setLicenseState({ license_status: 'trial', license_variant_name: 'Admiral Monthly', license_product_name: 'Sencho Admiral' });
+    expect(svc.getVariant()).toBe('admiral');
   });
 
   it('returns null when no variant name is stored', () => {
@@ -119,7 +126,6 @@ describe('LicenseService.getVariant()', () => {
 describe('LicenseService.getTier()', () => {
   it('returns "community" when no status is set', () => {
     setLicenseState({});
-    // initialize() sets trial on first boot; override to test the empty-status path
     DatabaseService.getInstance().setSystemState('license_status', '');
     expect(svc.getTier()).toBe('community');
   });
@@ -263,5 +269,27 @@ describe('LicenseService.getLicenseInfo() - full scenarios', () => {
     expect(info.isLifetime).toBe(false);
     expect(info.trialDaysRemaining).toBeNull();
     expect(info.customerName).toBe('Another User');
+  });
+});
+
+describe('LicenseService.initialize()', () => {
+  // initialize() starts a 72h validation interval; tear it down so vitest's worker
+  // does not inherit the timer into sibling test files.
+  afterAll(() => {
+    svc.destroy();
+  });
+
+  it('does not auto-start a trial on first boot', () => {
+    const db = DatabaseService.getInstance();
+    db.setSystemState('instance_id', '');
+    db.setSystemState('license_status', '');
+    db.setSystemState('license_valid_until', '');
+
+    svc.initialize();
+
+    expect(db.getSystemState('instance_id')).toBeTruthy();
+    expect(db.getSystemState('license_status')).toBe('');
+    expect(db.getSystemState('license_valid_until')).toBe('');
+    expect(svc.getTier()).toBe('community');
   });
 });
