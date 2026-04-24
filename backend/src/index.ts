@@ -1,10 +1,9 @@
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import DockerController, { globalDockerNetwork, type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
+import DockerController, { type CreateNetworkOptions, type NetworkDriver } from './services/DockerController';
 import { FileSystemService } from './services/FileSystemService';
 import { ComposeService } from './services/ComposeService';
 import crypto from 'crypto';
-import si from 'systeminformation';
 import path from 'path';
 import { DatabaseService, parsePolicyEvaluation, type VulnerabilityScan } from './services/DatabaseService';
 import { NotificationService } from './services/NotificationService';
@@ -32,8 +31,6 @@ import {
   PORT,
   MFA_REPLAY_TTL_MS,
   MFA_REPLAY_PURGE_INTERVAL_MS,
-  STATS_CACHE_TTL_MS,
-  SYSTEM_STATS_CACHE_TTL_MS,
   STACK_STATUSES_CACHE_TTL_MS,
 } from './helpers/constants';
 import { requirePermission } from './middleware/permissions';
@@ -78,10 +75,11 @@ import { auditLogRouter } from './routes/auditLog';
 import { settingsRouter } from './routes/settings';
 import { scheduledTasksRouter } from './routes/scheduledTasks';
 import { agentsRouter } from './routes/agents';
+import { metricsRouter } from './routes/metrics';
+import { imageUpdatesRouter, autoUpdateRouter } from './routes/imageUpdates';
 
 import { isDebugEnabled } from './utils/debug';
 import { getErrorMessage } from './utils/errors';
-import { GlobalLogEntry, normalizeContainerName, parseLogTimestamp, detectLogLevel, demuxDockerLog } from './utils/log-parsing';
 import SelfUpdateService from './services/SelfUpdateService';
 import TrivyService, { SbomFormat } from './services/TrivyService';
 import TrivyInstaller from './services/TrivyInstaller';
@@ -154,6 +152,9 @@ app.use('/api/stacks', stackGitSourceRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/scheduled-tasks', scheduledTasksRouter);
 app.use('/api/agents', agentsRouter);
+app.use('/api', metricsRouter);
+app.use('/api/image-updates', imageUpdatesRouter);
+app.use('/api/auto-update', autoUpdateRouter);
 
 // Symbols still consumed by inline security and node routes still living in
 // index.ts. These will move with their route groups in a later slice.
@@ -957,229 +958,6 @@ app.get('/api/stacks/:stackName/backup', async (req: Request, res: Response) => 
   }
 });
 
-
-// Get all containers stats for dashboard.
-// Cached per-node for 2s to collapse multi-tab polling pressure. Invalidated
-// by stack/container write endpoints (deploy, down, start, stop, restart, etc).
-app.get('/api/stats', async (req: Request, res: Response) => {
-  try {
-    const composeDir = path.resolve(NodeRegistry.getInstance().getComposeDir(req.nodeId));
-    const result = await CacheService.getInstance().getOrFetch(
-      `stats:${req.nodeId}`,
-      STATS_CACHE_TTL_MS,
-      async () => {
-        const allContainers = await DockerController.getInstance(req.nodeId).getAllContainers();
-
-        // A container is "managed" if Docker started it from within COMPOSE_DIR.
-        // We use com.docker.compose.project.working_dir rather than project name because
-        // stacks launched from the COMPOSE_DIR root (not a subdirectory) all share the
-        // project name of the root folder, causing false "external" classification.
-        const isManagedByComposeDir = (c: any): boolean => {
-          const workingDir: string | undefined = c.Labels?.['com.docker.compose.project.working_dir'];
-          if (!workingDir) return false;
-          const resolved = path.resolve(workingDir);
-          return resolved === composeDir || resolved.startsWith(composeDir + path.sep);
-        };
-
-        const active = allContainers.filter((c: any) => c.State === 'running').length;
-        const exited = allContainers.filter((c: any) => c.State === 'exited').length;
-        const total = allContainers.length;
-        const managed = allContainers.filter((c: any) => c.State === 'running' && isManagedByComposeDir(c)).length;
-        const unmanaged = allContainers.filter((c: any) => c.State === 'running' && !isManagedByComposeDir(c)).length;
-
-        return { active, managed, unmanaged, exited, total };
-      },
-    );
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch stats' });
-  }
-});
-
-app.get('/api/metrics/historical', async (req: Request, res: Response) => {
-  try {
-    const metrics = DatabaseService.getInstance().getContainerMetrics(24);
-    res.json(metrics);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch metrics' });
-  }
-});
-
-app.get('/api/logs/global', async (req: Request, res: Response) => {
-  try {
-    const debug = isDebugEnabled();
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getRunningContainers();
-    const allLogs: GlobalLogEntry[] = [];
-    if (debug) console.debug('[GlobalLogs:debug] Polling snapshot starting', { containerCount: containers.length, nodeId: req.nodeId });
-
-    await Promise.all(containers.map(async (c) => {
-      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
-      const containerName = normalizeContainerName(rawName, stackName);
-
-      try {
-        const container = dockerController.getDocker().getContainer(c.Id);
-        const inspect = await container.inspect();
-        const isTty = inspect.Config.Tty;
-        const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 100, timestamps: true }) as Buffer;
-
-        demuxDockerLog(logsBuffer, isTty, (line, source) => {
-          if (!line.trim()) return;
-          const { timestampMs, cleanMessage } = parseLogTimestamp(line);
-          const level = detectLogLevel(cleanMessage, source);
-          allLogs.push({ stackName, containerName, source, level, message: cleanMessage, timestampMs });
-        });
-      } catch (err) {
-        console.warn(`[GlobalLogs] Failed to fetch/parse logs for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
-      }
-    }));
-
-    // Sort globally by timestamp ascending (newest bottom).
-    // Limit to 500 lines; the client renders at most 300 rows at once.
-    allLogs.sort((a, b) => a.timestampMs - b.timestampMs);
-    if (debug) console.debug('[GlobalLogs:debug] Polling snapshot complete', { totalLines: allLogs.length });
-    res.json(allLogs.slice(-500));
-  } catch (error) {
-    console.error('[GlobalLogs] Snapshot fetch failed:', (error as Error).message);
-    res.status(500).json({ error: 'Failed to fetch global logs' });
-  }
-});
-
-app.get('/api/logs/global/stream', async (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  // Prevent nginx from buffering SSE events (would cause burst delivery).
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  const debug = isDebugEnabled();
-  const dockerController = DockerController.getInstance(req.nodeId);
-  const streams: NodeJS.ReadableStream[] = [];
-
-  // Send a heartbeat comment every 30s to keep reverse proxies from closing
-  // idle connections. SSE comments (lines starting with ':') are silently
-  // discarded by the browser's EventSource API.
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(':heartbeat\n\n');
-  }, 30_000);
-
-  try {
-    const containers = await dockerController.getRunningContainers();
-    if (debug) console.debug('[GlobalLogs:debug] SSE stream opened', { containerCount: containers.length, nodeId: req.nodeId });
-
-    await Promise.all(containers.map(async (c) => {
-      const stackName = c.Labels?.['com.docker.compose.project'] || 'system';
-      const rawName = c.Names?.[0]?.replace(/^\//, '') || c.Id.substring(0, 12);
-      const containerName = normalizeContainerName(rawName, stackName);
-
-      try {
-        const container = dockerController.getDocker().getContainer(c.Id);
-        const inspect = await container.inspect();
-        const isTty = inspect.Config.Tty;
-
-        const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 500, timestamps: true });
-        streams.push(stream);
-
-        stream.on('data', (chunk: Buffer) => {
-          demuxDockerLog(chunk, isTty, (line, source) => {
-            if (!line.trim()) return;
-            const { timestampMs, cleanMessage } = parseLogTimestamp(line);
-            const level = detectLogLevel(cleanMessage, source);
-            if (!res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ stackName, containerName, source, level, message: cleanMessage, timestampMs })}\n\n`);
-            }
-          });
-        });
-      } catch (err) {
-        console.warn(`[GlobalLogs] Failed to attach stream for container ${containerName} (${c.Id.substring(0, 12)}):`, (err as Error).message);
-      }
-    }));
-
-    req.on('close', () => {
-      clearInterval(heartbeat);
-      if (debug) console.debug('[GlobalLogs:debug] SSE stream closed, cleaning up', { streamCount: streams.length });
-      streams.forEach(s => {
-        try { (s as NodeJS.ReadableStream & { destroy(): void }).destroy(); } catch { /* stream already ended */ }
-      });
-    });
-
-  } catch (error) {
-    clearInterval(heartbeat);
-    console.error('[GlobalLogs] SSE stream attachment failed:', (error as Error).message);
-    res.write(`data: ${JSON.stringify({ level: 'ERROR', message: '[Sencho] Failed to attach global log stream.', timestampMs: Date.now(), stackName: 'system', containerName: 'backend', source: 'STDERR' })}\n\n`);
-    res.end();
-  }
-});
-
-// Get host system stats.
-// Cached for 3s to collapse overlapping samplers: the dashboard polls every 5s,
-// MonitorService samples every 30s, and si.currentLoad() blocks for ~200ms per
-// call. A short TTL makes concurrent polls share one sample without noticeable
-// UX staleness. No write-path invalidation: these are pure host metrics.
-app.get('/api/system/stats', async (req: Request, res: Response) => {
-  try {
-    // Network is read outside the cache because it is cheap and per-request.
-    const rxSec = Math.max(0, globalDockerNetwork.rxSec);
-    const txSec = Math.max(0, globalDockerNetwork.txSec);
-
-    const sample = await CacheService.getInstance().getOrFetch(
-      `system-stats:${req.nodeId}`,
-      SYSTEM_STATS_CACHE_TTL_MS,
-      async () => {
-        // Remote node requests are intercepted and proxied by remoteNodeProxy
-        // before reaching here. This fetcher only runs for local nodes.
-        const [currentLoad, mem, fsSize] = await Promise.all([
-          si.currentLoad(),
-          si.mem(),
-          si.fsSize(),
-        ]);
-
-        const mainDisk = fsSize.find(fs => fs.mount === '/' || fs.mount === 'C:') || fsSize[0];
-
-        return {
-          cpu: {
-            usage: currentLoad.currentLoad.toFixed(1),
-            cores: currentLoad.cpus.length,
-          },
-          memory: {
-            total: mem.total,
-            used: mem.used,
-            free: mem.free,
-            usagePercent: ((mem.used / mem.total) * 100).toFixed(1),
-          },
-          disk: mainDisk ? {
-            fs: mainDisk.fs,
-            mount: mainDisk.mount,
-            total: mainDisk.size,
-            used: mainDisk.used,
-            free: mainDisk.available,
-            usagePercent: mainDisk.use ? mainDisk.use.toFixed(1) : '0',
-          } : null,
-        };
-      },
-    );
-
-    res.json({ ...sample, network: { rxBytes: 0, txBytes: 0, rxSec, txSec } });
-  } catch (error) {
-    console.error('Failed to fetch system stats:', error);
-    res.status(500).json({ error: 'Failed to fetch system stats' });
-  }
-});
-
-// Admin-only cache observability: per-namespace hit/miss/stale counters and
-// live entry counts for the unified CacheService. Used by Settings → About and
-// for post-deployment verification that cache hit rates look healthy.
-app.get('/api/system/cache-stats', async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    res.json(CacheService.getInstance().getStats());
-  } catch (error) {
-    console.error('Failed to fetch cache stats:', error);
-    res.status(500).json({ error: 'Failed to fetch cache stats' });
-  }
-});
 
 // --- Notification & Alerting Routes ---
 
@@ -2285,231 +2063,6 @@ app.post('/api/templates/deploy', authMiddleware, async (req: Request, res: Resp
     const message = getErrorMessage(error, 'Failed to deploy template');
     console.error('[Templates] Deploy error:', message);
     res.status(500).json({ error: message });
-  }
-});
-
-// =========================
-// Image Update Checker API
-// =========================
-
-app.get('/api/image-updates', authMiddleware, (req: Request, res: Response) => {
-  try {
-    const updates = DatabaseService.getInstance().getStackUpdateStatus(req.nodeId);
-    res.json(updates);
-  } catch (error) {
-    console.error('Failed to fetch image update status:', error);
-    res.status(500).json({ error: 'Failed to fetch image update status' });
-  }
-});
-
-app.post('/api/image-updates/refresh', authMiddleware, (_req: Request, res: Response) => {
-  if (!requireAdmin(_req, res)) return;
-  try {
-    const triggered = ImageUpdateService.getInstance().triggerManualRefresh();
-    if (!triggered) {
-      const mins = ImageUpdateService.manualCooldownMinutes;
-      res.status(429).json({ error: `Rate limited. Please wait at least ${mins} minute${mins !== 1 ? 's' : ''} between manual refreshes.` });
-      return;
-    }
-    res.json({ success: true, message: 'Image update check started in background.' });
-  } catch (error) {
-    console.error('Failed to trigger image update refresh:', error);
-    res.status(500).json({ error: 'Failed to trigger refresh' });
-  }
-});
-
-app.get('/api/image-updates/status', authMiddleware, (_req: Request, res: Response) => {
-  res.json({ checking: ImageUpdateService.getInstance().isChecking() });
-});
-
-// Fleet-wide image update aggregation (local DB + remote node APIs)
-const FLEET_UPDATE_CACHE_KEY = 'fleet-updates';
-const FLEET_CACHE_TTL = 120_000; // 2 minutes
-
-app.get('/api/image-updates/fleet', authMiddleware, async (_req: Request, res: Response) => {
-  try {
-    const result = await CacheService.getInstance().getOrFetch<Record<number, Record<string, boolean>>>(
-      FLEET_UPDATE_CACHE_KEY,
-      FLEET_CACHE_TTL,
-      async () => {
-        const db = DatabaseService.getInstance();
-        const nodes = db.getNodes();
-        const nr = NodeRegistry.getInstance();
-        const data: Record<number, Record<string, boolean>> = {};
-
-        // Local nodes: synchronous DB reads
-        for (const node of nodes) {
-          if (node.type === 'local') {
-            data[node.id] = db.getStackUpdateStatus(node.id);
-          }
-        }
-
-        // Remote nodes: parallel fetches with individual timeouts
-        const remoteNodes = nodes.filter(n => n.type === 'remote' && n.status === 'online' && n.api_url);
-        const remoteResults = await Promise.allSettled(
-          remoteNodes.map(async (node) => {
-            const proxyTarget = nr.getProxyTarget(node.id);
-            const baseUrl = node.api_url!.replace(/\/$/, '');
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 5000);
-            try {
-              const resp = await fetch(`${baseUrl}/api/image-updates`, {
-                headers: proxyTarget?.apiToken
-                  ? { Authorization: `Bearer ${proxyTarget.apiToken}` }
-                  : {},
-                signal: controller.signal,
-              });
-              clearTimeout(timeout);
-              if (resp.ok) return { nodeId: node.id, data: await resp.json() as Record<string, boolean> };
-            } catch {
-              clearTimeout(timeout);
-            }
-            return null;
-          })
-        );
-
-        for (const entry of remoteResults) {
-          if (entry.status === 'fulfilled' && entry.value) {
-            data[entry.value.nodeId] = entry.value.data;
-          }
-        }
-
-        return data;
-      },
-    );
-    res.json(result);
-  } catch (error) {
-    console.error('Failed to aggregate fleet update status:', error);
-    res.status(500).json({ error: 'Failed to aggregate fleet update status' });
-  }
-});
-
-// =========================
-// Auto-Update Execution API
-// =========================
-
-// Execute auto-update for a single stack (or all stacks with target "*").
-// This runs locally on whichever Sencho instance receives the request.
-// The gateway scheduler proxies this to remote nodes via HTTP.
-app.post('/api/auto-update/execute', authMiddleware, async (req: Request, res: Response) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { target } = req.body as { target?: string };
-    console.log(`[AutoUpdate] Execute requested: target="${target || ''}"`);
-    if (!target || typeof target !== 'string') {
-      return res.status(400).json({ error: 'Missing "target" (stack name or "*" for all)' });
-    }
-
-    let stackNames: string[];
-    if (target === '*') {
-      stackNames = await FileSystemService.getInstance(req.nodeId).getStacks();
-      if (stackNames.length === 0) {
-        return res.json({ result: 'No stacks found on node; skipped.' });
-      }
-    } else {
-      if (!isValidStackName(target)) {
-        return res.status(400).json({ error: 'Invalid stack name' });
-      }
-      stackNames = [target];
-    }
-
-    const docker = DockerController.getInstance(req.nodeId);
-    const imageUpdateService = ImageUpdateService.getInstance();
-    const compose = ComposeService.getInstance(req.nodeId);
-    const db = DatabaseService.getInstance();
-    const atomic = LicenseService.getInstance().getTier() === 'paid';
-    const results: string[] = [];
-
-    for (const stackName of stackNames) {
-      try {
-        const containers = await docker.getContainersByStack(stackName);
-        if (!containers || containers.length === 0) {
-          results.push(`Stack "${stackName}": no containers found; skipped.`);
-          continue;
-        }
-
-        const imageRefs = [...new Set(
-          containers
-            .map((c: { Image?: string }) => c.Image)
-            .filter((img): img is string => !!img && !img.startsWith('sha256:'))
-        )];
-
-        if (imageRefs.length === 0) {
-          results.push(`Stack "${stackName}": no pullable images; skipped.`);
-          continue;
-        }
-
-        let hasUpdate = false;
-        const updatedImages: string[] = [];
-        const checkErrors: string[] = [];
-        for (const imageRef of imageRefs) {
-          try {
-            const result = await imageUpdateService.checkImage(docker, imageRef);
-            if (result.error) {
-              checkErrors.push(result.error);
-            } else if (result.hasUpdate) {
-              hasUpdate = true;
-              updatedImages.push(imageRef);
-            }
-          } catch (e) {
-            const errMsg = getErrorMessage(e, String(e));
-            checkErrors.push(errMsg);
-            console.warn(`[AutoUpdate] Failed to check image ${imageRef}:`, e);
-          }
-        }
-
-        if (!hasUpdate) {
-          if (checkErrors.length > 0 && checkErrors.length === imageRefs.length) {
-            results.push(`Stack "${stackName}": WARNING - all image checks failed (${checkErrors.join('; ')}). Unable to determine update status.`);
-          } else if (checkErrors.length > 0) {
-            results.push(`Stack "${stackName}": all reachable images up to date (${checkErrors.length} check(s) failed).`);
-          } else {
-            results.push(`Stack "${stackName}": all images up to date.`);
-          }
-          continue;
-        }
-
-        // Auto-update is a background action initiated by the scheduler. A
-        // policy bypass is never appropriate here: if updated images fail
-        // the gate, skip this stack and raise a notification so an operator
-        // can review before retrying manually.
-        const autoUpdateGate = await enforcePolicyPreDeploy(
-          stackName,
-          req.nodeId,
-          buildPolicyGateOptions(req, {
-            bypass: false,
-            actor: `auto-update:${req.user?.username ?? 'scheduler'}`,
-          }),
-        );
-        if (!autoUpdateGate.ok) {
-          const blockedMsg = `Policy "${autoUpdateGate.policy?.name}" blocked auto-update: ${autoUpdateGate.violations.length} image(s) exceed ${autoUpdateGate.policy?.max_severity}`;
-          NotificationService.getInstance().dispatchAlert('warning', blockedMsg, stackName);
-          results.push(`Stack "${stackName}": ${blockedMsg}`);
-          continue;
-        }
-
-        await compose.updateStack(stackName, undefined, atomic);
-        db.clearStackUpdateStatus(req.nodeId, stackName);
-
-        NotificationService.getInstance().dispatchAlert(
-          'info',
-          `Auto-update: stack "${stackName}" updated with new images`,
-          stackName
-        );
-
-        results.push(`Stack "${stackName}": updated (${updatedImages.join(', ')}).`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        results.push(`Stack "${stackName}" failed: ${msg}`);
-        console.error(`[AutoUpdate] Failed for stack "${stackName}":`, e);
-      }
-    }
-
-    res.json({ result: results.join('\n') });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Auto-update execution failed';
-    console.error('[AutoUpdate] Execute error:', msg);
-    res.status(500).json({ error: msg });
   }
 });
 
