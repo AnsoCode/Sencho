@@ -1,0 +1,95 @@
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { DatabaseService } from '../services/DatabaseService';
+import { authMiddleware } from '../middleware/auth';
+import { requireAdmin } from '../middleware/tierGates';
+
+// Keys that contain auth credentials; never exposed to the frontend or
+// writable via the settings API.
+const PRIVATE_SETTINGS_KEYS = new Set(['auth_username', 'auth_password_hash', 'auth_jwt_secret']);
+
+// Strict allowlist of keys writable via the settings API. Prevents
+// overwriting auth credentials through a misconfigured key.
+const ALLOWED_SETTING_KEYS = new Set([
+  'host_cpu_limit',
+  'host_ram_limit',
+  'host_disk_limit',
+  'docker_janitor_gb',
+  'global_crash',
+  'developer_mode',
+  'template_registry_url',
+  'metrics_retention_hours',
+  'log_retention_days',
+  'audit_retention_days',
+]);
+
+// Bulk PATCH schema. All keys optional; present keys are fully validated.
+const SettingsPatchSchema = z.object({
+  host_cpu_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  host_ram_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  host_disk_limit: z.coerce.number().int().min(1).max(100).transform(String),
+  docker_janitor_gb: z.coerce.number().min(0).transform(String),
+  global_crash: z.enum(['0', '1']),
+  developer_mode: z.enum(['0', '1']),
+  template_registry_url: z.string().max(2048).refine(v => v === '' || /^https?:\/\/.+/.test(v), { message: 'Must be a valid URL or empty' }),
+  metrics_retention_hours: z.coerce.number().int().min(1).max(8760).transform(String),
+  log_retention_days: z.coerce.number().int().min(1).max(365).transform(String),
+  audit_retention_days: z.coerce.number().int().min(1).max(365).transform(String),
+}).partial();
+
+export const settingsRouter = Router();
+
+settingsRouter.get('/', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const settings = DatabaseService.getInstance().getGlobalSettings();
+    for (const key of PRIVATE_SETTINGS_KEYS) {
+      delete settings[key];
+    }
+    res.json(settings);
+  } catch (error) {
+    console.error('Failed to fetch settings:', error);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+settingsRouter.post('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { key, value } = req.body;
+    if (!key || typeof key !== 'string' || !ALLOWED_SETTING_KEYS.has(key)) {
+      res.status(400).json({ error: `Invalid or disallowed setting key: ${key}` });
+      return;
+    }
+    if (value === undefined || value === null) {
+      res.status(400).json({ error: 'Setting value is required' });
+      return;
+    }
+    DatabaseService.getInstance().updateGlobalSetting(key, String(value));
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update setting:', error);
+    res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
+
+settingsRouter.patch('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const parsed = SettingsPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const db = DatabaseService.getInstance();
+    const updateMany = db.getDb().transaction((entries: [string, string][]) => {
+      for (const [k, v] of entries) {
+        db.updateGlobalSetting(k, v);
+      }
+    });
+    updateMany(Object.entries(parsed.data) as [string, string][]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to bulk update settings:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
