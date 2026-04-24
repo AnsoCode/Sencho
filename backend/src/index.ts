@@ -73,6 +73,14 @@ app.use('/api', auditLog);
 
 app.use('/api', enforceApiTokenScope);
 
+// Remote Node HTTP Proxy (see proxy/remoteNodeProxy.ts). Mounted BEFORE the
+// per-group routers so a request targeting a remote node short-circuits into
+// the proxy instead of hitting a local handler that would read local state.
+// Gateway-level paths (auth, nodes, license, fleet, webhooks, meta) are listed
+// in helpers/proxyExemptPaths.ts and bypass the proxy back to the local
+// handlers below.
+app.use('/api/', createRemoteProxyMiddleware());
+
 app.use('/api/license', licenseRouter);
 app.use('/api/system', systemUpdateRouter);
 app.use('/api/permissions', permissionsRouter);
@@ -106,11 +114,6 @@ app.use('/api/containers', containersRouter);
 app.use('/api/ports', portsRouter);
 app.use('/api/nodes', nodesRouter);
 app.use('/api/stacks', stacksRouter);
-
-// Remote Node HTTP Proxy (see proxy/remoteNodeProxy.ts). Mounted here after
-// authGate + auditLog + apiTokenScope so local Sencho enforces auth first;
-// the proxy then takes over for remote-targeted requests.
-app.use('/api/', createRemoteProxyMiddleware());
 
 const { server, wss, pilotTunnelWss } = createServer(app);
 attachUpgrade(server, { wss, pilotTunnelWss });
