@@ -23,18 +23,18 @@ import './types/express';
  *   7.  pollingLimiter (at /api)
  *   8.  conditionalJsonParser
  *   9.  nodeContextMiddleware
- *   10. authGate (at /api)                -- registered in index.ts (before Phase 4 finishes)
+ *   10. authGate (at /api)                -- registered in index.ts
  *   11. auditLog (at /api)                -- registered in index.ts
  *   12. enforceApiTokenScope (at /api)    -- registered in index.ts
  *   13. createRemoteProxyMiddleware       -- proxy/remoteNodeProxy.ts, registered in index.ts
- *   14. routes                            -- registered in index.ts (moves to routes/* in Phase 4)
- *   15. static serving + SPA fallback     -- registered in index.ts (moves here in Phase 5)
+ *   14. routes                            -- registered in index.ts from routes/*
+ *   15. static serving + SPA fallback     -- registered in index.ts
  *   16. errorHandler                      -- registered in index.ts
  *
- * Steps 10-12 and 14 must run after the auth routes are registered so those
- * routes can remain public (login, setup, MFA, SSO). Once all routes live in
- * `routes/*.ts` routers and are mounted here in `createApp()`, every step
- * collapses into this factory.
+ * Steps 10 to 12 and 14 must run after the public auth routers (meta, auth,
+ * mfa, sso) are registered so those routes stay reachable without a session
+ * cookie. index.ts mounts those public routers before step 10 to preserve
+ * that invariant.
  */
 export function createApp(): express.Express {
   const app = express();
