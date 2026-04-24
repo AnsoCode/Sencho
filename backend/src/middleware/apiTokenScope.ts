@@ -2,6 +2,21 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { isDebugEnabled } from '../utils/debug';
 import type { ApiTokenScope } from '../services/DatabaseService';
 
+/**
+ * 403 the request if it is authenticated via an API token. Many admin and
+ * account-scoped endpoints reject API tokens outright; this helper
+ * centralises the message and `code: 'SCOPE_DENIED'` envelope. Returns true
+ * and writes the response when rejected, false otherwise; callers should
+ * early-return on true.
+ */
+export function rejectApiTokenScope(req: Request, res: Response, message: string): boolean {
+  if (req.apiTokenScope) {
+    res.status(403).json({ error: message, code: 'SCOPE_DENIED' });
+    return true;
+  }
+  return false;
+}
+
 // Scope enforcement for API tokens: restricts which endpoints a token can reach.
 const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
   /^\/api\/stacks\/[^/]+\/deploy$/,

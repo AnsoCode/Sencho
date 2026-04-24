@@ -63,3 +63,12 @@ export const requireScheduledTaskTier = (action: string, req: Request, res: Resp
   if (action === 'update' || action === 'scan') return requirePaid(req, res);
   return requireAdmiral(req, res);
 };
+
+/** 400s when the request has no object body. Used by endpoints that always expect JSON input. */
+export const requireBody = (req: Request, res: Response): boolean => {
+  if (!req.body || typeof req.body !== 'object') {
+    res.status(400).json({ error: 'Request body is required' });
+    return false;
+  }
+  return true;
+};
