@@ -1,11 +1,18 @@
 import { Router, type Request, type Response } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
 import { SSOService, type SSOProviderConfig } from '../services/SSOService';
-import { requireAdmin } from '../middleware/tierGates';
+import { requireAdmin, requireTierForSsoProvider } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
 
 const VALID_SSO_PROVIDERS = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta', 'oidc_custom'] as const;
 const SSO_SCOPE_MESSAGE = 'API tokens cannot access SSO configuration.';
+
+/** Reject unknown provider ids before any tier check so invalid inputs 400 rather than leaking a tier-specific 403. */
+function rejectInvalidProvider(provider: string, res: Response): boolean {
+  if ((VALID_SSO_PROVIDERS as readonly string[]).includes(provider)) return false;
+  res.status(400).json({ error: 'Invalid SSO provider' });
+  return true;
+}
 
 function stripSecrets<T extends object>(config: T): Partial<T> {
   const copy: Partial<T> = { ...config };
@@ -35,8 +42,11 @@ ssoConfigRouter.get('/', (req: Request, res: Response): void => {
 ssoConfigRouter.get('/:provider', (req: Request, res: Response): void => {
   if (rejectApiTokenScope(req, res, SSO_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
+  const provider = String(req.params.provider);
+  if (rejectInvalidProvider(provider, res)) return;
+  if (!requireTierForSsoProvider(provider, req, res)) return;
   try {
-    const config = SSOService.getInstance().getProviderConfig(String(req.params.provider));
+    const config = SSOService.getInstance().getProviderConfig(provider);
     if (!config) {
       res.status(404).json({ error: 'Provider not configured' });
       return;
@@ -51,12 +61,10 @@ ssoConfigRouter.get('/:provider', (req: Request, res: Response): void => {
 ssoConfigRouter.put('/:provider', (req: Request, res: Response): void => {
   if (rejectApiTokenScope(req, res, SSO_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
+  const provider = String(req.params.provider);
+  if (rejectInvalidProvider(provider, res)) return;
+  if (!requireTierForSsoProvider(provider, req, res)) return;
   try {
-    const provider = String(req.params.provider);
-    if (!(VALID_SSO_PROVIDERS as readonly string[]).includes(provider)) {
-      res.status(400).json({ error: 'Invalid SSO provider' });
-      return;
-    }
     const config = { ...req.body, provider } as SSOProviderConfig;
 
     if (config.enabled) {
@@ -88,10 +96,12 @@ ssoConfigRouter.put('/:provider', (req: Request, res: Response): void => {
 ssoConfigRouter.delete('/:provider', (req: Request, res: Response): void => {
   if (rejectApiTokenScope(req, res, SSO_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
+  const provider = String(req.params.provider);
+  if (rejectInvalidProvider(provider, res)) return;
+  if (!requireTierForSsoProvider(provider, req, res)) return;
   try {
-    const deletedProvider = String(req.params.provider);
-    SSOService.getInstance().deleteProviderConfig(deletedProvider);
-    console.log(`[SSO] Config deleted: ${deletedProvider}`);
+    SSOService.getInstance().deleteProviderConfig(provider);
+    console.log(`[SSO] Config deleted: ${provider}`);
     res.json({ success: true, message: 'SSO configuration deleted' });
   } catch (error) {
     console.error('[SSO] Failed to delete SSO config:', error);
@@ -102,8 +112,10 @@ ssoConfigRouter.delete('/:provider', (req: Request, res: Response): void => {
 ssoConfigRouter.post('/:provider/test', async (req: Request, res: Response): Promise<void> => {
   if (rejectApiTokenScope(req, res, SSO_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
+  const provider = String(req.params.provider);
+  if (rejectInvalidProvider(provider, res)) return;
+  if (!requireTierForSsoProvider(provider, req, res)) return;
   try {
-    const provider = String(req.params.provider);
     if (provider === 'ldap') {
       const result = await SSOService.getInstance().testLdapConnection();
       res.json(result);

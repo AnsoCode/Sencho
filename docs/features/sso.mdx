@@ -3,17 +3,21 @@ title: SSO & LDAP Authentication
 description: Authenticate with your existing identity provider, including LDAP, Google, GitHub, Okta, and any spec-compliant OIDC provider.
 ---
 
-Sencho lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication; it does not replace it. SSO is available in all Sencho editions, including Community.
+Sencho lets your team sign in using existing identity providers instead of managing separate credentials. SSO works **alongside** password authentication; it does not replace it. SSO is available in every Sencho edition; higher tiers add turnkey presets and enterprise directory support.
 
 ## Supported providers
 
-| Provider | Protocol | Notes |
-|----------|----------|-------|
-| **LDAP / Active Directory** | LDAP bind + search | Works with OpenLDAP, Active Directory, FreeIPA, and any LDAPv3 server |
-| **Google** | OpenID Connect | Google Workspace or personal Google accounts |
-| **GitHub** | OAuth 2.0 | GitHub personal accounts and GitHub orgs |
-| **Okta** | OpenID Connect | Any Okta org or Okta-compatible IdP |
-| **Custom OIDC** | OpenID Connect | Any spec-compliant OIDC provider: Keycloak, Authentik, Authelia, Zitadel, KanIDM, Pocket ID, and more |
+| Provider | Protocol | Tier | Notes |
+|----------|----------|------|-------|
+| **Custom OIDC** | OpenID Connect | Community | Any spec-compliant OIDC provider: Authelia, Keycloak, Authentik, Zitadel, KanIDM, Pocket ID, and more |
+| **Google** | OpenID Connect | Skipper | One-click preset for Google Workspace or personal Google accounts |
+| **GitHub** | OAuth 2.0 | Skipper | One-click preset for GitHub personal accounts and GitHub orgs |
+| **Okta** | OpenID Connect | Skipper | One-click preset for any Okta org or Okta-compatible IdP |
+| **LDAP / Active Directory** | LDAP bind + search | Admiral | Works with OpenLDAP, Active Directory, FreeIPA, and any LDAPv3 server |
+
+<Tip>
+  **Self-hosters on the Community tier** can still integrate Google, GitHub, Okta, or any other identity provider by using the Custom OIDC option pointed at the provider's discovery endpoint. The paid-tier presets add one-click configuration and provider-specific defaults; the underlying protocol is the same.
+</Tip>
 
 ## How it works
 

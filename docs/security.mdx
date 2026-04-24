@@ -64,7 +64,9 @@ Every Sencho instance includes the foundational security stack. Advanced access-
 | Feature | Community | Skipper | Admiral |
 |---------|:---------:|:-------:|:-------:|
 | Password authentication | ✓ | ✓ | ✓ |
-| SSO (LDAP, Google, GitHub, Okta, Custom OIDC) | ✓ | ✓ | ✓ |
+| Custom OIDC SSO (Authelia, Keycloak, Authentik, any provider) | ✓ | ✓ | ✓ |
+| One-click Google / GitHub / Okta SSO | | ✓ | ✓ |
+| LDAP / Active Directory | | | ✓ |
 | Two-factor authentication (TOTP + backup codes) | ✓ | ✓ | ✓ |
 | Session management (httpOnly, Secure, SameSite) | ✓ | ✓ | ✓ |
 | Encryption at rest (AES-256-GCM) | ✓ | ✓ | ✓ |
@@ -86,7 +88,11 @@ Changing your password immediately invalidates all other active sessions, so a c
 
 ## Single sign-on
 
-Sencho supports five identity providers: **LDAP/Active Directory**, **Google**, **GitHub**, **Okta**, and any **Custom OIDC** provider (Keycloak, Authentik, Authelia, Zitadel, KanIDM, Pocket ID, and others). SSO is available on every tier, including Community.
+Sencho supports five identity providers split across tiers by delivery model:
+
+- **Community**: **Custom OIDC**, which connects to any spec-compliant OpenID Connect provider (Authelia, Keycloak, Authentik, Zitadel, KanIDM, Pocket ID, and others).
+- **Skipper**: one-click presets for **Google**, **GitHub**, and **Okta**.
+- **Admiral**: **LDAP / Active Directory** for on-premises directories.
 
 All OIDC flows use PKCE (Proof Key for Code Exchange) and a cryptographic state parameter to prevent authorization code interception and cross-site request forgery. SSO credentials (client secrets and LDAP bind passwords) are encrypted at rest with AES-256-GCM.
 
