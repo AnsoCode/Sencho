@@ -177,7 +177,7 @@ export function LicenseSection() {
                                 </div>
                                 <p className="text-xs text-muted-foreground">Professional tools for solo operators.</p>
                                 <ul className="space-y-1.5">
-                                    {['Fleet View with drill-down', 'Viewer accounts (1 admin + 3 viewers)', 'Webhooks & stack labels', 'Atomic deployments & backups', 'Auto-update policies'].map((f) => (
+                                    {['Fleet View with drill-down', 'Viewer accounts (1 admin + 3 viewers)', 'Webhooks & stack labels', 'Atomic deployments & backups', 'Auto-update policies', 'Google / GitHub / Okta SSO'].map((f) => (
                                         <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
                                             <Check className="w-3 h-3 shrink-0 text-success" />
                                             {f}
@@ -208,7 +208,7 @@ export function LicenseSection() {
                                     ...(license?.variant === 'skipper' ? ['Everything in Skipper'] : ['Everything in Community']),
                                     'Unlimited accounts & scoped RBAC',
                                     ...(license?.variant !== 'skipper' ? ['Fleet View, webhooks & labels', 'Atomic deployments & backups'] : []),
-                                    'SSO, audit log & host console',
+                                    'LDAP/AD, audit log & host console',
                                     'API tokens & private registries',
                                     'Scheduled operations',
                                 ].map((f) => (

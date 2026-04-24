@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { CapabilityGate } from './CapabilityGate';
+import { PaidGate } from './PaidGate';
+import { AdmiralGate } from './AdmiralGate';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const ROLE_OPTIONS = [
@@ -42,12 +44,14 @@ interface SSOProviderConfig {
     oidcEmailClaim?: string;
 }
 
+// Ordered by tier: Custom OIDC (Community) → preset OIDC (Skipper) → LDAP/AD (Admiral).
+// The ordering reinforces the free → paid progression in the UI.
 const PROVIDERS = [
-    { id: 'ldap', label: 'LDAP / Active Directory', type: 'ldap' as const },
+    { id: 'oidc_custom', label: 'Custom OIDC', type: 'oidc' as const },
     { id: 'oidc_google', label: 'Google', type: 'oidc' as const },
     { id: 'oidc_github', label: 'GitHub', type: 'oidc' as const },
     { id: 'oidc_okta', label: 'Okta', type: 'oidc' as const },
-    { id: 'oidc_custom', label: 'Custom OIDC', type: 'oidc' as const },
+    { id: 'ldap', label: 'LDAP / Active Directory', type: 'ldap' as const },
 ];
 
 function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
@@ -379,6 +383,23 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
     );
 }
 
+// Mirrors the backend tier split in ssoConfig.ts requireTierForProvider: Custom OIDC
+// is free, preset OIDC (Google/GitHub/Okta) requires Skipper+, LDAP requires Admiral.
+function ProviderCardWithGate(props: {
+    providerId: string;
+    type: 'ldap' | 'oidc';
+    label: string;
+    initialConfig: SSOProviderConfig | null;
+    onSave: () => void;
+}) {
+    const card = <ProviderCard {...props} />;
+    if (props.providerId === 'oidc_custom') return card;
+    if (props.providerId === 'ldap') {
+        return <AdmiralGate compact featureName="LDAP / Active Directory">{card}</AdmiralGate>;
+    }
+    return <PaidGate compact featureName={`${props.label} SSO`}>{card}</PaidGate>;
+}
+
 export function SSOSection() {
     const [configs, setConfigs] = useState<SSOProviderConfig[]>([]);
 
@@ -399,7 +420,7 @@ export function SSOSection() {
             <div className="space-y-6">
                 <div className="space-y-3">
                     {PROVIDERS.map(p => (
-                        <ProviderCard
+                        <ProviderCardWithGate
                             key={p.id}
                             providerId={p.id}
                             type={p.type}

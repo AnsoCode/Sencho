@@ -64,6 +64,17 @@ export const requireScheduledTaskTier = (action: string, req: Request, res: Resp
   return requireAdmiral(req, res);
 };
 
+/**
+ * Tier gate for SSO providers. The split is by delivery (turnkey vs self-configured), not by
+ * protocol: Custom OIDC stays free so self-hosters can wire any OIDC IdP (Authelia, Keycloak,
+ * Authentik, Zitadel); paid tiers get one-click presets and LDAP/AD.
+ */
+export const requireTierForSsoProvider = (provider: string, req: Request, res: Response): boolean => {
+  if (provider === 'oidc_custom') return true;
+  if (provider === 'ldap') return requireAdmiral(req, res);
+  return requirePaid(req, res);
+};
+
 /** 400s when the request has no object body. Used by endpoints that always expect JSON input. */
 export const requireBody = (req: Request, res: Response): boolean => {
   if (!req.body || typeof req.body !== 'object') {
