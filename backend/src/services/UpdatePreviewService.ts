@@ -24,12 +24,21 @@ export interface UpdatePreviewImage {
     semver_bump: SemverBump;
 }
 
+export type UpdateKind = 'tag' | 'digest' | 'none';
+
 export interface UpdatePreviewSummary {
     has_update: boolean;
     primary_image: string | null;
     current_tag: string | null;
     next_tag: string | null;
     semver_bump: SemverBump;
+    /**
+     * Distinguishes a "new tag is available" update from a "same tag, new
+     * digest" rebuild. The UI renders the rebuild case differently because
+     * showing "10.11 -> 10.11" reads as a bug even though it is technically
+     * accurate (the tag did not change, only the immutable digest behind it).
+     */
+    update_kind: UpdateKind;
     blocked: boolean;
     blocked_reason: string | null;
 }
@@ -208,6 +217,14 @@ export function buildSummary(stackName: string, images: UpdatePreviewImage[]): U
         'none',
     );
     const blocked = overallBump === 'major';
+    // 'tag' means at least one image has a strictly newer tag; 'digest' means
+    // the only updates available are same-tag rebuilds (digest changed); 'none'
+    // means there is nothing to apply.
+    const updateKind: UpdateKind = !hasUpdate
+        ? 'none'
+        : updated.some(i => i.next_tag !== null && i.next_tag !== i.current_tag)
+            ? 'tag'
+            : 'digest';
     return {
         stack_name: stackName,
         images,
@@ -217,6 +234,7 @@ export function buildSummary(stackName: string, images: UpdatePreviewImage[]): U
             current_tag: primary ? primary.current_tag : null,
             next_tag: primary ? primary.next_tag : null,
             semver_bump: overallBump,
+            update_kind: updateKind,
             blocked,
             blocked_reason: blocked ? 'Major version jumps require human review before applying.' : null,
         },
