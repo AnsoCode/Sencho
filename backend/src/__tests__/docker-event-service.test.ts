@@ -18,6 +18,7 @@ import { EventEmitter } from 'events';
 
 const {
     mockDispatchAlert,
+    mockBroadcastEvent,
     mockGetGlobalSettings,
     mockGetEvents,
     mockListContainers,
@@ -26,6 +27,7 @@ const {
     mockGetDocker,
 } = vi.hoisted(() => ({
     mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
+    mockBroadcastEvent: vi.fn(),
     mockGetGlobalSettings: vi.fn().mockReturnValue({ global_crash: '1' }),
     mockGetEvents: vi.fn(),
     mockListContainers: vi.fn().mockResolvedValue([]),
@@ -36,7 +38,10 @@ const {
 
 vi.mock('../services/NotificationService', () => ({
     NotificationService: {
-        getInstance: () => ({ dispatchAlert: mockDispatchAlert }),
+        getInstance: () => ({
+            dispatchAlert: mockDispatchAlert,
+            broadcastEvent: mockBroadcastEvent,
+        }),
     },
 }));
 
@@ -583,6 +588,65 @@ describe('DockerEventService - hardening', () => {
             typeof c[1] === 'string' && c[1].includes('Crash Detected'));
         expect(crashCalls).toHaveLength(1);
         expect(crashCalls[0][1]).toContain('Code: 2');
+    });
+});
+
+// ── State-invalidate broadcasts ────────────────────────────────────────
+
+describe('DockerEventService - state-invalidate broadcasts', () => {
+    it('broadcasts state-invalidate on container start', async () => {
+        service = new DockerEventService(7, 'node-7');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'start',
+            Actor: { ID: 'aaa', Attributes: { 'com.docker.compose.project': 'web' } },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(mockBroadcastEvent).toHaveBeenCalledWith(expect.objectContaining({
+            type: 'state-invalidate',
+            scope: 'stack',
+            nodeId: 7,
+            stackName: 'web',
+            containerId: 'aaa',
+            action: 'start',
+        }));
+    });
+
+    it('broadcasts state-invalidate on health_status:unhealthy', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'health_status: unhealthy',
+            Actor: { ID: 'bbb', Attributes: { 'com.docker.compose.project': 'api' } },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        const states = mockBroadcastEvent.mock.calls.filter(c =>
+            (c[0] as { type?: string }).type === 'state-invalidate');
+        expect(states.length).toBeGreaterThan(0);
+        expect(states[0][0]).toMatchObject({ action: 'health_status', stackName: 'api' });
+    });
+
+    it('does not broadcast state-invalidate on non-state actions like exec_create', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'exec_create: /bin/sh',
+            Actor: { ID: 'ccc' },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(mockBroadcastEvent).not.toHaveBeenCalled();
     });
 });
 

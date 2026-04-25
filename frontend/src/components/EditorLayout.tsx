@@ -609,6 +609,22 @@ export default function EditorLayout() {
     }
   };
 
+  // Coalesce a burst of state-invalidate signals (e.g. compose recreating
+  // 10 services produces ~30 docker events in <500ms) into one stack refetch
+  // and one downstream window event. The 250ms debounce balances "feels
+  // instant" against not thrashing the API. The function is held in a ref
+  // so the long-lived WS effect never closes over a stale refreshStacks.
+  const stateInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshStacksRef = useRef(refreshStacks);
+  useEffect(() => { refreshStacksRef.current = refreshStacks; }, [refreshStacks]);
+  const scheduleStateInvalidateRefresh = useCallback(() => {
+    if (stateInvalidateTimerRef.current) clearTimeout(stateInvalidateTimerRef.current);
+    stateInvalidateTimerRef.current = setTimeout(() => {
+      stateInvalidateTimerRef.current = null;
+      refreshStacksRef.current(true);
+    }, 250);
+  }, []);
+
   // Notification WS push - subscribe to local real-time alerts.
   // Initial history load is handled by the [nodes] effect below.
   useEffect(() => {
@@ -645,6 +661,13 @@ export default function EditorLayout() {
               nodeName: localNode?.name ?? 'Local',
             };
             setNotifications(prev => [tagged, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+          } else if (msg.type === 'state-invalidate') {
+            // Lightweight signal that a container/stack event happened.
+            // Re-broadcast on the window bus so other hooks (dashboard data,
+            // sidebar, etc.) can refetch on the same trigger without prop
+            // drilling. Refresh stack statuses on this layer too.
+            window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: msg }));
+            scheduleStateInvalidateRefresh();
           }
         } catch (e) {
           console.error('[WS notifications] parse error', e);
@@ -728,6 +751,9 @@ export default function EditorLayout() {
                 [{ ...msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
                   .sort((a, b) => b.timestamp - a.timestamp)
               );
+            } else if (msg.type === 'state-invalidate') {
+              window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: { ...msg, nodeId: rn.id } }));
+              scheduleStateInvalidateRefresh();
             }
           } catch (e) {
             console.error(`[WS notifications:${rn.name}] parse error`, e);
