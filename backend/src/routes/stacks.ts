@@ -13,7 +13,7 @@ import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
 import { requirePermission } from '../middleware/permissions';
 import { requirePaid, requireAdmin } from '../middleware/tierGates';
 import { NotificationService } from '../services/NotificationService';
-import { isValidStackName, isPathWithinBase } from '../utils/validation';
+import { isValidStackName, isValidServiceName, isPathWithinBase } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 import { sendGitSourceError } from '../utils/gitSourceHttp';
@@ -691,6 +691,65 @@ stacksRouter.post('/:stackName/start', async (req: Request, res: Response) => {
     res.status(500).json({ error: message });
   }
 });
+
+type ServiceAction = 'start' | 'stop' | 'restart';
+
+async function handleServiceAction(
+  req: Request,
+  res: Response,
+  action: ServiceAction,
+): Promise<void> {
+  const stackName = req.params.stackName as string;
+  const serviceName = req.params.serviceName as string;
+  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  if (!isValidStackName(stackName)) {
+    res.status(400).json({ error: 'Invalid stack name' });
+    return;
+  }
+  if (!isValidServiceName(serviceName)) {
+    res.status(400).json({ error: 'Invalid service name' });
+    return;
+  }
+  try {
+    const dockerController = DockerController.getInstance(req.nodeId);
+    const all = await dockerController.getContainersByStack(stackName);
+    if (!all || all.length === 0) {
+      res.status(404).json({ error: 'No containers found for this stack.' });
+      return;
+    }
+    const matching = all.filter(c => c.Service === serviceName);
+    if (matching.length === 0) {
+      res.status(404).json({ error: `Service '${serviceName}' not found in stack '${stackName}'.` });
+      return;
+    }
+    const op =
+      action === 'start'
+        ? (id: string) => dockerController.startContainer(id)
+        : action === 'stop'
+          ? (id: string) => dockerController.stopContainer(id)
+          : (id: string) => dockerController.restartContainer(id);
+    await Promise.all(matching.map(c => op(c.Id)));
+    invalidateNodeCaches(req.nodeId);
+    console.log(
+      `[Stacks] Service ${action} completed: ${stackName}/${serviceName} (${matching.length} containers)`,
+    );
+    res.json({
+      success: true,
+      message: `Service ${action} completed via Engine API.`,
+      count: matching.length,
+    });
+  } catch (error: unknown) {
+    console.error(`[Stacks] Service ${action} failed: ${stackName}/${serviceName}`, error);
+    res.status(500).json({ error: getErrorMessage(error, `Failed to ${action} service`) });
+  }
+}
+
+stacksRouter.post('/:stackName/services/:serviceName/restart', (req, res) =>
+  handleServiceAction(req, res, 'restart'));
+stacksRouter.post('/:stackName/services/:serviceName/stop', (req, res) =>
+  handleServiceAction(req, res, 'stop'));
+stacksRouter.post('/:stackName/services/:serviceName/start', (req, res) =>
+  handleServiceAction(req, res, 'start'));
 
 stacksRouter.get('/:stackName/update-preview', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;

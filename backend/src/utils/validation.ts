@@ -73,6 +73,13 @@ export function isValidDockerResourceId(id: string): boolean {
 }
 
 /**
+ * Compose service name. Allows dots in addition to the stack-name set
+ * (Compose spec permits `my.service`).
+ */
+export const isValidServiceName = (name: string): boolean =>
+  /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
+
+/**
  * Asserts that a resolved file path stays within a given base directory.
  * Returns true if the path is safe, false if it escapes the base.
  */
