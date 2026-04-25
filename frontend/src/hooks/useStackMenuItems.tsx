@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowUpRight,
   BellRing,
+  CircleSlash,
   Download,
   Pin,
   PinOff,
@@ -20,7 +21,7 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
     stackStatus, hasPort, isBusy, isPaid, canDelete, isPinned, labels,
     openAlertSheet, openAutoHeal, checkUpdates, openStackApp,
     deploy, stop, restart, update, remove, pin, unpin, toggleLabel,
-    menuVisibility,
+    menuVisibility, autoUpdateEnabled, setAutoUpdateEnabled,
   } = ctx;
   const { showDeploy, showStop, showRestart, showUpdate } = menuVisibility;
 
@@ -32,6 +33,12 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
     ];
     if (isPaid) {
       inspect.push({ id: 'auto-heal', label: 'Auto-Heal', icon: Activity, shortcut: 'H', onSelect: openAutoHeal });
+      inspect.push({
+        id: 'auto-update',
+        label: autoUpdateEnabled ? 'Auto-update: Enabled' : 'Auto-update: Disabled',
+        icon: autoUpdateEnabled ? RefreshCw : CircleSlash,
+        onSelect: () => setAutoUpdateEnabled(!autoUpdateEnabled),
+      });
     }
     inspect.push({ id: 'check-updates', label: 'Check updates', icon: RefreshCw, shortcut: 'U', onSelect: checkUpdates });
     if (stackStatus === 'running' && hasPort) {
@@ -80,6 +87,7 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
   }, [
     stackStatus, hasPort, isBusy, isPaid, canDelete, isPinned, labels,
     showDeploy, showStop, showRestart, showUpdate,
+    autoUpdateEnabled, setAutoUpdateEnabled,
     openAlertSheet, openAutoHeal, checkUpdates, openStackApp,
     deploy, stop, restart, update, remove, pin, unpin, toggleLabel,
   ]);

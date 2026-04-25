@@ -11,7 +11,8 @@ import { UpdatePreviewService } from '../services/UpdatePreviewService';
 import { GitSourceService, GitSourceError, repoHost as gitRepoHost } from '../services/GitSourceService';
 import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
 import { requirePermission } from '../middleware/permissions';
-import { requirePaid } from '../middleware/tierGates';
+import { requirePaid, requireAdmin } from '../middleware/tierGates';
+import { NotificationService } from '../services/NotificationService';
 import { isValidStackName, isPathWithinBase } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
@@ -125,6 +126,61 @@ stacksRouter.get('/statuses', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Failed to fetch stack statuses:', error);
     res.status(500).json({ error: 'Failed to fetch stack statuses' });
+  }
+});
+
+stacksRouter.get('/auto-update-settings', (req: Request, res: Response): void => {
+  try {
+    const settings = DatabaseService.getInstance().getStackAutoUpdateSettingsForNode(req.nodeId);
+    res.json(settings);
+  } catch (error) {
+    console.error('[Stacks] Failed to fetch auto-update settings:', error);
+    res.status(500).json({ error: 'Failed to fetch auto-update settings' });
+  }
+});
+
+stacksRouter.get('/:stackName/auto-update', (req: Request, res: Response): void => {
+  try {
+    const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      res.status(400).json({ error: 'Invalid stack name' });
+      return;
+    }
+    const enabled = DatabaseService.getInstance().getStackAutoUpdateEnabled(req.nodeId, stackName);
+    res.json({ enabled });
+  } catch (error) {
+    console.error('[Stacks] Failed to fetch auto-update setting:', error);
+    res.status(500).json({ error: 'Failed to fetch auto-update setting' });
+  }
+});
+
+stacksRouter.put('/:stackName/auto-update', (req: Request, res: Response): void => {
+  if (!requirePaid(req, res)) return;
+  if (!requireAdmin(req, res)) return;
+  try {
+    const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) {
+      res.status(400).json({ error: 'Invalid stack name' });
+      return;
+    }
+    const { enabled } = req.body as { enabled?: unknown };
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: '"enabled" must be a boolean' });
+      return;
+    }
+    DatabaseService.getInstance().upsertStackAutoUpdateEnabled(req.nodeId, stackName, enabled);
+    NotificationService.getInstance().broadcastEvent({
+      type: 'state-invalidate',
+      scope: 'stack',
+      nodeId: req.nodeId,
+      stackName,
+      action: 'auto-update-settings-changed',
+      ts: Date.now(),
+    });
+    res.json({ enabled });
+  } catch (error) {
+    console.error('[Stacks] Failed to update auto-update setting:', error);
+    res.status(500).json({ error: 'Failed to update auto-update setting' });
   }
 });
 
@@ -469,6 +525,7 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
     }
 
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
+    DatabaseService.getInstance().clearStackAutoUpdateSetting(req.nodeId, stackName);
     DatabaseService.getInstance().deleteRoleAssignmentsByResource('stack', stackName);
     DatabaseService.getInstance().deleteGitSource(stackName);
 
