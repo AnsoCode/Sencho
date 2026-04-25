@@ -3015,7 +3015,20 @@ export class DatabaseService {
     }
 
     public deleteScanPolicy(id: number): void {
-        this.db.prepare('DELETE FROM scan_policies WHERE id = ?').run(id);
+        // policy_evaluation is a JSON blob containing the policyId of the policy
+        // that produced it. Clear it on every scan referencing the deleted policy
+        // so cached scans no longer report stale violations after the policy is gone.
+        const clearEval = this.db.prepare(
+            `UPDATE vulnerability_scans
+                SET policy_evaluation = NULL
+              WHERE json_extract(policy_evaluation, '$.policyId') = ?`,
+        );
+        const deletePolicy = this.db.prepare('DELETE FROM scan_policies WHERE id = ?');
+        const txn = this.db.transaction((policyId: number) => {
+            clearEval.run(policyId);
+            deletePolicy.run(policyId);
+        });
+        txn(id);
     }
 
     /**
