@@ -10,9 +10,11 @@ import '@xterm/xterm/css/xterm.css';
 
 interface TerminalComponentProps {
   stackName?: string;
+  onReady?: () => void;
+  onMessage?: (text: string) => void;
 }
 
-export default function TerminalComponent({ stackName }: TerminalComponentProps) {
+export default function TerminalComponent({ stackName, onReady, onMessage }: TerminalComponentProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -141,6 +143,7 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
             if (!cleanStackName) {
               // Generic terminal mode - send connect action
               ws.send(JSON.stringify({ action: 'connectTerminal' }));
+              onReady?.();
             }
             // For stack logs mode, the server starts streaming automatically on connection
           }
@@ -149,6 +152,7 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
         ws.onmessage = (event) => {
           if (mounted && terminalInstance.current) {
             const text = typeof event.data === 'string' ? event.data : event.data.toString();
+            onMessage?.(text);
             terminalInstance.current.write(text.replace(/\r?\n/g, '\r\n'));
           }
         };
@@ -208,7 +212,7 @@ export default function TerminalComponent({ stackName }: TerminalComponentProps)
       searchAddonRef.current = null;
       serializeAddonRef.current = null;
     };
-  }, [stackName]);
+  }, [stackName, onReady, onMessage]);
 
   const handleDownload = () => {
     if (!serializeAddonRef.current) return;
