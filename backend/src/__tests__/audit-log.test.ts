@@ -65,9 +65,15 @@ describe('getAuditSummary()', () => {
     expect(getAuditSummary('POST', '/stacks/mystack/rollback')).toBe('Rolled back stack: mystack');
   });
 
-  it('resolves per-service lifecycle actions (stack name as resource)', () => {
+  it('resolves per-service restart summary (stack name as resource)', () => {
     expect(getAuditSummary('POST', '/stacks/web/services/app/restart')).toBe('Restarted stack service: web');
+  });
+
+  it('resolves per-service stop summary (stack name as resource)', () => {
     expect(getAuditSummary('POST', '/stacks/web/services/app/stop')).toBe('Stopped stack service: web');
+  });
+
+  it('resolves per-service start summary (stack name as resource)', () => {
     expect(getAuditSummary('POST', '/stacks/web/services/app/start')).toBe('Started stack service: web');
   });
 

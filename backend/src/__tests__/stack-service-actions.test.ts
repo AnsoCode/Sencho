@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
 import request from 'supertest';
+import bcrypt from 'bcrypt';
 import { setupTestDb, cleanupTestDb, loginAsTestAdmin } from './helpers/setupTestDb';
 
 // ── Hoisted mocks (must come before importing the app) ──────────────────────
@@ -58,14 +59,23 @@ vi.mock('../services/FileSystemService', () => ({
 
 // ── Container fixture helpers ───────────────────────────────────────────────
 
-function makeContainer(id: string, service: string) {
+interface ContainerFixture {
+  Id: string;
+  Service: string;
+  Names: string[];
+  State: string;
+  Status: string;
+  Ports: { PrivatePort: number; PublicPort: number }[];
+}
+
+function makeContainer(id: string, service: string): ContainerFixture {
   return {
     Id: id,
     Service: service,
     Names: [`/${service}`],
     State: 'running',
     Status: 'Up 1 second',
-    Ports: [] as { PrivatePort: number; PublicPort: number }[],
+    Ports: [],
   };
 }
 
@@ -74,14 +84,24 @@ function makeContainer(id: string, service: string) {
 let tmpDir: string;
 let app: import('express').Express;
 let authCookie: string;
+let viewerCookie: string;
+let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
 
 beforeAll(async () => {
   tmpDir = await setupTestDb();
+  ({ DatabaseService } = await import('../services/DatabaseService'));
   ({ app } = await import('../index'));
   authCookie = await loginAsTestAdmin(app);
+
+  const viewerHash = await bcrypt.hash('viewerpass', 1);
+  DatabaseService.getInstance().addUser({ username: 'svc-viewer', password_hash: viewerHash, role: 'viewer' });
+  const viewerRes = await request(app).post('/api/auth/login').send({ username: 'svc-viewer', password: 'viewerpass' });
+  const cookies = viewerRes.headers['set-cookie'] as string | string[];
+  viewerCookie = Array.isArray(cookies) ? cookies[0] : cookies;
 });
 
 afterAll(() => {
+  vi.restoreAllMocks();
   cleanupTestDb(tmpDir);
 });
 
@@ -90,6 +110,9 @@ beforeEach(() => {
   mockRestartContainer.mockReset();
   mockStopContainer.mockReset();
   mockStartContainer.mockReset();
+
+  // Default: no containers found (safe baseline for tests that set their own value)
+  mockGetContainersByStack.mockResolvedValue([]);
 
   // Default: operations resolve successfully
   mockRestartContainer.mockResolvedValue(undefined);
@@ -211,7 +234,7 @@ describe('404 error cases', () => {
 });
 
 describe('400 validation errors', () => {
-  it('returns 400 for invalid stack name (path traversal)', async () => {
+  it('returns 400 for stack name containing invalid characters', async () => {
     // Express decodes %2F but a literal ".." fails isValidStackName
     const res = await request(app)
       .post('/api/stacks/..invalid../services/app/restart')
@@ -236,6 +259,15 @@ describe('authentication', () => {
     const res = await request(app).post('/api/stacks/web/services/app/restart');
     expect(res.status).toBe(401);
   });
+
+  it('returns 403 for viewer role (no write permission)', async () => {
+    const res = await request(app)
+      .post('/api/stacks/web/services/app/restart')
+      .set('Cookie', viewerCookie);
+
+    expect(res.status).toBe(403);
+    expect(mockRestartContainer).not.toHaveBeenCalled();
+  });
 });
 
 describe('Docker error propagation', () => {
@@ -248,6 +280,6 @@ describe('Docker error propagation', () => {
       .set('Cookie', authCookie);
 
     expect(res.status).toBe(500);
-    expect(JSON.stringify(res.body)).toContain('daemon error');
+    expect(res.body.error).toContain('daemon error');
   });
 });
