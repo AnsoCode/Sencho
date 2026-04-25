@@ -264,7 +264,7 @@ export interface ScheduledTask {
     target_type: 'stack' | 'fleet' | 'system';
     target_id: string | null;
     node_id: number | null;
-    action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan';
+    action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan' | 'auto_backup' | 'auto_stop' | 'auto_down' | 'auto_start';
     cron_expression: string;
     enabled: number;
     created_by: string;
@@ -277,6 +277,7 @@ export interface ScheduledTask {
     prune_targets: string | null;
     target_services: string | null;
     prune_label_filter: string | null;
+    delete_after_run?: number;
 }
 
 export interface ScheduledTaskRun {
@@ -949,6 +950,7 @@ export class DatabaseService {
         maybeAddCol('scheduled_tasks', 'prune_targets', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'target_services', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'prune_label_filter', 'TEXT DEFAULT NULL');
+        maybeAddCol('scheduled_tasks', 'delete_after_run', 'INTEGER DEFAULT 0');
 
         // Recreate stack_update_status with composite PK (node_id, stack_name).
         // Original table had stack_name as sole PK which breaks when multiple nodes share stack names.
@@ -2471,13 +2473,13 @@ export class DatabaseService {
 
     public createScheduledTask(task: Omit<ScheduledTask, 'id'>): number {
         const result = this.db.prepare(
-            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error, prune_targets, target_services, prune_label_filter) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error, prune_targets, target_services, prune_label_filter, delete_after_run) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             task.name, task.target_type, task.target_id, task.node_id,
             task.action, task.cron_expression, task.enabled, task.created_by,
             task.created_at, task.updated_at, task.last_run_at, task.next_run_at,
             task.last_status, task.last_error, task.prune_targets, task.target_services,
-            task.prune_label_filter
+            task.prune_label_filter, task.delete_after_run ?? 0
         );
         return result.lastInsertRowid as number;
     }
@@ -2494,6 +2496,7 @@ export class DatabaseService {
             last_status: updates.last_status, last_error: updates.last_error,
             prune_targets: updates.prune_targets, target_services: updates.target_services,
             prune_label_filter: updates.prune_label_filter,
+            delete_after_run: updates.delete_after_run,
         };
 
         for (const [col, val] of Object.entries(map)) {

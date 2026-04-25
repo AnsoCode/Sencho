@@ -8,12 +8,14 @@ import { escapeCsvField } from '../utils/csv';
 import { getErrorMessage } from '../utils/errors';
 
 const VALID_TARGET_TYPES = ['stack', 'fleet', 'system'] as const;
-const VALID_ACTIONS = ['restart', 'snapshot', 'prune', 'update', 'scan'] as const;
+const VALID_ACTIONS = ['restart', 'snapshot', 'prune', 'update', 'scan', 'auto_backup', 'auto_stop', 'auto_down', 'auto_start'] as const;
 const VALID_PRUNE_TARGETS = ['containers', 'images', 'networks', 'volumes'] as const;
 const ERR_FLEET_NODE_REQUIRED = 'Fleet update requires node_id.';
 
 type TargetType = typeof VALID_TARGET_TYPES[number];
 type ScheduledAction = typeof VALID_ACTIONS[number];
+
+const STACK_ONLY_ACTIONS = new Set<ScheduledAction>(['auto_backup', 'auto_stop', 'auto_down', 'auto_start']);
 
 function parseTaskId(req: Request, res: Response): number | null {
   const id = parseInt(req.params.id as string, 10);
@@ -35,6 +37,9 @@ function validateActionTarget(action: ScheduledAction, targetType: TargetType): 
   if (action === 'snapshot' && targetType !== 'fleet') return 'Snapshot action requires target_type "fleet".';
   if (action === 'prune' && targetType !== 'system') return 'Prune action requires target_type "system".';
   if (action === 'scan' && targetType !== 'system') return 'Scan action requires target_type "system".';
+  if (STACK_ONLY_ACTIONS.has(action) && targetType !== 'stack') {
+    return `${action} action requires target_type "stack".`;
+  }
   return null;
 }
 
@@ -113,7 +118,7 @@ scheduledTasksRouter.get('/', (req: Request, res: Response): void => {
 scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   try {
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter, delete_after_run } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Name is required' }); return;
@@ -122,7 +127,7 @@ scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
       res.status(400).json({ error: 'Invalid target_type. Must be stack, fleet, or system.' }); return;
     }
     if (!(VALID_ACTIONS as readonly string[]).includes(action)) {
-      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, prune, update, or scan.' }); return;
+      res.status(400).json({ error: 'Invalid action. Must be restart, snapshot, prune, update, scan, auto_backup, auto_stop, auto_down, or auto_start.' }); return;
     }
     if (!requireScheduledTaskTier(action, req, res)) return;
 
@@ -169,6 +174,7 @@ scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
       prune_targets: prune_targets ? JSON.stringify(prune_targets) : null,
       target_services: target_services ? JSON.stringify(target_services) : null,
       prune_label_filter: prune_label_filter ? prune_label_filter.trim() : null,
+      delete_after_run: delete_after_run ? 1 : 0,
     });
 
     console.log(`[ScheduledTasks] Created task id=${id} action=${action} target=${target_id || 'none'}`);
@@ -208,7 +214,7 @@ scheduledTasksRouter.put('/:id', (req: Request, res: Response): void => {
     if (!existing) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
     if (!requireScheduledTaskTier(existing.action, req, res)) return;
 
-    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter } = req.body;
+    const { name, target_type, target_id, node_id, action, cron_expression, enabled, prune_targets, target_services, prune_label_filter, delete_after_run } = req.body;
 
     if (target_type && !(VALID_TARGET_TYPES as readonly string[]).includes(target_type)) {
       res.status(400).json({ error: 'Invalid target_type' }); return;
@@ -256,6 +262,7 @@ scheduledTasksRouter.put('/:id', (req: Request, res: Response): void => {
     if (prune_targets !== undefined) updates.prune_targets = prune_targets ? JSON.stringify(prune_targets) : null;
     if (target_services !== undefined) updates.target_services = target_services ? JSON.stringify(target_services) : null;
     if (prune_label_filter !== undefined) updates.prune_label_filter = prune_label_filter ? prune_label_filter.trim() : null;
+    if (delete_after_run !== undefined) updates.delete_after_run = delete_after_run ? 1 : 0;
 
     const finalCron = cron_expression || existing.cron_expression;
     const finalEnabled = enabled !== undefined ? enabled : existing.enabled;

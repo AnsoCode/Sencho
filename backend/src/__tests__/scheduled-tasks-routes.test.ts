@@ -243,3 +243,80 @@ describe('GET /api/scheduled-tasks/:id/runs', () => {
     expect(res.body).toHaveProperty('runs');
   });
 });
+
+describe('POST /api/scheduled-tasks - new lifecycle actions', () => {
+  const stackPayload = (action: string) => ({
+    name: `test-${action}`,
+    target_type: 'stack',
+    target_id: 'my-stack',
+    node_id: 1,
+    action,
+    cron_expression: '0 3 * * *',
+    enabled: true,
+  });
+
+  for (const action of ['auto_backup', 'auto_stop', 'auto_down', 'auto_start']) {
+    it(`creates ${action} task successfully (Admiral)`, async () => {
+      const res = await request(app)
+        .post('/api/scheduled-tasks')
+        .set('Cookie', adminCookie)
+        .send(stackPayload(action));
+      expect(res.status).toBe(201);
+      expect(res.body.action).toBe(action);
+      expect(res.body.target_type).toBe('stack');
+    });
+
+    it(`rejects ${action} with target_type "system"`, async () => {
+      const res = await request(app)
+        .post('/api/scheduled-tasks')
+        .set('Cookie', adminCookie)
+        .send({ ...stackPayload(action), target_type: 'system', target_id: null });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/target_type "stack"/);
+    });
+  }
+
+  it('persists delete_after_run flag', async () => {
+    const res = await request(app)
+      .post('/api/scheduled-tasks')
+      .set('Cookie', adminCookie)
+      .send({ ...stackPayload('auto_backup'), delete_after_run: true });
+    expect(res.status).toBe(201);
+    expect(res.body.delete_after_run).toBe(1);
+  });
+
+  it('defaults delete_after_run to 0 when not provided', async () => {
+    const res = await request(app)
+      .post('/api/scheduled-tasks')
+      .set('Cookie', adminCookie)
+      .send(stackPayload('auto_stop'));
+    expect(res.status).toBe(201);
+    expect(res.body.delete_after_run).toBe(0);
+  });
+});
+
+describe('PUT /api/scheduled-tasks/:id - delete_after_run', () => {
+  it('can toggle delete_after_run via update', async () => {
+    const now = Date.now();
+    const id = DatabaseService.getInstance().createScheduledTask({
+      name: 't', target_type: 'stack', target_id: 's', node_id: 1, action: 'auto_backup',
+      cron_expression: '0 3 * * *', enabled: 1, created_by: 'admin', created_at: now, updated_at: now,
+      last_run_at: null, next_run_at: null, last_status: null, last_error: null,
+      prune_targets: null, target_services: null, prune_label_filter: null, delete_after_run: 0,
+    });
+
+    const res = await request(app)
+      .put(`/api/scheduled-tasks/${id}`)
+      .set('Cookie', adminCookie)
+      .send({ delete_after_run: true });
+    expect(res.status).toBe(200);
+    expect(res.body.delete_after_run).toBe(1);
+
+    const res2 = await request(app)
+      .put(`/api/scheduled-tasks/${id}`)
+      .set('Cookie', adminCookie)
+      .send({ delete_after_run: false });
+    expect(res2.status).toBe(200);
+    expect(res2.body.delete_after_run).toBe(0);
+  });
+});
