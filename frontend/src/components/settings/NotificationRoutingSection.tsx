@@ -32,6 +32,9 @@ import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { AdmiralGate } from '@/components/AdmiralGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
+import type { NotificationCategory } from '@/components/dashboard/types';
+import type { Label as StackLabel } from '@/components/label-types';
+import { CATEGORY_LABELS } from '@/lib/notificationCategories';
 import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
 
 interface NotificationRoute {
@@ -39,6 +42,8 @@ interface NotificationRoute {
     name: string;
     node_id: number | null;
     stack_patterns: string[];
+    label_ids: number[] | null;
+    categories: NotificationCategory[] | null;
     channel_type: 'discord' | 'slack' | 'webhook';
     channel_url: string;
     priority: number;
@@ -69,11 +74,14 @@ export function NotificationRoutingSection() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [testingId, setTestingId] = useState<number | null>(null);
     const [stackOptions, setStackOptions] = useState<ComboboxOption[]>([]);
+    const [labelOptions, setLabelOptions] = useState<StackLabel[]>([]);
 
     // Form state
     const [formName, setFormName] = useState('');
     const [formNodeId, setFormNodeId] = useState<number | null>(null);
     const [formStacks, setFormStacks] = useState<string[]>([]);
+    const [formLabelIds, setFormLabelIds] = useState<number[]>([]);
+    const [formCategories, setFormCategories] = useState<NotificationCategory[]>([]);
     const [formChannelType, setFormChannelType] = useState<'discord' | 'slack' | 'webhook'>('discord');
     const [formChannelUrl, setFormChannelUrl] = useState('');
     const [formPriority, setFormPriority] = useState(0);
@@ -104,15 +112,27 @@ export function NotificationRoutingSection() {
         }
     }, []);
 
+    const fetchLabels = useCallback(async () => {
+        try {
+            const res = await apiFetch('/labels');
+            if (res.ok) {
+                setLabelOptions(await res.json());
+            }
+        } catch {
+            // Labels non-critical
+        }
+    }, []);
+
     useEffect(() => {
-        fetchRoutes();
-        fetchStacks();
-    }, [fetchRoutes, fetchStacks]);
+        void Promise.all([fetchRoutes(), fetchStacks(), fetchLabels()]);
+    }, [fetchRoutes, fetchStacks, fetchLabels]);
 
     const resetForm = () => {
         setFormName('');
         setFormNodeId(null);
         setFormStacks([]);
+        setFormLabelIds([]);
+        setFormCategories([]);
         setFormChannelType('discord');
         setFormChannelUrl('');
         setFormPriority(0);
@@ -126,6 +146,8 @@ export function NotificationRoutingSection() {
         setFormName(route.name);
         setFormNodeId(route.node_id);
         setFormStacks([...route.stack_patterns]);
+        setFormLabelIds(route.label_ids ? [...route.label_ids] : []);
+        setFormCategories(route.categories ? [...route.categories] : []);
         setFormChannelType(route.channel_type);
         setFormChannelUrl(route.channel_url);
         setFormPriority(route.priority);
@@ -135,7 +157,6 @@ export function NotificationRoutingSection() {
 
     const handleSave = async () => {
         if (!formName.trim()) { toast.error('Name is required.'); return; }
-        if (formStacks.length === 0) { toast.error('At least one stack must be selected.'); return; }
         if (!formChannelUrl.trim() || !formChannelUrl.startsWith('https://')) {
             toast.error('Channel URL must be a valid HTTPS URL.');
             return;
@@ -147,6 +168,8 @@ export function NotificationRoutingSection() {
                 name: formName.trim(),
                 node_id: formNodeId,
                 stack_patterns: formStacks,
+                label_ids: formLabelIds.length > 0 ? formLabelIds : null,
+                categories: formCategories.length > 0 ? formCategories : null,
                 channel_type: formChannelType,
                 channel_url: formChannelUrl.trim(),
                 priority: formPriority,
@@ -235,7 +258,37 @@ export function NotificationRoutingSection() {
         setFormStacks(prev => prev.filter(s => s !== stackName));
     };
 
+    const addLabel = (idStr: string) => {
+        const id = Number(idStr);
+        if (!isNaN(id) && id > 0 && !formLabelIds.includes(id)) {
+            setFormLabelIds(prev => [...prev, id]);
+        }
+    };
+
+    const removeLabel = (id: number) => {
+        setFormLabelIds(prev => prev.filter(l => l !== id));
+    };
+
+    const addCategory = (cat: string) => {
+        const c = cat as NotificationCategory;
+        if (c && !formCategories.includes(c)) {
+            setFormCategories(prev => [...prev, c]);
+        }
+    };
+
+    const removeCategory = (cat: NotificationCategory) => {
+        setFormCategories(prev => prev.filter(c => c !== cat));
+    };
+
     const availableStackOptions = stackOptions.filter(o => !formStacks.includes(o.value));
+    const availableLabelOptions = useMemo<ComboboxOption[]>(
+        () => labelOptions.filter(l => !formLabelIds.includes(l.id)).map(l => ({ value: String(l.id), label: l.name })),
+        [labelOptions, formLabelIds],
+    );
+    const availableCategoryOptions = useMemo<ComboboxOption[]>(
+        () => (Object.keys(CATEGORY_LABELS) as NotificationCategory[]).filter(c => !formCategories.includes(c)).map(c => ({ value: c, label: CATEGORY_LABELS[c] })),
+        [formCategories],
+    );
 
     return (
         <AdmiralGate featureName="Notification Routing">
@@ -284,7 +337,7 @@ export function NotificationRoutingSection() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Stacks</Label>
+                                <Label>Stacks <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                                 <Combobox
                                     options={availableStackOptions}
                                     value=""
@@ -309,6 +362,66 @@ export function NotificationRoutingSection() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Labels <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                                <Combobox
+                                    options={availableLabelOptions}
+                                    value=""
+                                    onValueChange={addLabel}
+                                    placeholder="Add a label..."
+                                    searchPlaceholder="Search labels..."
+                                    emptyText="No labels found."
+                                />
+                                {formLabelIds.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                        {formLabelIds.map(id => {
+                                            const lbl = labelOptions.find(l => l.id === id);
+                                            return (
+                                                <Badge key={id} variant="secondary" className="text-xs gap-1 pr-1">
+                                                    {lbl?.name ?? `Label ${id}`}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeLabel(id)}
+                                                        className="ml-0.5 rounded-full hover:bg-foreground/10 p-0.5"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </Badge>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Categories <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                                <Combobox
+                                    options={availableCategoryOptions}
+                                    value=""
+                                    onValueChange={addCategory}
+                                    placeholder="Add a category..."
+                                    searchPlaceholder="Search categories..."
+                                    emptyText="No categories found."
+                                />
+                                {formCategories.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                        {formCategories.map(c => (
+                                            <Badge key={c} variant="secondary" className="text-xs gap-1 pr-1">
+                                                {CATEGORY_LABELS[c]}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeCategory(c)}
+                                                    className="ml-0.5 rounded-full hover:bg-foreground/10 p-0.5"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                )}
+                                <p className="text-xs text-muted-foreground">Leave blank to match all categories. All non-empty filters must match (AND).</p>
                             </div>
 
                             <div className="space-y-2">
@@ -457,12 +570,24 @@ export function NotificationRoutingSection() {
                                 </AlertDialog>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex flex-wrap gap-1">
-                                {route.stack_patterns.map(s => (
-                                    <Badge key={s} variant="secondary" className="font-mono text-[10px]">{s}</Badge>
-                                ))}
-                            </div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                            {route.stack_patterns.length > 0 && route.stack_patterns.map(s => (
+                                <Badge key={s} variant="secondary" className="font-mono text-[10px]">{s}</Badge>
+                            ))}
+                            {route.label_ids && route.label_ids.length > 0 && route.label_ids.map(id => {
+                                const lbl = labelOptions.find(l => l.id === id);
+                                return (
+                                    <Badge key={id} variant="outline" className="text-[10px]">
+                                        {lbl?.name ?? `label:${id}`}
+                                    </Badge>
+                                );
+                            })}
+                            {route.categories && route.categories.length > 0 && route.categories.map(c => (
+                                <Badge key={c} variant="outline" className="text-[10px] font-mono">{CATEGORY_LABELS[c] ?? c}</Badge>
+                            ))}
+                            {route.stack_patterns.length === 0 && (!route.label_ids || route.label_ids.length === 0) && (!route.categories || route.categories.length === 0) && (
+                                <span className="text-muted-foreground/50 text-[10px]">Matches all alerts</span>
+                            )}
                             <span className="text-muted-foreground/50">|</span>
                             <span className="font-mono truncate max-w-[200px]" title={route.channel_url}>
                                 {route.channel_url}

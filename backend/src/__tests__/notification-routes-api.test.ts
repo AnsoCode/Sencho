@@ -282,20 +282,21 @@ describe('POST /api/notification-routes - validation', () => {
     expect(res.body.error).toContain('100');
   });
 
-  it('rejects empty stack_patterns array', async () => {
+  it('accepts empty stack_patterns array', async () => {
     const res = await request(app)
       .post('/api/notification-routes')
       .set('Cookie', authCookie)
       .send({ name: 'test', stack_patterns: [], channel_type: 'discord', channel_url: 'https://discord.com/api/webhooks/123/abc' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
   });
 
-  it('rejects whitespace-only stack patterns', async () => {
+  it('accepts whitespace-only stack patterns, cleaning them to an empty array', async () => {
     const res = await request(app)
       .post('/api/notification-routes')
       .set('Cookie', authCookie)
       .send({ name: 'test', stack_patterns: ['  ', ''], channel_type: 'discord', channel_url: 'https://discord.com/api/webhooks/123/abc' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    expect(res.body.stack_patterns).toEqual([]);
   });
 
   it('rejects invalid channel_type', async () => {

@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
-import { NotificationService } from '../services/NotificationService';
+import { NotificationService, ALL_NOTIFICATION_CATEGORIES } from '../services/NotificationService';
+import type { NotificationCategory } from '../services/NotificationService';
 import { NodeRegistry } from '../services/NodeRegistry';
 import { authMiddleware } from '../middleware/auth';
 import { requireAdmin, requireAdmiral } from '../middleware/tierGates';
@@ -11,6 +12,8 @@ import {
 } from '../helpers/notificationChannels';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+
+const VALID_CATEGORIES: ReadonlySet<NotificationCategory> = new Set(ALL_NOTIFICATION_CATEGORIES);
 
 function parseRouteId(req: Request, res: Response): number | null {
   const id = parseInt(req.params.id as string, 10);
@@ -33,6 +36,24 @@ function validateNodeId(nodeId: unknown, res: Response): number | null | false {
     return false;
   }
   return nodeId;
+}
+
+function validateLabelIds(label_ids: unknown, res: Response): boolean {
+  if (label_ids === undefined || label_ids === null) return true;
+  if (!Array.isArray(label_ids) || label_ids.some((id: unknown) => typeof id !== 'number' || !Number.isInteger(id))) {
+    res.status(400).json({ error: 'label_ids must be an array of integers or null' });
+    return false;
+  }
+  return true;
+}
+
+function validateCategories(categories: unknown, res: Response): boolean {
+  if (categories === undefined || categories === null) return true;
+  if (!Array.isArray(categories) || categories.some((c: unknown) => typeof c !== 'string' || !VALID_CATEGORIES.has(c as NotificationCategory))) {
+    res.status(400).json({ error: 'categories must be an array of valid category names' });
+    return false;
+  }
+  return true;
 }
 
 export const notificationsRouter = Router();
@@ -115,7 +136,7 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const { name, node_id: rawNodeId, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+    const { name, node_id: rawNodeId, stack_patterns, label_ids, categories, channel_type, channel_url, priority, enabled } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Name is required' });
@@ -127,15 +148,13 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
     }
     const nodeIdResult = validateNodeId(rawNodeId, res);
     if (nodeIdResult === false) return;
-    if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
-      res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+    const cleanedPatterns = Array.isArray(stack_patterns) ? cleanStackPatterns(stack_patterns) : [];
+    if (Array.isArray(stack_patterns) && stack_patterns.some((p: unknown) => typeof p !== 'string')) {
+      res.status(400).json({ error: 'stack_patterns must be an array of strings' });
       return;
     }
-    const cleanedPatterns = cleanStackPatterns(stack_patterns);
-    if (cleanedPatterns.length === 0) {
-      res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
-      return;
-    }
+    if (!validateLabelIds(label_ids, res)) return;
+    if (!validateCategories(categories, res)) return;
     if (!(NOTIFICATION_CHANNEL_TYPES as readonly string[]).includes(channel_type)) {
       res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
       return;
@@ -152,6 +171,8 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
       name: name.trim(),
       node_id: nodeIdResult,
       stack_patterns: cleanedPatterns,
+      label_ids: Array.isArray(label_ids) && label_ids.length > 0 ? label_ids : null,
+      categories: Array.isArray(categories) && categories.length > 0 ? (categories as NotificationCategory[]) : null,
       channel_type,
       channel_url: channel_url.trim(),
       priority: typeof priority === 'number' ? priority : 0,
@@ -178,7 +199,7 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
     const existing = DatabaseService.getInstance().getNotificationRoute(id);
     if (!existing) { res.status(404).json({ error: 'Route not found' }); return; }
 
-    const { name, node_id: rawNodeId, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+    const { name, node_id: rawNodeId, stack_patterns, label_ids, categories, channel_type, channel_url, priority, enabled } = req.body;
 
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
       res.status(400).json({ error: 'Name must be a non-empty string' });
@@ -196,16 +217,14 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
     }
     let cleanedPatterns: string[] | undefined;
     if (stack_patterns !== undefined) {
-      if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
-        res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
+      if (!Array.isArray(stack_patterns) || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
+        res.status(400).json({ error: 'stack_patterns must be an array of strings' });
         return;
       }
       cleanedPatterns = cleanStackPatterns(stack_patterns);
-      if (cleanedPatterns.length === 0) {
-        res.status(400).json({ error: 'stack_patterns must contain at least one non-empty stack name' });
-        return;
-      }
     }
+    if (!validateLabelIds(label_ids, res)) return;
+    if (!validateCategories(categories, res)) return;
     if (channel_type !== undefined && !(NOTIFICATION_CHANNEL_TYPES as readonly string[]).includes(channel_type)) {
       res.status(400).json({ error: `channel_type must be ${NOTIFICATION_CHANNEL_TYPES.join(', ')}` });
       return;
@@ -227,6 +246,8 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
     if (name !== undefined) updates.name = name.trim();
     if (validatedNodeId !== undefined) updates.node_id = validatedNodeId;
     if (cleanedPatterns !== undefined) updates.stack_patterns = cleanedPatterns;
+    if ('label_ids' in req.body) updates.label_ids = Array.isArray(label_ids) && label_ids.length > 0 ? label_ids : null;
+    if ('categories' in req.body) updates.categories = Array.isArray(categories) && categories.length > 0 ? categories : null;
     if (channel_type !== undefined) updates.channel_type = channel_type;
     if (channel_url !== undefined) updates.channel_url = channel_url.trim();
     if (priority !== undefined) updates.priority = priority;

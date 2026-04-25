@@ -9,11 +9,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   mockGetEnabledNotificationRoutes,
   mockGetEnabledAgents,
+  mockGetStackLabelIds,
   mockAddNotificationHistory,
   mockUpdateNotificationDispatchError,
 } = vi.hoisted(() => ({
   mockGetEnabledNotificationRoutes: vi.fn().mockReturnValue([]),
   mockGetEnabledAgents: vi.fn().mockReturnValue([]),
+  mockGetStackLabelIds: vi.fn().mockReturnValue([]),
   mockAddNotificationHistory: vi.fn().mockReturnValue({
     id: 1,
     level: 'info',
@@ -29,6 +31,7 @@ vi.mock('../services/DatabaseService', () => ({
     getInstance: () => ({
       getEnabledNotificationRoutes: mockGetEnabledNotificationRoutes,
       getEnabledAgents: mockGetEnabledAgents,
+      getStackLabelIds: mockGetStackLabelIds,
       addNotificationHistory: mockAddNotificationHistory,
       updateNotificationDispatchError: mockUpdateNotificationDispatchError,
     }),
@@ -60,6 +63,8 @@ function makeRoute(overrides: Record<string, unknown> = {}) {
     name: 'Prod Discord',
     node_id: null as number | null,
     stack_patterns: ['my-app'],
+    label_ids: null as number[] | null,
+    categories: null as string[] | null,
     channel_type: 'discord' as const,
     channel_url: 'https://discord.com/api/webhooks/123/abc',
     priority: 0,
@@ -129,13 +134,13 @@ describe('NotificationService - routing logic', () => {
     );
   });
 
-  it('falls back to global agents when no stackName provided', async () => {
-    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
+  it('falls back to global agents when no stackName provided and route requires a specific stack', async () => {
+    // Route has a stack_patterns filter, so it won't match an alert with no stackName
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ stack_patterns: ['my-app'] })]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
     await svc.dispatchAlert('warning', 'monitor_alert', 'Host CPU high');
 
-    // Should have called global agent (no stackName means skip routing)
     expect(mockFetch).toHaveBeenCalledWith(
       'https://hooks.slack.com/services/global',
       expect.objectContaining({ method: 'POST' })
@@ -319,7 +324,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: 1 })]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('info', 'Test', 'my-app');
+    await svc.dispatchAlert('info', 'system', 'Test', { stackName: 'my-app' });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://discord.com/api/webhooks/123/abc',
@@ -332,7 +337,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: 99 })]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
-    await svc.dispatchAlert('info', 'Test', 'my-app');
+    await svc.dispatchAlert('info', 'system', 'Test', { stackName: 'my-app' });
 
     // Route should be skipped; falls back to global agent
     expect(mockFetch).not.toHaveBeenCalledWith(
@@ -350,7 +355,114 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: null })]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('warning', 'Global alert', 'my-app');
+    await svc.dispatchAlert('warning', 'monitor_alert', 'Global alert', { stackName: 'my-app' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('fires a category-only route when category matches', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], categories: ['deploy_failure'] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('error', 'deploy_failure', 'Deploy failed', { stackName: 'my-app' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('skips a category-only route when category does not match', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], categories: ['deploy_failure'] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([makeAgent()]);
+
+    await svc.dispatchAlert('info', 'deploy_success', 'Deploy ok', { stackName: 'my-app' });
+
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.anything()
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://hooks.slack.com/services/global',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('fires a label-only route when stack has a matching label', async () => {
+    // Stack 'my-app' on node 1 has label id 42
+    mockGetStackLabelIds.mockReturnValue([42]);
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], label_ids: [42] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('info', 'image_update_available', 'Update ready', { stackName: 'my-app' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('skips a label-only route when stack does not have a matching label', async () => {
+    mockGetStackLabelIds.mockReturnValue([99]);
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], label_ids: [42] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([makeAgent()]);
+
+    await svc.dispatchAlert('info', 'image_update_available', 'Update ready', { stackName: 'my-app' });
+
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.anything()
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://hooks.slack.com/services/global',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('AND semantics: combined label + category route fires only when both match', async () => {
+    mockGetStackLabelIds.mockReturnValue([42]);
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], label_ids: [42], categories: ['deploy_failure'] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([makeAgent()]);
+
+    mockGetStackLabelIds.mockReturnValueOnce([99]);
+    await svc.dispatchAlert('error', 'deploy_failure', 'Deploy fail 1', { stackName: 'my-app' });
+    expect(mockFetch).not.toHaveBeenCalledWith('https://discord.com/api/webhooks/123/abc', expect.anything());
+
+    vi.clearAllMocks();
+    mockGetStackLabelIds.mockReturnValue([42]);
+    await svc.dispatchAlert('info', 'deploy_success', 'Deploy ok', { stackName: 'my-app' });
+    expect(mockFetch).not.toHaveBeenCalledWith('https://discord.com/api/webhooks/123/abc', expect.anything());
+
+    vi.clearAllMocks();
+    // Both match
+    mockGetStackLabelIds.mockReturnValue([42]);
+    await svc.dispatchAlert('error', 'deploy_failure', 'Deploy fail 2', { stackName: 'my-app' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('category-only route with no stackName matches alert from any emission', async () => {
+    mockGetEnabledNotificationRoutes.mockReturnValue([
+      makeRoute({ stack_patterns: [], categories: ['system'] }),
+    ]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('info', 'system', 'Host rebooted');
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://discord.com/api/webhooks/123/abc',

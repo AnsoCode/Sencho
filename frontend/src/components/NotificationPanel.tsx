@@ -22,26 +22,13 @@ import {
 import { cn } from '@/lib/utils';
 import type { NotificationCategory, NotificationItem } from './dashboard/types';
 import type { Node } from '@/context/NodeContext';
+import { CATEGORY_LABELS } from '@/lib/notificationCategories';
 
 const NODE_FILTER_ALL = 'all' as const;
 const CATEGORY_FILTER_ALL = 'all' as const;
 type NotifFilter = 'all' | 'unread' | 'alerts';
 type NodeFilter = typeof NODE_FILTER_ALL | number;
 type CategoryFilter = typeof CATEGORY_FILTER_ALL | NotificationCategory;
-
-const CATEGORY_LABELS: Record<NotificationCategory, string> = {
-    deploy_success: 'Deploy success',
-    deploy_failure: 'Deploy failure',
-    stack_started: 'Stack started',
-    stack_stopped: 'Stack stopped',
-    stack_restarted: 'Stack restarted',
-    image_update_available: 'Update available',
-    image_update_applied: 'Update applied',
-    autoheal_triggered: 'Auto-heal',
-    monitor_alert: 'Monitor alert',
-    scan_finding: 'Scan finding',
-    system: 'System',
-};
 
 type LevelConfig = {
     icon: LucideIcon;

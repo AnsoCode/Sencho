@@ -309,6 +309,8 @@ export interface NotificationRoute {
     name: string;
     node_id: number | null;
     stack_patterns: string[];
+    label_ids: number[] | null;
+    categories: string[] | null;
     channel_type: 'discord' | 'slack' | 'webhook';
     channel_url: string;
     priority: number;
@@ -487,6 +489,7 @@ export class DatabaseService {
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
         this.migrateNotificationRoutesNodeId();
+        this.migrateNotificationRoutesMatchers();
         this.migrateNotificationHistoryContext();
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
@@ -1141,53 +1144,38 @@ export class DatabaseService {
         this.db.prepare('CREATE INDEX IF NOT EXISTS idx_notification_routes_node_priority ON notification_routes(node_id, enabled, priority)').run();
     }
 
+    private tryAddColumn(table: string, col: string, def: string): void {
+        try {
+            this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+        } catch {
+            /* column already present */
+        }
+    }
+
+    private migrateNotificationRoutesMatchers(): void {
+        this.tryAddColumn('notification_routes', 'label_ids', 'TEXT NULL');
+        this.tryAddColumn('notification_routes', 'categories', 'TEXT NULL');
+    }
+
     private migrateNotificationHistoryContext(): void {
-        const tryAddColumn = (col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE notification_history ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('stack_name', 'TEXT');
-        tryAddColumn('container_name', 'TEXT');
+        this.tryAddColumn('notification_history', 'stack_name', 'TEXT');
+        this.tryAddColumn('notification_history', 'container_name', 'TEXT');
     }
 
     private migrateScanPolicyFleetColumns(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
-        tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
+        this.tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
     }
 
     private migrateSecretMisconfigColumns(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('vulnerability_scans', 'secret_count', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('vulnerability_scans', 'misconfig_count', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
+        this.tryAddColumn('vulnerability_scans', 'secret_count', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('vulnerability_scans', 'misconfig_count', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
     }
 
     private migrateAgentsAndNotificationsNodeId(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('agents', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('notification_history', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('agents', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('notification_history', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
         const tryIndex = (sql: string, label: string) => {
             try {
                 this.db.prepare(sql).run();
@@ -1260,6 +1248,8 @@ export class DatabaseService {
             name: row.name as string,
             node_id: row.node_id != null ? (row.node_id as number) : null,
             stack_patterns: JSON.parse(row.stack_patterns as string) as string[],
+            label_ids: row.label_ids ? JSON.parse(row.label_ids as string) as number[] : null,
+            categories: row.categories ? JSON.parse(row.categories as string) as string[] : null,
             channel_type: row.channel_type as 'discord' | 'slack' | 'webhook',
             channel_url: row.channel_url as string,
             priority: row.priority as number,
@@ -1267,6 +1257,13 @@ export class DatabaseService {
             created_at: row.created_at as number,
             updated_at: row.updated_at as number,
         };
+    }
+
+    public getStackLabelIds(nodeId: number, stackName: string): number[] {
+        const rows = this.db.prepare(
+            'SELECT label_id FROM stack_label_assignments WHERE stack_name = ? AND node_id = ?'
+        ).all(stackName, nodeId) as { label_id: number }[];
+        return rows.map(r => r.label_id);
     }
 
     public getNotificationRoutes(): NotificationRoute[] {
@@ -1288,11 +1285,13 @@ export class DatabaseService {
 
     public createNotificationRoute(route: Omit<NotificationRoute, 'id'>): NotificationRoute {
         const result = this.db.prepare(
-            'INSERT INTO notification_routes (name, node_id, stack_patterns, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO notification_routes (name, node_id, stack_patterns, label_ids, categories, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             route.name,
             route.node_id ?? null,
             JSON.stringify(route.stack_patterns),
+            route.label_ids ? JSON.stringify(route.label_ids) : null,
+            route.categories ? JSON.stringify(route.categories) : null,
             route.channel_type,
             route.channel_url,
             route.priority,
@@ -1310,6 +1309,8 @@ export class DatabaseService {
         if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
         if ('node_id' in updates) { fields.push('node_id = ?'); values.push(updates.node_id ?? null); }
         if (updates.stack_patterns !== undefined) { fields.push('stack_patterns = ?'); values.push(JSON.stringify(updates.stack_patterns)); }
+        if ('label_ids' in updates) { fields.push('label_ids = ?'); values.push(updates.label_ids ? JSON.stringify(updates.label_ids) : null); }
+        if ('categories' in updates) { fields.push('categories = ?'); values.push(updates.categories ? JSON.stringify(updates.categories) : null); }
         if (updates.channel_type !== undefined) { fields.push('channel_type = ?'); values.push(updates.channel_type); }
         if (updates.channel_url !== undefined) { fields.push('channel_url = ?'); values.push(updates.channel_url); }
         if (updates.priority !== undefined) { fields.push('priority = ?'); values.push(updates.priority); }
