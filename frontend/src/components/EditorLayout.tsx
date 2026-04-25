@@ -2505,19 +2505,19 @@ export default function EditorLayout() {
                               }
 
                               const containerName = container?.Names?.[0]?.replace(/^\//, '') || container?.Id?.slice(0, 12) || 'container';
-                              const isRunning = container.State === 'running';
+                              const isActive = container.State === 'running' || container.State === 'paused';
                               const health = container.healthStatus;
-                              const uptime = isRunning ? extractUptime(container.Status) : null;
+                              const uptime = isActive ? extractUptime(container.Status) : null;
                               const hcLabel = healthcheckLabel(health);
                               const stats = containerStats[container?.Id];
                               const history = stats?.history;
 
-                              const badgeClass = health === 'unhealthy' || !isRunning
+                              const badgeClass = health === 'unhealthy' || !isActive
                                 ? 'bg-destructive text-destructive-foreground'
                                 : health === 'starting'
                                   ? 'bg-warning text-warning-foreground'
                                   : 'bg-success text-success-foreground';
-                              const badgeGlyph = health === 'unhealthy' || !isRunning ? '✗' : health === 'starting' ? '…' : '✓';
+                              const badgeGlyph = health === 'unhealthy' || !isActive ? '✗' : health === 'starting' ? '…' : '✓';
                               const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
 
                               return (
@@ -2559,7 +2559,7 @@ export default function EditorLayout() {
                                         variant="ghost"
                                         className="h-7 w-7 rounded-md"
                                         onClick={() => openLogViewer(container?.Id, containerName)}
-                                        disabled={!isRunning}
+                                        disabled={!isActive}
                                         aria-label="View logs"
                                       >
                                         <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2570,7 +2570,7 @@ export default function EditorLayout() {
                                           variant="ghost"
                                           className="h-7 w-7 rounded-md"
                                           onClick={() => openBashModal(container?.Id, containerName)}
-                                          disabled={!isRunning}
+                                          disabled={!isActive}
                                           aria-label="Open bash shell"
                                         >
                                           <Terminal className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2589,7 +2589,7 @@ export default function EditorLayout() {
                                             </Button>
                                           </DropdownMenuTrigger>
                                           <DropdownMenuContent align="end">
-                                            {isRunning ? (
+                                            {isActive ? (
                                               <>
                                                 <DropdownMenuItem onSelect={() => serviceAction('restart', container.Service!)}>
                                                   Restart service
@@ -2608,7 +2608,7 @@ export default function EditorLayout() {
                                       )}
                                     </div>
                                   </div>
-                                  {isRunning ? (
+                                  {isActive ? (
                                     <div className="mt-2 grid grid-cols-3 gap-2">
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">
