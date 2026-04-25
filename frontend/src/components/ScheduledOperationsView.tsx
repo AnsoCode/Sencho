@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,12 +51,19 @@ function formatRelative(ts: number, now: number): string {
   return remMins === 0 ? `in ${hours}h` : `in ${hours}h ${remMins}m`;
 }
 
+export interface ScheduleTaskPrefill {
+  stackName: string;
+  nodeId: number | null;
+}
+
 interface ScheduledOperationsViewProps {
   filterNodeId?: number | null;
   onClearFilter?: () => void;
+  prefill?: ScheduleTaskPrefill | null;
+  onPrefillConsumed?: () => void;
 }
 
-export default function ScheduledOperationsView({ filterNodeId, onClearFilter }: ScheduledOperationsViewProps) {
+export default function ScheduledOperationsView({ filterNodeId, onClearFilter, prefill, onPrefillConsumed }: ScheduledOperationsViewProps) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'timeline' | 'table'>('timeline');
@@ -95,6 +102,8 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
   const filterNodeName = filterNodeId != null
     ? nodes.find(n => n.id === filterNodeId)?.name
     : null;
+
+  const consumedPrefillRef = useRef<ScheduleTaskPrefill | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -142,6 +151,13 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
   }, [fetchTasks, fetchStacks, fetchNodes]);
 
   useEffect(() => {
+    if (!prefill || prefill === consumedPrefillRef.current) return;
+    consumedPrefillRef.current = prefill;
+    openCreate({ stackName: prefill.stackName, nodeId: prefill.nodeId != null ? String(prefill.nodeId) : '' });
+    onPrefillConsumed?.();
+  }, [prefill, onPrefillConsumed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
@@ -177,21 +193,20 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
     }
   }, [formNodeId, dialogOpen, fetchStacks]);
 
-  const openCreate = () => {
+  const openCreate = (prefillData?: { stackName: string; nodeId: string }) => {
+    const nodeId = prefillData?.nodeId ?? (filterNodeId != null ? String(filterNodeId) : '');
     setEditingTask(null);
     setFormName('');
     setFormAction('restart');
-    setFormTargetId('');
-    setFormNodeId(filterNodeId != null ? String(filterNodeId) : '');
+    setFormTargetId(prefillData?.stackName ?? '');
+    setFormNodeId(nodeId);
     setFormCron('0 3 * * *');
     setFormEnabled(true);
     setFormPruneTargets(['containers', 'images', 'networks', 'volumes']);
     setFormTargetServices([]);
     setFormPruneLabelFilter('');
     setDialogOpen(true);
-    if (filterNodeId != null) {
-      fetchStacks(String(filterNodeId));
-    }
+    if (nodeId) fetchStacks(nodeId);
   };
 
   const openEdit = (task: ScheduledTask) => {
@@ -380,7 +395,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter }:
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                 Refresh
               </Button>
-              <Button size="sm" onClick={openCreate}>
+              <Button size="sm" onClick={() => openCreate()}>
                 <Plus className="w-4 h-4 mr-2" strokeWidth={1.5} />
                 New Schedule
               </Button>

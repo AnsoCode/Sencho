@@ -47,7 +47,7 @@ import { Sparkline } from './ui/sparkline';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
-import ScheduledOperationsView from './ScheduledOperationsView';
+import ScheduledOperationsView, { type ScheduleTaskPrefill } from './ScheduledOperationsView';
 import AutoUpdateReadinessView from './AutoUpdateReadinessView';
 import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
@@ -322,6 +322,8 @@ export default function EditorLayout() {
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
   const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
+  const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
+  const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
   const [isEditing, setIsEditing] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2004,6 +2006,11 @@ export default function EditorLayout() {
         }
       },
       openLabelManager: () => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); },
+      openScheduleTask: () => {
+        const stackName = file.replace(/\.(yml|yaml)$/, '');
+        setSchedulePrefill({ stackName, nodeId: activeNode?.id ?? null });
+        setActiveView('scheduled-ops');
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -2811,7 +2818,12 @@ export default function EditorLayout() {
             </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
-              <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+              <ScheduledOperationsView
+                filterNodeId={filterNodeId}
+                onClearFilter={() => setFilterNodeId(null)}
+                prefill={schedulePrefill}
+                onPrefillConsumed={handlePrefillConsumed}
+              />
             </CapabilityGate>
           ) : (
             <HomeDashboard
