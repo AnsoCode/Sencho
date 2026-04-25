@@ -22,6 +22,13 @@ import { invalidateNodeCaches } from '../helpers/cacheInvalidation';
 import { STACK_STATUSES_CACHE_TTL_MS } from '../helpers/constants';
 import { getTerminalWs } from '../websocket/generic';
 
+function notifyActionFailure(action: string, stackName: string, error: unknown): void {
+  const message = getErrorMessage(error, `Failed to ${action} stack`);
+  NotificationService.getInstance()
+    .dispatchAlert('error', 'deploy_failure', message, { stackName })
+    .catch(err => console.error(`[Stacks] Failed to dispatch failure notification for ${stackName}:`, err));
+}
+
 async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
   const fsService = FileSystemService.getInstance(nodeId);
   const stackDir = path.join(fsService.getBaseDir(), stackName);
@@ -596,6 +603,7 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     if (rolledBack) console.warn(`[Stacks] Deploy failed, rolled back: ${stackName}`);
     const message = getErrorMessage(error, 'Failed to deploy stack');
+    notifyActionFailure('deploy', stackName, error);
     res.status(500).json({ error: message, rolledBack });
   }
 });
@@ -611,8 +619,9 @@ stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] Down completed: ${stackName}`);
     res.json({ status: 'Command started' });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`[Stacks] Down failed: ${stackName}`, error);
+    notifyActionFailure('down', stackName, error);
     res.status(500).json({ error: 'Failed to start command' });
   }
 });
@@ -638,6 +647,7 @@ stacksRouter.post('/:stackName/restart', async (req: Request, res: Response) => 
   } catch (error: unknown) {
     console.error(`[Stacks] Restart failed: ${stackName}`, error);
     const message = getErrorMessage(error, 'Failed to restart containers');
+    notifyActionFailure('restart', stackName, error);
     res.status(500).json({ error: message });
   }
 });
@@ -663,6 +673,7 @@ stacksRouter.post('/:stackName/stop', async (req: Request, res: Response) => {
   } catch (error: unknown) {
     console.error(`[Stacks] Stop failed: ${stackName}`, error);
     const message = getErrorMessage(error, 'Failed to stop containers');
+    notifyActionFailure('stop', stackName, error);
     res.status(500).json({ error: message });
   }
 });
@@ -786,11 +797,12 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
       console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`[Stacks] Update failed: ${stackName}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${stackName}`);
-    res.status(500).json({ error: 'Failed to update', rolledBack });
+    notifyActionFailure('update', stackName, error);
+    res.status(500).json({ error: getErrorMessage(error, 'Failed to update'), rolledBack });
   }
 });
 
