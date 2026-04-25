@@ -14,7 +14,7 @@ Thank you for your interest in contributing to Sencho!
    ```
 5. Start the dev servers:
    ```bash
-   cd backend && npm run dev    # Express + nodemon on :3000
+   cd backend && npm run dev    # Express + nodemon on :1852
    cd frontend && npm run dev   # Vite on :5173
    ```
 

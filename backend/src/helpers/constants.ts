@@ -3,7 +3,7 @@
 // monolith.
 
 // Server
-export const PORT = 3000;
+export const PORT = 1852;
 
 // Password policy
 export const MIN_PASSWORD_LENGTH = 8;

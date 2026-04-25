@@ -8,7 +8,7 @@ Sencho exposes a REST API for automating stack deployments, managing webhooks, m
 ## Base URL
 
 ```
-https://your-sencho-instance:3000/api
+https://your-sencho-instance:1852/api
 ```
 
 Replace with your actual Sencho host and port. All API paths are prefixed with `/api`.
@@ -19,7 +19,7 @@ Authenticated endpoints require a **Bearer token** in the `Authorization` header
 
 ```bash
 curl -H "Authorization: Bearer YOUR_API_TOKEN" \
-  https://your-sencho-instance:3000/api/stacks
+  https://your-sencho-instance:1852/api/stacks
 ```
 
 <Note>
@@ -51,7 +51,7 @@ If omitted, the request targets the default node.
 # Target node ID 2
 curl -H "Authorization: Bearer TOKEN" \
   -H "x-node-id: 2" \
-  https://your-sencho-instance:3000/api/stacks
+  https://your-sencho-instance:1852/api/stacks
 ```
 
 ## Error format
@@ -132,7 +132,7 @@ Sencho also provides real-time streaming via WebSocket connections. These are no
 
 Stream live logs from a stack's containers.
 
-**URL:** `wss://your-sencho-instance:3000/api/stacks/{stackName}/logs?nodeId={nodeId}`
+**URL:** `wss://your-sencho-instance:1852/api/stacks/{stackName}/logs?nodeId={nodeId}`
 
 **Authentication:** Pass the token as a cookie (`sencho_token`) or Bearer token. For WebSocket connections, authentication is verified during the upgrade handshake.
 
@@ -142,7 +142,7 @@ Stream live logs from a stack's containers.
 import WebSocket from "ws";
 
 const ws = new WebSocket(
-  "wss://your-sencho-instance:3000/api/stacks/my-app/logs",
+  "wss://your-sencho-instance:1852/api/stacks/my-app/logs",
   { headers: { Cookie: "sencho_token=YOUR_JWT" } }
 );
 
@@ -156,7 +156,7 @@ curl -i -N \
   -H "Connection: Upgrade" \
   -H "Upgrade: websocket" \
   -H "Cookie: sencho_token=YOUR_JWT" \
-  https://your-sencho-instance:3000/api/stacks/my-app/logs
+  https://your-sencho-instance:1852/api/stacks/my-app/logs
 ```
 
 </CodeGroup>
@@ -165,7 +165,7 @@ curl -i -N \
 
 Open an interactive shell session inside a running container.
 
-**URL:** `wss://your-sencho-instance:3000/ws`
+**URL:** `wss://your-sencho-instance:1852/ws`
 
 **Authentication:** Cookie-based JWT only. API tokens with `read-only` or `deploy-only` scope are blocked.
 
@@ -174,7 +174,7 @@ Open an interactive shell session inside a running container.
 ```javascript Node.js
 import WebSocket from "ws";
 
-const ws = new WebSocket("wss://your-sencho-instance:3000/ws", {
+const ws = new WebSocket("wss://your-sencho-instance:1852/ws", {
   headers: { Cookie: "sencho_token=YOUR_JWT" },
 });
 

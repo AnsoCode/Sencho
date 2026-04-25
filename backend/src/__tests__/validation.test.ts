@@ -63,7 +63,7 @@ describe('isValidStackName', () => {
 
 describe('isValidRemoteUrl', () => {
   it('accepts valid http URLs', () => {
-    const result = isValidRemoteUrl('http://192.168.1.10:3000');
+    const result = isValidRemoteUrl('http://192.168.1.10:1852');
     expect(result.valid).toBe(true);
   });
 
@@ -84,25 +84,25 @@ describe('isValidRemoteUrl', () => {
   });
 
   it('rejects localhost', () => {
-    expect(isValidRemoteUrl('http://localhost:3000').valid).toBe(false);
-    expect(isValidRemoteUrl('http://LOCALHOST:3000').valid).toBe(false);
+    expect(isValidRemoteUrl('http://localhost:1852').valid).toBe(false);
+    expect(isValidRemoteUrl('http://LOCALHOST:1852').valid).toBe(false);
   });
 
   it('rejects loopback IPs', () => {
-    expect(isValidRemoteUrl('http://127.0.0.1:3000').valid).toBe(false);
+    expect(isValidRemoteUrl('http://127.0.0.1:1852').valid).toBe(false);
     expect(isValidRemoteUrl('http://127.1.2.3').valid).toBe(false);
     // Node.js URL.hostname preserves brackets: new URL('http://[::1]').hostname === '[::1]'
-    expect(isValidRemoteUrl('http://[::1]:3000').valid).toBe(false);
+    expect(isValidRemoteUrl('http://[::1]:1852').valid).toBe(false);
   });
 
   it('rejects 0.0.0.0', () => {
-    expect(isValidRemoteUrl('http://0.0.0.0:3000').valid).toBe(false);
+    expect(isValidRemoteUrl('http://0.0.0.0:1852').valid).toBe(false);
   });
 
   it('allows LAN/private IPs (users need these for local network nodes)', () => {
     // Users legitimately run Sencho nodes on their LAN
-    expect(isValidRemoteUrl('http://192.168.1.100:3000').valid).toBe(true);
-    expect(isValidRemoteUrl('http://10.0.0.5:3000').valid).toBe(true);
+    expect(isValidRemoteUrl('http://192.168.1.100:1852').valid).toBe(true);
+    expect(isValidRemoteUrl('http://10.0.0.5:1852').valid).toBe(true);
   });
 });
 

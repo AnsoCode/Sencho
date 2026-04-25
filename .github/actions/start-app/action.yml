@@ -13,7 +13,7 @@ inputs:
     default: '/tmp/compose'
   port:
     required: false
-    default: '3000'
+    default: '1852'
   skip-backend-build:
     description: >
       When 'true', skip running `npm run build` in backend/ and assume the

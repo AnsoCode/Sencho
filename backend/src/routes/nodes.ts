@@ -37,7 +37,7 @@ function mintPilotEnrollment(nodeId: number, req: Request): { token: string; exp
   const forwardedProto = req.headers['x-forwarded-proto'];
   const protoHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
   const protocol = protoHeader || req.protocol || 'http';
-  const host = req.get('host') || 'localhost:3000';
+  const host = req.get('host') || 'localhost:1852';
   const primaryUrl = `${protocol}://${host}`;
 
   const dockerRun =

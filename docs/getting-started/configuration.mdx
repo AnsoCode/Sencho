@@ -23,7 +23,7 @@ When you point `COMPOSE_DIR` at a directory, Sencho expects each stack to live i
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3000` | Port the Sencho HTTP server listens on. |
+| `PORT` | `1852` | Port the Sencho HTTP server listens on. |
 | `DATA_DIR` | `/app/data` | Directory where Sencho stores its SQLite database, node registry, and cached metrics. |
 | `FRONTEND_URL` | *(empty)* | Frontend origin for CORS. Only needed if the UI is served from a different domain than the API. Leave empty for same-origin setups. |
 | `NODE_ENV` | `production` | Set automatically in the Docker image. Only change this for local development. |
@@ -140,7 +140,7 @@ services:
     image: saelix/sencho:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "1852:1852"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./sencho-data:/app/data
@@ -180,7 +180,7 @@ server {
     server_name sencho.yourdomain.com;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:1852;
         proxy_http_version 1.1;
 
         # WebSocket support
@@ -211,7 +211,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/sencho.yourdomain.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:1852;
         proxy_http_version 1.1;
 
         # WebSocket support
@@ -235,7 +235,7 @@ Use [Certbot](https://certbot.eff.org/) to obtain and auto-renew certificates: `
 labels:
   - "traefik.enable=true"
   - "traefik.http.routers.sencho.rule=Host(`sencho.yourdomain.com`)"
-  - "traefik.http.services.sencho.loadbalancer.server.port=3000"
+  - "traefik.http.services.sencho.loadbalancer.server.port=1852"
 ```
 
 ### Traefik with SSL (Let's Encrypt)
@@ -246,7 +246,7 @@ labels:
   - "traefik.http.routers.sencho.rule=Host(`sencho.yourdomain.com`)"
   - "traefik.http.routers.sencho.entrypoints=websecure"
   - "traefik.http.routers.sencho.tls.certresolver=letsencrypt"
-  - "traefik.http.services.sencho.loadbalancer.server.port=3000"
+  - "traefik.http.services.sencho.loadbalancer.server.port=1852"
   # HTTP to HTTPS redirect
   - "traefik.http.routers.sencho-http.rule=Host(`sencho.yourdomain.com`)"
   - "traefik.http.routers.sencho-http.entrypoints=web"
@@ -262,7 +262,7 @@ labels:
 
 ```
 sencho.yourdomain.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:1852
 }
 ```
 
