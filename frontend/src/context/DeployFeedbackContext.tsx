@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useState, useRef, useCallback } from 'react';
+import { type ParsedLogRow, parseLogChunk } from '../components/log-rendering/composeLogParser';
+import { useDeployFeedbackEnabled } from '../hooks/use-deploy-feedback-enabled';
 
-export type ActionVerb = 'deploy' | 'update' | 'down' | 'restart' | 'stop';
+export type ActionVerb = 'deploy' | 'update' | 'down' | 'restart' | 'stop' | 'install';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const VERB_LABELS: Record<ActionVerb, { present: string; past: string }> = {
+  deploy:  { present: 'Deploying',  past: 'Deployed'  },
+  update:  { present: 'Updating',   past: 'Updated'   },
+  down:    { present: 'Stopping',   past: 'Stopped'   },
+  restart: { present: 'Restarting', past: 'Restarted' },
+  stop:    { present: 'Stopping',   past: 'Stopped'   },
+  install: { present: 'Installing', past: 'Installed' },
+};
 
 export interface DeployPanelState {
   isOpen: boolean;
@@ -15,13 +27,15 @@ interface RunResult {
   errorMessage?: string;
 }
 
-interface DeployLogContextValue {
+interface DeployFeedbackContextValue {
   runWithLog: (
     params: { stackName: string; action: ActionVerb },
     run: (deployStarted: Promise<void>) => Promise<RunResult>
   ) => Promise<RunResult>;
   panelState: DeployPanelState;
+  logRows: ParsedLogRow[];
   onTerminalReady: () => void;
+  onMessage: (text: string) => void;
   onPanelClose: () => void;
 }
 
@@ -32,10 +46,11 @@ const DEFAULT_PANEL_STATE: DeployPanelState = {
   status: 'preparing',
 };
 
-const DeployLogContext = createContext<DeployLogContextValue | undefined>(undefined);
+const DeployFeedbackContext = createContext<DeployFeedbackContextValue | undefined>(undefined);
 
-export function DeployLogProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+export function DeployFeedbackProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [panelState, setPanelState] = useState<DeployPanelState>(DEFAULT_PANEL_STATE);
+  const [logRows, setLogRows] = useState<ParsedLogRow[]>([]);
 
   // Holds the resolver for the current session's deployStarted promise.
   // Updated at the start of each runWithLog call; not state because
@@ -46,18 +61,31 @@ export function DeployLogProvider({ children }: { children: React.ReactNode }): 
   // cannot mutate state for the new session that replaced it.
   const sessionIdRef = useRef(0);
 
+  // Monotonically increasing counter for unique log row IDs.
+  // Never reset between deploys so React keys remain globally unique.
+  const idCounterRef = useRef(0);
+
+  const [isEnabled] = useDeployFeedbackEnabled();
+
   const onTerminalReady = useCallback(() => {
+    setPanelState((prev) => ({ ...prev, status: 'streaming' }));
     if (readyResolverRef.current !== null) {
       readyResolverRef.current();
       readyResolverRef.current = null;
     }
   }, []);
 
+  const onMessage = useCallback((text: string) => {
+    const newRows = parseLogChunk(text, idCounterRef.current);
+    idCounterRef.current += newRows.length;
+    setLogRows((prev) => [...prev, ...newRows]);
+  }, []);
+
   const onPanelClose = useCallback(() => {
-    // Invalidate any in-progress session
     sessionIdRef.current += 1;
     readyResolverRef.current = null;
     setPanelState(DEFAULT_PANEL_STATE);
+    setLogRows([]);
   }, []);
 
   const runWithLog = useCallback(
@@ -65,9 +93,16 @@ export function DeployLogProvider({ children }: { children: React.ReactNode }): 
       params: { stackName: string; action: ActionVerb },
       run: (deployStarted: Promise<void>) => Promise<RunResult>
     ): Promise<RunResult> => {
-      // Cancel any existing session before starting a new one
+      if (!isEnabled) {
+        return run(Promise.resolve());
+      }
+
+      // Cancel any existing session before starting a new one.
       sessionIdRef.current += 1;
       const mySession = sessionIdRef.current;
+
+      // idCounterRef is intentionally not reset; keys must remain globally unique across sessions.
+      setLogRows([]);
 
       setPanelState({
         isOpen: true,
@@ -100,21 +135,23 @@ export function DeployLogProvider({ children }: { children: React.ReactNode }): 
 
       return result;
     },
-    []
+    [isEnabled]
   );
 
   return (
-    <DeployLogContext.Provider value={{ runWithLog, panelState, onTerminalReady, onPanelClose }}>
+    <DeployFeedbackContext.Provider
+      value={{ runWithLog, panelState, logRows, onTerminalReady, onMessage, onPanelClose }}
+    >
       {children}
-    </DeployLogContext.Provider>
+    </DeployFeedbackContext.Provider>
   );
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useDeployLog(): DeployLogContextValue {
-  const context = useContext(DeployLogContext);
+export function useDeployFeedback(): DeployFeedbackContextValue {
+  const context = useContext(DeployFeedbackContext);
   if (context === undefined) {
-    throw new Error('useDeployLog must be used within a DeployLogProvider');
+    throw new Error('useDeployFeedback must be used within a DeployFeedbackProvider');
   }
   return context;
 }

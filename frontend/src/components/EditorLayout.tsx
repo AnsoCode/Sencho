@@ -65,7 +65,7 @@ import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
-import { useDeployLog } from '@/context/DeployLogContext';
+import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
@@ -181,7 +181,7 @@ export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
-  const { runWithLog } = useDeployLog();
+  const { runWithLog } = useDeployFeedback();
   const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);

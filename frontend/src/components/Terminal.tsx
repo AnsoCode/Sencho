@@ -133,7 +133,7 @@ export default function TerminalComponent({ stackName, onReady, onMessage }: Ter
         // Otherwise, fall back to the generic terminal WebSocket
         const wsUrl = cleanStackName
           ? `${wsProtocol}//${window.location.host}/api/stacks/${cleanStackName}/logs${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`
-          : `${wsProtocol}//${window.location.host}`;
+          : `${wsProtocol}//${window.location.host}/ws${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`;
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;

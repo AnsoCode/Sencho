@@ -5,8 +5,8 @@ import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import EditorLayout from './components/EditorLayout';
 import { MfaChallenge } from './components/MfaChallenge';
-import { DeployLogProvider, useDeployLog } from './context/DeployLogContext';
-import DeployLogPanel from './components/DeployLogPanel';
+import { DeployFeedbackProvider } from './context/DeployFeedbackContext';
+import { DeployFeedbackPortal } from './components/DeployFeedbackPortal';
 
 function AppContent() {
   const { appStatus, isAuthenticated, needsSetup, completeSetup } = useAuth();
@@ -42,24 +42,13 @@ function AppContent() {
 
 import { ToastContainer } from './components/ui/toast';
 
-function DeployLogPortal() {
-  const { panelState, onTerminalReady, onPanelClose } = useDeployLog();
-  return (
-    <DeployLogPanel
-      panelState={panelState}
-      onTerminalReady={onTerminalReady}
-      onPanelClose={onPanelClose}
-    />
-  );
-}
-
 function App() {
   return (
     <AuthProvider>
-      <DeployLogProvider>
+      <DeployFeedbackProvider>
         <AppContent />
-        <DeployLogPortal />
-      </DeployLogProvider>
+        <DeployFeedbackPortal />
+      </DeployFeedbackProvider>
       <ToastContainer />
     </AuthProvider>
   );
