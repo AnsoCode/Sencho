@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,12 +18,20 @@ import { Combobox } from '@/components/ui/combobox';
 import type { ScheduledTask, TaskRun, NodeOption } from '@/types/scheduling';
 import { getCronDescription, formatTimestamp } from '@/lib/scheduling';
 
-const ACTION_OPTIONS = [
-  { value: 'restart', label: 'Restart Stack', targetType: 'stack' as const },
-  { value: 'update', label: 'Auto-update Stack', targetType: 'stack' as const },
-  { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' as const },
-  { value: 'prune', label: 'System Prune', targetType: 'system' as const },
-  { value: 'scan', label: 'Vulnerability Scan', targetType: 'system' as const },
+const UPDATE_FLEET_ACTION = 'update-fleet' as const;
+
+const ACTION_OPTIONS: Array<{
+  value: string;
+  label: string;
+  targetType: 'stack' | 'fleet' | 'system';
+  backendAction?: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan';
+}> = [
+  { value: 'restart', label: 'Restart Stack', targetType: 'stack' },
+  { value: 'update', label: 'Auto-update Stack', targetType: 'stack' },
+  { value: UPDATE_FLEET_ACTION, label: 'Auto-update All Stacks', targetType: 'fleet', backendAction: 'update' },
+  { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' },
+  { value: 'prune', label: 'System Prune', targetType: 'system' },
+  { value: 'scan', label: 'Vulnerability Scan', targetType: 'system' },
 ];
 
 const TIMELINE_LANES: { key: ScheduledTask['action']; label: string; color: string; bg: string; actions: ScheduledTask['action'][] }[] = [
@@ -212,7 +220,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
   const openEdit = (task: ScheduledTask) => {
     setEditingTask(task);
     setFormName(task.name);
-    setFormAction(task.action);
+    setFormAction(task.action === 'update' && task.target_type === 'fleet' ? UPDATE_FLEET_ACTION : task.action);
     setFormTargetId(task.target_id || '');
     setFormNodeId(task.node_id != null ? String(task.node_id) : '');
     setFormCron(task.cron_expression);
@@ -234,7 +242,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
     const body: Record<string, unknown> = {
       name: formName,
       target_type: actionOption.targetType,
-      action: formAction,
+      action: actionOption.backendAction ?? formAction,
       cron_expression: formCron,
       enabled: formEnabled,
     };
@@ -243,7 +251,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
       body.target_id = formTargetId;
       body.node_id = formNodeId ? parseInt(formNodeId, 10) : null;
     }
-    if (formAction === 'scan') {
+    if (formAction === 'scan' || formAction === UPDATE_FLEET_ACTION) {
       body.node_id = formNodeId ? parseInt(formNodeId, 10) : null;
     }
     if (formAction === 'prune' && formPruneTargets.length > 0) {
@@ -348,6 +356,13 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
 
   const targetType = ACTION_OPTIONS.find(a => a.value === formAction)?.targetType;
   const cronDescription = getCronDescription(formCron);
+  const nodeOptions = useMemo(() => nodes.map(n => ({ value: String(n.id), label: n.name })), [nodes]);
+  const isSaveDisabled =
+    saving || !formName || !formCron
+    || (targetType === 'stack' && (!formTargetId || !formNodeId))
+    || (formAction === 'scan' && !formNodeId)
+    || (formAction === UPDATE_FLEET_ACTION && !formNodeId)
+    || (formAction === 'prune' && formPruneTargets.length === 0);
 
   const windowEnd = now + TIMELINE_WINDOW_MS;
   const timelinePills = filteredTasks
@@ -576,7 +591,10 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
                     <TableCell className="font-medium">{task.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {ACTION_OPTIONS.find(a => a.value === task.action)?.label || task.action}
+                        {(task.action === 'update' && task.target_type === 'fleet'
+                          ? ACTION_OPTIONS.find(a => a.value === UPDATE_FLEET_ACTION)
+                          : ACTION_OPTIONS.find(a => a.value === task.action)
+                        )?.label || task.action}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -584,7 +602,9 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
                         ? task.target_services
                           ? `${task.target_id} (${(JSON.parse(task.target_services) as string[]).join(', ')})`
                           : task.target_id
-                        : task.target_type}
+                        : task.action === 'update'
+                          ? 'All eligible stacks'
+                          : task.target_type}
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">{getCronDescription(task.cron_expression)}</div>
@@ -660,7 +680,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
                 <div className="space-y-2">
                   <Label>Node</Label>
                   <Combobox
-                    options={nodes.map(n => ({ value: String(n.id), label: n.name }))}
+                    options={nodeOptions}
                     value={formNodeId}
                     onValueChange={setFormNodeId}
                     placeholder="Select node..."
@@ -699,11 +719,24 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
               </>
             )}
 
+            {formAction === UPDATE_FLEET_ACTION && (
+              <div className="space-y-2">
+                <Label>Node</Label>
+                <Combobox
+                  options={nodeOptions}
+                  value={formNodeId}
+                  onValueChange={setFormNodeId}
+                  placeholder="Select node..."
+                />
+                <p className="text-xs text-muted-foreground">Only stacks with auto-updates enabled on this node will be updated.</p>
+              </div>
+            )}
+
             {formAction === 'scan' && (
               <div className="space-y-2">
                 <Label>Node</Label>
                 <Combobox
-                  options={nodes.map(n => ({ value: String(n.id), label: n.name }))}
+                  options={nodeOptions}
                   value={formNodeId}
                   onValueChange={setFormNodeId}
                   placeholder="Select node..."
@@ -763,7 +796,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !formName || !formCron || (targetType === 'stack' && (!formTargetId || !formNodeId)) || (formAction === 'scan' && !formNodeId) || (formAction === 'prune' && formPruneTargets.length === 0)}>
+            <Button onClick={handleSave} disabled={isSaveDisabled}>
               {saving ? 'Saving...' : editingTask ? 'Update' : 'Create'}
             </Button>
           </DialogFooter>

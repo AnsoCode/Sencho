@@ -10,6 +10,7 @@ import { getErrorMessage } from '../utils/errors';
 const VALID_TARGET_TYPES = ['stack', 'fleet', 'system'] as const;
 const VALID_ACTIONS = ['restart', 'snapshot', 'prune', 'update', 'scan'] as const;
 const VALID_PRUNE_TARGETS = ['containers', 'images', 'networks', 'volumes'] as const;
+const ERR_FLEET_NODE_REQUIRED = 'Fleet update requires node_id.';
 
 type TargetType = typeof VALID_TARGET_TYPES[number];
 type ScheduledAction = typeof VALID_ACTIONS[number];
@@ -30,7 +31,7 @@ function parseTaskId(req: Request, res: Response): number | null {
  */
 function validateActionTarget(action: ScheduledAction, targetType: TargetType): string | null {
   if (action === 'restart' && targetType !== 'stack') return 'Restart action requires target_type "stack".';
-  if (action === 'update' && targetType !== 'stack') return 'Update action requires target_type "stack".';
+  if (action === 'update' && targetType !== 'stack' && targetType !== 'fleet') return 'Update action requires target_type "stack" or "fleet".';
   if (action === 'snapshot' && targetType !== 'fleet') return 'Snapshot action requires target_type "fleet".';
   if (action === 'prune' && targetType !== 'system') return 'Prune action requires target_type "system".';
   if (action === 'scan' && targetType !== 'system') return 'Scan action requires target_type "system".';
@@ -131,6 +132,9 @@ scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
     if (action === 'scan' && !node_id) {
       res.status(400).json({ error: 'Scan action requires node_id.' }); return;
     }
+    if (action === 'update' && target_type === 'fleet' && !node_id) {
+      res.status(400).json({ error: ERR_FLEET_NODE_REQUIRED }); return;
+    }
     if (target_type === 'stack' && (!target_id || !node_id)) {
       res.status(400).json({ error: 'Stack operations require target_id and node_id.' }); return;
     }
@@ -222,6 +226,12 @@ scheduledTasksRouter.put('/:id', (req: Request, res: Response): void => {
       const finalNodeId = node_id !== undefined ? node_id : existing.node_id;
       if (!finalNodeId) {
         res.status(400).json({ error: 'Scan action requires node_id.' }); return;
+      }
+    }
+    if (finalAction === 'update' && finalTargetType === 'fleet') {
+      const finalNodeId = node_id !== undefined ? node_id : existing.node_id;
+      if (!finalNodeId) {
+        res.status(400).json({ error: ERR_FLEET_NODE_REQUIRED }); return;
       }
     }
 

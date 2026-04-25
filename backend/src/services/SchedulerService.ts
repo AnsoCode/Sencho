@@ -482,41 +482,56 @@ export class SchedulerService {
     }
 
     private async executeUpdate(task: ScheduledTask): Promise<string> {
-        if (!task.target_id || task.node_id == null) {
-            throw new Error('Auto-update requires target_id (stack name or "*") and node_id');
+        if (task.node_id == null) {
+            throw new Error('Auto-update requires node_id');
         }
 
-        // For remote nodes, proxy the entire execution to the remote Sencho instance
+        const isFleet = task.target_type === 'fleet';
+
+        if (!isFleet && !task.target_id) {
+            throw new Error('Auto-update requires target_id (stack name or "*")');
+        }
+
+        // For remote nodes, proxy the entire execution to the remote Sencho instance.
+        // The remote /api/auto-update/execute endpoint already handles per-stack
+        // auto-update policy, so passing '*' for fleet is sufficient.
         const node = NodeRegistry.getInstance().getNode(task.node_id);
         if (node?.type === 'remote') {
-            return this.executeUpdateRemote(task.node_id, task.target_id);
+            return this.executeUpdateRemote(task.node_id, isFleet ? '*' : task.target_id!);
         }
 
         // Local node: execute directly
         const isWildcard = task.target_id === '*';
         let stackNames: string[];
-        if (isWildcard) {
+        if (isFleet || isWildcard) {
             stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
             if (stackNames.length === 0) {
                 return 'No stacks found on node; skipped.';
             }
         } else {
-            stackNames = [task.target_id];
+            stackNames = [task.target_id!];
         }
 
         if (isDebugEnabled()) {
-            console.log(`[SchedulerService] executeUpdate: ${stackNames.length} stack(s) to check, wildcard=${isWildcard}`);
+            console.log(`[SchedulerService] executeUpdate: ${stackNames.length} stack(s) to check, fleet=${isFleet}, wildcard=${isWildcard}`);
         }
 
+        const db = DatabaseService.getInstance();
         const docker = DockerController.getInstance(task.node_id);
         const imageUpdateService = ImageUpdateService.getInstance();
         const compose = ComposeService.getInstance(task.node_id);
-        const db = DatabaseService.getInstance();
         const results: string[] = [];
+
+        // Single batch query for fleet mode; per-stack default is enabled (true) when no explicit row exists.
+        const policyMap = isFleet ? db.getStackAutoUpdateSettingsForNode(task.node_id) : null;
 
         for (const stackName of stackNames) {
             try {
-                const output = await this.executeUpdateForStack(stackName, task.node_id ?? 0, docker, imageUpdateService, compose, db, isWildcard);
+                if (isFleet && (policyMap![stackName] ?? true) === false) {
+                    results.push(`Stack "${stackName}": auto-updates disabled; skipped.`);
+                    continue;
+                }
+                const output = await this.executeUpdateForStack(stackName, task.node_id, docker, imageUpdateService, compose, db, isFleet || isWildcard);
                 results.push(output);
             } catch (e) {
                 const msg = getErrorMessage(e, String(e));
