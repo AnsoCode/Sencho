@@ -289,9 +289,34 @@ export class SchedulerService {
                     scanFailedCount = result.failed;
                     break;
                 }
+                case 'auto_backup':
+                    output = await this.executeAutoBackup(task);
+                    break;
+                case 'auto_stop':
+                    output = await this.executeAutoStop(task);
+                    break;
+                case 'auto_down':
+                    output = await this.executeAutoDown(task);
+                    break;
+                case 'auto_start':
+                    output = await this.executeAutoStart(task);
+                    break;
             }
 
             if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} action completed in ${Date.now() - actionStart}ms`);
+
+            db.updateScheduledTaskRun(runId, {
+                completed_at: Date.now(),
+                status: 'success',
+                output,
+            });
+            console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
+
+            if (task.delete_after_run === 1) {
+                console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) self-deleting after successful one-shot run`);
+                db.deleteScheduledTask(task.id);
+                return;
+            }
 
             const nextRun = this.calculateNextRun(task.cron_expression);
             db.updateScheduledTask(task.id, {
@@ -301,12 +326,7 @@ export class SchedulerService {
                 last_error: null,
                 updated_at: Date.now(),
             });
-            db.updateScheduledTaskRun(runId, {
-                completed_at: Date.now(),
-                status: 'success',
-                output,
-            });
-            console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
+
             if (task.action === 'scan') {
                 const scanLevel: 'info' | 'warning' = scanFailedCount > 0 ? 'warning' : 'info';
                 if (isDebugEnabled()) {
@@ -390,6 +410,36 @@ export class SchedulerService {
             ? ` (services: ${(JSON.parse(task.target_services) as string[]).join(', ')})`
             : '';
         return `Restarted ${filtered.length} container(s) in stack "${task.target_id}"${servicesSuffix}`;
+    }
+
+    private assertStackTarget(task: ScheduledTask, label: string): asserts task is ScheduledTask & { target_id: string; node_id: number } {
+        if (!task.target_id || task.node_id == null) {
+            throw new Error(`${label} requires target_id and node_id`);
+        }
+    }
+
+    private async executeAutoBackup(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-backup');
+        await FileSystemService.getInstance(task.node_id).backupStackFiles(task.target_id);
+        return `Backed up stack "${task.target_id}" files`;
+    }
+
+    private async executeAutoStop(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-stop');
+        await ComposeService.getInstance(task.node_id).runCommand(task.target_id, 'stop');
+        return `Stopped stack "${task.target_id}" (containers preserved)`;
+    }
+
+    private async executeAutoDown(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-down');
+        await ComposeService.getInstance(task.node_id).runCommand(task.target_id, 'down');
+        return `Took down stack "${task.target_id}" (containers removed)`;
+    }
+
+    private async executeAutoStart(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-start');
+        await ComposeService.getInstance(task.node_id).deployStack(task.target_id);
+        return `Started stack "${task.target_id}"`;
     }
 
     private async executeSnapshot(task: ScheduledTask): Promise<string> {

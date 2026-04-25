@@ -32,6 +32,10 @@ const ACTION_OPTIONS: Array<{
   { value: 'snapshot', label: 'Fleet Snapshot', targetType: 'fleet' },
   { value: 'prune', label: 'System Prune', targetType: 'system' },
   { value: 'scan', label: 'Vulnerability Scan', targetType: 'system' },
+  { value: 'auto_backup', label: 'Backup Stack Files', targetType: 'stack' },
+  { value: 'auto_stop', label: 'Stop Stack (keep containers)', targetType: 'stack' },
+  { value: 'auto_down', label: 'Take Stack Down (remove containers)', targetType: 'stack' },
+  { value: 'auto_start', label: 'Start Stack', targetType: 'stack' },
 ];
 
 const TIMELINE_LANES: { key: ScheduledTask['action']; label: string; color: string; bg: string; actions: ScheduledTask['action'][] }[] = [
@@ -39,6 +43,7 @@ const TIMELINE_LANES: { key: ScheduledTask['action']; label: string; color: stri
   { key: 'update', label: 'Update', color: 'var(--success)', bg: 'oklch(from var(--success) l c h / 0.18)', actions: ['update'] },
   { key: 'scan', label: 'Scan', color: 'var(--label-purple)', bg: 'var(--label-purple-bg)', actions: ['scan'] },
   { key: 'prune', label: 'Prune', color: 'var(--warning)', bg: 'oklch(from var(--warning) l c h / 0.18)', actions: ['prune', 'snapshot'] },
+  { key: 'auto_stop', label: 'Lifecycle', color: 'var(--label-blue)', bg: 'var(--label-blue-bg)', actions: ['auto_stop', 'auto_down', 'auto_start', 'auto_backup'] },
 ];
 
 const TIMELINE_WINDOW_HOURS = 24;
@@ -90,6 +95,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
   const [formNodeId, setFormNodeId] = useState('');
   const [formCron, setFormCron] = useState('0 3 * * *');
   const [formEnabled, setFormEnabled] = useState(true);
+  const [formDeleteAfterRun, setFormDeleteAfterRun] = useState(false);
   const [formPruneTargets, setFormPruneTargets] = useState<string[]>(['containers', 'images', 'networks', 'volumes']);
   const [formTargetServices, setFormTargetServices] = useState<string[]>([]);
   const [formPruneLabelFilter, setFormPruneLabelFilter] = useState('');
@@ -210,6 +216,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
     setFormNodeId(nodeId);
     setFormCron('0 3 * * *');
     setFormEnabled(true);
+    setFormDeleteAfterRun(false);
     setFormPruneTargets(['containers', 'images', 'networks', 'volumes']);
     setFormTargetServices([]);
     setFormPruneLabelFilter('');
@@ -225,6 +232,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
     setFormNodeId(task.node_id != null ? String(task.node_id) : '');
     setFormCron(task.cron_expression);
     setFormEnabled(task.enabled === 1);
+    setFormDeleteAfterRun((task.delete_after_run ?? 0) === 1);
     setFormPruneTargets(
       task.prune_targets ? JSON.parse(task.prune_targets) : ['containers', 'images', 'networks', 'volumes']
     );
@@ -245,6 +253,7 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
       action: actionOption.backendAction ?? formAction,
       cron_expression: formCron,
       enabled: formEnabled,
+      delete_after_run: formDeleteAfterRun,
     };
 
     if (actionOption.targetType === 'stack') {
@@ -793,6 +802,19 @@ export default function ScheduledOperationsView({ filterNodeId, onClearFilter, p
               <TogglePill checked={formEnabled} onChange={setFormEnabled} id="task-enabled" />
               <Label htmlFor="task-enabled">Enabled</Label>
             </div>
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                id="task-delete-after-run"
+                checked={formDeleteAfterRun}
+                onCheckedChange={(checked) => setFormDeleteAfterRun(checked === true)}
+                className="mt-0.5"
+              />
+              <div>
+                <span className="text-sm font-medium">Delete after successful run</span>
+                <p className="text-xs text-muted-foreground">Task removes itself after its first successful execution. Failures keep the task so you can retry or debug.</p>
+              </div>
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
