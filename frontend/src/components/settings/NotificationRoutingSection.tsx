@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Combobox } from '@/components/ui/combobox';
 import type { ComboboxOption } from '@/components/ui/combobox';
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { springs } from '@/lib/motion';
 import {
     Dialog,
@@ -28,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { useNodes } from '@/context/NodeContext';
 import { AdmiralGate } from '@/components/AdmiralGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
 import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
@@ -35,6 +37,7 @@ import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
 interface NotificationRoute {
     id: number;
     name: string;
+    node_id: number | null;
     stack_patterns: string[];
     channel_type: 'discord' | 'slack' | 'webhook';
     channel_url: string;
@@ -57,6 +60,8 @@ const CHANNEL_PLACEHOLDERS: Record<string, string> = {
 };
 
 export function NotificationRoutingSection() {
+    const { nodes } = useNodes();
+    const localNode = useMemo(() => nodes.find(n => n.type === 'local') ?? null, [nodes]);
     const [routes, setRoutes] = useState<NotificationRoute[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -67,6 +72,7 @@ export function NotificationRoutingSection() {
 
     // Form state
     const [formName, setFormName] = useState('');
+    const [formNodeId, setFormNodeId] = useState<number | null>(null);
     const [formStacks, setFormStacks] = useState<string[]>([]);
     const [formChannelType, setFormChannelType] = useState<'discord' | 'slack' | 'webhook'>('discord');
     const [formChannelUrl, setFormChannelUrl] = useState('');
@@ -105,6 +111,7 @@ export function NotificationRoutingSection() {
 
     const resetForm = () => {
         setFormName('');
+        setFormNodeId(null);
         setFormStacks([]);
         setFormChannelType('discord');
         setFormChannelUrl('');
@@ -117,6 +124,7 @@ export function NotificationRoutingSection() {
     const startEdit = (route: NotificationRoute) => {
         setEditingId(route.id);
         setFormName(route.name);
+        setFormNodeId(route.node_id);
         setFormStacks([...route.stack_patterns]);
         setFormChannelType(route.channel_type);
         setFormChannelUrl(route.channel_url);
@@ -137,6 +145,7 @@ export function NotificationRoutingSection() {
         try {
             const body = {
                 name: formName.trim(),
+                node_id: formNodeId,
                 stack_patterns: formStacks,
                 channel_type: formChannelType,
                 channel_url: formChannelUrl.trim(),
@@ -257,6 +266,24 @@ export function NotificationRoutingSection() {
                             </div>
 
                             <div className="space-y-2">
+                                <Label>Node scope</Label>
+                                <Select
+                                    value={formNodeId === null ? 'any' : String(formNodeId)}
+                                    onValueChange={(v) => setFormNodeId(v === 'any' ? null : Number(v))}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="any">Any node</SelectItem>
+                                        {localNode !== null && (
+                                            <SelectItem value={String(localNode.id)}>{localNode.name}</SelectItem>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
                                 <Label>Stacks</Label>
                                 <Combobox
                                     options={availableStackOptions}
@@ -366,6 +393,11 @@ export function NotificationRoutingSection() {
                                 <Badge variant="outline" className="text-[10px] shrink-0">
                                     {CHANNEL_LABELS[route.channel_type]}
                                 </Badge>
+                                {route.node_id !== null && (
+                                    <Badge variant="secondary" className="text-[10px] shrink-0 font-mono">
+                                        {route.node_id === localNode?.id ? localNode?.name : `node:${route.node_id}`}
+                                    </Badge>
+                                )}
                                 {!route.enabled && (
                                     <Badge variant="secondary" className="text-[10px] shrink-0 text-muted-foreground">
                                         Disabled
