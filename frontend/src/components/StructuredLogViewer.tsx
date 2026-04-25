@@ -43,7 +43,8 @@ function formatTs(iso: string | null): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
 }
 
 export default function StructuredLogViewer({ stackName }: StructuredLogViewerProps) {
@@ -68,6 +69,22 @@ export default function StructuredLogViewer({ stackName }: StructuredLogViewerPr
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
+    let rafId = 0;
+    const flushPending = () => {
+      rafId = 0;
+      if (pendingRef.current.length === 0) return;
+      const incoming = pendingRef.current;
+      pendingRef.current = [];
+      setRows((prev) => {
+        const merged = prev.concat(incoming);
+        return merged.length > BUFFER_CAP ? merged.slice(merged.length - BUFFER_CAP) : merged;
+      });
+    };
+    const scheduleFlush = () => {
+      if (rafId !== 0) return;
+      rafId = requestAnimationFrame(flushPending);
+    };
+
     ws.onmessage = (event) => {
       if (closed) return;
       const text = typeof event.data === 'string' ? event.data : '';
@@ -79,24 +96,14 @@ export default function StructuredLogViewer({ stackName }: StructuredLogViewerPr
         rowIdRef.current += 1;
         pendingRef.current.push({ id: rowIdRef.current, ...parsed });
       }
+      scheduleFlush();
     };
 
     ws.onerror = () => { /* surface nothing; reconnection is backend's job */ };
 
-    // Batch incoming lines into state every 250 ms to avoid thrashing React.
-    const flushInterval = window.setInterval(() => {
-      if (pendingRef.current.length === 0) return;
-      const incoming = pendingRef.current;
-      pendingRef.current = [];
-      setRows((prev) => {
-        const merged = prev.concat(incoming);
-        return merged.length > BUFFER_CAP ? merged.slice(merged.length - BUFFER_CAP) : merged;
-      });
-    }, 250);
-
     return () => {
       closed = true;
-      window.clearInterval(flushInterval);
+      if (rafId !== 0) cancelAnimationFrame(rafId);
       try { ws.close(); } catch { /* ignore */ }
       wsRef.current = null;
       pendingRef.current = [];
