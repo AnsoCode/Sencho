@@ -10,7 +10,7 @@ import { LicenseService } from '../services/LicenseService';
 import { NotificationService } from '../services/NotificationService';
 import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
 import { authMiddleware } from '../middleware/auth';
-import { requireAdmin } from '../middleware/tierGates';
+import { requireAdmin, requirePaid } from '../middleware/tierGates';
 import { buildPolicyGateOptions } from '../helpers/policyGate';
 import { isValidStackName } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
@@ -108,6 +108,74 @@ imageUpdatesRouter.get('/fleet', authMiddleware, async (_req: Request, res: Resp
     console.error('Failed to aggregate fleet update status:', error);
     res.status(500).json({ error: 'Failed to aggregate fleet update status' });
   }
+});
+
+imageUpdatesRouter.post('/fleet/refresh', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
+  if (!requireAdmin(_req, res)) return;
+  if (!requirePaid(_req, res)) return;
+
+  const db = DatabaseService.getInstance();
+  const nodes = db.getNodes();
+  const nr = NodeRegistry.getInstance();
+  const triggered: number[] = [];
+  const rateLimited: number[] = [];
+  const failed: number[] = [];
+
+  // ImageUpdateService is a per-instance singleton, so the local node's manual
+  // refresh fires at most once per request regardless of how many local rows
+  // exist in the schema.
+  const localNode = nodes.find(n => n.type === 'local');
+  if (localNode) {
+    try {
+      if (ImageUpdateService.getInstance().triggerManualRefresh()) {
+        triggered.push(localNode.id);
+      } else {
+        rateLimited.push(localNode.id);
+      }
+    } catch (e) {
+      console.error(`[ImageUpdates] Local fleet refresh failed for node ${localNode.id}:`, e);
+      failed.push(localNode.id);
+    }
+  }
+
+  const remoteNodes = nodes.filter(n => n.type === 'remote' && n.status === 'online' && n.api_url);
+  const remoteResults = await Promise.allSettled(
+    remoteNodes.map(async (node) => {
+      const proxyTarget = nr.getProxyTarget(node.id);
+      const baseUrl = node.api_url!.replace(/\/$/, '');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REMOTE_NODE_FETCH_TIMEOUT_MS);
+      try {
+        const resp = await fetch(`${baseUrl}/api/image-updates/refresh`, {
+          method: 'POST',
+          headers: proxyTarget?.apiToken
+            ? { Authorization: `Bearer ${proxyTarget.apiToken}` }
+            : {},
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        return { nodeId: node.id, status: resp.status };
+      } catch (e) {
+        clearTimeout(timeout);
+        return { nodeId: node.id, status: 0, error: e };
+      }
+    }),
+  );
+
+  for (const entry of remoteResults) {
+    if (entry.status !== 'fulfilled') continue;
+    const { nodeId, status } = entry.value;
+    if (status >= 200 && status < 300) {
+      triggered.push(nodeId);
+    } else if (status === 429) {
+      rateLimited.push(nodeId);
+    } else {
+      failed.push(nodeId);
+    }
+  }
+
+  CacheService.getInstance().invalidate(FLEET_UPDATE_CACHE_KEY);
+  res.json({ triggered, rateLimited, failed });
 });
 
 /**
@@ -233,6 +301,7 @@ autoUpdateRouter.post('/execute', authMiddleware, async (req: Request, res: Resp
       }
     }
 
+    CacheService.getInstance().invalidate(FLEET_UPDATE_CACHE_KEY);
     res.json({ result: results.join('\n') });
   } catch (error) {
     const msg = getErrorMessage(error, 'Auto-update execution failed');

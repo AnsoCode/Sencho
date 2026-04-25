@@ -23,7 +23,9 @@ Each card shows:
   <img src="/images/auto-update/readiness-board.png" alt="Readiness board with hero count, per-stack cards, and risk tags" />
 </Frame>
 
-The hero at the top counts pending updates fleet-wide and tells you how many of them are ready to apply without human review. Major version jumps and stacks with blocked registries are counted separately so they can be reviewed before the scheduler runs.
+The hero at the top counts pending updates across every node in your fleet and tells you how many of them are ready to apply without human review. Major version jumps and stacks with blocked registries are counted separately so they can be reviewed before the scheduler runs.
+
+Cards are grouped by node, with a section header for each node that has at least one pending update. The local node is listed first, followed by remote nodes alphabetically. If any of your online nodes is unreachable when the page loads, a small line under the hero shows how many of your online nodes responded.
 
 ## Workflow
 
@@ -31,7 +33,7 @@ The hero at the top counts pending updates fleet-wide and tells you how many of 
 2. Skim the card grid. Patch and minor bumps render with a green or amber tag; major bumps render in red and are marked as blocked.
 3. For a safe update, click **Apply now** on the card to pull and recreate the stack immediately.
 4. For a major bump, review the changelog preview and the rollback target before deciding. If you still want to apply it, switch to the **Schedules** view and create or edit an auto-update task for that stack.
-5. Use **Recheck all** in the hero to force an immediate registry poll if you want to bypass the cached update status.
+5. Use **Recheck** in the hero to force an immediate registry poll across every reachable node. Per-node cooldowns still apply, and the toast tells you how many nodes were triggered, rate-limited, or failed.
 
 ## Risk tags
 
@@ -57,7 +59,9 @@ The task lives alongside restart, prune, snapshot, and scan tasks in the same ti
 
 ## Multi-node support
 
-The readiness board scopes to the active node selected in the sidebar, matching the scope of the auto-update schedule attached to each card. When a remote node is selected, Sencho proxies the registry checks and the apply call to the remote Sencho instance via the Distributed API. No additional configuration is needed.
+The readiness board shows pending updates from every node in your fleet in a single view, regardless of which node is selected in the sidebar. You do not need to switch nodes to inspect what is pending elsewhere.
+
+Each node group renders its own card grid. **Apply now** runs on the node that owns the stack, and **Recheck** fans out to every reachable node so registries get polled in parallel. Sencho handles the routing through the Distributed API; no additional configuration is needed.
 
 ## How readiness is computed
 
@@ -83,8 +87,12 @@ The stack has a major version bump. Open the cron schedule for that stack and ap
 
 ### Card stays stuck on "Checking"
 
-The registry call is either still pending or failed. Click **Recheck all** in the hero to retry. If the stack has private-registry credentials, confirm they are still valid in **Settings > Registries**.
+The registry call is either still pending or failed. Click **Recheck** in the hero to retry. If the stack has private-registry credentials, confirm they are still valid in **Settings > Registries**.
 
 ### "Nothing to update" but I see an update on another view
 
-Image update detection runs every six hours. The readiness board uses the same cached status. Trigger **Recheck all** to force a fresh check, or see [Image update detection](/features/image-update-detection) for details on the refresh cycle.
+Image update detection runs every six hours on each node. The readiness board uses the same cached status. Trigger **Recheck** to force a fresh check across every reachable node, or see [Image update detection](/features/image-update-detection) for details on the refresh cycle.
+
+### Banner says "X of Y nodes reachable"
+
+One or more nodes that are marked online in your fleet did not respond within the request timeout. Pending updates from those nodes are not shown until they come back. Check the node's status from the Fleet view and the network path between this Sencho instance and the unreachable node.

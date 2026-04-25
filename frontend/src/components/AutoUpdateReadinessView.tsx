@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { RefreshCw, Shield, AlertTriangle, ShieldAlert, Clock, Play, CalendarClock } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { RefreshCw, Shield, AlertTriangle, ShieldAlert, Clock, Play, CalendarClock, Monitor, Globe } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, fetchForNode } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
 import { useNodes } from '@/context/NodeContext';
 import type { ScheduledTask } from '@/types/scheduling';
@@ -40,10 +41,22 @@ interface UpdatePreview {
 
 interface StackCard {
   stack: string;
+  nodeId: number;
   preview: UpdatePreview | null;
   previewLoaded: boolean;
   scheduledTask: ScheduledTask | null;
   applying: boolean;
+}
+
+interface NodeGroup {
+  nodeId: number;
+  nodeName: string;
+  nodeType: 'local' | 'remote';
+  cards: StackCard[];
+}
+
+interface FleetUpdateResponse {
+  [nodeId: string]: Record<string, boolean>;
 }
 
 function formatRelative(ts: number | null): string {
@@ -127,9 +140,9 @@ function StackReadinessCard({
   onApply,
 }: {
   card: StackCard;
-  onApply: (stack: string) => void;
+  onApply: (stack: string, nodeId: number) => void;
 }) {
-  const { stack, preview, previewLoaded, scheduledTask, applying } = card;
+  const { stack, nodeId, preview, previewLoaded, scheduledTask, applying } = card;
   const loading = !previewLoaded;
   const failed = previewLoaded && preview === null;
   const blocked = preview?.summary.blocked ?? false;
@@ -213,7 +226,7 @@ function StackReadinessCard({
                 </div>
                 <Button
                   size="sm"
-                  onClick={() => onApply(stack)}
+                  onClick={() => onApply(stack, nodeId)}
                   disabled={blocked || applying}
                   title={blocked ? (blockedReason ?? undefined) : undefined}
                   className="gap-1.5"
@@ -233,11 +246,13 @@ function StackReadinessCard({
 function ReadinessHero({
   total,
   ready,
+  nodeCount,
   refreshing,
   onRefresh,
 }: {
   total: number;
   ready: number;
+  nodeCount: number;
   refreshing: boolean;
   onRefresh: () => void;
 }) {
@@ -246,6 +261,11 @@ function ReadinessHero({
     : total === 1
       ? '1 update pending'
       : `${total} updates pending`;
+  const acrossNodes = nodeCount > 1
+    ? ` across ${nodeCount} nodes`
+    : nodeCount === 1
+      ? ' across 1 node'
+      : '';
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-brand/25 border-t-brand/35 bg-card shadow-card-bevel">
@@ -261,7 +281,7 @@ function ReadinessHero({
           </span>
           {total > 0 && (
             <span className="font-mono text-[11px] text-stat-subtitle/90">
-              {ready} of {total} ready to apply automatically
+              {ready} of {total} ready to apply automatically{acrossNodes}
               {total - ready > 0 ? ` · ${total - ready} blocked by major bump` : ''}
             </span>
           )}
@@ -298,65 +318,134 @@ function ReadinessHero({
   );
 }
 
+function NodeGroupSection({
+  group,
+  onApply,
+}: {
+  group: NodeGroup;
+  onApply: (stack: string, nodeId: number) => void;
+}) {
+  const TypeIcon = group.nodeType === 'local' ? Monitor : Globe;
+  const stackCount = group.cards.length;
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex items-baseline gap-3 border-b border-card-border/60 pb-2">
+        <TypeIcon className="h-4 w-4 text-stat-subtitle self-center" strokeWidth={1.5} aria-hidden="true" />
+        <span className="font-display italic text-xl leading-tight tracking-tight text-stat-value truncate">
+          {group.nodeName}
+        </span>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 self-center">
+          {group.nodeType}
+        </Badge>
+        <span className="font-mono text-[11px] text-stat-subtitle/80">
+          {stackCount} {stackCount === 1 ? 'stack' : 'stacks'}
+        </span>
+      </div>
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3">
+        {group.cards.map(card => (
+          <StackReadinessCard key={`${card.nodeId}::${card.stack}`} card={card} onApply={onApply} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AutoUpdateReadinessContent() {
-  const { activeNode } = useNodes();
-  const [cards, setCards] = useState<StackCard[]>([]);
+  const { nodes } = useNodes();
+  const [groups, setGroups] = useState<NodeGroup[]>([]);
+  const [reachableNodeCount, setReachableNodeCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Monotonic token guards against stale setCards from older node-scoped fetches.
+  // Monotonic token guards against stale setGroups from older fetches.
   const loadTokenRef = useRef(0);
+  // Holds the latest nodes array so loadReadiness can reference it without
+  // re-firing every time NodeContext rebuilds the array on a meta refresh.
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+
+  // Stable signature: only changes when membership or node identity actually
+  // changes, not when NodeContext reissues the same logical list.
+  const nodesSignature = useMemo(
+    () => nodes.map(n => `${n.id}:${n.type}:${n.status}`).sort().join('|'),
+    [nodes],
+  );
+
+  const localNodeId = useMemo(() => nodes.find(n => n.type === 'local')?.id ?? null, [nodes]);
+  const onlineNodeCount = useMemo(() => nodes.filter(n => n.status === 'online').length, [nodes]);
 
   const loadReadiness = useCallback(async () => {
     const token = ++loadTokenRef.current;
-    const currentNodeId = activeNode?.id ?? null;
     setLoading(true);
     try {
       const [statusRes, tasksRes] = await Promise.all([
-        apiFetch('/image-updates'),
+        apiFetch('/image-updates/fleet', { localOnly: true }),
         apiFetch('/scheduled-tasks?action=update', { localOnly: true }),
       ]);
       if (token !== loadTokenRef.current) return;
 
       if (!statusRes.ok) {
-        throw new Error('Failed to load image update status');
+        throw new Error('Failed to load fleet update status');
       }
-      const statuses = await statusRes.json() as Record<string, boolean>;
-      const stacksWithUpdates = Object.entries(statuses)
-        .filter(([, hasUpdate]) => hasUpdate)
-        .map(([stack]) => stack)
-        .sort();
+      const fleetStatus = await statusRes.json() as FleetUpdateResponse;
+      setReachableNodeCount(Object.keys(fleetStatus).length);
 
       const tasks: ScheduledTask[] = tasksRes.ok ? await tasksRes.json() : [];
-      const taskByStack = new Map<string, ScheduledTask>();
+      const taskByNodeStack = new Map<string, ScheduledTask>();
       for (const t of tasks) {
-        // Match tasks targeting this stack on this node. Tasks with node_id=null
-        // are local-node-scoped and only apply when viewing the local node.
-        const matchesNode = currentNodeId != null
-          ? (t.node_id === currentNodeId || (t.node_id == null && activeNode?.type === 'local'))
-          : t.node_id == null;
-        if (t.target_type === 'stack' && t.target_id && matchesNode) {
-          const existing = taskByStack.get(t.target_id);
-          if (!existing || (t.next_run_at ?? Infinity) < (existing.next_run_at ?? Infinity)) {
-            taskByStack.set(t.target_id, t);
-          }
+        if (t.target_type !== 'stack' || !t.target_id) continue;
+        // Tasks with node_id=null are local-node-scoped.
+        const taskNodeId = t.node_id ?? localNodeId;
+        if (taskNodeId == null) continue;
+        const key = `${taskNodeId}::${t.target_id}`;
+        const existing = taskByNodeStack.get(key);
+        if (!existing || (t.next_run_at ?? Infinity) < (existing.next_run_at ?? Infinity)) {
+          taskByNodeStack.set(key, t);
         }
       }
 
-      const initial: StackCard[] = stacksWithUpdates.map(stack => ({
-        stack,
-        preview: null,
-        previewLoaded: false,
-        scheduledTask: taskByStack.get(stack) ?? null,
-        applying: false,
-      }));
+      const flatPairs: { nodeId: number; stack: string }[] = [];
+      const initialGroups: NodeGroup[] = [];
+      const currentNodes = nodesRef.current;
+      for (const [nodeIdStr, stackMap] of Object.entries(fleetStatus)) {
+        const nodeId = Number(nodeIdStr);
+        const node = currentNodes.find(n => n.id === nodeId);
+        if (!node) continue;
+        const stacks = Object.entries(stackMap)
+          .filter(([, hasUpdate]) => hasUpdate)
+          .map(([stack]) => stack)
+          .sort();
+        if (stacks.length === 0) continue;
+        const cards: StackCard[] = stacks.map(stack => {
+          flatPairs.push({ nodeId, stack });
+          return {
+            stack,
+            nodeId,
+            preview: null,
+            previewLoaded: false,
+            scheduledTask: taskByNodeStack.get(`${nodeId}::${stack}`) ?? null,
+            applying: false,
+          };
+        });
+        initialGroups.push({
+          nodeId,
+          nodeName: node.name,
+          nodeType: node.type,
+          cards,
+        });
+      }
+      initialGroups.sort((a, b) => {
+        if (a.nodeType !== b.nodeType) return a.nodeType === 'local' ? -1 : 1;
+        return a.nodeName.localeCompare(b.nodeName);
+      });
+
       if (token !== loadTokenRef.current) return;
-      setCards(initial);
+      setGroups(initialGroups);
 
       const previews = await Promise.all(
-        stacksWithUpdates.map(async (stack) => {
+        flatPairs.map(async ({ nodeId, stack }) => {
           try {
-            const res = await apiFetch(`/stacks/${encodeURIComponent(stack)}/update-preview`);
+            const res = await fetchForNode(`/stacks/${encodeURIComponent(stack)}/update-preview`, nodeId);
             if (!res.ok) return null;
             return await res.json() as UpdatePreview;
           } catch {
@@ -366,12 +455,18 @@ function AutoUpdateReadinessContent() {
       );
       if (token !== loadTokenRef.current) return;
 
-      setCards(stacksWithUpdates.map((stack, idx) => ({
-        stack,
-        preview: previews[idx],
-        previewLoaded: true,
-        scheduledTask: taskByStack.get(stack) ?? null,
-        applying: false,
+      const previewByKey = new Map<string, UpdatePreview | null>();
+      flatPairs.forEach((pair, idx) => {
+        previewByKey.set(`${pair.nodeId}::${pair.stack}`, previews[idx]);
+      });
+
+      setGroups(initialGroups.map(g => ({
+        ...g,
+        cards: g.cards.map(c => ({
+          ...c,
+          preview: previewByKey.get(`${c.nodeId}::${c.stack}`) ?? null,
+          previewLoaded: true,
+        })),
       })));
     } catch (err) {
       if (token !== loadTokenRef.current) return;
@@ -379,34 +474,46 @@ function AutoUpdateReadinessContent() {
     } finally {
       if (token === loadTokenRef.current) setLoading(false);
     }
-  }, [activeNode?.id, activeNode?.type]);
+  }, [localNodeId]);
 
   useEffect(() => {
+    if (nodesSignature === '') return;
     loadReadiness();
     return () => {
-      // Invalidate any in-flight fetch and cancel pending refresh timers on unmount/node-change.
+      // Invalidate any in-flight fetch and cancel pending refresh timers on unmount.
       loadTokenRef.current++;
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
     };
-  }, [loadReadiness]);
+  }, [loadReadiness, nodesSignature]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await apiFetch('/image-updates/refresh', { method: 'POST' });
-      if (res.status === 429) {
-        const data = await res.json().catch(() => ({ error: 'Rate limited' }));
-        toast.warning(data.error ?? 'Please wait before rechecking');
-        return;
-      }
+      const res = await apiFetch('/image-updates/fleet/refresh', { method: 'POST', localOnly: true });
       if (!res.ok) {
         toast.error('Failed to trigger refresh');
         return;
       }
-      toast.success('Checking registries for updates...');
+      const data = await res.json() as { triggered: number[]; rateLimited: number[]; failed: number[] };
+      const tCount = data.triggered.length;
+      const rCount = data.rateLimited.length;
+      const fCount = data.failed.length;
+      if (tCount > 0) {
+        toast.success(`Rechecking ${tCount} ${tCount === 1 ? 'node' : 'nodes'}...`);
+      }
+      if (rCount > 0) {
+        toast.warning(`${rCount} ${rCount === 1 ? 'node is' : 'nodes are'} rate-limited; try again shortly`);
+      }
+      if (fCount > 0) {
+        toast.error(`${fCount} ${fCount === 1 ? 'node' : 'nodes'} failed to refresh`);
+      }
+      if (tCount === 0 && rCount === 0 && fCount === 0) {
+        toast.info('No reachable nodes to refresh');
+        return;
+      }
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = setTimeout(() => {
         refreshTimerRef.current = null;
@@ -419,40 +526,71 @@ function AutoUpdateReadinessContent() {
     }
   }, [loadReadiness]);
 
-  const handleApply = useCallback(async (stack: string) => {
-    setCards(prev => prev.map(c => c.stack === stack ? { ...c, applying: true } : c));
+  const handleApply = useCallback(async (stack: string, nodeId: number) => {
+    const setCardField = (predicate: (c: StackCard) => boolean, patch: Partial<StackCard>) =>
+      setGroups(prev => prev.map(g => ({
+        ...g,
+        cards: g.cards.map(c => predicate(c) ? { ...c, ...patch } : c),
+      })));
+
+    setCardField(c => c.stack === stack && c.nodeId === nodeId, { applying: true });
     const loadingId = toast.loading(`Applying update to ${stack}...`);
     try {
-      const res = await apiFetch(`/stacks/${encodeURIComponent(stack)}/update`, { method: 'POST' });
+      const res = await fetchForNode(
+        `/stacks/${encodeURIComponent(stack)}/update`,
+        nodeId,
+        { method: 'POST' },
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Update failed' }));
         throw new Error(data.error ?? 'Update failed');
       }
       toast.success(`${stack} updated successfully`);
-      setCards(prev => prev.filter(c => c.stack !== stack));
+      setGroups(prev => prev
+        .map(g => g.nodeId === nodeId
+          ? { ...g, cards: g.cards.filter(c => c.stack !== stack) }
+          : g)
+        .filter(g => g.cards.length > 0));
     } catch (err) {
       toast.error((err as Error)?.message || 'Update failed');
-      setCards(prev => prev.map(c => c.stack === stack ? { ...c, applying: false } : c));
+      setCardField(c => c.stack === stack && c.nodeId === nodeId, { applying: false });
     } finally {
       toast.dismiss(loadingId);
     }
   }, []);
 
+  const flatCards = useMemo(() => groups.flatMap(g => g.cards), [groups]);
   const { total, ready } = useMemo(() => {
-    const t = cards.length;
-    const r = cards.filter(c => c.previewLoaded && c.preview !== null && !c.preview.summary.blocked).length;
+    const t = flatCards.length;
+    const r = flatCards.filter(c => c.previewLoaded && c.preview !== null && !c.preview.summary.blocked).length;
     return { total: t, ready: r };
-  }, [cards]);
+  }, [flatCards]);
+
+  const showPartialBanner = reachableNodeCount != null
+    && onlineNodeCount > 0
+    && reachableNodeCount < onlineNodeCount;
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-[1600px] mx-auto w-full">
-      <ReadinessHero total={total} ready={ready} refreshing={refreshing} onRefresh={handleRefresh} />
+      <ReadinessHero
+        total={total}
+        ready={ready}
+        nodeCount={groups.length}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+      />
 
-      {loading && cards.length === 0 ? (
+      {showPartialBanner && (
+        <div className="font-mono text-[11px] text-stat-subtitle/90 -mt-3 pl-7">
+          {reachableNodeCount} of {onlineNodeCount} nodes reachable. Unreachable nodes are not shown.
+        </div>
+      )}
+
+      {loading && groups.length === 0 ? (
         <div className="flex items-center justify-center py-16 font-mono text-xs text-stat-subtitle">
           Loading readiness...
         </div>
-      ) : cards.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-card-border bg-card/40 py-16">
           <Shield className="h-8 w-8 text-success/70" strokeWidth={1.5} aria-hidden="true" />
           <div className="font-display italic text-xl text-stat-value">All stacks on current builds</div>
@@ -461,9 +599,9 @@ function AutoUpdateReadinessContent() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3">
-          {cards.map(card => (
-            <StackReadinessCard key={card.stack} card={card} onApply={handleApply} />
+        <div className="flex flex-col gap-8">
+          {groups.map(group => (
+            <NodeGroupSection key={group.nodeId} group={group} onApply={handleApply} />
           ))}
         </div>
       )}

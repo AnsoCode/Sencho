@@ -94,6 +94,54 @@ describe('GET /api/image-updates/fleet', () => {
   });
 });
 
+describe('POST /api/image-updates/fleet/refresh', () => {
+  it('rejects unauthenticated requests with 401', async () => {
+    const res = await request(app).post('/api/image-updates/fleet/refresh');
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects non-admin users with 403', async () => {
+    const res = await request(app).post('/api/image-updates/fleet/refresh').set('Cookie', viewerCookie);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns triggered/rateLimited/failed arrays for admin caller', async () => {
+    const res = await request(app).post('/api/image-updates/fleet/refresh').set('Cookie', adminCookie);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.triggered)).toBe(true);
+    expect(Array.isArray(res.body.rateLimited)).toBe(true);
+    expect(Array.isArray(res.body.failed)).toBe(true);
+    // The single local node should land in either triggered (first hit) or
+    // rateLimited (cooldown from a prior /refresh in this suite).
+    const localNodeBuckets = res.body.triggered.length + res.body.rateLimited.length;
+    expect(localNodeBuckets).toBeGreaterThanOrEqual(1);
+  });
+
+  it('invalidates the fleet aggregation cache', async () => {
+    const { CacheService } = await import('../services/CacheService');
+    // Prime the cache by hitting the GET endpoint, then refresh, then
+    // confirm the cache key was wiped.
+    await request(app).get('/api/image-updates/fleet').set('Cookie', adminCookie);
+    expect(CacheService.getInstance().get('fleet-updates')).toBeDefined();
+    await request(app).post('/api/image-updates/fleet/refresh').set('Cookie', adminCookie);
+    expect(CacheService.getInstance().get('fleet-updates')).toBeUndefined();
+  });
+
+  it('downgrades to 402-style upgrade response when license is community', async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    const tierSpy = vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('community');
+    try {
+      const res = await request(app).post('/api/image-updates/fleet/refresh').set('Cookie', adminCookie);
+      // requirePaid responds with a non-2xx status carrying an upgrade payload.
+      expect(res.status).not.toBe(200);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      tierSpy.mockRestore();
+      vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
+    }
+  });
+});
+
 describe('POST /api/auto-update/execute', () => {
   it('rejects unauthenticated requests with 401', async () => {
     const res = await request(app).post('/api/auto-update/execute').send({ target: '*' });
