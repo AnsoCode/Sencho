@@ -10,11 +10,13 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     hasPort: true,
     isBusy: false,
     isPaid: true,
+    isAdmiral: false,
     canDelete: true,
     isPinned: false,
     labels: [],
     assignedLabelIds: [],
     menuVisibility: { showDeploy: false, showStop: true, showRestart: true, showUpdate: false },
+    autoUpdateEnabled: true,
     openAlertSheet: vi.fn(),
     openAutoHeal: vi.fn(),
     checkUpdates: vi.fn(),
@@ -29,6 +31,7 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     toggleLabel: vi.fn(),
     createAndAssignLabel: vi.fn(),
     openLabelManager: vi.fn(),
+    setAutoUpdateEnabled: vi.fn(),
     ...overrides,
   };
 }
@@ -86,6 +89,28 @@ describe('useStackMenuItems', () => {
     const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
     const ids = lifecycle.items.map(i => i.id);
     expect(ids).toEqual(['deploy', 'update']);
+  });
+
+  it('shows auto-update toggle in inspect when isPaid', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({ isPaid: true, autoUpdateEnabled: true })));
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    expect(inspect.items.find(i => i.id === 'auto-update')).toBeDefined();
+  });
+
+  it('hides auto-update toggle when !isPaid', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({ isPaid: false })));
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    expect(inspect.items.find(i => i.id === 'auto-update')).toBeUndefined();
+  });
+
+  it('auto-update toggle calls setAutoUpdateEnabled with toggled value', () => {
+    const setAutoUpdateEnabled = vi.fn();
+    const { result } = renderHook(() =>
+      useStackMenuItems('web.yml', makeCtx({ isPaid: true, autoUpdateEnabled: true, setAutoUpdateEnabled }))
+    );
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    inspect.items.find(i => i.id === 'auto-update')!.onSelect();
+    expect(setAutoUpdateEnabled).toHaveBeenCalledWith(false);
   });
 
   it('disables every lifecycle item when isBusy', () => {

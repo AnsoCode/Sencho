@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, Shield, AlertTriangle, ShieldAlert, Clock, Play, CalendarClock, Monitor, Globe } from 'lucide-react';
+import { RefreshCw, Shield, AlertTriangle, ShieldAlert, CircleSlash, Clock, Play, CalendarClock, Monitor, Globe } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
@@ -46,6 +46,7 @@ interface StackCard {
   previewLoaded: boolean;
   scheduledTask: ScheduledTask | null;
   applying: boolean;
+  autoUpdateEnabled: boolean;
 }
 
 interface NodeGroup {
@@ -142,7 +143,7 @@ function StackReadinessCard({
   card: StackCard;
   onApply: (stack: string, nodeId: number) => void;
 }) {
-  const { stack, nodeId, preview, previewLoaded, scheduledTask, applying } = card;
+  const { stack, nodeId, preview, previewLoaded, scheduledTask, applying, autoUpdateEnabled } = card;
   const loading = !previewLoaded;
   const failed = previewLoaded && preview === null;
   const blocked = preview?.summary.blocked ?? false;
@@ -161,7 +162,15 @@ function StackReadinessCard({
             {stack}
           </span>
         </div>
-        {previewLoaded && preview && <RiskBadge bump={bump} blocked={blocked} />}
+        <div className="flex items-center gap-2 shrink-0">
+          {!autoUpdateEnabled && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle">
+              <CircleSlash className="h-3 w-3" strokeWidth={1.5} />
+              Auto: Off
+            </span>
+          )}
+          {previewLoaded && preview && <RiskBadge bump={bump} blocked={blocked} />}
+        </div>
       </div>
 
       {loading ? (
@@ -227,8 +236,12 @@ function StackReadinessCard({
                 <Button
                   size="sm"
                   onClick={() => onApply(stack, nodeId)}
-                  disabled={blocked || applying}
-                  title={blocked ? (blockedReason ?? undefined) : undefined}
+                  disabled={blocked || applying || !autoUpdateEnabled}
+                  title={
+                    !autoUpdateEnabled
+                      ? 'Auto-updates are disabled for this stack. Update it from its actions menu.'
+                      : (blocked ? (blockedReason ?? undefined) : undefined)
+                  }
                   className="gap-1.5"
                 >
                   <Play className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -382,6 +395,8 @@ function AutoUpdateReadinessContent() {
         apiFetch('/image-updates/fleet', { localOnly: true }),
         apiFetch('/scheduled-tasks?action=update', { localOnly: true }),
       ]);
+      // Auto-update settings are per-node; fetch lazily after we know which nodes have updates.
+      // Collected into a map keyed by nodeId once we know the fleet topology.
       if (token !== loadTokenRef.current) return;
 
       if (!statusRes.ok) {
@@ -404,6 +419,20 @@ function AutoUpdateReadinessContent() {
         }
       }
 
+      // Fetch auto-update settings for all nodes that have pending updates.
+      const nodeIdsWithUpdates = [...new Set(
+        Object.keys(fleetStatus).map(Number).filter(id => Object.values(fleetStatus[String(id)]).some(Boolean))
+      )];
+      const autoUpdateByNode = new Map<number, Record<string, boolean>>();
+      await Promise.all(nodeIdsWithUpdates.map(async (nodeId) => {
+        try {
+          const res = await fetchForNode('/stacks/auto-update-settings', nodeId);
+          if (res.ok) autoUpdateByNode.set(nodeId, await res.json() as Record<string, boolean>);
+        } catch {
+          // If the fetch fails, default all stacks on that node to enabled.
+        }
+      }));
+
       const flatPairs: { nodeId: number; stack: string }[] = [];
       const initialGroups: NodeGroup[] = [];
       const currentNodes = nodesRef.current;
@@ -416,6 +445,7 @@ function AutoUpdateReadinessContent() {
           .map(([stack]) => stack)
           .sort();
         if (stacks.length === 0) continue;
+        const nodeAutoUpdateSettings = autoUpdateByNode.get(nodeId) ?? {};
         const cards: StackCard[] = stacks.map(stack => {
           flatPairs.push({ nodeId, stack });
           return {
@@ -425,6 +455,7 @@ function AutoUpdateReadinessContent() {
             previewLoaded: false,
             scheduledTask: taskByNodeStack.get(`${nodeId}::${stack}`) ?? null,
             applying: false,
+            autoUpdateEnabled: nodeAutoUpdateSettings[stack] ?? true,
           };
         });
         initialGroups.push({

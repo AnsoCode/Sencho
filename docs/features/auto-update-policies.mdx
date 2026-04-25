@@ -47,6 +47,30 @@ Cards are grouped by node, with a section header for each node that has at least
 
 Blocked updates still schedule check runs, but the apply button is disabled until you review them manually.
 
+## Per-stack control
+
+Auto-updates can be disabled on a per-stack basis from the stack's context menu. This lets you keep the global schedule active while opting specific stacks out of unattended updates, such as databases, self-built images, or any stack pinned to a fixed tag.
+
+### Disabling auto-updates for a stack
+
+1. Right-click the stack in the sidebar, or open the kebab menu (three dots).
+2. In the **Inspect** group, click **Auto-update: Enabled** to toggle it off. The label changes to **Auto-update: Disabled** and the icon switches to a slash-circle.
+3. The setting persists across restarts. The readiness board shows an **Auto: Off** pill on that card, and the **Apply now** button is disabled with the tooltip "Auto-updates are disabled for this stack. Update it from its actions menu."
+
+<Note>
+  Per-stack auto-update control requires a **Skipper** or **Admiral** license. The toggle does not appear on Community.
+</Note>
+
+### What disabling means
+
+- **Scheduled and fleet-wide auto-update runs skip the stack entirely.** No registry call is made, and no image update is applied automatically.
+- **Image update detection still runs.** The sidebar dot and the readiness card still reflect whether an update is available. You are informed; the system just does not apply it for you.
+- **Manual updates are unaffected.** You can still click **Update** in the lifecycle menu (or **Deploy**) to apply an update on demand. Per-stack control governs only the automated path.
+
+### Re-enabling
+
+Open the same menu and click **Auto-update: Disabled** to toggle it back on. The next scheduled run will include the stack again.
+
 ## Scheduling auto-updates
 
 Auto-update is a first-class action in the Schedules view. To create a recurring check for a stack:
@@ -92,6 +116,10 @@ The registry call is either still pending or failed. Click **Recheck** in the he
 ### "Nothing to update" but I see an update on another view
 
 Image update detection runs every six hours on each node. The readiness board uses the same cached status. Trigger **Recheck** to force a fresh check across every reachable node, or see [Image update detection](/features/image-update-detection) for details on the refresh cycle.
+
+### Scheduled auto-update runs are not applying to a specific stack
+
+The stack likely has auto-updates disabled. Open the stack's kebab menu or right-click context menu and check the **Inspect** group. If the item reads **Auto-update: Disabled**, click it to re-enable. Once re-enabled, the next scheduled run will include the stack, or you can trigger an immediate run from the Auto-Update view.
 
 ### Banner says "X of Y nodes reachable"
 

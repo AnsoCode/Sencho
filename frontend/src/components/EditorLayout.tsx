@@ -347,6 +347,8 @@ export default function EditorLayout() {
 
   // Image update checker state
   const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
+  const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
+  const isAdmiral = license?.variant === 'admiral';
 
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -667,7 +669,11 @@ export default function EditorLayout() {
             // sidebar, etc.) can refetch on the same trigger without prop
             // drilling. Refresh stack statuses on this layer too.
             window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: msg }));
-            scheduleStateInvalidateRefresh();
+            if (msg.action === 'auto-update-settings-changed') {
+              fetchAutoUpdateSettings();
+            } else {
+              scheduleStateInvalidateRefresh();
+            }
           }
         } catch (e) {
           console.error('[WS notifications] parse error', e);
@@ -811,6 +817,7 @@ export default function EditorLayout() {
 
     refreshStacks();
     fetchImageUpdates();
+    fetchAutoUpdateSettings();
     refreshGitSourcePending();
 
     // Poll for image update results every 5 minutes so background checks are picked up
@@ -872,6 +879,20 @@ export default function EditorLayout() {
       }
     } catch (e: unknown) {
       console.error('[ImageUpdates] fetch failed:', e);
+    }
+  };
+
+  const fetchAutoUpdateSettings = async () => {
+    try {
+      const res = await apiFetch('/stacks/auto-update-settings');
+      if (res.ok) {
+        const data = await res.json();
+        setAutoUpdateSettings(data as Record<string, boolean>);
+      } else {
+        console.error('[AutoUpdateSettings] fetch returned', res.status);
+      }
+    } catch (e: unknown) {
+      console.error('[AutoUpdateSettings] fetch failed:', e);
     }
   };
 
@@ -1899,11 +1920,13 @@ export default function EditorLayout() {
       hasPort: Boolean(stackPorts[file]),
       isBusy: isStackBusy(file),
       isPaid,
+      isAdmiral,
       canDelete: can('stack:delete', 'stack', stackName),
       isPinned: isPinned(file),
       labels,
       assignedLabelIds: (stackLabelMap[file] ?? []).map(l => l.id),
       menuVisibility: getStackMenuVisibility(file),
+      autoUpdateEnabled: autoUpdateSettings[stackName] ?? true,
       openAlertSheet: () => openAlertSheet(file),
       openAutoHeal: () => setAutoHealStackName(file),
       checkUpdates: () => checkUpdatesForStack(),
@@ -1915,6 +1938,22 @@ export default function EditorLayout() {
       remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
       pin: () => pin(file),
       unpin: () => unpin(file),
+      setAutoUpdateEnabled: async (enabled: boolean) => {
+        setAutoUpdateSettings(prev => ({ ...prev, [stackName]: enabled }));
+        try {
+          const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/auto-update`, {
+            method: 'PUT',
+            body: JSON.stringify({ enabled }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || 'Failed to update auto-update setting.');
+          }
+        } catch (err: unknown) {
+          setAutoUpdateSettings(prev => ({ ...prev, [stackName]: !enabled }));
+          toast.error((err as Error)?.message || 'Failed to update auto-update setting.');
+        }
+      },
       toggleLabel: async (labelId: number) => {
         const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
         const assigned = currentIds.includes(labelId);
@@ -1968,8 +2007,8 @@ export default function EditorLayout() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    stackStatuses, stackPorts, isPaid, isPinned, labels, stackLabelMap,
-    pin, unpin,
+    stackStatuses, stackPorts, isPaid, isAdmiral, isPinned, labels, stackLabelMap,
+    autoUpdateSettings, pin, unpin,
   ]);
 
   const createStackSlot = can('stack:create') ? (
