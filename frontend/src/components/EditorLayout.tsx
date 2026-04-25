@@ -1431,6 +1431,7 @@ export default function EditorLayout() {
         throw new Error(errText || 'Update failed');
       }
       toast.success('Stack updated successfully!');
+      fetchImageUpdates();
       // Refresh containers after update
       if (selectedFile === stackFile) {
         const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
