@@ -8,6 +8,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import { Zap, Plus, Copy, Trash2, CheckCircle, RefreshCw, Clock } from 'lucide-react';
@@ -118,9 +119,9 @@ export function ApiTokensSection() {
         } catch { toast.error('Network error.'); }
     };
 
-    const copyToClipboard = async (text: string, label: string) => {
+    const handleCopy = async (text: string, label: string) => {
         try {
-            await navigator.clipboard.writeText(text);
+            await copyToClipboard(text);
             toast.success(`${label} copied to clipboard.`);
         } catch {
             toast.error('Failed to copy to clipboard.');
@@ -195,7 +196,7 @@ export function ApiTokensSection() {
                         <p className="text-xs text-muted-foreground">This token will not be shown again. Store it securely.</p>
                         <div className="flex items-center gap-2">
                             <code className="flex-1 text-xs font-mono bg-muted px-3 py-2 rounded-lg break-all select-all">{newToken.token}</code>
-                            <Button variant="outline" size="sm" onClick={() => copyToClipboard(newToken.token, 'Token')}>
+                            <Button variant="outline" size="sm" onClick={() => handleCopy(newToken.token, 'Token')}>
                                 <Copy className="w-4 h-4" strokeWidth={1.5} />
                             </Button>
                         </div>
