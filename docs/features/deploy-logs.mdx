@@ -1,0 +1,41 @@
+---
+title: Deploy Logs
+description: Watch docker compose output stream in real time as your stacks deploy, update, stop, and restart.
+---
+
+When you trigger a stack action (Deploy, Update, Stop, Restart, or Down), a log drawer opens automatically at the bottom of the screen and streams the raw output from `docker compose` in real-time. This lets you watch image pulls, container creation, and see exact error messages as they happen.
+
+## Using the deploy log panel
+
+The panel displays terminal output from the `docker compose` command while it runs. It is useful for seeing image pull progress, container creation steps, and error diagnostics when deployments fail.
+
+### Panel controls
+
+| Control | What it does |
+|---------|--------------|
+| Drag the top edge | Resize the panel height |
+| Minimize button | Collapses the panel to a slim header bar; the log stream continues in the background |
+| Expand button | Restores the panel to full height |
+| Close (X) | Dismisses the panel |
+
+### On success
+
+When the action completes successfully, the panel shows a confirmation banner and closes automatically after a few seconds. Hover over the panel to pause the auto-close, or click X to dismiss it immediately.
+
+### On failure
+
+If the action fails, the panel stays open and displays the error message. The exact error text from `docker compose` appears in the terminal output, making it easy to diagnose image pull failures, port conflicts, and other issues.
+
+### Viewing logs after the panel closes
+
+The panel streams deploy output only. To view running container logs after a deploy completes, use the [terminal](/features/host-console) in the editor's command center (select a container and click the logs icon).
+
+## Troubleshooting
+
+<Accordion title="Panel did not open when I clicked Deploy">
+Check that the WebSocket connection to Sencho is not blocked by an upstream proxy or firewall. Sencho uses a WebSocket on the same port and path as the main API. If you are running behind nginx or a reverse proxy, ensure `proxy_set_header Upgrade $http_upgrade;` and `proxy_set_header Connection "upgrade";` are set. See the [configuration guide](/getting-started/configuration) for an example nginx config.
+</Accordion>
+
+<Accordion title="The terminal body is empty">
+If the panel opens but shows no output, the WebSocket may have connected after the deploy started. Refresh the page and retry the action to re-establish the connection.
+</Accordion>
