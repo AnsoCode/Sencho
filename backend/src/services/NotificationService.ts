@@ -17,6 +17,12 @@ export type NotificationCategory =
     | 'scan_finding'
     | 'system';
 
+export const ALL_NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
+    'deploy_success', 'deploy_failure', 'stack_started', 'stack_stopped',
+    'stack_restarted', 'image_update_available', 'image_update_applied',
+    'autoheal_triggered', 'monitor_alert', 'scan_finding', 'system',
+];
+
 /** Webhook timeout: 10 seconds per external dispatch call. */
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -117,17 +123,23 @@ export class NotificationService {
         // 2. Push to connected browser clients via WebSocket
         this.broadcastToSubscribers(notification);
 
-        // 3. Check notification routing rules if a stack context is available
+        // 3. Check notification routing rules — always evaluated, matchers compose AND
         const errors: string[] = [];
 
-        if (stackName !== undefined) {
+        {
             const routes = this.dbService.getEnabledNotificationRoutes();
-            const matched = routes.filter(r =>
-                (r.node_id == null || r.node_id === localNodeId) &&
-                r.stack_patterns.includes(stackName)
-            );
+            const needsLabels = stackName !== undefined && routes.some(r => r.label_ids != null && r.label_ids.length > 0);
+            const stackLabelIds = needsLabels ? this.dbService.getStackLabelIds(localNodeId, stackName!) : [];
+
+            const matched = routes.filter(r => {
+                if (r.node_id != null && r.node_id !== localNodeId) return false;
+                if (r.stack_patterns.length > 0 && (stackName === undefined || !r.stack_patterns.includes(stackName))) return false;
+                if (r.label_ids != null && r.label_ids.length > 0 && !r.label_ids.some(id => stackLabelIds.includes(id))) return false;
+                if (r.categories != null && r.categories.length > 0 && !r.categories.includes(category)) return false;
+                return true;
+            });
             if (matched.length > 0) {
-                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName}"`);
+                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName ?? '(none)'}", category="${category}"`);
                 await Promise.allSettled(
                     matched.map(route =>
                         this.sendToChannel(route.channel_type, route.channel_url, level, message)
