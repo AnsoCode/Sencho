@@ -63,6 +63,16 @@ const RECONNECT_JITTER_MS = 500;
 /** Compose project label key used by docker compose on every container it creates. */
 const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
 
+/**
+ * Container-event actions that change observable stack/container state. The
+ * UI receives a lightweight `state-invalidate` signal for any of these so it
+ * can refetch immediately rather than wait for the next polling tick.
+ */
+const STATE_INVALIDATE_ACTIONS = new Set([
+    'start', 'die', 'kill', 'destroy', 'create', 'restart', 'pause', 'unpause',
+    'health_status', 'rename', 'update',
+]);
+
 /** TTL for the cached global_crash settings flag (sub-second so toggle takes effect quickly). */
 const SETTINGS_CACHE_MS = 500;
 
@@ -371,6 +381,22 @@ export class DockerEventService {
 
         // Normalize: `health_status: unhealthy` -> base action
         const baseAction = action.startsWith('health_status') ? 'health_status' : action;
+
+        // Push a lightweight state-invalidate signal so connected UIs can
+        // refetch stack statuses immediately on a real container event,
+        // without waiting for the next polling tick. This is fire-and-forget
+        // and is NOT persisted to the alerts history.
+        if (STATE_INVALIDATE_ACTIONS.has(baseAction)) {
+            this.notifier.broadcastEvent({
+                type: 'state-invalidate',
+                scope: 'stack',
+                nodeId: this.nodeId,
+                stackName: event.Actor?.Attributes?.[COMPOSE_PROJECT_LABEL] ?? null,
+                containerId: id,
+                action: baseAction,
+                ts: Date.now(),
+            });
+        }
 
         switch (baseAction) {
             case 'kill':

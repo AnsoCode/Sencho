@@ -164,6 +164,34 @@ export function useDashboardData(): DashboardData {
     return cleanup;
   }, [nodeId, fetchJson]);
 
+  // React to live `state-invalidate` signals from /ws/notifications: when a
+  // Docker container event fires (start/stop/die/restart/health), the layout
+  // re-broadcasts the envelope as a window CustomEvent. Refetch the cheap
+  // data (stats, system, statuses) immediately so the dashboard header and
+  // sidebar status update in well under a second instead of waiting for the
+  // next polling tick. Historical metrics are intentionally skipped — they
+  // are a 10-minute trend, not a live indicator.
+  useEffect(() => {
+    const currentNodeId = nodeId;
+    const onInvalidate = async () => {
+      if (nodeIdRef.current !== currentNodeId) return;
+      const [statsData, sysData, statusesData] = await Promise.all([
+        fetchJson<Stats>('/stats'),
+        fetchJson<SystemStats>('/system/stats'),
+        fetchJson<Record<string, StackStatusEntry>>('/stacks/statuses'),
+      ]);
+      if (nodeIdRef.current !== currentNodeId) return;
+      if (statsData) {
+        setStats(statsData);
+        setLastSyncAt(Date.now());
+      }
+      if (sysData) setSystemStats(sysData);
+      if (statusesData) setStackStatuses(statusesData);
+    };
+    window.addEventListener('sencho:state-invalidate', onInvalidate);
+    return () => window.removeEventListener('sencho:state-invalidate', onInvalidate);
+  }, [nodeId, fetchJson]);
+
   const stackCpuSeries = useMemo<Record<string, StackCpuSeries>>(() => {
     if (metrics.length === 0) return {};
     const grouped = new Map<string, MetricPoint[]>();

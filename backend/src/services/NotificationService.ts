@@ -53,6 +53,25 @@ export class NotificationService {
     }
 
     /**
+     * Broadcast an arbitrary non-notification event envelope to every
+     * currently-open subscriber WITHOUT writing it to the alerts history.
+     *
+     * Used by DockerEventService to push lightweight `state-invalidate`
+     * signals so the UI can refetch stack statuses on a real container event
+     * instead of waiting for the next polling tick. Persisting these would
+     * spam the notifications panel; they are pure ephemeral signals.
+     */
+    public broadcastEvent(envelope: { type: string; [key: string]: unknown }): void {
+        if (this.subscribers.size === 0) return;
+        const msg = JSON.stringify(envelope);
+        for (const ws of this.subscribers) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+            }
+        }
+    }
+
+    /**
      * Dispatch an alert: log to history, push via WebSocket, and route to
      * external channels.
      *
