@@ -307,6 +307,7 @@ export interface Registry {
 export interface NotificationRoute {
     id: number;
     name: string;
+    node_id: number | null;
     stack_patterns: string[];
     channel_type: 'discord' | 'slack' | 'webhook';
     channel_url: string;
@@ -485,6 +486,7 @@ export class DatabaseService {
         this.migrateRegistries();
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
+        this.migrateNotificationRoutesNodeId();
         this.migrateNotificationHistoryContext();
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
@@ -1130,6 +1132,15 @@ export class DatabaseService {
         try { this.db.prepare('ALTER TABLE notification_history ADD COLUMN dispatch_error TEXT').run(); } catch { /* already exists */ }
     }
 
+    private migrateNotificationRoutesNodeId(): void {
+        try {
+            this.db.prepare('ALTER TABLE notification_routes ADD COLUMN node_id INTEGER NULL').run();
+        } catch {
+            // column already present
+        }
+        this.db.prepare('CREATE INDEX IF NOT EXISTS idx_notification_routes_node_priority ON notification_routes(node_id, enabled, priority)').run();
+    }
+
     private migrateNotificationHistoryContext(): void {
         const tryAddColumn = (col: string, def: string) => {
             try {
@@ -1247,6 +1258,7 @@ export class DatabaseService {
         return {
             id: row.id as number,
             name: row.name as string,
+            node_id: row.node_id != null ? (row.node_id as number) : null,
             stack_patterns: JSON.parse(row.stack_patterns as string) as string[],
             channel_type: row.channel_type as 'discord' | 'slack' | 'webhook',
             channel_url: row.channel_url as string,
@@ -1276,9 +1288,10 @@ export class DatabaseService {
 
     public createNotificationRoute(route: Omit<NotificationRoute, 'id'>): NotificationRoute {
         const result = this.db.prepare(
-            'INSERT INTO notification_routes (name, stack_patterns, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO notification_routes (name, node_id, stack_patterns, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             route.name,
+            route.node_id ?? null,
             JSON.stringify(route.stack_patterns),
             route.channel_type,
             route.channel_url,
@@ -1295,6 +1308,7 @@ export class DatabaseService {
         const values: unknown[] = [];
 
         if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if ('node_id' in updates) { fields.push('node_id = ?'); values.push(updates.node_id ?? null); }
         if (updates.stack_patterns !== undefined) { fields.push('stack_patterns = ?'); values.push(JSON.stringify(updates.stack_patterns)); }
         if (updates.channel_type !== undefined) { fields.push('channel_type = ?'); values.push(updates.channel_type); }
         if (updates.channel_url !== undefined) { fields.push('channel_url = ?'); values.push(updates.channel_url); }

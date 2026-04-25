@@ -122,7 +122,10 @@ export class NotificationService {
 
         if (stackName !== undefined) {
             const routes = this.dbService.getEnabledNotificationRoutes();
-            const matched = routes.filter(r => r.stack_patterns.includes(stackName));
+            const matched = routes.filter(r =>
+                (r.node_id == null || r.node_id === localNodeId) &&
+                r.stack_patterns.includes(stackName)
+            );
             if (matched.length > 0) {
                 if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName}"`);
                 await Promise.allSettled(

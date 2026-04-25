@@ -58,6 +58,7 @@ function makeRoute(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
     name: 'Prod Discord',
+    node_id: null as number | null,
     stack_patterns: ['my-app'],
     channel_type: 'discord' as const,
     channel_url: 'https://discord.com/api/webhooks/123/abc',
@@ -311,5 +312,49 @@ describe('NotificationService - routing logic', () => {
     await svc.dispatchAlert('info', 'system', 'All good', { stackName: 'my-app' });
 
     expect(mockUpdateNotificationDispatchError).not.toHaveBeenCalled();
+  });
+
+  it('fires a node-scoped route when node_id matches the local node', async () => {
+    // getDefaultNodeId returns 1 (mocked above)
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: 1 })]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('info', 'Test', 'my-app');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('skips a node-scoped route when node_id does not match the local node', async () => {
+    // getDefaultNodeId returns 1; route is scoped to node 99
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: 99 })]);
+    mockGetEnabledAgents.mockReturnValue([makeAgent()]);
+
+    await svc.dispatchAlert('info', 'Test', 'my-app');
+
+    // Route should be skipped; falls back to global agent
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.anything()
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://hooks.slack.com/services/global',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('fires a null-scoped route regardless of which node emits the alert', async () => {
+    // node_id=null means "any node"
+    mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute({ node_id: null })]);
+    mockGetEnabledAgents.mockReturnValue([]);
+
+    await svc.dispatchAlert('warning', 'Global alert', 'my-app');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://discord.com/api/webhooks/123/abc',
+      expect.objectContaining({ method: 'POST' })
+    );
   });
 });

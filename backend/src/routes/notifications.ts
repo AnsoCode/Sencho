@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
+import { NodeRegistry } from '../services/NodeRegistry';
 import { authMiddleware } from '../middleware/auth';
 import { requireAdmin, requireAdmiral } from '../middleware/tierGates';
 import {
@@ -18,6 +19,20 @@ function parseRouteId(req: Request, res: Response): number | null {
     return null;
   }
   return id;
+}
+
+function validateNodeId(nodeId: unknown, res: Response): number | null | false {
+  if (nodeId === undefined || nodeId === null) return null;
+  if (typeof nodeId !== 'number' || !Number.isInteger(nodeId)) {
+    res.status(400).json({ error: 'node_id must be an integer or null' });
+    return false;
+  }
+  const localNodeId = NodeRegistry.getInstance().getDefaultNodeId();
+  if (nodeId !== localNodeId) {
+    res.status(400).json({ error: 'node_id must match the local node or be null' });
+    return false;
+  }
+  return nodeId;
 }
 
 export const notificationsRouter = Router();
@@ -100,7 +115,7 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+    const { name, node_id: rawNodeId, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Name is required' });
@@ -110,6 +125,8 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
       res.status(400).json({ error: 'Name must be 100 characters or fewer' });
       return;
     }
+    const nodeIdResult = validateNodeId(rawNodeId, res);
+    if (nodeIdResult === false) return;
     if (!Array.isArray(stack_patterns) || stack_patterns.length === 0 || stack_patterns.some((p: unknown) => typeof p !== 'string')) {
       res.status(400).json({ error: 'stack_patterns must be a non-empty array of stack names' });
       return;
@@ -133,6 +150,7 @@ notificationRoutesRouter.post('/', authMiddleware, async (req: Request, res: Res
     const now = Date.now();
     const route = DatabaseService.getInstance().createNotificationRoute({
       name: name.trim(),
+      node_id: nodeIdResult,
       stack_patterns: cleanedPatterns,
       channel_type,
       channel_url: channel_url.trim(),
@@ -160,7 +178,7 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
     const existing = DatabaseService.getInstance().getNotificationRoute(id);
     if (!existing) { res.status(404).json({ error: 'Route not found' }); return; }
 
-    const { name, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
+    const { name, node_id: rawNodeId, stack_patterns, channel_type, channel_url, priority, enabled } = req.body;
 
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
       res.status(400).json({ error: 'Name must be a non-empty string' });
@@ -169,6 +187,12 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
     if (name !== undefined && name.trim().length > 100) {
       res.status(400).json({ error: 'Name must be 100 characters or fewer' });
       return;
+    }
+    let validatedNodeId: number | null | undefined;
+    if ('node_id' in req.body) {
+      const result = validateNodeId(rawNodeId, res);
+      if (result === false) return;
+      validatedNodeId = result;
     }
     let cleanedPatterns: string[] | undefined;
     if (stack_patterns !== undefined) {
@@ -201,6 +225,7 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
 
     const updates: Record<string, unknown> = { updated_at: Date.now() };
     if (name !== undefined) updates.name = name.trim();
+    if (validatedNodeId !== undefined) updates.node_id = validatedNodeId;
     if (cleanedPatterns !== undefined) updates.stack_patterns = cleanedPatterns;
     if (channel_type !== undefined) updates.channel_type = channel_type;
     if (channel_url !== undefined) updates.channel_url = channel_url.trim();
