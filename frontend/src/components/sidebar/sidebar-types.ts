@@ -26,9 +26,6 @@ export interface StackMenuCtx {
   hasPort: boolean;
   isBusy: boolean;
   isPaid: boolean;
-  // isAdmiral: plumbed now so Admiral-specific menu items can be added in a
-  // follow-up PR without changing this interface. No Admiral-only items ship
-  // in the current PR; the auto-update toggle is Skipper+, gated on isPaid.
   isAdmiral: boolean;
   canDelete: boolean;
   isPinned: boolean;
@@ -51,6 +48,7 @@ export interface StackMenuCtx {
   createAndAssignLabel: (name: string, color: LabelColor) => Promise<void>;
   openLabelManager: () => void;
   setAutoUpdateEnabled: (enabled: boolean) => void;
+  openScheduleTask: () => void;
 }
 
 export type StackGroupKind = 'pinned' | 'labeled' | 'unlabeled';

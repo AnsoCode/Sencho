@@ -32,6 +32,7 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     createAndAssignLabel: vi.fn(),
     openLabelManager: vi.fn(),
     setAutoUpdateEnabled: vi.fn(),
+    openScheduleTask: vi.fn(),
     ...overrides,
   };
 }
@@ -82,15 +83,6 @@ describe('useStackMenuItems', () => {
     expect(del.icon).toBe(Trash2);
   });
 
-  it('lifecycle items follow menuVisibility flags', () => {
-    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
-      menuVisibility: { showDeploy: true, showStop: false, showRestart: false, showUpdate: true },
-    })));
-    const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
-    const ids = lifecycle.items.map(i => i.id);
-    expect(ids).toEqual(['deploy', 'update']);
-  });
-
   it('shows auto-update toggle in inspect when isPaid', () => {
     const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({ isPaid: true, autoUpdateEnabled: true })));
     const inspect = result.current.find(g => g.id === 'inspect')!;
@@ -113,12 +105,24 @@ describe('useStackMenuItems', () => {
     expect(setAutoUpdateEnabled).toHaveBeenCalledWith(false);
   });
 
-  it('disables every lifecycle item when isBusy', () => {
+  it('lifecycle items follow menuVisibility flags', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
+      menuVisibility: { showDeploy: true, showStop: false, showRestart: false, showUpdate: true },
+    })));
+    const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
+    const ids = lifecycle.items.map(i => i.id);
+    expect(ids).toEqual(['deploy', 'update', 'schedule']);
+  });
+
+  it('disables action lifecycle items when isBusy but leaves schedule enabled', () => {
     const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
       isBusy: true,
       menuVisibility: { showDeploy: true, showStop: true, showRestart: true, showUpdate: true },
     })));
     const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
-    expect(lifecycle.items.every(i => i.disabled === true)).toBe(true);
+    const actionItems = lifecycle.items.filter(i => i.id !== 'schedule');
+    expect(actionItems.every(i => i.disabled === true)).toBe(true);
+    const scheduleItem = lifecycle.items.find(i => i.id === 'schedule')!;
+    expect(scheduleItem.disabled).toBeFalsy();
   });
 });
