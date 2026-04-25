@@ -126,12 +126,12 @@ jobs:
           # enough for `docker logs` in the trap to surface the stack trace.
           # The trap force-removes it explicitly whether it is still running
           # or already exited.
-          docker run -d --name sencho-smoke -p 3000:3000 localhost/sencho:release-scan
+          docker run -d --name sencho-smoke -p 1852:1852 localhost/sencho:release-scan
           trap 'docker logs sencho-smoke 2>&1 || true; docker rm -f sencho-smoke >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
+            if curl -fsS http://localhost:1852/api/health >/dev/null 2>&1; then
               echo "Container healthy after ${i}s"
-              curl -s http://localhost:3000/api/health
+              curl -s http://localhost:1852/api/health
               exit 0
             fi
             sleep 1

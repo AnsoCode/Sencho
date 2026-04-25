@@ -22,7 +22,7 @@ export function isValidRemoteUrl(
     console.warn('[Validation] URL parse failure:', (e as Error).message, '— input:', raw);
     return {
       valid: false,
-      reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:3000)',
+      reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:1852)',
     };
   }
   if (!['http:', 'https:'].includes(url.protocol)) {

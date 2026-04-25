@@ -70,7 +70,7 @@ Sencho itself is lightweight. The majority of resource usage on your host comes 
 
 ## Networking
 
-- **Listen port:** 3000 (fixed). Map it to any host port using Docker's `-p` flag or `ports` in your compose file
+- **Listen port:** 1852 (fixed). Map it to any host port using Docker's `-p` flag or `ports` in your compose file
 - **Inbound:** Only the listen port needs to be reachable (directly or through a reverse proxy)
 - **Outbound:** No outbound connections are required for local-only setups. If you use multi-node management, Sencho needs HTTP/HTTPS access to remote Sencho instances on their configured API URLs
 - **Health check:** `GET /api/health` returns `200` when the application is ready. The Docker image includes a built-in `HEALTHCHECK` that polls this endpoint every 30 seconds

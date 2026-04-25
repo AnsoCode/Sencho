@@ -39,7 +39,7 @@ On your **primary** Sencho instance, open **Settings → Nodes** and click **+ A
 |-------|-------------|
 | **Name** | A display name (e.g. `Production VPS`, `media-box`) |
 | **Type** | Select **Remote** (or **Local** for an additional local Docker socket) |
-| **Sencho API URL** | The full HTTP/HTTPS URL of the remote instance (e.g. `http://192.168.1.50:3000`) |
+| **Sencho API URL** | The full HTTP/HTTPS URL of the remote instance (e.g. `http://192.168.1.50:1852`) |
 | **API Token** | The token you generated in Step 1 |
 | **Compose Directory** | The root directory where compose stack folders live on the remote node (defaults to `/app/compose`) |
 
@@ -156,8 +156,8 @@ There are three recommended approaches depending on your deployment:
 If all your Sencho instances are on the same local network, VPC, or subnet, HTTP is perfectly fine. The token never leaves the private network, so there is no interception risk.
 
 ```
-http://192.168.1.50:3000   ← safe on a private LAN
-http://10.0.1.20:3000      ← safe inside a VPC
+http://192.168.1.50:1852   ← safe on a private LAN
+http://10.0.1.20:1852      ← safe inside a VPC
 ```
 
 #### VPN tunnel (WireGuard, Tailscale)
@@ -169,7 +169,7 @@ http://10.0.1.20:3000      ← safe inside a VPC
 With a mesh VPN like [Tailscale](https://tailscale.com) or [WireGuard](https://www.wireguard.com/), each server gets a private IP on the VPN. Use those IPs as your Sencho API URLs:
 
 ```
-http://100.64.0.2:3000     ← Tailscale IP, encrypted by the VPN tunnel
+http://100.64.0.2:1852     ← Tailscale IP, encrypted by the VPN tunnel
 ```
 
 All traffic between nodes is encrypted by the VPN. Sencho does not need to do anything additional.
@@ -181,7 +181,7 @@ If you prefer TLS termination at each node, place a reverse proxy in front of ea
 <CodeGroup>
 ```text Caddyfile
 sencho.example.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:1852
 }
 ```
 
@@ -194,7 +194,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/sencho.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:1852;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;

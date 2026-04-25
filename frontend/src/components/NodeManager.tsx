@@ -368,7 +368,7 @@ export function NodeManager() {
             <Label htmlFor="node-api-url">Sencho API URL</Label>
             <Input
               id="node-api-url"
-              placeholder="http://192.168.1.50:3000"
+              placeholder="http://192.168.1.50:1852"
               value={formData.api_url}
               onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
             />

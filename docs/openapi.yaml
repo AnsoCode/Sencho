@@ -44,7 +44,7 @@ servers:
       host:
         default: localhost
       port:
-        default: "3000"
+        default: "1852"
 
 security:
   - bearerAuth: []
@@ -1679,7 +1679,7 @@ paths:
                 api_url:
                   type: string
                   description: Remote Sencho instance URL (required for remote nodes).
-                  example: https://sencho.example.com:3000
+                  example: https://sencho.example.com:1852
                 api_token:
                   type: string
                   description: API token for authenticating with the remote Sencho instance.

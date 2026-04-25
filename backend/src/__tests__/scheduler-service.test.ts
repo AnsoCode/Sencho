@@ -1185,7 +1185,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
   it('proxies update execution to remote node', async () => {
     mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
     mockGetProxyTarget.mockReturnValue({
-      apiUrl: 'http://remote:3000',
+      apiUrl: 'http://remote:1852',
       apiToken: 'test-token',
     });
 
@@ -1211,7 +1211,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
     await svc.triggerTask(88);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://remote:3000/api/auto-update/execute',
+      'http://remote:1852/api/auto-update/execute',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ target: 'web-app' }),
@@ -1226,7 +1226,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
   it('records failure when remote node returns error', async () => {
     mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
     mockGetProxyTarget.mockReturnValue({
-      apiUrl: 'http://remote:3000',
+      apiUrl: 'http://remote:1852',
       apiToken: 'test-token',
     });
 

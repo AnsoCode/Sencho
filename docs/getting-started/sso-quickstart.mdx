@@ -162,7 +162,7 @@ services:
     image: saelix/sencho:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "1852:1852"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./sencho-data:/app/data
