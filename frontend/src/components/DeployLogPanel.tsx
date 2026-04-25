@@ -234,6 +234,7 @@ export default function DeployLogPanel({
 
         {/* Terminal body (stays mounted when minimized, hidden via display:none) */}
         <div
+          data-testid="deploy-log-terminal-body"
           className="flex-1 min-h-0 shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]"
           style={{ display: isMinimized ? 'none' : 'flex', flexDirection: 'column' }}
           onMouseEnter={cancelAutoClose}
