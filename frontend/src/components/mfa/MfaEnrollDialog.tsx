@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Check, Copy, Download, Loader2 } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 import { OtpDigitField } from '@/components/auth/OtpDigitField';
@@ -121,7 +122,7 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
 
   const handleCopySecret = async () => {
     try {
-      await navigator.clipboard.writeText(secret);
+      await copyToClipboard(secret);
       toast.success('Secret copied to clipboard');
     } catch {
       toast.error('Could not copy to clipboard');
@@ -130,7 +131,7 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
 
   const handleCopyBackupCodes = async () => {
     try {
-      await navigator.clipboard.writeText(backupCodes.join('\n'));
+      await copyToClipboard(backupCodes.join('\n'));
       toast.success('Backup codes copied');
     } catch {
       toast.error('Could not copy to clipboard');

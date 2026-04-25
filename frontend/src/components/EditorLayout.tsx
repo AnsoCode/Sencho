@@ -24,6 +24,7 @@ import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
@@ -2273,7 +2274,7 @@ export default function EditorLayout() {
                                       aria-label={copiedDigest === first.ImageID ? 'Copied' : 'Copy digest'}
                                       onClick={() => {
                                         const id = first.ImageID as string;
-                                        void navigator.clipboard.writeText(id).then(() => {
+                                        void copyToClipboard(id).then(() => {
                                           setCopiedDigest(id);
                                           if (copiedDigestTimerRef.current !== null) {
                                             window.clearTimeout(copiedDigestTimerRef.current);
@@ -2282,7 +2283,7 @@ export default function EditorLayout() {
                                             setCopiedDigest(prev => (prev === id ? null : prev));
                                             copiedDigestTimerRef.current = null;
                                           }, 1500);
-                                        });
+                                        }).catch(() => { /* clipboard unavailable */ });
                                       }}
                                       className="inline-flex h-4 w-4 items-center justify-center rounded text-stat-subtitle hover:text-foreground hover:bg-muted/60 transition-colors"
                                     >

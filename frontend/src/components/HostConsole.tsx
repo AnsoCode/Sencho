@@ -7,6 +7,7 @@ import { Button } from './ui/button';
 import { PageMasthead, type MastheadTone } from './ui/PageMasthead';
 import '@xterm/xterm/css/xterm.css';
 import { useNodes } from '@/context/NodeContext';
+import { copyToClipboard } from '@/lib/clipboard';
 
 interface HostConsoleProps {
     stackName?: string | null;
@@ -206,7 +207,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
         if (!term) return;
         const selection = term.getSelection();
         if (!selection) return;
-        navigator.clipboard?.writeText(selection).catch(() => { /* ignore */ });
+        void copyToClipboard(selection).catch(() => { /* ignore */ });
     }, []);
 
     const handleClear = useCallback(() => {
