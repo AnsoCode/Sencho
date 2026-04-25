@@ -196,6 +196,7 @@ export interface SSOConfig {
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
+    category?: string;
     message: string;
     timestamp: number;
     is_read: boolean;
@@ -489,6 +490,7 @@ export class DatabaseService {
         this.migrateSecretMisconfigColumns();
         this.migrateAgentsAndNotificationsNodeId();
         this.migratePolicyEvaluationColumn();
+        this.migrateNotificationCategory();
     }
 
     public static getInstance(): DatabaseService {
@@ -1202,6 +1204,14 @@ export class DatabaseService {
         }
     }
 
+    private migrateNotificationCategory(): void {
+        try {
+            this.db.prepare('ALTER TABLE notification_history ADD COLUMN category TEXT').run();
+        } catch {
+            // column already present
+        }
+    }
+
     // --- Agents ---
 
     public getAgents(nodeId: number): Agent[] {
@@ -1457,19 +1467,23 @@ export class DatabaseService {
 
     // --- Notification History ---
 
-    public getNotificationHistory(nodeId: number, limit = 50): NotificationHistory[] {
-        const stmt = this.db.prepare('SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?');
-        return stmt.all(nodeId, limit).map((row: any) => ({
+    public getNotificationHistory(nodeId: number, limit = 50, category?: string): NotificationHistory[] {
+        const sql = category
+            ? 'SELECT * FROM notification_history WHERE node_id = ? AND category = ? ORDER BY timestamp DESC LIMIT ?'
+            : 'SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?';
+        const args: (number | string)[] = category ? [nodeId, category, limit] : [nodeId, limit];
+        return this.db.prepare(sql).all(...args).map((row: any) => ({
             ...row,
             is_read: row.is_read === 1,
             stack_name: row.stack_name ?? undefined,
             container_name: row.container_name ?? undefined,
+            category: row.category ?? undefined,
         }));
     }
 
     public addNotificationHistory(nodeId: number, notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare(
-            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name) VALUES (?, ?, ?, ?, 0, ?, ?)'
+            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name, category) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
         );
         const result = stmt.run(
             nodeId,
@@ -1477,7 +1491,8 @@ export class DatabaseService {
             notification.message,
             notification.timestamp,
             notification.stack_name ?? null,
-            notification.container_name ?? null
+            notification.container_name ?? null,
+            notification.category ?? null,
         );
 
         this.db.prepare(`
@@ -1490,6 +1505,7 @@ export class DatabaseService {
         return {
             id: result.lastInsertRowid as number,
             level: notification.level,
+            category: notification.category,
             message: notification.message,
             timestamp: notification.timestamp,
             is_read: false,

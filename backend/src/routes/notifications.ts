@@ -25,7 +25,8 @@ export const notificationsRouter = Router();
 notificationsRouter.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const nodeId = req.nodeId ?? 0;
-    const history = DatabaseService.getInstance().getNotificationHistory(nodeId);
+    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const history = DatabaseService.getInstance().getNotificationHistory(nodeId, 50, category);
     res.json(history);
   } catch {
     res.status(500).json({ error: 'Failed to fetch notifications' });

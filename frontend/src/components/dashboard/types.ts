@@ -43,9 +43,23 @@ export interface MetricPoint {
   net_tx_mb: number;
 }
 
+export type NotificationCategory =
+    | 'deploy_success'
+    | 'deploy_failure'
+    | 'stack_started'
+    | 'stack_stopped'
+    | 'stack_restarted'
+    | 'image_update_available'
+    | 'image_update_applied'
+    | 'autoheal_triggered'
+    | 'monitor_alert'
+    | 'scan_finding'
+    | 'system';
+
 export interface NotificationItem {
   id: number;
   level: 'info' | 'warning' | 'error';
+  category?: NotificationCategory | string;
   message: string;
   timestamp: number;
   is_read: number;

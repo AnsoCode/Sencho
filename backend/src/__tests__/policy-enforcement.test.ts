@@ -161,7 +161,8 @@ describe('enforcePolicyPreDeploy', () => {
     expect(result.violations).toEqual([]);
     expect(notificationStub.dispatchAlert).toHaveBeenCalledTimes(1);
     expect(notificationStub.dispatchAlert.mock.calls[0][0]).toBe('warning');
-    expect(notificationStub.dispatchAlert.mock.calls[0][1]).toContain('Trivy not installed');
+    expect(notificationStub.dispatchAlert.mock.calls[0][1]).toBe('scan_finding');
+    expect(notificationStub.dispatchAlert.mock.calls[0][2]).toContain('Trivy not installed');
     expect(composeStub.listStackImages).not.toHaveBeenCalled();
   });
 

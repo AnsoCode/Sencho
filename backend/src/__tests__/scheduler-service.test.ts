@@ -870,7 +870,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(91);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('failed'), undefined);
+    expect(mockDispatchAlert).toHaveBeenCalledWith('error', 'system', expect.stringContaining('failed'), { stackName: undefined });
   });
 
   it('dispatches recovery notification when previous status was failure', async () => {
@@ -890,7 +890,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(92);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('recovered'), 'my-stack');
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', 'system', expect.stringContaining('recovered'), { stackName: 'my-stack' });
   });
 });
 
@@ -946,13 +946,15 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('nightly-scan'),
-      undefined,
+      { stackName: undefined },
     );
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('Scanned 3 image(s)'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -965,8 +967,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'warning',
+      'scan_finding',
       expect.stringContaining('2 failed'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -979,8 +982,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('completed'),
-      'web-stack',
+      { stackName: 'web-stack' },
     );
   });
 
@@ -998,8 +1002,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
     expect(mockDispatchAlert).toHaveBeenCalledTimes(1);
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('recovered-scan'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -1032,8 +1037,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'error',
+      'system',
       expect.stringMatching(/failed.*Trivy/i),
-      'payment-stack',
+      { stackName: 'payment-stack' },
     );
   });
 
@@ -1046,7 +1052,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(206);
 
-    const message = mockDispatchAlert.mock.calls[0][1] as string;
+    const message = mockDispatchAlert.mock.calls[0][2] as string;
     expect(message).toContain('2 critical');
     expect(message).toContain('5 high');
     expect(message).toContain('10 medium');
@@ -1061,8 +1067,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('No images to scan'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -1075,8 +1082,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('All 12 image(s) already scanned recently'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -1196,8 +1204,9 @@ describe('SchedulerService - invalid cron at execution time', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'error',
+      'system',
       expect.stringContaining('failed'),
-      undefined
+      { stackName: undefined },
     );
   });
 });

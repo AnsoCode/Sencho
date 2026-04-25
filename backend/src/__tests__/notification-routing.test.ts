@@ -94,7 +94,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
-    await svc.dispatchAlert('error', 'Container crashed', 'my-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Container crashed', { stackName: 'my-app' });
 
     // Should have called fetch with discord webhook URL
     expect(mockFetch).toHaveBeenCalledWith(
@@ -114,7 +114,7 @@ describe('NotificationService - routing logic', () => {
     ]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
-    await svc.dispatchAlert('error', 'Container crashed', 'my-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Container crashed', { stackName: 'my-app' });
 
     // Should NOT have called the route's discord channel
     expect(mockFetch).not.toHaveBeenCalledWith(
@@ -132,7 +132,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
-    await svc.dispatchAlert('warning', 'Host CPU high');
+    await svc.dispatchAlert('warning', 'monitor_alert', 'Host CPU high');
 
     // Should have called global agent (no stackName means skip routing)
     expect(mockFetch).toHaveBeenCalledWith(
@@ -148,7 +148,7 @@ describe('NotificationService - routing logic', () => {
     ]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('error', 'Test', 'my-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Test', { stackName: 'my-app' });
 
     // Both routes match, both should be dispatched (all matching routes fire)
     expect(mockFetch).toHaveBeenCalledWith(
@@ -169,7 +169,7 @@ describe('NotificationService - routing logic', () => {
     ]);
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
 
-    await svc.dispatchAlert('error', 'Test', 'production-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Test', { stackName: 'production-app' });
 
     // Route should not fire
     expect(mockFetch).not.toHaveBeenCalledWith(
@@ -189,7 +189,7 @@ describe('NotificationService - routing logic', () => {
     ]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('info', 'Update complete', 'app-b');
+    await svc.dispatchAlert('info', 'image_update_applied', 'Update complete', { stackName: 'app-b' });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://discord.com/api/webhooks/123/abc',
@@ -202,14 +202,14 @@ describe('NotificationService - routing logic', () => {
     mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
 
     // Should not throw
-    await expect(svc.dispatchAlert('error', 'Crash', 'my-app')).resolves.toBeUndefined();
+    await expect(svc.dispatchAlert('error', 'monitor_alert', 'Crash', { stackName: 'my-app' })).resolves.toBeUndefined();
   });
 
   it('does not dispatch to global agents when routes array is empty and no stackName', async () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('info', 'Test');
+    await svc.dispatchAlert('info', 'system', 'Test');
 
     // No routes, no agents — just logs and broadcasts
     expect(mockFetch).not.toHaveBeenCalled();
@@ -219,10 +219,11 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('info', 'Should be logged');
+    await svc.dispatchAlert('info', 'system', 'Should be logged');
 
     expect(mockAddNotificationHistory).toHaveBeenCalledWith(1, {
       level: 'info',
+      category: 'system',
       message: 'Should be logged',
       timestamp: expect.any(Number),
       stack_name: undefined,
@@ -234,10 +235,11 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([]);
     mockGetEnabledAgents.mockReturnValue([]);
 
-    await svc.dispatchAlert('warning', 'Restarted', 'my-app', 'my-app-web-1');
+    await svc.dispatchAlert('warning', 'autoheal_triggered', 'Restarted', { stackName: 'my-app', containerName: 'my-app-web-1' });
 
     expect(mockAddNotificationHistory).toHaveBeenCalledWith(1, {
       level: 'warning',
+      category: 'autoheal_triggered',
       message: 'Restarted',
       timestamp: expect.any(Number),
       stack_name: 'my-app',
@@ -250,7 +252,7 @@ describe('NotificationService - routing logic', () => {
       makeRoute({ channel_type: 'slack', channel_url: 'https://hooks.slack.com/services/route-specific' }),
     ]);
 
-    await svc.dispatchAlert('warning', 'Alert', 'my-app');
+    await svc.dispatchAlert('warning', 'monitor_alert', 'Alert', { stackName: 'my-app' });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://hooks.slack.com/services/route-specific',
@@ -266,7 +268,7 @@ describe('NotificationService - routing logic', () => {
       makeRoute({ channel_type: 'webhook', channel_url: 'https://example.com/hook' }),
     ]);
 
-    await svc.dispatchAlert('error', 'Critical failure', 'my-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Critical failure', { stackName: 'my-app' });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://example.com/hook',
@@ -281,7 +283,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
     mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
 
-    await svc.dispatchAlert('error', 'Test', 'my-app');
+    await svc.dispatchAlert('error', 'monitor_alert', 'Test', { stackName: 'my-app' });
 
     expect(mockUpdateNotificationDispatchError).toHaveBeenCalledWith(
       1, // notification id from mock
@@ -294,7 +296,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledAgents.mockReturnValue([makeAgent()]);
     mockFetch.mockRejectedValueOnce(new Error('Timeout'));
 
-    await svc.dispatchAlert('warning', 'Host alert');
+    await svc.dispatchAlert('warning', 'monitor_alert', 'Host alert');
 
     expect(mockUpdateNotificationDispatchError).toHaveBeenCalledWith(
       1,
@@ -306,7 +308,7 @@ describe('NotificationService - routing logic', () => {
     mockGetEnabledNotificationRoutes.mockReturnValue([makeRoute()]);
     mockFetch.mockResolvedValueOnce({ ok: true });
 
-    await svc.dispatchAlert('info', 'All good', 'my-app');
+    await svc.dispatchAlert('info', 'system', 'All good', { stackName: 'my-app' });
 
     expect(mockUpdateNotificationDispatchError).not.toHaveBeenCalled();
   });

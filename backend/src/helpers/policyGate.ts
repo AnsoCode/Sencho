@@ -81,8 +81,9 @@ export async function triggerPostDeployScan(
         if (scan.critical_count > 0 || scan.high_count > 0) {
           NotificationService.getInstance().dispatchAlert(
             scan.critical_count > 0 ? 'error' : 'warning',
+            'scan_finding',
             `Vulnerability scan for ${imageRef}: ${scan.critical_count} critical, ${scan.high_count} high`,
-            stackName,
+            { stackName },
           );
         }
       } catch (err) {
@@ -90,8 +91,9 @@ export async function triggerPostDeployScan(
         console.error(`[Security] Post-deploy scan failed for ${imageRef}:`, message);
         NotificationService.getInstance().dispatchAlert(
           'warning',
+          'scan_finding',
           `Post-deploy scan failed for ${imageRef} (${stackName}): ${message}`,
-          stackName,
+          { stackName },
         );
       }
     }

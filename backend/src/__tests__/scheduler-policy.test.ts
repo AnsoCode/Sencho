@@ -162,11 +162,11 @@ describe('SchedulerService - scheduled scan policy alerts', () => {
 
     const warningCalls = mockDispatchAlert.mock.calls.filter((c) => c[0] === 'warning');
     expect(warningCalls).toHaveLength(2);
-    expect(warningCalls[0][1]).toContain('prod-high-gate');
-    expect(warningCalls[0][1]).toContain('nginx:1.14');
-    expect(warningCalls[0][1]).toContain('CRITICAL');
-    expect(warningCalls[0][1]).toContain('HIGH');
-    expect(warningCalls[1][1]).toContain('redis:6');
+    expect(warningCalls[0][2]).toContain('prod-high-gate');
+    expect(warningCalls[0][2]).toContain('nginx:1.14');
+    expect(warningCalls[0][2]).toContain('CRITICAL');
+    expect(warningCalls[0][2]).toContain('HIGH');
+    expect(warningCalls[1][2]).toContain('redis:6');
   });
 
   it('does not dispatch any policy alert when no violations occur', async () => {
@@ -177,7 +177,7 @@ describe('SchedulerService - scheduled scan policy alerts', () => {
     await svc.triggerTask(300);
 
     const warningCalls = mockDispatchAlert.mock.calls.filter(
-      (c) => c[0] === 'warning' && typeof c[1] === 'string' && c[1].includes('Policy'),
+      (c) => c[0] === 'warning' && typeof c[2] === 'string' && c[2].includes('Policy'),
     );
     expect(warningCalls).toHaveLength(0);
   });
