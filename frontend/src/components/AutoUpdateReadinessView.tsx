@@ -19,6 +19,8 @@ interface UpdatePreviewImage {
   semver_bump: SemverBump;
 }
 
+type UpdateKind = 'tag' | 'digest' | 'none';
+
 interface UpdatePreview {
   stack_name: string;
   images: UpdatePreviewImage[];
@@ -28,6 +30,7 @@ interface UpdatePreview {
     current_tag: string | null;
     next_tag: string | null;
     semver_bump: SemverBump;
+    update_kind: UpdateKind;
     blocked: boolean;
     blocked_reason: string | null;
   };
@@ -160,10 +163,19 @@ function StackReadinessCard({
           const blockedReason = p.summary.blocked_reason;
           return (
             <>
-              <VersionDiff
-                current={p.summary.current_tag}
-                next={p.summary.next_tag}
-              />
+              {p.summary.update_kind === 'digest' ? (
+                <div className="flex items-baseline gap-2 font-mono text-sm">
+                  <span className="text-stat-subtitle">{p.summary.current_tag}</span>
+                  <span className="text-brand text-[11px] uppercase tracking-[0.16em]">
+                    Rebuild available
+                  </span>
+                </div>
+              ) : (
+                <VersionDiff
+                  current={p.summary.current_tag}
+                  next={p.summary.next_tag}
+                />
+              )}
 
               <div className="flex items-center gap-1.5 font-mono text-[11px] text-stat-subtitle/80">
                 <span>{p.summary.primary_image ?? '-'}</span>
