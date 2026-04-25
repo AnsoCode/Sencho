@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import semver from 'semver';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
+import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
 import { isValidVersion, getSenchoVersion } from './CapabilityRegistry';
 import { getLatestVersion } from '../utils/version-check';
@@ -182,9 +183,13 @@ export class MonitorService {
                             const match = reclaimStr.match(/^([0-9.]+)([a-zA-Z]+)/);
                             if (match) {
                                 const val = parseFloat(match[1]);
-                                const unit = match[2];
+                                // Docker emits both "kB" (lowercase k) on newer versions and "KB"
+                                // historically. Normalise so neither is silently dropped, and
+                                // include "TB" for hosts with terabytes of reclaimable build cache.
+                                const unit = match[2].toUpperCase();
                                 let bytes = 0;
-                                if (unit === 'GB') bytes = val * 1024 * 1024 * 1024;
+                                if (unit === 'TB') bytes = val * 1024 * 1024 * 1024 * 1024;
+                                else if (unit === 'GB') bytes = val * 1024 * 1024 * 1024;
                                 else if (unit === 'MB') bytes = val * 1024 * 1024;
                                 else if (unit === 'KB') bytes = val * 1024;
                                 else if (unit === 'B') bytes = val;
@@ -199,10 +204,17 @@ export class MonitorService {
 
                 const reclaimGb = totalReclaimableBytes / (1024 * 1024 * 1024);
                 const JANITOR_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+                // Sanity floor: never alert on near-empty hosts even if the user
+                // configured an aggressive threshold like 0.001 GB. 100 MB is the
+                // smallest waste worth interrupting an operator over.
+                const MIN_RECLAIMABLE_GB = 0.1;
 
-                if (reclaimGb >= janitorLimitGb) {
+                if (reclaimGb >= janitorLimitGb && reclaimGb >= MIN_RECLAIMABLE_GB) {
+                    const registry = NodeRegistry.getInstance();
+                    const localNode = registry.getNode(registry.getDefaultNodeId());
+                    const nodeLabel = localNode?.name ?? 'this node';
                     await this.dispatchWithCooldown(HOST_ALERT_KEYS.janitor, JANITOR_COOLDOWN_MS, 'info',
-                        `Your system has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
+                        `Node "${nodeLabel}" has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
                 }
             }
         } catch (e) {
