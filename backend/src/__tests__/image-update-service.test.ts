@@ -385,8 +385,9 @@ services:
     expect(mockDispatchAlert).toHaveBeenCalledTimes(1);
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'image_update_available',
       expect.stringContaining('stackA'),
-      'stackA',
+      { stackName: 'stackA' },
     );
     expect(mockUpsertStackUpdateStatus).toHaveBeenCalledWith(1, 'stackA', true, expect.any(Number));
   });
@@ -413,7 +414,7 @@ services:
     await (service as any).checkNode(1, 'local', fakeDb());
 
     expect(mockDispatchAlert).toHaveBeenCalledTimes(2);
-    const dispatched = mockDispatchAlert.mock.calls.map(call => call[2]);
+    const dispatched = mockDispatchAlert.mock.calls.map(call => (call[3] as any)?.stackName);
     expect(dispatched).toEqual(expect.arrayContaining(['stackA', 'stackB']));
     expect(mockSetSystemState).toHaveBeenCalledWith('image_update_notifications_backfilled', '1');
 

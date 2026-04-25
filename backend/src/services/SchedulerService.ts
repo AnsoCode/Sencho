@@ -89,6 +89,7 @@ export class SchedulerService {
                     await trivy.detectTrivy();
                     this.safeDispatch(
                         'info',
+                        'system',
                         `Trivy updated from v${previous} to v${check.latest}`,
                     );
                     db.updateGlobalSetting('trivy_last_notified_version', check.latest);
@@ -100,6 +101,7 @@ export class SchedulerService {
                 if (lastNotified === check.latest) return;
                 this.safeDispatch(
                     'info',
+                    'system',
                     `Trivy update available: v${check.latest} (currently v${check.current ?? 'unknown'})`,
                 );
                 db.updateGlobalSetting('trivy_last_notified_version', check.latest);
@@ -159,9 +161,9 @@ export class SchedulerService {
      * Fire a notification without awaiting completion, catching any promise
      * rejection so the scheduler never crashes on a failed dispatch.
      */
-    private safeDispatch(level: 'info' | 'warning' | 'error', message: string, stackName?: string): void {
+    private safeDispatch(level: 'info' | 'warning' | 'error', category: import('./NotificationService').NotificationCategory, message: string, stackName?: string): void {
         NotificationService.getInstance()
-            .dispatchAlert(level, message, stackName)
+            .dispatchAlert(level, category, message, { stackName })
             .catch(err => console.error('[SchedulerService] Notification dispatch failed:', getErrorMessage(err, 'unknown error')));
     }
 
@@ -314,12 +316,14 @@ export class SchedulerService {
                 }
                 this.safeDispatch(
                     scanLevel,
+                    'scan_finding',
                     `Scheduled scan "${task.name}" completed: ${output}`,
                     task.target_id ?? undefined
                 );
             } else if (task.last_status === 'failure') {
                 this.safeDispatch(
                     'info',
+                    'system',
                     `Scheduled task "${task.name}" (${task.action}) recovered successfully`,
                     task.target_id ?? undefined
                 );
@@ -355,6 +359,7 @@ export class SchedulerService {
             console.error(`[SchedulerService] Task "${task.name}" (id=${task.id}) failed:`, errMsg);
             this.safeDispatch(
                 'error',
+                'system',
                 `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`,
                 task.target_id ?? undefined
             );
@@ -647,6 +652,7 @@ export class SchedulerService {
 
         this.safeDispatch(
             'info',
+            'image_update_applied',
             `Auto-update: stack "${stackName}" updated with new images`,
             stackName
         );
@@ -684,6 +690,7 @@ export class SchedulerService {
         for (const v of summary.violations ?? []) {
             NotificationService.getInstance().dispatchAlert(
                 'warning',
+                'scan_finding',
                 `Policy "${v.policyName}" violated by ${v.imageRef}: ${v.severity} exceeds ${v.maxSeverity}`,
             );
         }

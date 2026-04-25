@@ -4,6 +4,19 @@ import { NodeRegistry } from './NodeRegistry';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
 
+export type NotificationCategory =
+    | 'deploy_success'
+    | 'deploy_failure'
+    | 'stack_started'
+    | 'stack_stopped'
+    | 'stack_restarted'
+    | 'image_update_available'
+    | 'image_update_applied'
+    | 'autoheal_triggered'
+    | 'monitor_alert'
+    | 'scan_finding'
+    | 'system';
+
 /** Webhook timeout: 10 seconds per external dispatch call. */
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -83,16 +96,18 @@ export class NotificationService {
      */
     public async dispatchAlert(
         level: 'info' | 'warning' | 'error',
+        category: NotificationCategory,
         message: string,
-        stackName?: string,
-        containerName?: string,
+        options?: { stackName?: string; containerName?: string },
     ) {
+        const { stackName, containerName } = options ?? {};
         // Internal writes use the middleware default so they share a row key
         // with user-initiated requests; otherwise the UI and monitors split
         // between different node_id buckets.
         const localNodeId = NodeRegistry.getInstance().getDefaultNodeId();
         const notification = this.dbService.addNotificationHistory(localNodeId, {
             level,
+            category,
             message,
             timestamp: Date.now(),
             stack_name: stackName,
@@ -105,7 +120,7 @@ export class NotificationService {
         // 3. Check notification routing rules if a stack context is available
         const errors: string[] = [];
 
-        if (stackName) {
+        if (stackName !== undefined) {
             const routes = this.dbService.getEnabledNotificationRoutes();
             const matched = routes.filter(r => r.stack_patterns.includes(stackName));
             if (matched.length > 0) {

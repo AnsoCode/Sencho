@@ -135,7 +135,7 @@ export class MonitorService {
             const cpuUsage = currentLoad.currentLoad;
             const cpuLimit = parseFloat(settings['host_cpu_limit']);
             if (!isNaN(cpuLimit) && cpuLimit > 0 && cpuUsage > cpuLimit) {
-                await this.dispatchWithCooldown(HOST_ALERT_KEYS.cpu, HOST_ALERT_COOLDOWN_MS, 'warning',
+                await this.dispatchWithCooldown(HOST_ALERT_KEYS.cpu, HOST_ALERT_COOLDOWN_MS, 'warning', 'monitor_alert',
                     `Host CPU utilization is critically high: ${cpuUsage.toFixed(1)}% (Threshold: ${cpuLimit}%)`);
             }
 
@@ -143,7 +143,7 @@ export class MonitorService {
             const ramUsage = (mem.used / mem.total) * 100;
             const ramLimit = parseFloat(settings['host_ram_limit']);
             if (!isNaN(ramLimit) && ramLimit > 0 && ramUsage > ramLimit) {
-                await this.dispatchWithCooldown(HOST_ALERT_KEYS.ram, HOST_ALERT_COOLDOWN_MS, 'warning',
+                await this.dispatchWithCooldown(HOST_ALERT_KEYS.ram, HOST_ALERT_COOLDOWN_MS, 'warning', 'monitor_alert',
                     `Host Memory utilization is critically high: ${ramUsage.toFixed(1)}% (Threshold: ${ramLimit}%)`);
             }
 
@@ -152,7 +152,7 @@ export class MonitorService {
             if (mainDisk) {
                 const diskLimit = parseFloat(settings['host_disk_limit']);
                 if (!isNaN(diskLimit) && diskLimit > 0 && mainDisk.use > diskLimit) {
-                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.disk, HOST_ALERT_COOLDOWN_MS, 'warning',
+                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.disk, HOST_ALERT_COOLDOWN_MS, 'warning', 'monitor_alert',
                         `Host Disk space utilization is critically high: ${mainDisk.use.toFixed(1)}% (Threshold: ${diskLimit}%)`);
                 }
             }
@@ -213,7 +213,7 @@ export class MonitorService {
                     const registry = NodeRegistry.getInstance();
                     const localNode = registry.getNode(registry.getDefaultNodeId());
                     const nodeLabel = localNode?.name ?? 'this node';
-                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.janitor, JANITOR_COOLDOWN_MS, 'info',
+                    await this.dispatchWithCooldown(HOST_ALERT_KEYS.janitor, JANITOR_COOLDOWN_MS, 'info', 'system',
                         `Node "${nodeLabel}" has accumulated ${reclaimGb.toFixed(1)} GB of unused Docker data. Consider using the Janitor tool.`);
                 }
             }
@@ -290,7 +290,7 @@ export class MonitorService {
 
         try {
             const notifier = NotificationService.getInstance();
-            await notifier.dispatchAlert('info',
+            await notifier.dispatchAlert('info', 'system',
                 `Sencho ${latest} is available (currently running ${currentVersion}). Visit the Fleet dashboard to update.`);
             db.setSystemState(stateKey, latest);
             if (isDebugEnabled()) console.debug(`[Monitor:diag] Dispatched version notification: ${currentVersion} -> ${latest}`);
@@ -391,8 +391,9 @@ export class MonitorService {
                                         if (isDebugEnabled()) console.log(`[Monitor:diag] Duration met for rule ${ruleId}, dispatching alert`);
                                         await NotificationService.getInstance().dispatchAlert(
                                             'warning',
+                                            'monitor_alert',
                                             message,
-                                            rule.stack_name
+                                            { stackName: rule.stack_name },
                                         );
 
                                         // Update last fired
@@ -454,12 +455,13 @@ export class MonitorService {
     /** Dispatch an alert only if the cooldown period has elapsed since the last alert for this key. */
     private async dispatchWithCooldown(
         stateKey: string, cooldownMs: number,
-        severity: 'info' | 'warning' | 'error', message: string, stack?: string,
+        severity: 'info' | 'warning' | 'error', category: import('./NotificationService').NotificationCategory,
+        message: string, stack?: string,
     ): Promise<void> {
         const db = DatabaseService.getInstance();
         const last = parseInt(db.getSystemState(stateKey) || '0', 10);
         if (Date.now() - last > cooldownMs) {
-            await NotificationService.getInstance().dispatchAlert(severity, message, stack);
+            await NotificationService.getInstance().dispatchAlert(severity, category, message, { stackName: stack });
             db.setSystemState(stateKey, Date.now().toString());
         }
     }

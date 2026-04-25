@@ -274,7 +274,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '50' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('CPU'), { stackName: undefined });
   });
 
   it('does not dispatch when CPU below threshold', async () => {
@@ -283,7 +283,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '50' });
 
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('CPU'), { stackName: undefined });
   });
 
   it('dispatches RAM warning when over threshold', async () => {
@@ -292,7 +292,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_ram_limit: '80' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Memory'), undefined);
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('Memory'), { stackName: undefined });
   });
 
   it('dispatches disk warning when over threshold', async () => {
@@ -301,7 +301,7 @@ describe('MonitorService - evaluateGlobalSettings', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_disk_limit: '90' });
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Disk'), undefined);
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('Disk'), { stackName: undefined });
   });
 
   it('skips host limits when threshold is 0 or NaN', async () => {
@@ -309,10 +309,10 @@ describe('MonitorService - evaluateGlobalSettings', () => {
 
     const svc = MonitorService.getInstance();
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: '0' });
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('CPU'), { stackName: undefined });
 
     await (svc as any).evaluateGlobalSettings({ host_cpu_limit: 'abc' });
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), undefined);
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('CPU'), { stackName: undefined });
   });
 });
 
@@ -352,7 +352,7 @@ describe('MonitorService - breach state machine', () => {
     const svc = MonitorService.getInstance();
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('CPU'), 'my-stack');
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('CPU'), { stackName: 'my-stack' });
     expect(mockUpdateStackAlertLastFired).toHaveBeenCalledWith(1, expect.any(Number));
   });
 
@@ -526,7 +526,7 @@ describe('MonitorService - restart_count metric', () => {
 
     expect(mockGetContainerRestartCount).toHaveBeenCalledWith('c1');
     // restart_count=5 > threshold=3, should fire
-    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', expect.stringContaining('Restart count'), 'my-stack');
+    expect(mockDispatchAlert).toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('Restart count'), { stackName: 'my-stack' });
   });
 
   it('skips Docker inspect when no restart_count rules exist', async () => {
@@ -545,7 +545,7 @@ describe('MonitorService - restart_count metric', () => {
     await (svc as any).evaluate();
 
     expect(mockGetContainerRestartCount).toHaveBeenCalledWith('c1');
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', expect.stringContaining('Restart count'), expect.anything());
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('warning', 'monitor_alert', expect.stringContaining('Restart count'), expect.anything());
   });
 });
 
@@ -577,9 +577,9 @@ describe('MonitorService - Sencho version check', () => {
     (svc as any).lastVersionCheckAt = 0;
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('0.46.0'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', 'system', expect.stringContaining('0.46.0'));
     // Message must include the real running version, not "0.0.0".
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('currently running 0.45.0'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', 'system', expect.stringContaining('currently running 0.45.0'));
     expect(mockSetSystemState).toHaveBeenCalledWith('last_sencho_update_notified_version', '0.46.0');
   });
 
@@ -593,7 +593,7 @@ describe('MonitorService - Sencho version check', () => {
     (svc as any).lastVersionCheckAt = 0;
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', expect.stringContaining('0.46.0'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', 'system', expect.stringContaining('0.46.0'));
   });
 
   it('handles version check failure gracefully', async () => {
@@ -605,7 +605,7 @@ describe('MonitorService - Sencho version check', () => {
 
     // Should not throw
     await expect((svc as any).evaluate()).resolves.toBeUndefined();
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', expect.stringContaining('available'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', 'system', expect.stringContaining('available'));
   });
 
   it('respects the 6-hour cooldown interval', async () => {
@@ -632,7 +632,7 @@ describe('MonitorService - Sencho version check', () => {
     (svc as any).lastVersionCheckAt = 0;
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', expect.stringContaining('0.46.0'));
+    expect(mockDispatchAlert).not.toHaveBeenCalledWith('info', 'system', expect.stringContaining('0.46.0'));
     expect(mockSetSystemState).not.toHaveBeenCalledWith('last_sencho_update_notified_version', expect.anything());
     // Should not have even attempted the lookup.
     expect(mockGetLatestVersion).not.toHaveBeenCalled();
@@ -675,7 +675,7 @@ describe('MonitorService - Sencho version check', () => {
     expect(mockGetLatestVersion).not.toHaveBeenCalled();
     // Exactly one dispatch across both evals.
     const availabilityDispatches = mockDispatchAlert.mock.calls.filter(
-      (args: unknown[]) => typeof args[1] === 'string' && args[1].includes('available'),
+      (args: unknown[]) => typeof args[2] === 'string' && args[2].includes('available'),
     );
     expect(availabilityDispatches).toHaveLength(1);
   });
@@ -691,7 +691,7 @@ describe('MonitorService - Sencho version check', () => {
     (svc as any).lastVersionCheckAt = 0;
     await (svc as any).evaluate();
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('0.47.0'));
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', 'system', expect.stringContaining('0.47.0'));
     expect(store.last_sencho_update_notified_version).toBe('0.47.0');
   });
 });
