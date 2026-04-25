@@ -213,6 +213,20 @@ The stack header groups actions by frequency of use. The most common action is t
   Stack directories often contain root-owned files, either because Docker Compose creates them, or because the stacks were originally set up outside of Sencho with `sudo`. Sencho handles this automatically: if a normal deletion fails due to permissions, it uses Docker to clean up root-owned files. No manual intervention is needed in the standard setup.
 </Note>
 
+## Controlling a single service
+
+Inside the stack detail view, each service row has a kebab menu (`⋮`) on the right side. Use it to act on that service without touching the rest of the stack.
+
+- **Restart service** — stops and starts all containers for that service.
+- **Stop service** — stops all containers for that service. Only shown when the service is running.
+- **Start service** — starts all containers for that service. Only shown when the service is stopped or exited.
+
+For services running multiple replicas, the action applies to every replica simultaneously. Sibling services are not affected.
+
+<Note>
+  The service name in the action must match the `services:` key in your `compose.yaml`. If no containers exist yet for that service, the action will fail with a "service not found" error. Make sure the service is defined in the compose file and has been deployed at least once.
+</Note>
+
 ## Stack context menu
 
 Right-click any stack in the sidebar to open the context menu. The menu adapts to the stack's current state; only relevant actions are shown.
@@ -260,3 +274,9 @@ Click the **folder-search icon** next to the "Create Stack" button in the sideba
 <Tip>
   Any subdirectory inside your `COMPOSE_DIR` that contains a `compose.yaml`, `compose.yml`, `docker-compose.yaml`, or `docker-compose.yml` file is recognized as a valid stack.
 </Tip>
+
+## Troubleshooting
+
+### Service action returns a "service not found" error
+
+The service name used in the action must match the `services:` key in the stack's `compose.yaml`. This error occurs when no running containers match that service name, either because the service was never deployed or because the compose file defines a different name. Verify the service key in your compose file and ensure the stack has been deployed at least once so containers exist for that service.

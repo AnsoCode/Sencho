@@ -76,6 +76,7 @@ import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
 interface ContainerInfo {
   Id: string;
   Names: string[];
+  Service?: string;
   State: string;
   Status?: string;
   Ports?: { PrivatePort: number, PublicPort: number }[];
@@ -1471,6 +1472,27 @@ export default function EditorLayout() {
     }
   };
 
+  const serviceAction = async (action: 'start' | 'stop' | 'restart', serviceName: string) => {
+    if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    try {
+      const r = await apiFetch(`/stacks/${stackName}/services/${encodeURIComponent(serviceName)}/${action}`, {
+        method: 'POST',
+      });
+      if (!r.ok) throw new Error((await r.text()) || `${action} failed`);
+      const label = action === 'restart' ? 'restarted' : action === 'stop' ? 'stopped' : 'started';
+      toast.success(`Service "${serviceName}" ${label}`);
+      const cr = await apiFetch(`/stacks/${stackName}/containers`);
+      const conts = await cr.json();
+      setContainers(Array.isArray(conts) ? conts : []);
+    } catch (e) {
+      console.error(`Failed to ${action} service "${serviceName}":`, e);
+      toast.error((e as Error).message || `Failed to ${action} service "${serviceName}"`);
+    } finally {
+      refreshStacks(true);
+    }
+  };
+
   const updateStack = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     e?.stopPropagation();
@@ -2483,19 +2505,19 @@ export default function EditorLayout() {
                               }
 
                               const containerName = container?.Names?.[0]?.replace(/^\//, '') || container?.Id?.slice(0, 12) || 'container';
-                              const isRunning = container.State === 'running';
+                              const isActive = container.State === 'running' || container.State === 'paused';
                               const health = container.healthStatus;
-                              const uptime = isRunning ? extractUptime(container.Status) : null;
+                              const uptime = isActive ? extractUptime(container.Status) : null;
                               const hcLabel = healthcheckLabel(health);
                               const stats = containerStats[container?.Id];
                               const history = stats?.history;
 
-                              const badgeClass = health === 'unhealthy' || !isRunning
+                              const badgeClass = health === 'unhealthy' || !isActive
                                 ? 'bg-destructive text-destructive-foreground'
                                 : health === 'starting'
                                   ? 'bg-warning text-warning-foreground'
                                   : 'bg-success text-success-foreground';
-                              const badgeGlyph = health === 'unhealthy' || !isRunning ? '✗' : health === 'starting' ? '…' : '✓';
+                              const badgeGlyph = health === 'unhealthy' || !isActive ? '✗' : health === 'starting' ? '…' : '✓';
                               const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
 
                               return (
@@ -2537,7 +2559,7 @@ export default function EditorLayout() {
                                         variant="ghost"
                                         className="h-7 w-7 rounded-md"
                                         onClick={() => openLogViewer(container?.Id, containerName)}
-                                        disabled={!isRunning}
+                                        disabled={!isActive}
                                         aria-label="View logs"
                                       >
                                         <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2548,15 +2570,45 @@ export default function EditorLayout() {
                                           variant="ghost"
                                           className="h-7 w-7 rounded-md"
                                           onClick={() => openBashModal(container?.Id, containerName)}
-                                          disabled={!isRunning}
+                                          disabled={!isActive}
                                           aria-label="Open bash shell"
                                         >
                                           <Terminal className="h-3.5 w-3.5" strokeWidth={1.5} />
                                         </Button>
                                       )}
+                                      {container.Service && (
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="h-7 w-7 rounded-md"
+                                              aria-label="Service actions"
+                                            >
+                                              <MoreVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            {isActive ? (
+                                              <>
+                                                <DropdownMenuItem onSelect={() => serviceAction('restart', container.Service!)}>
+                                                  Restart service
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => serviceAction('stop', container.Service!)}>
+                                                  Stop service
+                                                </DropdownMenuItem>
+                                              </>
+                                            ) : (
+                                              <DropdownMenuItem onSelect={() => serviceAction('start', container.Service!)}>
+                                                Start service
+                                              </DropdownMenuItem>
+                                            )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      )}
                                     </div>
                                   </div>
-                                  {isRunning ? (
+                                  {isActive ? (
                                     <div className="mt-2 grid grid-cols-3 gap-2">
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">

@@ -18,6 +18,12 @@ export const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /stacks/*/start': 'Started stack',
   'POST /stacks/*/stop': 'Stopped stack',
   'POST /stacks/*/restart': 'Restarted stack',
+
+  // Per-service lifecycle (resourceName = stack name; service name is in the path column)
+  'POST /stacks/*/services/*/start': 'Started stack service',
+  'POST /stacks/*/services/*/stop': 'Stopped stack service',
+  'POST /stacks/*/services/*/restart': 'Restarted stack service',
+
   'POST /stacks/*/update': 'Updated stack images',
   'POST /stacks/*/rollback': 'Rolled back stack',
 
