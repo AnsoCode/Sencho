@@ -185,7 +185,7 @@ stacksRouter.get('/:stackName/env', async (req: Request, res: Response) => {
     const requestedFile = req.query.file as string | undefined;
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
-    let envPath = envPaths[0];
+    let envPath: string | undefined = envPaths[0];
 
     if (requestedFile) {
       if (envPaths.includes(requestedFile)) {
@@ -193,6 +193,15 @@ stacksRouter.get('/:stackName/env', async (req: Request, res: Response) => {
       } else {
         return res.status(400).json({ error: 'Requested env file not allowed' });
       }
+    }
+
+    // Default path with no env files yet: reply 200 with an empty body and a
+    // header the frontend can read. This avoids surfacing a 404 for the
+    // legitimate "stack has no .env yet" case, which previous flows
+    // sometimes echoed back to the user as a confusing error string.
+    if (!envPath) {
+      res.setHeader('X-Env-Exists', 'false');
+      return res.send('');
     }
 
     const fsService = FileSystemService.getInstance(req.nodeId);
@@ -204,11 +213,31 @@ stacksRouter.get('/:stackName/env', async (req: Request, res: Response) => {
       if (code !== 'ENOENT') {
         console.error('[Sencho] Unexpected error checking env file existence:', (e as Error).message);
       }
-      return res.status(404).json({ error: 'Env file not found' });
+      // No env file at the resolved path. For an explicit ?file= query we
+      // surface a 404 (the caller asked for something specific). Otherwise
+      // treat it as the empty-stack case above.
+      if (requestedFile) {
+        return res.status(404).json({ error: 'Env file not found' });
+      }
+      res.setHeader('X-Env-Exists', 'false');
+      return res.send('');
     }
 
-    const content = await fsService.readFile(envPath, 'utf-8');
-    res.send(content);
+    try {
+      const content = await fsService.readFile(envPath, 'utf-8');
+      res.setHeader('X-Env-Exists', 'true');
+      return res.send(content);
+    } catch (e: unknown) {
+      // TOCTOU: the file existed at access() but vanished before readFile().
+      // Return the same friendly empty-body shape rather than a generic 500
+      // that the frontend would otherwise echo as an opaque error.
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT' && !requestedFile) {
+        res.setHeader('X-Env-Exists', 'false');
+        return res.send('');
+      }
+      throw e;
+    }
   } catch (error) {
     console.error('Failed to read env file:', error);
     res.status(500).json({ error: 'Failed to read env file' });

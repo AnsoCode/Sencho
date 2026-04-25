@@ -1159,11 +1159,20 @@ export default function EditorLayout() {
     setIsFileLoading(true);
     try {
       const res = await apiFetch(`/stacks/${selectedFile}/env?file=${encodeURIComponent(file)}`);
+      if (!res.ok) {
+        // Don't stuff a JSON error body into the editor on a non-OK response.
+        setEnvContent('');
+        setOriginalEnvContent('');
+        toast.error('Could not load env file');
+        return;
+      }
       const text = await res.text();
       setEnvContent(text || '');
       setOriginalEnvContent(text || '');
     } catch (e) {
       console.error('Failed to switch env file', e);
+      setEnvContent('');
+      setOriginalEnvContent('');
     } finally {
       setIsFileLoading(false);
     }
