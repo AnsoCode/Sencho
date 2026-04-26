@@ -49,6 +49,16 @@ export async function isDashboard(page: Page): Promise<boolean> {
 }
 
 /**
+ * Wait for the stacks sidebar to finish loading. Waits for the Create Stack
+ * button and the data-stacks-loaded sentinel set by the CommandList after its
+ * async refreshStacks() call resolves.
+ */
+export async function waitForStacksLoaded(page: Page): Promise<void> {
+  await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
+}
+
+/**
  * Navigate to the app root, complete first-run setup if needed, then log in.
  * After this call the dashboard is guaranteed to be visible.
  */

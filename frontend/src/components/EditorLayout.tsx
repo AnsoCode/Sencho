@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy, FolderOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
@@ -73,6 +73,7 @@ import { usePinnedStacks } from '@/hooks/usePinnedStacks';
 import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
 import type { StackRowStatus } from '@/components/sidebar/StackRow';
 import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
+import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 
 interface ContainerInfo {
   Id: string;
@@ -237,7 +238,7 @@ export default function EditorLayout() {
   // the delta is always computed against the most recent known value, avoiding
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
-  const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const [activeTab, setActiveTab] = useState<'compose' | 'env' | 'files'>('compose');
   const [logsMode, setLogsMode] = useState<'structured' | 'raw'>(() => {
     if (typeof window === 'undefined') return 'structured';
     return (localStorage.getItem('sencho.stackView.logsMode') as 'structured' | 'raw' | null) ?? 'structured';
@@ -1107,6 +1108,7 @@ export default function EditorLayout() {
     setIsFileLoading(true);
     setIsEditing(false); // Reset to view mode when loading a new file
     setEditingCompose(false); // Default back to anatomy on stack switch
+    setActiveTab('compose');
     try {
       const res = await apiFetch(`/stacks/${filename}`);
       const text = await res.text();
@@ -1231,6 +1233,7 @@ export default function EditorLayout() {
   };
 
   const saveFile = async () => {
+    if (activeTab === 'files') return;
     if (!selectedFile) return;
     const currentContent = activeTab === 'compose' ? (content || '') : (envContent || '');
     const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env?file=${encodeURIComponent(selectedEnvFile)}`;
@@ -1291,6 +1294,7 @@ export default function EditorLayout() {
   };
 
   const discardChanges = () => {
+    if (activeTab === 'files') return;
     if (activeTab === 'compose') {
       setContent(originalContent);
     } else {
@@ -2713,7 +2717,7 @@ export default function EditorLayout() {
                 <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-0 bg-card">
                   <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
-                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
+                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env' | 'files')}>
                         <TabsList>
                           <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
                             <TabsHighlightItem value="compose">
@@ -2721,6 +2725,12 @@ export default function EditorLayout() {
                             </TabsHighlightItem>
                             <TabsHighlightItem value="env">
                               <TabsTrigger value="env" disabled={!envExists}>.env</TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="files">
+                              <TabsTrigger value="files">
+                                <FolderOpen className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                Files
+                              </TabsTrigger>
                             </TabsHighlightItem>
                           </TabsHighlight>
                         </TabsList>
@@ -2742,7 +2752,7 @@ export default function EditorLayout() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {can('stack:edit', 'stack', stackName) && (
+                      {activeTab !== 'files' && can('stack:edit', 'stack', stackName) && (
                         <>
                         <Button
                           size="sm"
@@ -2805,45 +2815,57 @@ export default function EditorLayout() {
                     </div>
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
-                    {activeTab === 'env' && (
-                      <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
-                        <span>
-                          Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                      {!isFileLoading && (
-                        <Editor
-                          height="100%"
-                          language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
-                          theme={isDarkMode ? 'vs-dark' : 'vs'}
-                          value={activeTab === 'compose' ? safeContent : safeEnvContent}
-                          onMount={(editor) => { monacoEditorRef.current = editor; }}
-                          onChange={(value) => {
-                            if (!isEditing) return; // Prevent changes in view mode
-                            if (activeTab === 'compose') {
-                              setContent(value || '');
-                            } else {
-                              setEnvContent(value || '');
-                            }
-                          }}
-                          options={{
-                            minimap: { enabled: false },
-                            fontFamily: "'Geist Mono', monospace",
-                            fontSize: 14,
-                            padding: { top: 10 },
-                            scrollBeyondLastLine: false,
-                            readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
-                          }}
-                        />
-                      )}
-                      {isFileLoading && (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                          Loading...
+                    {activeTab === 'files' ? (
+                      <StackFileExplorer
+                        stackName={stackName}
+                        canEdit={can('stack:edit', 'stack', stackName)}
+                        isDarkMode={isDarkMode}
+                        onNavigateToCompose={() => setActiveTab('compose')}
+                        onNavigateToEnv={() => setActiveTab('env')}
+                      />
+                    ) : (
+                      <>
+                        {activeTab === 'env' && (
+                          <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
+                            <span>
+                              Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                          {!isFileLoading && (
+                            <Editor
+                              height="100%"
+                              language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
+                              theme={isDarkMode ? 'vs-dark' : 'vs'}
+                              value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                              onMount={(editor) => { monacoEditorRef.current = editor; }}
+                              onChange={(value) => {
+                                if (!isEditing) return; // Prevent changes in view mode
+                                if (activeTab === 'compose') {
+                                  setContent(value || '');
+                                } else {
+                                  setEnvContent(value || '');
+                                }
+                              }}
+                              options={{
+                                minimap: { enabled: false },
+                                fontFamily: "'Geist Mono', monospace",
+                                fontSize: 14,
+                                padding: { top: 10 },
+                                scrollBeyondLastLine: false,
+                                readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
+                              }}
+                            />
+                          )}
+                          {isFileLoading && (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                              Loading...
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </>
+                    )}
                   </div>
                 </Card>
                 ) : (
@@ -2854,6 +2876,7 @@ export default function EditorLayout() {
                   selectedEnvFile={selectedEnvFile}
                   gitSourcePending={Boolean(gitSourcePendingMap[stackName])}
                   onEditCompose={() => setEditingCompose(true)}
+                  onOpenFiles={() => { setEditingCompose(true); setActiveTab('files'); }}
                   onOpenGitSource={() => setGitSourceOpen(true)}
                   onApplyUpdate={() => { void updateStack(); }}
                   canEdit={can('stack:edit', 'stack', stackName)}

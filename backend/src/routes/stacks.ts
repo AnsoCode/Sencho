@@ -1,6 +1,7 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import path from 'path';
 import YAML from 'yaml';
+import multer from 'multer';
 import { FileSystemService } from '../services/FileSystemService';
 import { ComposeService } from '../services/ComposeService';
 import DockerController from '../services/DockerController';
@@ -13,7 +14,7 @@ import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
 import { requirePermission } from '../middleware/permissions';
 import { requirePaid, requireAdmin } from '../middleware/tierGates';
 import { NotificationService } from '../services/NotificationService';
-import { isValidStackName, isValidServiceName, isPathWithinBase } from '../utils/validation';
+import { isValidStackName, isValidServiceName, isPathWithinBase, isValidRelativeStackPath } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 import { sendGitSourceError } from '../utils/gitSourceHttp';
@@ -98,6 +99,15 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
   } catch {
     return [];
   }
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+});
+
+function getRelPath(req: Request): string {
+  return typeof req.query.path === 'string' ? req.query.path : '';
 }
 
 export const stacksRouter = Router();
@@ -845,5 +855,187 @@ stacksRouter.get('/:stackName/backup', async (req: Request, res: Response) => {
     console.error('Failed to get backup info:', error);
     const message = getErrorMessage(error, 'Failed to get backup info.');
     res.status(500).json({ error: message });
+  }
+});
+
+// ── File explorer endpoints ──
+
+type FsErrorCode = 'INVALID_PATH' | 'SYMLINK_ESCAPE' | 'IS_DIRECTORY' | 'NOT_EMPTY' | 'NOT_FOUND' | 'TOO_LARGE';
+
+function sendFsError(
+  res: Response,
+  err: unknown,
+  fallback: string,
+  opts: { notFoundMessage?: string } = {},
+): Response {
+  const e = err as NodeJS.ErrnoException & { code?: string };
+  if (e.code === 'INVALID_PATH' || e.code === 'SYMLINK_ESCAPE') {
+    return res.status(400).json({ error: e.message, code: e.code as FsErrorCode });
+  }
+  if (e.code === 'IS_DIRECTORY') {
+    return res.status(400).json({ error: e.message, code: e.code as FsErrorCode });
+  }
+  if (e.code === 'NOT_EMPTY') {
+    return res.status(409).json({ error: e.message, code: e.code as FsErrorCode });
+  }
+  if (e.code === 'ENOENT') {
+    return res.status(404).json({ error: opts.notFoundMessage ?? 'File not found', code: 'NOT_FOUND' });
+  }
+  console.error(`[files] ${fallback}:`, e.message);
+  return res.status(500).json({ error: fallback });
+}
+
+stacksRouter.get('/:stackName/files', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  const relPath = getRelPath(req);
+  if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  try {
+    const entries = await FileSystemService.getInstance(req.nodeId).listStackDirectory(stackName, relPath);
+    return res.json(entries);
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to list directory');
+  }
+});
+
+stacksRouter.get('/:stackName/files/content', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  const relPath = getRelPath(req);
+  if (!relPath) return res.status(400).json({ error: 'path query parameter is required', code: 'INVALID_PATH' });
+  if (!isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  try {
+    const result = await FileSystemService.getInstance(req.nodeId).readStackFile(stackName, relPath);
+    return res.json(result);
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to read file');
+  }
+});
+
+stacksRouter.get('/:stackName/files/download', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  const relPath = getRelPath(req);
+  if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  try {
+    const result = await FileSystemService.getInstance(req.nodeId).streamStackFile(stackName, relPath);
+    res.setHeader('Content-Type', result.mime);
+    res.setHeader('Content-Length', result.size);
+    const encodedFilename = encodeURIComponent(result.filename);
+    const safeFilename = result.filename.replace(/[\\"]/g, '');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
+    result.stream.on('error', (streamErr) => {
+      console.error('[files] stream error:', streamErr);
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    req.on('close', () => result.stream.destroy());
+    result.stream.pipe(res);
+    return;
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to download file');
+  }
+});
+
+stacksRouter.post(
+  '/:stackName/files/upload',
+  (req: Request, res: Response, next: NextFunction) => {
+    const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+    if (!requirePaid(req, res)) return;
+    upload.single('file')(req, res, (err) => {
+      if (err && (err as multer.MulterError).code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File exceeds 25 MB limit', code: 'TOO_LARGE' });
+      }
+      if (err) return res.status(500).json({ error: 'Upload failed' });
+      next();
+    });
+  },
+  async (req: Request, res: Response) => {
+    const stackName = req.params.stackName as string;
+    if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+    const relPath = getRelPath(req);
+    if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
+      return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+    }
+    const safeName = path.basename(req.file.originalname);
+    if (!safeName || safeName === '.' || safeName === '..') {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const targetRelPath = relPath ? `${relPath}/${safeName}` : safeName;
+    try {
+      await FileSystemService.getInstance(req.nodeId).writeStackFileBuffer(stackName, targetRelPath, req.file.buffer);
+      return res.status(204).send();
+    } catch (err: unknown) {
+      return sendFsError(res, err, 'Failed to upload file', { notFoundMessage: 'Target directory not found' });
+    }
+  },
+);
+
+stacksRouter.put('/:stackName/files/content', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  const relPath = getRelPath(req);
+  if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  const { content } = req.body as { content?: unknown };
+  if (typeof content !== 'string') {
+    return res.status(400).json({ error: '"content" must be a string' });
+  }
+  try {
+    await FileSystemService.getInstance(req.nodeId).writeStackFile(stackName, relPath, content);
+    return res.status(204).send();
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to write file');
+  }
+});
+
+stacksRouter.delete('/:stackName/files', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  const relPath = getRelPath(req);
+  if (relPath === '') return res.status(400).json({ error: 'Path is required for delete' });
+  if (!isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  const recursive = req.query.recursive === '1';
+  try {
+    await FileSystemService.getInstance(req.nodeId).deleteStackPath(stackName, relPath, recursive);
+    return res.status(204).send();
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to delete path');
+  }
+});
+
+stacksRouter.post('/:stackName/files/folder', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  const relPath = getRelPath(req);
+  if (relPath === '') return res.status(400).json({ error: 'Path is required to create a folder' });
+  if (!isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  try {
+    await FileSystemService.getInstance(req.nodeId).mkdirStackPath(stackName, relPath);
+    return res.status(204).send();
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to create folder');
   }
 });

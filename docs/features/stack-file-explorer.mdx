@@ -1,0 +1,104 @@
+---
+title: Stack File Explorer
+description: Browse, edit, upload, and manage files inside a stack's directory from the dashboard.
+---
+
+The file explorer gives you direct access to everything inside a stack's directory: configuration files, certificates, scripts, static assets, and any other files your containers depend on. It lives on the **Files** tab inside the stack editor.
+
+<Note>
+  The explorer is scoped to the stack's own directory. You cannot browse other stacks or navigate above the stack root.
+</Note>
+
+## Opening the file explorer
+
+Select any stack in the sidebar, then click the **Files** tab in the editor. The left panel shows the directory tree; clicking a file opens it in the viewer on the right.
+
+## Tiers at a glance
+
+<CardGroup cols={2}>
+  <Card title="Community" icon="eye">
+    Browse the directory tree and view text files in read-only mode.
+  </Card>
+  <Card title="Skipper" icon="pencil">
+    Full read/write access: upload, download, edit and save, create folders, and delete files or directories. Admiral tier includes the same access.
+  </Card>
+</CardGroup>
+
+## Browsing the directory tree
+
+The tree lists all files and folders in the stack directory. Folders are sorted before files, and items within each group are sorted alphabetically.
+
+Click a folder to expand or collapse it. Click a file to open it in the viewer panel on the right.
+
+### Protected files
+
+`compose.yaml`, `docker-compose.yaml`, `docker-compose.yml`, `.env`, and any `.env.*` variants are shown in the tree, but clicking them does not open the generic file viewer. Instead, Sencho navigates to the dedicated **Compose** or **Env** tab editor for that file. This ensures you always use the purpose-built editor with save-and-deploy controls for your main stack files.
+
+## Viewing files
+
+When you click a text file, its contents appear in the editor panel on the right.
+
+**Viewing limits:**
+
+| File type | Behaviour |
+|-----------|-----------|
+| Text file up to 2 MB | Displayed inline with syntax highlighting. |
+| Text file over 2 MB | "File is too large to preview" message with a **Download** button (Skipper+). |
+| Binary file | "Binary file detected" message with a **Download** button (Skipper+). |
+
+On Community, the Download button is hidden for files that exceed the preview limit. To access large or binary files from the Community tier, use the host terminal or `docker cp` from your server.
+
+## Editing and saving (Skipper+)
+
+Text files open in read-only mode by default. Click **Edit** in the toolbar to enable editing. The editor accepts plain text input.
+
+When you're done, click **Save** to write the file to disk. Unsaved changes are discarded when you navigate away or close the tab.
+
+<Warning>
+  Editing a file does not restart any containers. If your stack reads the file at runtime (e.g. a config file mounted as a volume), restart the relevant service after saving for the change to take effect.
+</Warning>
+
+## Uploading files (Skipper+)
+
+Click **Upload** in the file explorer toolbar, then select one or more files from your local machine. Files are uploaded into the currently selected directory.
+
+**Limits:**
+
+- Maximum 25 MB per file.
+- Files larger than 25 MB are rejected with an error. Split large archives or use `scp` / `rsync` for bulk transfers.
+
+If a file with the same name already exists in the target directory, it is overwritten.
+
+## Downloading files (Skipper+)
+
+Click the **Download** button in the file toolbar (for the currently open file) or right-click a file in the tree and choose **Download**. Files are streamed directly to your browser. The download limit is 100 MB per file.
+
+<Tip>
+  For files larger than 100 MB, use `docker cp`, `scp`, or mount an export volume and copy from there.
+</Tip>
+
+## Creating folders (Skipper+)
+
+Click the **New Folder** button in the tree toolbar, or right-click an existing folder and choose **New Folder**. Enter a name and confirm. The new folder is created immediately and appears in the tree.
+
+Folder names follow the same rules as filenames on your host OS. Avoid leading dots unless you intend a hidden directory.
+
+## Deleting files and folders (Skipper+)
+
+Right-click a file or folder in the tree and choose **Delete**. A confirmation prompt appears before anything is removed.
+
+**Deleting a folder** removes the folder and all of its contents recursively. The confirmation dialog lists the path so you can verify before proceeding.
+
+<Warning>
+  Deletions are permanent. Sencho does not keep a trash bin or undo history for file operations.
+</Warning>
+
+## Troubleshooting
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| File shows as "Binary file detected" but it is a text file | The binary detection heuristic found null bytes or a high proportion of non-printable characters, which can happen with certain encodings or line endings | Download the file, edit it locally or via an SSH session, then re-upload. Alternatively, open a host terminal and edit with `nano` or `vim`. |
+| Upload fails with a 413 error | The file exceeds the 25 MB per-file limit | Compress or split the file before uploading, or transfer it via `scp` / `rsync` directly to the stack directory on the host. |
+| Cannot delete a folder | The UI requires confirmation before a recursive delete | Confirm the deletion prompt. If the error persists, check whether a running container has an open file handle inside that directory, which can block the delete on some OS configurations. Stop the relevant service and retry. |
+| File saved but container still reads old content | The container caches the file at startup or the mount is read-only inside the container | Restart the service after saving so the container picks up the new file. |
+| Download button not visible | You are on the Community tier, and the file exceeds the preview limit or is binary | Upgrade to Skipper to enable downloads, or access the file via the host terminal or `docker cp`. |

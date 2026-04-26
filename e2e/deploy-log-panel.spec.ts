@@ -9,7 +9,7 @@
  * on a cold cache.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { loginAs } from './helpers';
+import { loginAs, waitForStacksLoaded } from './helpers';
 
 const HAPPY_STACK = 'e2e-deploy-log-test';
 const FAIL_STACK = 'e2e-deploy-log-fail-test';
@@ -24,11 +24,6 @@ const FAIL_COMPOSE = `services:
   web:
     image: nginnnnx:notexist
 `;
-
-async function waitForStacksLoaded(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
-}
 
 async function createStackViaApi(page: Page, name: string, composeContent: string): Promise<void> {
   await page.evaluate(
