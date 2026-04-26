@@ -11,6 +11,7 @@ import { Search, Rocket, Loader2, Info, ExternalLink, Star, ShieldCheck } from '
 import { toast } from '@/components/ui/toast-store';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
+import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useNodes } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
@@ -37,6 +38,7 @@ interface AppStoreViewProps {
 export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     const { can } = useAuth();
     const { activeNode } = useNodes();
+    const { runWithLog } = useDeployFeedback();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -189,23 +191,28 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
         });
 
         try {
-            const res = await apiFetch('/templates/deploy', {
-                method: 'POST',
-                body: JSON.stringify({
-                    stackName: stackName.trim(),
-                    template: modifiedTemplate,
-                    envVars: finalEnvVars,
-                    skip_scan: !autoScan,
-                }),
+            const result = await runWithLog({ stackName: stackName.trim(), action: 'install' }, async (started) => {
+                await started;
+                const res = await apiFetch('/templates/deploy', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        stackName: stackName.trim(),
+                        template: modifiedTemplate,
+                        envVars: finalEnvVars,
+                        skip_scan: !autoScan,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) return { ok: false, errorMessage: data.error || 'Failed to deploy template' };
+                return { ok: true };
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to deploy template');
-
-            toast.success(`${selectedTemplate?.title} deployed successfully!`);
-            setIsSheetOpen(false);
-            onDeploySuccess(stackName.trim());
-        } catch (err) {
-            toast.error((err as Error).message || 'Deployment failed');
+            if (result.ok) {
+                toast.success(`${selectedTemplate?.title} deployed successfully!`);
+                setIsSheetOpen(false);
+                onDeploySuccess(stackName.trim());
+            } else {
+                toast.error(result.errorMessage || 'Deployment failed');
+            }
         } finally {
             setIsDeploying(false);
         }

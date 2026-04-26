@@ -65,6 +65,7 @@ import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
+import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
@@ -180,6 +181,7 @@ export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
+  const { runWithLog } = useDeployFeedback();
   const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
@@ -1329,13 +1331,19 @@ export default function EditorLayout() {
     }
   };
 
-  const runDeploy = async (stackName: string, stackFile: string, ignorePolicy: boolean): Promise<void> => {
+  const runDeploy = async (
+    stackName: string,
+    stackFile: string,
+    ignorePolicy: boolean,
+    started?: Promise<void>,
+  ): Promise<{ ok: boolean; errorMessage?: string }> => {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
       const path = ignorePolicy
         ? `/stacks/${stackName}/deploy?ignorePolicy=true`
         : `/stacks/${stackName}/deploy`;
+      if (started) await started;
       const response = await apiFetch(path, { method: 'POST' });
       if (!response.ok) {
         const rawBody = await response.text();
@@ -1346,7 +1354,7 @@ export default function EditorLayout() {
             setPolicyBlock({ stackName, payload: parsed });
             if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
             toast.error(`Deploy blocked by policy "${parsed.policy.name}"`);
-            return;
+            return { ok: false, errorMessage: `Deploy blocked by policy "${parsed.policy.name}"` };
           }
         }
         throw new Error(rawBody || 'Deploy failed');
@@ -1364,11 +1372,13 @@ export default function EditorLayout() {
           if (backupRes.ok) setBackupInfo(await backupRes.json());
         } catch { /* ignore */ }
       }
+      return { ok: true };
     } catch (error) {
       console.error('Failed to deploy:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      const msg = (error as Error).message || 'Failed to deploy stack';
-      toast.error(isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
+      const errorMessage = (error as Error).message || 'Failed to deploy stack';
+      toast.error(isPaid ? `${errorMessage} - automatically rolled back to previous version.` : errorMessage);
+      return { ok: false, errorMessage };
     }
   };
 
@@ -1380,7 +1390,9 @@ export default function EditorLayout() {
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'deploy');
     try {
-      await runDeploy(stackName, stackFile, false);
+      await runWithLog({ stackName, action: 'deploy' }, (started) =>
+        runDeploy(stackName, stackFile, false, started)
+      );
     } finally {
       clearStackAction(stackFile);
       refreshStacks(true);
@@ -1396,7 +1408,9 @@ export default function EditorLayout() {
     setPolicyBypassing(true);
     setStackAction(existingFile, 'deploy');
     try {
-      await runDeploy(policyBlock.stackName, existingFile, true);
+      await runWithLog({ stackName: policyBlock.stackName, action: 'deploy' }, (started) =>
+        runDeploy(policyBlock.stackName, existingFile, true, started)
+      );
     } finally {
       setPolicyBypassing(false);
       clearStackAction(existingFile);
@@ -1414,20 +1428,21 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'exited');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/stop`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'stop' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/stop`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Stop failed');
+        }
+        toast.success('Stack stopped successfully!');
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Stop failed');
-      }
-      toast.success('Stack stopped successfully!');
-      // Refresh containers after stop
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to stop:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
@@ -1448,20 +1463,21 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/restart`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'restart' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/restart`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Restart failed');
+        }
+        toast.success('Stack restarted successfully!');
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Restart failed');
-      }
-      toast.success('Stack restarted successfully!');
-      // Refresh containers after restart
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to restart:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
@@ -1503,21 +1519,22 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/update`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'update' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/update`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Update failed');
+        }
+        toast.success('Stack updated successfully!');
+        fetchImageUpdates();
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Update failed');
-      }
-      toast.success('Stack updated successfully!');
-      fetchImageUpdates();
-      // Refresh containers after update
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to update:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
@@ -2407,12 +2424,12 @@ export default function EditorLayout() {
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
                                 <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                               </Button>
                             ) : (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
                               </Button>

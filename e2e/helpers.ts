@@ -72,11 +72,23 @@ export async function loginAs(page: Page, username = TEST_USERNAME, password = T
 
   // ── Login screen ─────────────────────────────────────────────────────────
   if (await isLoginPage(page)) {
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('button:has-text("Login"), button:has-text("Sign in")').first().click();
-    await expect(page.locator(DASHBOARD_INDICATOR)).toBeVisible({ timeout: 10_000 });
-    return;
+    // Confirm the username field is actually visible before filling. If
+    // isLoginPage was a transient false positive (e.g. login form briefly
+    // rendered before auth check redirected to dashboard), the fill would
+    // hang forever waiting for #username to come back.
+    const usernameField = page.locator('#username');
+    const usernameVisible = await usernameField
+      .waitFor({ state: 'visible', timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (usernameVisible) {
+      await usernameField.fill(username);
+      await page.locator('#password').fill(password);
+      await page.locator('button:has-text("Login"), button:has-text("Sign in")').first().click();
+      await expect(page.locator(DASHBOARD_INDICATOR)).toBeVisible({ timeout: 10_000 });
+      return;
+    }
+    // Fall through to the dashboard check below.
   }
 
   // ── Already on the dashboard ──────────────────────────────────────────────
