@@ -66,7 +66,16 @@ async function deleteStackViaApi(page: Page, name: string): Promise<void> {
   }, name);
 }
 
+/**
+ * Set the opt-in flag so it survives every page navigation and reload in the
+ * test. addInitScript runs before any page script on each load, so the React
+ * tree's useState initializer always reads the current value on mount. The
+ * page.evaluate call covers any state already mounted on the current page.
+ */
 async function enableDeployFeedback(page: Page): Promise<void> {
+  await page.addInitScript((key: string) => {
+    window.localStorage.setItem(key, 'true');
+  }, DEPLOY_FEEDBACK_KEY);
   await page.evaluate((key: string) => {
     window.localStorage.setItem(key, 'true');
     window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
