@@ -99,6 +99,7 @@
               "features/sidebar",
               "features/stack-management",
               "features/editor",
+              "features/stack-file-explorer",
               "features/deploy-progress",
               "features/resources",
               "features/app-store",
