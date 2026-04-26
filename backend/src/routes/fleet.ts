@@ -22,6 +22,8 @@ import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { NotificationService } from '../services/NotificationService';
+import { buildLocalConfigurationStatus, type ConfigurationStatus } from './dashboard';
+import { LicenseService } from '../services/LicenseService';
 
 const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -326,6 +328,70 @@ fleetRouter.get('/overview', authMiddleware, async (_req: Request, res: Response
   } catch (error) {
     console.error('[Fleet] Overview error:', error);
     res.status(500).json({ error: 'Failed to fetch fleet overview' });
+  }
+});
+
+interface FleetNodeConfiguration {
+  id: number;
+  name: string;
+  type: 'local' | 'remote';
+  status: 'online' | 'offline';
+  configuration: ConfigurationStatus | null;
+}
+
+fleetRouter.get('/configuration', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const db = DatabaseService.getInstance();
+    const nodes = db.getNodes();
+    const userId = req.user?.userId ?? 0;
+    const localTier = LicenseService.getInstance().getTier();
+    const localVariant = LicenseService.getInstance().getVariant();
+
+    const results = await Promise.allSettled(
+      nodes.map(async (node: Node): Promise<FleetNodeConfiguration> => {
+        if (node.type === 'local') {
+          return {
+            id: node.id,
+            name: node.name,
+            type: 'local',
+            status: 'online',
+            configuration: buildLocalConfigurationStatus(node.id, userId, localTier, localVariant),
+          };
+        }
+
+        if (!node.api_url || !node.api_token) {
+          return { id: node.id, name: node.name, type: 'remote', status: 'offline', configuration: null };
+        }
+
+        try {
+          const resp = await fetch(
+            `${node.api_url.replace(/\/$/, '')}/api/dashboard/configuration`,
+            { headers: { Authorization: `Bearer ${node.api_token}` }, signal: AbortSignal.timeout(10000) },
+          );
+          const configuration = resp.ok ? (await resp.json() as ConfigurationStatus) : null;
+          return {
+            id: node.id,
+            name: node.name,
+            type: 'remote',
+            status: configuration ? 'online' : 'offline',
+            configuration,
+          };
+        } catch {
+          return { id: node.id, name: node.name, type: 'remote', status: 'offline', configuration: null };
+        }
+      }),
+    );
+
+    const fleet: FleetNodeConfiguration[] = results.map((result, i) => {
+      if (result.status === 'fulfilled') return result.value;
+      console.error(`[Fleet] Configuration fetch failed for node ${nodes[i].name}:`, result.reason);
+      return { id: nodes[i].id, name: nodes[i].name, type: nodes[i].type, status: 'offline', configuration: null };
+    });
+
+    res.json(fleet);
+  } catch (error) {
+    console.error('[Fleet] Configuration overview error:', error);
+    res.status(500).json({ error: 'Failed to fetch fleet configuration' });
   }
 });
 

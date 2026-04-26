@@ -37,10 +37,11 @@ Below the masthead, switch between two layouts:
 
 ### Tabs
 
-The Fleet page has two tabs:
+The Fleet page has three tabs:
 
 - **Overview**: the monitoring view described on this page
 - **Snapshots**: fleet-wide backup snapshots (covered in [Fleet Backups](/features/fleet-backups))
+- **Status**: fleet-wide feature status rollup (covered below)
 
 ### Action buttons
 
@@ -173,6 +174,33 @@ If you update the local node, a confirmation dialog appears first, then a reconn
 </Note>
 
 **How self-update works:** Each Sencho instance reads its own Docker Compose labels to determine the image name, compose file path, and service name. It pulls the latest image directly, then spawns a helper container that mounts the compose directory from the host and runs `docker compose up --force-recreate`. This approach works regardless of the container's own volume mounts.
+
+---
+
+## Fleet Status tab
+
+The **Status** tab gives you a fleet-wide summary of which automations and security features are active on each node, without having to open each node's settings individually.
+
+<Frame>
+  <img src="/images/fleet/configuration-tab.png" alt="Fleet Configuration tab showing per-node configuration summaries with one online node and one offline node" />
+</Frame>
+
+Each node appears as a card. Online nodes display a compact two-column summary grid:
+
+| Field | What it shows |
+|-------|---------------|
+| **Agents** | Delivery agents configured on this node |
+| **Alert rules** | Number of per-stack alert rules |
+| **Auto-heal** | Active auto-heal policies |
+| **Webhooks** | Outbound webhook triggers |
+| **MFA** | Whether MFA is set up for the admin account |
+| **Scanning** | Active vulnerability scan policies |
+| **Backup** | Cloud backup provider, or Disabled |
+| **Crash detect** | Whether global crash detection is on |
+
+Offline nodes show a muted card with "Node is unreachable. Configuration unavailable." The online/offline badge confirms the node's current reachability at the time of the last fetch.
+
+The tab fetches configuration data from all nodes in parallel. A dead node does not block the others from rendering.
 
 ---
 

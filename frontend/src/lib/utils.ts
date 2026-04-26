@@ -13,3 +13,18 @@ export function formatBytes(bytes: number, decimals = 2) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
+
+export function formatCount(n: number, unit: string): string {
+  if (n === 0) return 'None';
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
+
+export function visibilityInterval(fn: () => void, ms: number): () => void {
+  let interval: ReturnType<typeof setInterval> | null = null;
+  const start = () => { if (interval) return; interval = setInterval(fn, ms); };
+  const stop = () => { if (interval) { clearInterval(interval); interval = null; } };
+  const onVisChange = () => { if (document.hidden) { stop(); } else { fn(); start(); } };
+  document.addEventListener('visibilitychange', onVisChange);
+  start();
+  return () => { stop(); document.removeEventListener('visibilitychange', onVisChange); };
+}

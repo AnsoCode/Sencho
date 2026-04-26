@@ -6,6 +6,7 @@ import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import type { NotificationItem } from './dashboard/types';
+import type { SectionId } from './settings/types';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
 import { AdmiralGate } from './AdmiralGate';
@@ -360,7 +361,7 @@ export default function EditorLayout() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [tickerConnected, setTickerConnected] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'labels' | 'nodes'>('account');
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SectionId>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
   const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
@@ -2922,6 +2923,7 @@ export default function EditorLayout() {
               onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
               notifications={notifications}
               onClearNotifications={clearAllNotifications}
+              onOpenSettings={(section) => { setSettingsInitialSection(section); setSettingsModalOpen(true); }}
             />
           )}
         </div>

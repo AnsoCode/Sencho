@@ -1,7 +1,12 @@
 export { HealthStatusBar } from './HealthStatusBar';
 export { ResourceGauges } from './ResourceGauges';
 export { StackHealthTable } from './StackHealthTable';
-export { HistoricalCharts } from './HistoricalCharts';
 export { RecentAlerts } from './RecentAlerts';
+export { ConfigurationStatus } from './ConfigurationStatus';
+export { RecentActivity } from './RecentActivity';
 export { useDashboardData } from './useDashboardData';
+export { useConfigurationStatus } from './useConfigurationStatus';
+export { useRecentActivity } from './useRecentActivity';
 export type * from './types';
+export type { ConfigurationStatus as ConfigurationStatusPayload } from './useConfigurationStatus';
+export type { ActivityItem } from './useRecentActivity';
