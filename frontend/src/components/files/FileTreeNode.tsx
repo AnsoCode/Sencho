@@ -29,6 +29,7 @@ export function FileTreeNode({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onClick();
       }}
+      aria-expanded={isDir ? isExpanded : undefined}
       className={cn(
         'flex items-center gap-1.5 py-0.5 cursor-pointer select-none rounded-sm',
         isSelected
@@ -39,16 +40,16 @@ export function FileTreeNode({
     >
       {isDir && (
         isLoading
-          ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+          ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" strokeWidth={1.5} />
           : isExpanded
-            ? <ChevronDown className="w-3.5 h-3.5 shrink-0" />
-            : <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+            ? <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+            : <ChevronRight className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
       )}
       {isDir
-        ? <Folder className="w-3.5 h-3.5 shrink-0" />
+        ? <Folder className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
         : entry.type === 'symlink'
-          ? <Link className="w-3.5 h-3.5 shrink-0" />
-          : <File className="w-3.5 h-3.5 shrink-0" />
+          ? <Link className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+          : <File className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
       }
       <span className="font-mono text-sm truncate">{entry.name}</span>
       {entry.isProtected && (

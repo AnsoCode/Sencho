@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -32,8 +32,10 @@ export function FileTree({
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [dirContents, setDirContents] = useState<Map<string, FileEntry[]>>(new Map());
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
+  const stackNameRef = useRef(stackName);
 
   useEffect(() => {
+    stackNameRef.current = stackName;
     let cancelled = false;
     setRootLoading(true);
     setError(null);
@@ -79,8 +81,10 @@ export function FileTree({
 
     setLoadingDirs((prev) => new Set(prev).add(dirRelPath));
 
-    listStackDirectory(stackName, dirRelPath)
+    const capturedStackName = stackName;
+    listStackDirectory(capturedStackName, dirRelPath)
       .then((entries) => {
+        if (stackNameRef.current !== capturedStackName) return;
         setDirContents((prev) => {
           const next = new Map(prev);
           next.set(dirRelPath, entries);
@@ -103,11 +107,13 @@ export function FileTree({
 
   function handleFileClick(relPath: string, entry: FileEntry) {
     if (COMPOSE_NAMES.has(entry.name)) {
-      onNavigateToCompose?.();
+      if (onNavigateToCompose) onNavigateToCompose();
+      else toast.info('Open the Compose tab to edit this file.');
       return;
     }
     if (ENV_NAMES.has(entry.name)) {
-      onNavigateToEnv?.();
+      if (onNavigateToEnv) onNavigateToEnv();
+      else toast.info('Open the Env tab to edit this file.');
       return;
     }
     onSelectFile(relPath, entry);
