@@ -1,15 +1,19 @@
 /**
- * Deploy log panel E2E tests.
+ * Deploy feedback modal E2E tests.
+ *
+ * The modal is opt-in (default off). Each test that expects the modal must
+ * enable the setting via localStorage before triggering an action.
  *
  * These tests require a running Docker daemon because they exercise real
- * docker compose up/down operations. Timeouts are generous to allow for
- * image pulls on a cold cache.
+ * docker compose operations. Timeouts are generous to allow for image pulls
+ * on a cold cache.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { loginAs } from './helpers';
 
 const HAPPY_STACK = 'e2e-deploy-log-test';
 const FAIL_STACK = 'e2e-deploy-log-fail-test';
+const DEPLOY_FEEDBACK_KEY = 'sencho.deploy-feedback.enabled';
 
 const HAPPY_COMPOSE = `services:
   web:
@@ -33,7 +37,7 @@ async function createStackViaApi(page: Page, name: string, composeContent: strin
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: stackName }),
+        body: JSON.stringify({ stackName }),
       });
       if (!createRes.ok && createRes.status !== 409) {
         throw new Error(`Failed to create stack: ${createRes.status}`);
@@ -62,101 +66,134 @@ async function deleteStackViaApi(page: Page, name: string): Promise<void> {
   }, name);
 }
 
+async function enableDeployFeedback(page: Page): Promise<void> {
+  await page.evaluate((key: string) => {
+    window.localStorage.setItem(key, 'true');
+    window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
+  }, DEPLOY_FEEDBACK_KEY);
+}
+
+async function disableDeployFeedback(page: Page): Promise<void> {
+  await page.evaluate((key: string) => {
+    window.localStorage.removeItem(key);
+    window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
+  }, DEPLOY_FEEDBACK_KEY);
+}
+
 /**
- * Delete any leftover, create the stack, reload so the sidebar picks it up,
- * then click it to open the editor. Returns with the stack selected and the
- * Deploy button ready to click.
+ * Delete any leftover stack, create a fresh one, reload so the sidebar picks
+ * it up, and click it to open the editor. Returns with the stack selected and
+ * the Deploy button ready.
  */
 async function setupDeployStack(page: Page, name: string, composeContent: string): Promise<void> {
   await deleteStackViaApi(page, name);
   await page.waitForTimeout(300);
   await createStackViaApi(page, name, composeContent);
   await page.reload();
-  // loginAs is a no-op when already on the dashboard
   await loginAs(page);
   await waitForStacksLoaded(page);
   await page.getByText(name, { exact: true }).first().click();
 }
 
-test.describe('Deploy log panel', () => {
+test.describe('Deploy feedback modal', () => {
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
     await waitForStacksLoaded(page);
   });
 
-  test('panel opens, streams output, and auto-closes on success', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('no modal appears when opt-in is off', async ({ page }) => {
+    test.setTimeout(60_000);
 
+    await disableDeployFeedback(page);
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
-    const panel = page.locator('[data-testid="deploy-log-panel"]');
-    await expect(panel).toBeVisible({ timeout: 10_000 });
-
-    // Verify an initial status indicator appears before waiting for completion
-    const connectingText = page.getByText(/Connecting\.\.\./i);
-    const succeededText = page.getByText(/Deployed|Stopped|Restarted|Updated/i);
-    await Promise.race([
-      connectingText.waitFor({ state: 'visible', timeout: 10_000 }),
-      succeededText.waitFor({ state: 'visible', timeout: 10_000 }),
-    ]);
-
-    await expect(page.getByText(/successfully/i)).toBeVisible({ timeout: 60_000 });
-
-    // Panel auto-closes AUTO_CLOSE_DELAY_MS (4s) after success; allow up to 12s total
-    await expect(panel).toBeHidden({ timeout: 12_000 });
+    // Modal must not appear when opt-in is disabled
+    await expect(page.locator('[data-testid="deploy-feedback-modal"]')).not.toBeVisible({
+      timeout: 5_000,
+    });
   });
 
-  test('panel stays open with error indicator on failure', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('modal opens, streams output, and auto-closes on success', async ({ page }) => {
+    test.setTimeout(120_000);
 
+    await enableDeployFeedback(page);
+    await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
+
+    await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
+
+    const modal = page.locator('[data-testid="deploy-feedback-modal"]');
+    await expect(modal).toBeVisible({ timeout: 10_000 });
+
+    // Initial status: either "Connecting..." or already streaming rows
+    const connectingText = page.getByText(/Connecting\.\.\./i);
+    const streamingIndicator = page.getByText(/\d+ lines?/i);
+    await Promise.race([
+      connectingText.waitFor({ state: 'visible', timeout: 10_000 }),
+      streamingIndicator.waitFor({ state: 'visible', timeout: 10_000 }),
+    ]);
+
+    // Wait for the operation to succeed
+    await expect(page.getByText('Succeeded')).toBeVisible({ timeout: 90_000 });
+
+    // Modal auto-closes AUTO_CLOSE_SECONDS (4s) after success; allow up to 15s total
+    await expect(modal).toBeHidden({ timeout: 15_000 });
+  });
+
+  test('modal stays open with error indicator on failure', async ({ page }) => {
+    test.setTimeout(120_000);
+
+    await enableDeployFeedback(page);
     await setupDeployStack(page, FAIL_STACK, FAIL_COMPOSE);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
-    const panel = page.locator('[data-testid="deploy-log-panel"]');
-    await expect(panel).toBeVisible({ timeout: 10_000 });
+    const modal = page.locator('[data-testid="deploy-feedback-modal"]');
+    await expect(modal).toBeVisible({ timeout: 10_000 });
 
-    // Docker fails to pull the nonexistent image; give it up to 60s to attempt and fail
+    // Docker fails to pull the nonexistent image; give it up to 90s to attempt and fail
     await expect(
       page.getByText(/failed|error|not found|unable to find/i).first(),
-    ).toBeVisible({ timeout: 60_000 });
+    ).toBeVisible({ timeout: 90_000 });
 
-    // Panel must remain open on failure; assert it is still visible after 10s
-    await page.waitForTimeout(10_000);
-    await expect(panel).toBeVisible();
+    // Modal must remain open on failure
+    await page.waitForTimeout(8_000);
+    await expect(modal).toBeVisible();
   });
 
-  test('panel can be minimized and expanded while deploy is in progress', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('modal can be minimized to a pill and expanded back', async ({ page }) => {
+    test.setTimeout(120_000);
 
+    await enableDeployFeedback(page);
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
-    const panel = page.locator('[data-testid="deploy-log-panel"]');
-    await expect(panel).toBeVisible({ timeout: 10_000 });
+    const modal = page.locator('[data-testid="deploy-feedback-modal"]');
+    await expect(modal).toBeVisible({ timeout: 10_000 });
 
-    const terminalBody = page.locator('[data-testid="deploy-log-terminal-body"]');
-
-    const minimizeBtn = page.getByRole('button', { name: 'Minimize panel' });
+    // Click the minimize button in the header (first occurrence)
+    const minimizeBtn = page.getByRole('button', { name: 'Minimize' }).first();
     await expect(minimizeBtn).toBeVisible({ timeout: 5_000 });
     await minimizeBtn.click();
 
-    // Terminal body is hidden via display:none when minimized; SheetContent stays in the DOM
-    await expect(terminalBody).toBeHidden({ timeout: 5_000 });
-    await expect(panel).toBeVisible();
+    // Modal dialog closes; pill appears at bottom center
+    await expect(modal).toBeHidden({ timeout: 5_000 });
+    const pill = page.locator('[data-testid="deploy-feedback-pill"]');
+    await expect(pill).toBeVisible({ timeout: 5_000 });
 
-    const expandBtn = page.getByRole('button', { name: 'Expand panel' });
-    await expect(expandBtn).toBeVisible({ timeout: 5_000 });
-    await expandBtn.click();
+    // Pill contains the stack name
+    await expect(pill).toContainText(HAPPY_STACK);
 
-    await expect(terminalBody).toBeVisible({ timeout: 5_000 });
+    // Click the pill to restore the modal
+    await pill.click();
+    await expect(modal).toBeVisible({ timeout: 5_000 });
   });
 
   test.afterEach(async ({ page }) => {
     await deleteStackViaApi(page, HAPPY_STACK);
     await deleteStackViaApi(page, FAIL_STACK);
+    await disableDeployFeedback(page);
   });
 });

@@ -159,6 +159,7 @@ export function DeployFeedbackModal({ isMinimized, onMinimize }: DeployFeedbackM
     <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         showClose={false}
+        data-testid="deploy-feedback-modal"
         className="max-w-[640px] p-0 gap-0 max-h-[70vh] flex flex-col"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
