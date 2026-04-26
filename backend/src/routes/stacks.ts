@@ -526,11 +526,21 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
   if (!isValidStackName(stackName)) {
     return res.status(400).json({ error: 'Invalid stack name' });
   }
+  const pruneVolumes = req.query.pruneVolumes === 'true';
   try {
     try {
       await ComposeService.getInstance(req.nodeId).downStack(stackName);
     } catch (downErr) {
       console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
+    }
+
+    if (pruneVolumes) {
+      try {
+        const result = await DockerController.getInstance().pruneManagedOnly('volumes', [stackName]);
+        console.log(`[Stacks] Pruned volumes for ${stackName}: ${result.reclaimedBytes} bytes reclaimed`);
+      } catch (pruneErr) {
+        console.warn(`[Stacks] Volume prune failed for ${stackName}, continuing delete:`, pruneErr);
+      }
     }
 
     let fsErr: unknown = null;

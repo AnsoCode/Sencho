@@ -271,6 +271,7 @@ export default function EditorLayout() {
   const [gitDeployNow, setGitDeployNow] = useState(false);
   const [creatingFromGit, setCreatingFromGit] = useState(false);
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
+  const [pruneVolumesOnDelete, setPruneVolumesOnDelete] = useState(false);
   const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
   const [pendingUnsavedNode, setPendingUnsavedNode] = useState<Node | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -1556,7 +1557,10 @@ export default function EditorLayout() {
     if (isStackBusy(deleteKey)) return;
     setStackAction(deleteKey, 'delete');
     try {
-      const response = await apiFetch(`/stacks/${stackToDelete}`, {
+      const url = pruneVolumesOnDelete
+        ? `/stacks/${stackToDelete}?pruneVolumes=true`
+        : `/stacks/${stackToDelete}`;
+      const response = await apiFetch(url, {
         method: 'DELETE',
       });
       if (!response.ok) {
@@ -1566,6 +1570,7 @@ export default function EditorLayout() {
       toast.success('Stack deleted successfully!');
       setDeleteDialogOpen(false);
       setStackToDelete(null);
+      setPruneVolumesOnDelete(false);
       if (selectedFile === stackToDelete) {
         setSelectedFile(null);
         setContent('');
@@ -1980,7 +1985,7 @@ export default function EditorLayout() {
       stop: () => executeStackActionByFile(file, 'stop', 'stop'),
       restart: () => executeStackActionByFile(file, 'restart', 'restart'),
       update: () => executeStackActionByFile(file, 'update', 'update'),
-      remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
+      remove: () => { setStackToDelete(stackName); setPruneVolumesOnDelete(false); setDeleteDialogOpen(true); },
       pin: () => pin(file),
       unpin: () => unpin(file),
       setAutoUpdateEnabled: async (enabled: boolean) => {
@@ -2487,6 +2492,7 @@ export default function EditorLayout() {
                                   disabled={loadingAction !== null}
                                   onClick={() => {
                                     setStackToDelete(selectedFile);
+                                    setPruneVolumesOnDelete(false);
                                     setDeleteDialogOpen(true);
                                   }}
                                 >
@@ -2936,6 +2942,16 @@ export default function EditorLayout() {
               Are you sure you want to delete {stackToDelete}? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="flex items-center gap-2 px-1 py-1">
+            <Checkbox
+              id="prune-volumes"
+              checked={pruneVolumesOnDelete}
+              onCheckedChange={(v) => setPruneVolumesOnDelete(v === true)}
+            />
+            <label htmlFor="prune-volumes" className="text-sm text-muted-foreground cursor-pointer select-none">
+              Also remove associated volumes
+            </label>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteStack}>Delete</AlertDialogAction>
