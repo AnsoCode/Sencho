@@ -562,6 +562,10 @@ body {
   from { opacity: 0; transform: scale(0.95); }
   to   { opacity: 1; transform: scale(1); }
 }
+@keyframes shimmer {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
 
 /* ─────────────────────────────────────────────────────────────
    ANIMATION UTILITIES
@@ -580,6 +584,9 @@ body {
 }
 .animate-scale-in {
   animation: scale-in var(--duration-fast) var(--ease-spring) both;
+}
+.animate-shimmer {
+  animation: shimmer 4.5s ease-in-out infinite alternate;
 }
 
 /* Stagger delay helpers */

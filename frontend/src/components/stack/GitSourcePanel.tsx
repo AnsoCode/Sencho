@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
+import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { toast } from '@/components/ui/toast-store';
 import { GitSourceDiffDialog, type PullResult } from './GitSourceDiffDialog';
 import { GitSourceFields, type ApplyMode } from './GitSourceFields';
@@ -82,6 +83,7 @@ export function GitSourcePanel({
   const [diffOpen, setDiffOpen] = useState(false);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
 
+  const { runWithLog } = useDeployFeedback();
   const applyMode = deriveApplyMode(source, applyModeOverride);
 
   const load = useCallback(async () => {
@@ -228,27 +230,41 @@ export function GitSourcePanel({
     setApplying(true);
     const loadingId = toast.loading(deploy ? 'Applying and deploying...' : 'Applying changes...');
     try {
-      const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/git-source/apply`, {
-        method: 'POST',
-        body: JSON.stringify({ commitSha, deploy }),
-      });
-      if (res.ok) {
-        const data: { applied: boolean; deployed: boolean; deployError?: string } = await res.json();
-        if (data.deployError) {
-          toast.warning(`Applied, but deploy failed: ${data.deployError}`);
+      const runApply = async (started: Promise<void>) => {
+        if (deploy) await started;
+        const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/git-source/apply`, {
+          method: 'POST',
+          body: JSON.stringify({ commitSha, deploy }),
+        });
+        if (res.ok) {
+          const data: { applied: boolean; deployed: boolean; deployError?: string } = await res.json();
+          if (data.deployError) {
+            toast.warning(`Applied, but deploy failed: ${data.deployError}`);
+          } else if (deploy && data.deployed) {
+            toast.success('Changes applied and deployed.');
+          } else {
+            toast.success('Changes applied.');
+          }
+          setDiffOpen(false);
+          setPull(null);
+          await load();
+          onSourceChanged?.();
+          return { ok: true };
         } else {
-          toast.success(data.deployed ? 'Applied and deployed.' : 'Applied successfully.');
+          const err = await res.json().catch(() => ({}));
+          const msg = (err as { error?: string }).error || 'Failed to apply changes.';
+          toast.error(msg);
+          return { ok: false, errorMessage: msg };
         }
-        setDiffOpen(false);
-        setPull(null);
-        await load();
-        onSourceChanged?.();
+      };
+
+      if (deploy) {
+        await runWithLog({ stackName, action: 'deploy' }, runApply);
       } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err?.error || 'Apply failed.');
+        await runApply(Promise.resolve());
       }
-    } catch (e) {
-      toast.error((e as Error)?.message || 'Network error.');
+    } catch (e: unknown) {
+      toast.error((e as Error)?.message || 'Something went wrong.');
     } finally {
       toast.dismiss(loadingId);
       setApplying(false);

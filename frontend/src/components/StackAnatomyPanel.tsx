@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { parse as parseYaml } from 'yaml';
-import { GitBranch, Pencil, ExternalLink, Rocket } from 'lucide-react';
+import { GitBranch, Pencil, ExternalLink, Rocket, FolderOpen } from 'lucide-react';
 import { Button } from './ui/button';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ interface StackAnatomyPanelProps {
   onEditCompose: () => void;
   onOpenGitSource: () => void;
   onApplyUpdate: () => void;
+  onOpenFiles?: () => void;
   canEdit: boolean;
 }
 
@@ -229,6 +230,7 @@ export default function StackAnatomyPanel({
   onEditCompose,
   onOpenGitSource,
   onApplyUpdate,
+  onOpenFiles,
   canEdit,
 }: StackAnatomyPanelProps) {
   const anatomy = useMemo(() => parseAnatomy(content), [content]);
@@ -327,16 +329,29 @@ export default function StackAnatomyPanel({
     <div className="flex h-full min-h-0 flex-col rounded-xl border border-muted bg-card/40">
       <div className="flex items-center justify-between border-b border-muted px-3 py-2 gap-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">anatomy</span>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={onEditCompose}
-            className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-stat-subtitle hover:text-brand transition-colors"
-          >
-            <Pencil className="h-3 w-3" strokeWidth={1.5} />
-            edit compose.yaml
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {onOpenFiles && (
+            <button
+              type="button"
+              data-testid="anatomy-files-btn"
+              onClick={onOpenFiles}
+              className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-stat-subtitle hover:text-brand transition-colors"
+            >
+              <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+              files
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onEditCompose}
+              className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-stat-subtitle hover:text-brand transition-colors"
+            >
+              <Pencil className="h-3 w-3" strokeWidth={1.5} />
+              edit compose.yaml
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-3">
         {!anatomy ? (

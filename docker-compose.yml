@@ -5,7 +5,7 @@ services:
     container_name: sencho
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "1852:1852"
     volumes:
       # Required: Docker Socket for container orchestration
       - /var/run/docker.sock:/var/run/docker.sock

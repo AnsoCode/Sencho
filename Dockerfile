@@ -184,11 +184,11 @@ RUN sed -i 's/\r//' /usr/local/bin/docker-entrypoint.sh \
   && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
-EXPOSE 3000
+EXPOSE 1852
 
 # Health check - polls the public /api/health endpoint every 30s
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "const h=require('http');h.get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
+  CMD node -e "const h=require('http');h.get('http://localhost:1852/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
 # Entrypoint ensures /app/data is writable and execs the CMD as root by default,
 # or drops to $SENCHO_USER via su-exec when that env var is set (see comment above).

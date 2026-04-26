@@ -24,13 +24,18 @@ export function AuthCanvas({ children, className, footer, ...props }: AuthCanvas
         className="relative w-full max-w-[440px] animate-scale-in overflow-hidden rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel"
         style={{ animationDuration: 'var(--duration-base)', animationTimingFunction: 'var(--ease-out-expo)' }}
       >
-        <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-brand/70" />
+        <div aria-hidden className="absolute inset-y-0 left-0 w-[3px] overflow-hidden bg-brand/70">
+          <div className="animate-shimmer absolute inset-x-0 h-1/3 bg-gradient-to-b from-transparent via-white/60 to-transparent" />
+        </div>
 
         <div className="flex items-center justify-between border-b border-card-border/60 px-7 pt-6 pb-4">
           <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
             SENCHO
           </span>
-          <span className="h-1.5 w-1.5 rounded-full bg-brand shadow-[0_0_8px_0_oklch(0.78_0.11_195_/_0.6)]" />
+          <span className="relative flex h-1.5 w-1.5">
+            <span aria-hidden className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand shadow-[0_0_8px_0_oklch(0.78_0.11_195_/_0.6)]" />
+          </span>
         </div>
 
         <div className="px-7 pb-7 pt-6">{children}</div>

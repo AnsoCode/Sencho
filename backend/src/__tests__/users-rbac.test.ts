@@ -568,7 +568,7 @@ describe('Orphaned role assignment cleanup', () => {
   it('deleting a node removes its role assignments', async () => {
     const db = DatabaseService.getInstance();
     // Create a test node
-    const nodeId = db.addNode({ name: 'test-cleanup-node', type: 'remote', api_url: 'http://test:3000', api_token: '', compose_dir: '/tmp', is_default: false });
+    const nodeId = db.addNode({ name: 'test-cleanup-node', type: 'remote', api_url: 'http://test:1852', api_token: '', compose_dir: '/tmp', is_default: false });
     // Create a role assignment for this node
     const hash = await bcrypt.hash('password123', 1);
     const userId = db.addUser({ username: 'nodeorphan', password_hash: hash, role: 'viewer' });

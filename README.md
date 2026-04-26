@@ -28,7 +28,7 @@ services:
     container_name: sencho
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "1852:1852"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
@@ -43,7 +43,7 @@ services:
 docker compose up -d
 ```
 
-Then open `http://your-server:3000` and create your admin account.
+Then open `http://your-server:1852` and create your admin account.
 
 See the [full documentation](https://docs.sencho.io) for configuration details, multi-node setup, and more.
 
@@ -57,7 +57,7 @@ cd backend && npm install && npm run dev
 cd frontend && npm install && npm run dev
 ```
 
-The frontend dev server proxies `/api` requests to the backend on port 3000.
+The frontend dev server proxies `/api` requests to the backend on port 1852.
 
 ## Contributing
 

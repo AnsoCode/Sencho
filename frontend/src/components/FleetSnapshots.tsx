@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
     Camera, ArrowLeft, Server, Layers, FileText, AlertTriangle, Trash2,
     Eye, ChevronDown, ChevronLeft, ChevronRight, Plus, Loader2, RotateCcw,
+    Cloud, CloudUpload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +21,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useLicense } from '@/context/LicenseContext';
 import { toast } from '@/components/ui/toast-store';
 
 // --- Types ---
@@ -66,6 +68,8 @@ const PAGE_SIZE = 10;
 
 export default function FleetSnapshots() {
     const { isAdmin } = useAuth();
+    const { license, isPaid } = useLicense();
+    const isAdmiral = isPaid && license?.variant === 'admiral';
 
     const [snapshots, setSnapshots] = useState<FleetSnapshot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -81,6 +85,8 @@ export default function FleetSnapshots() {
     const [restoringStack, setRestoringStack] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
     const [page, setPage] = useState(0);
+    const [cloudSnapshotIds, setCloudSnapshotIds] = useState<Set<number>>(new Set());
+    const [uploadingId, setUploadingId] = useState<number | null>(null);
 
     const totalPages = Math.max(1, Math.ceil(snapshots.length / PAGE_SIZE));
     const safePage = Math.min(page, totalPages - 1);
@@ -110,6 +116,37 @@ export default function FleetSnapshots() {
     useEffect(() => {
         fetchSnapshots();
     }, [fetchSnapshots]);
+
+    const fetchCloudSnapshots = useCallback(async () => {
+        if (!isAdmiral) return;
+        try {
+            const res = await apiFetch('/cloud-backup/snapshots', { localOnly: true });
+            if (!res.ok) return;
+            const data = await res.json() as Array<{ snapshotId: number | null }>;
+            setCloudSnapshotIds(new Set(data.map(d => d.snapshotId).filter((id): id is number => id != null)));
+        } catch {
+            // best-effort; cloud indicators stay hidden on failure
+        }
+    }, [isAdmiral]);
+
+    useEffect(() => {
+        fetchCloudSnapshots();
+    }, [fetchCloudSnapshots]);
+
+    const handleCloudUpload = async (id: number) => {
+        setUploadingId(id);
+        try {
+            const res = await apiFetch(`/cloud-backup/upload/${id}`, { method: 'POST', localOnly: true });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error((data as { error?: string }).error || `Upload failed (${res.status})`);
+            toast.success('Snapshot uploaded to cloud.');
+            await fetchCloudSnapshots();
+        } catch (err) {
+            toast.error((err as Error)?.message || 'Cloud upload failed.');
+        } finally {
+            setUploadingId(null);
+        }
+    };
 
     const handleCreate = async () => {
         setCreating(true);
@@ -533,11 +570,20 @@ export default function FleetSnapshots() {
                                             {new Date(snapshot.created_at).toLocaleString()}
                                         </TableCell>
                                         <TableCell className="text-sm max-w-[300px] truncate">
-                                            {snapshot.description ? (
-                                                snapshot.description
-                                            ) : (
-                                                <span className="italic text-muted-foreground">No description</span>
-                                            )}
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                {snapshot.description ? (
+                                                    <span className="truncate">{snapshot.description}</span>
+                                                ) : (
+                                                    <span className="italic text-muted-foreground">No description</span>
+                                                )}
+                                                {cloudSnapshotIds.has(snapshot.id) && (
+                                                    <Cloud
+                                                        className="w-3.5 h-3.5 text-success shrink-0"
+                                                        strokeWidth={1.5}
+                                                        aria-label="Uploaded to cloud"
+                                                    />
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell className="text-xs font-mono tabular-nums text-muted-foreground whitespace-nowrap">
                                             {snapshot.node_count} node{snapshot.node_count !== 1 ? 's' : ''}
@@ -568,6 +614,22 @@ export default function FleetSnapshots() {
                                                     <Eye className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                                                     View
                                                 </Button>
+                                                {isAdmin && isAdmiral && !cloudSnapshotIds.has(snapshot.id) && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-7 px-2 text-xs"
+                                                        title="Upload to cloud"
+                                                        disabled={uploadingId === snapshot.id}
+                                                        onClick={() => handleCloudUpload(snapshot.id)}
+                                                    >
+                                                        {uploadingId === snapshot.id ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} />
+                                                        ) : (
+                                                            <CloudUpload className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                        )}
+                                                    </Button>
+                                                )}
                                                 {isAdmin && (
                                                     <AlertDialog>
                                                         <AlertDialogTrigger asChild>

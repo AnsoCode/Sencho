@@ -1,6 +1,6 @@
 ---
 title: Scheduled Operations
-description: Automate recurring Docker operations like stack restarts, fleet snapshots, and system prunes on a cron schedule.
+description: Automate recurring Docker operations like stack restarts, lifecycle management, fleet snapshots, and system prunes on a cron schedule.
 ---
 
 <Note>
@@ -11,7 +11,7 @@ description: Automate recurring Docker operations like stack restarts, fleet sna
 
 Scheduled Operations lets you automate recurring maintenance tasks across your infrastructure. Define a cron schedule, choose an action, and Sencho handles the rest, including a full execution history log so you always know what ran and when.
 
-The view opens on a **Timeline** that plots the next 24 hours of scheduled work across four lanes (Restart, Update, Scan, Prune) so you can see, at a glance, what is about to fire and when. Toggle to **All tasks** for the full CRUD table.
+The view opens on a **Timeline** that plots the next 24 hours of scheduled work across five lanes (Restart, Update, Scan, Prune, Lifecycle) so you can see, at a glance, what is about to fire and when. Toggle to **All tasks** for the full CRUD table.
 
 <Frame>
   <img src="/images/scheduled-operations/timeline.png" alt="Schedules timeline showing the next 24 hours across four lanes with a cyan now rail" />
@@ -22,7 +22,7 @@ The view opens on a **Timeline** that plots the next 24 hours of scheduled work 
 The timeline is the default view. It shows:
 
 - A hero with the current 24-hour window as a date range, and the **next firing** on the right (time, task name, and relative countdown).
-- Four color-coded lanes: **Restart** (cyan), **Update** (green), **Scan** (purple), and **Prune** (amber). Snapshot tasks share the Prune lane.
+- Five color-coded lanes: **Restart** (cyan), **Update** (green), **Scan** (purple), **Prune** (amber), and **Lifecycle** (blue). Snapshot tasks share the Prune lane; stop, down, start, and backup tasks share the Lifecycle lane.
 - One pill per firing within the window, positioned proportionally to the task's next run time. Click any pill to open that task's execution history.
 - A vertical cyan **now rail** at the left edge, and six mono time ticks along the bottom axis.
 
@@ -39,6 +39,10 @@ Toggle to **All tasks** from the header to see every schedule in a table, regard
 | **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
 | **System Prune** | The default node | Prunes selected resources, optionally filtered by Docker label |
 | **Vulnerability Scan** | All images on a specific node | Runs Trivy against every image on the target node and records the results. Requires Trivy to be installed, see [Installing Trivy](/operations/trivy-setup). Available on Skipper and Admiral. |
+| **Backup Stack Files** | A specific stack on a specific node | Backs up the stack's compose file and `.env` to `<DATA_DIR>/backups/<stackName>/`. The most recent backup per stack is kept; each run overwrites the previous one. |
+| **Stop Stack** | A specific stack on a specific node | Runs `docker compose stop` — containers are stopped but preserved. Use this for off-hours power saving when you want a fast start later. |
+| **Take Stack Down** | A specific stack on a specific node | Runs `docker compose down` — containers are removed. Use this to fully release resources when the stack is not needed for an extended period. |
+| **Start Stack** | A specific stack on a specific node | Runs `docker compose up -d`. Works whether the stack was stopped or taken down: if containers exist they are started; if not, they are created and started from the compose file. |
 
 ## Creating a Scheduled Task
 
@@ -46,7 +50,7 @@ Toggle to **All tasks** from the header to see every schedule in a table, regard
 2. Click **New Schedule**.
 3. Fill in the form:
    - **Name**: A descriptive label (e.g. "Nightly staging restart").
-   - **Action**: Choose Restart Stack, Auto-update Stack, Fleet Snapshot, System Prune, or Vulnerability Scan. The form fields below change based on your selection.
+   - **Action**: Choose from the full action list. The form fields below change based on your selection.
    - **Node**: (Restart Stack, Auto-update Stack, and Vulnerability Scan) Select the node to run against. For stack actions it determines where the target stack lives; for Vulnerability Scan it determines which node's images are scanned.
    - **Stack**: (Restart Stack and Auto-update Stack) Select the stack to target. Becomes available after choosing a node.
    - **Services**: (Restart Stack only) Optionally select specific services within the stack to restart. Leave empty to restart all services.
@@ -54,6 +58,7 @@ Toggle to **All tasks** from the header to see every schedule in a table, regard
    - **Label Filter**: (System Prune only) Optionally filter prune operations to resources matching a specific Docker label (e.g. `com.docker.compose.project=mystack`).
    - **Cron Expression**: Standard 5-field cron format. A human-readable preview appears below the input.
    - **Enabled**: Toggle the task on or off.
+   - **Delete after successful run**: When checked, the task automatically removes itself after its first successful execution. This turns the task into a one-time operation. Failures keep the task so you can inspect the error, adjust the target if needed, and trigger a retry with **Run Now** or by re-enabling the schedule.
 4. Click **Create**.
 
 <Frame>
@@ -100,6 +105,30 @@ Enter a label in `key=value` format (e.g. `com.docker.compose.project=mystack`).
 <Frame>
   <img src="/images/scheduled-operations/prune-label-filter.png" alt="Label filter input for scoping prune operations to specific Docker labels" />
 </Frame>
+
+### Stack Lifecycle Scheduling
+
+The Stop Stack, Take Stack Down, Start Stack, and Backup Stack Files actions let you schedule lifecycle events for individual stacks on a per-node basis.
+
+A common pattern for development or staging stacks is:
+- A **Stop Stack** or **Take Stack Down** task scheduled for the end of the working day (e.g. `0 19 * * 1-5` — 7 PM on weekdays).
+- A **Start Stack** task scheduled for the start of the working day (e.g. `0 8 * * 1-5` — 8 AM on weekdays).
+
+**Stop vs Down:** Use Stop Stack when you want containers ready to resume quickly; Docker keeps the container filesystem in place and `Start Stack` simply restarts the existing containers. Use Take Stack Down when you want to fully release resources; `Start Stack` recreates the containers from the compose file on the next run.
+
+**Backup Stack Files** keeps only the most recent backup per stack under `<DATA_DIR>/backups/<stackName>/`. For a point-in-time archive across all nodes, use a [Fleet Snapshot](/features/fleet-backups) schedule instead.
+
+All four actions run against the local Sencho instance only. To schedule lifecycle operations on a remote node, manage the schedule from within that node's own Sencho UI.
+
+### Delete after Successful Run
+
+When **Delete after successful run** is enabled, the task removes itself from the schedule after its first successful execution. The entire task record, including run history, is removed. Use this for one-time preparatory or clean-up tasks: pre-scaling a stack before a deployment, a one-off backup before a config change, or stopping a stack once a migration is complete.
+
+If the run fails, the task stays in the schedule unchanged so you can inspect the error and retry. Disabling the option at any time before the successful run prevents auto-deletion.
+
+<Note>
+  Manual runs via **Run Now** also trigger the delete-after-run logic. If you run the task manually and it succeeds, the task removes itself.
+</Note>
 
 ## Cron Expression Reference
 
@@ -219,3 +248,15 @@ The scan notification shares the same delivery path as every other Sencho alert.
 ### Scan task fails with "Trivy binary is not available"
 
 Trivy must be installed on the node that runs the scan, not just on the primary instance. Follow [Installing Trivy](/operations/trivy-setup) on the target node, then trigger **Run Now** from the schedule to confirm the scan succeeds before waiting for the next cron tick.
+
+### Start Stack fails with a compose file error
+
+The Start Stack action runs `docker compose up -d` against the stack's compose directory. If the stack folder has been removed or its compose file is missing, the run fails. Re-create or restore the stack in the [Editor](/features/editor), then trigger **Run Now** to confirm the start succeeds before the next cron tick.
+
+### Auto-backup always overwrites the previous backup
+
+Backup Stack Files keeps a single backup slot per stack under `<DATA_DIR>/backups/<stackName>/`. Each run overwrites the previous backup. This is by design for simplicity. If you need a timestamped archive of compose files across all nodes, use a [Fleet Snapshot](/features/fleet-backups) schedule, which stores versioned snapshots.
+
+### One-shot task disappeared after a successful run
+
+A task with **Delete after successful run** enabled removes itself automatically after the first successful execution, including its run history. This is expected behavior. If you need a record of the run before deletion, export the execution history to CSV via the clock icon before the next successful run.

@@ -18,12 +18,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy } from 'lucide-react';
+import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, FileCode2, ShieldCheck, ArrowUpRight, Copy, FolderOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
@@ -46,7 +47,7 @@ import { Sparkline } from './ui/sparkline';
 import { GlobalObservabilityView } from './GlobalObservabilityView';
 import { FleetView } from './FleetView';
 import { AuditLogView } from './AuditLogView';
-import ScheduledOperationsView from './ScheduledOperationsView';
+import ScheduledOperationsView, { type ScheduleTaskPrefill } from './ScheduledOperationsView';
 import AutoUpdateReadinessView from './AutoUpdateReadinessView';
 import { SecurityHistoryView } from './SecurityHistoryView';
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
@@ -64,6 +65,7 @@ import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
+import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
@@ -71,10 +73,12 @@ import { usePinnedStacks } from '@/hooks/usePinnedStacks';
 import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
 import type { StackRowStatus } from '@/components/sidebar/StackRow';
 import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
+import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 
 interface ContainerInfo {
   Id: string;
   Names: string[];
+  Service?: string;
   State: string;
   Status?: string;
   Ports?: { PrivatePort: number, PublicPort: number }[];
@@ -178,6 +182,7 @@ export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
+  const { runWithLog } = useDeployFeedback();
   const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
@@ -233,7 +238,7 @@ export default function EditorLayout() {
   // the delta is always computed against the most recent known value, avoiding
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
-  const [activeTab, setActiveTab] = useState<'compose' | 'env'>('compose');
+  const [activeTab, setActiveTab] = useState<'compose' | 'env' | 'files'>('compose');
   const [logsMode, setLogsMode] = useState<'structured' | 'raw'>(() => {
     if (typeof window === 'undefined') return 'structured';
     return (localStorage.getItem('sencho.stackView.logsMode') as 'structured' | 'raw' | null) ?? 'structured';
@@ -321,6 +326,8 @@ export default function EditorLayout() {
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
   const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
+  const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
+  const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
   const [isEditing, setIsEditing] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -346,6 +353,8 @@ export default function EditorLayout() {
 
   // Image update checker state
   const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
+  const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
+  const isAdmiral = license?.variant === 'admiral';
 
   // Notifications & Settings state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -608,6 +617,22 @@ export default function EditorLayout() {
     }
   };
 
+  // Coalesce a burst of state-invalidate signals (e.g. compose recreating
+  // 10 services produces ~30 docker events in <500ms) into one stack refetch
+  // and one downstream window event. The 250ms debounce balances "feels
+  // instant" against not thrashing the API. The function is held in a ref
+  // so the long-lived WS effect never closes over a stale refreshStacks.
+  const stateInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshStacksRef = useRef(refreshStacks);
+  useEffect(() => { refreshStacksRef.current = refreshStacks; }, [refreshStacks]);
+  const scheduleStateInvalidateRefresh = useCallback(() => {
+    if (stateInvalidateTimerRef.current) clearTimeout(stateInvalidateTimerRef.current);
+    stateInvalidateTimerRef.current = setTimeout(() => {
+      stateInvalidateTimerRef.current = null;
+      refreshStacksRef.current(true);
+    }, 250);
+  }, []);
+
   // Notification WS push - subscribe to local real-time alerts.
   // Initial history load is handled by the [nodes] effect below.
   useEffect(() => {
@@ -644,6 +669,17 @@ export default function EditorLayout() {
               nodeName: localNode?.name ?? 'Local',
             };
             setNotifications(prev => [tagged, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+          } else if (msg.type === 'state-invalidate') {
+            // Lightweight signal that a container/stack event happened.
+            // Re-broadcast on the window bus so other hooks (dashboard data,
+            // sidebar, etc.) can refetch on the same trigger without prop
+            // drilling. Refresh stack statuses on this layer too.
+            window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: msg }));
+            if (msg.action === 'auto-update-settings-changed') {
+              fetchAutoUpdateSettings();
+            } else {
+              scheduleStateInvalidateRefresh();
+            }
           }
         } catch (e) {
           console.error('[WS notifications] parse error', e);
@@ -727,6 +763,9 @@ export default function EditorLayout() {
                 [{ ...msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
                   .sort((a, b) => b.timestamp - a.timestamp)
               );
+            } else if (msg.type === 'state-invalidate') {
+              window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: { ...msg, nodeId: rn.id } }));
+              scheduleStateInvalidateRefresh();
             }
           } catch (e) {
             console.error(`[WS notifications:${rn.name}] parse error`, e);
@@ -784,6 +823,7 @@ export default function EditorLayout() {
 
     refreshStacks();
     fetchImageUpdates();
+    fetchAutoUpdateSettings();
     refreshGitSourcePending();
 
     // Poll for image update results every 5 minutes so background checks are picked up
@@ -845,6 +885,20 @@ export default function EditorLayout() {
       }
     } catch (e: unknown) {
       console.error('[ImageUpdates] fetch failed:', e);
+    }
+  };
+
+  const fetchAutoUpdateSettings = async () => {
+    try {
+      const res = await apiFetch('/stacks/auto-update-settings');
+      if (res.ok) {
+        const data = await res.json();
+        setAutoUpdateSettings(data as Record<string, boolean>);
+      } else {
+        console.error('[AutoUpdateSettings] fetch returned', res.status);
+      }
+    } catch (e: unknown) {
+      console.error('[AutoUpdateSettings] fetch failed:', e);
     }
   };
 
@@ -1054,6 +1108,7 @@ export default function EditorLayout() {
     setIsFileLoading(true);
     setIsEditing(false); // Reset to view mode when loading a new file
     setEditingCompose(false); // Default back to anatomy on stack switch
+    setActiveTab('compose');
     try {
       const res = await apiFetch(`/stacks/${filename}`);
       const text = await res.text();
@@ -1158,17 +1213,27 @@ export default function EditorLayout() {
     setIsFileLoading(true);
     try {
       const res = await apiFetch(`/stacks/${selectedFile}/env?file=${encodeURIComponent(file)}`);
+      if (!res.ok) {
+        // Don't stuff a JSON error body into the editor on a non-OK response.
+        setEnvContent('');
+        setOriginalEnvContent('');
+        toast.error('Could not load env file');
+        return;
+      }
       const text = await res.text();
       setEnvContent(text || '');
       setOriginalEnvContent(text || '');
     } catch (e) {
       console.error('Failed to switch env file', e);
+      setEnvContent('');
+      setOriginalEnvContent('');
     } finally {
       setIsFileLoading(false);
     }
   };
 
   const saveFile = async () => {
+    if (activeTab === 'files') return;
     if (!selectedFile) return;
     const currentContent = activeTab === 'compose' ? (content || '') : (envContent || '');
     const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env?file=${encodeURIComponent(selectedEnvFile)}`;
@@ -1229,6 +1294,7 @@ export default function EditorLayout() {
   };
 
   const discardChanges = () => {
+    if (activeTab === 'files') return;
     if (activeTab === 'compose') {
       setContent(originalContent);
     } else {
@@ -1269,13 +1335,19 @@ export default function EditorLayout() {
     }
   };
 
-  const runDeploy = async (stackName: string, stackFile: string, ignorePolicy: boolean): Promise<void> => {
+  const runDeploy = async (
+    stackName: string,
+    stackFile: string,
+    ignorePolicy: boolean,
+    started?: Promise<void>,
+  ): Promise<{ ok: boolean; errorMessage?: string }> => {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
       const path = ignorePolicy
         ? `/stacks/${stackName}/deploy?ignorePolicy=true`
         : `/stacks/${stackName}/deploy`;
+      if (started) await started;
       const response = await apiFetch(path, { method: 'POST' });
       if (!response.ok) {
         const rawBody = await response.text();
@@ -1286,7 +1358,7 @@ export default function EditorLayout() {
             setPolicyBlock({ stackName, payload: parsed });
             if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
             toast.error(`Deploy blocked by policy "${parsed.policy.name}"`);
-            return;
+            return { ok: false, errorMessage: `Deploy blocked by policy "${parsed.policy.name}"` };
           }
         }
         throw new Error(rawBody || 'Deploy failed');
@@ -1304,11 +1376,13 @@ export default function EditorLayout() {
           if (backupRes.ok) setBackupInfo(await backupRes.json());
         } catch { /* ignore */ }
       }
+      return { ok: true };
     } catch (error) {
       console.error('Failed to deploy:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      const msg = (error as Error).message || 'Failed to deploy stack';
-      toast.error(isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
+      const errorMessage = (error as Error).message || 'Failed to deploy stack';
+      toast.error(isPaid ? `${errorMessage} - automatically rolled back to previous version.` : errorMessage);
+      return { ok: false, errorMessage };
     }
   };
 
@@ -1320,7 +1394,9 @@ export default function EditorLayout() {
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'deploy');
     try {
-      await runDeploy(stackName, stackFile, false);
+      await runWithLog({ stackName, action: 'deploy' }, (started) =>
+        runDeploy(stackName, stackFile, false, started)
+      );
     } finally {
       clearStackAction(stackFile);
       refreshStacks(true);
@@ -1336,7 +1412,9 @@ export default function EditorLayout() {
     setPolicyBypassing(true);
     setStackAction(existingFile, 'deploy');
     try {
-      await runDeploy(policyBlock.stackName, existingFile, true);
+      await runWithLog({ stackName: policyBlock.stackName, action: 'deploy' }, (started) =>
+        runDeploy(policyBlock.stackName, existingFile, true, started)
+      );
     } finally {
       setPolicyBypassing(false);
       clearStackAction(existingFile);
@@ -1354,20 +1432,21 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'exited');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/stop`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'stop' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/stop`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Stop failed');
+        }
+        toast.success('Stack stopped successfully!');
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Stop failed');
-      }
-      toast.success('Stack stopped successfully!');
-      // Refresh containers after stop
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to stop:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
@@ -1388,26 +1467,48 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/restart`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'restart' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/restart`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Restart failed');
+        }
+        toast.success('Stack restarted successfully!');
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Restart failed');
-      }
-      toast.success('Stack restarted successfully!');
-      // Refresh containers after restart
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to restart:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
       toast.error((error as Error).message || 'Failed to restart stack');
     } finally {
       clearStackAction(stackFile);
+      refreshStacks(true);
+    }
+  };
+
+  const serviceAction = async (action: 'start' | 'stop' | 'restart', serviceName: string) => {
+    if (!selectedFile) return;
+    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
+    try {
+      const r = await apiFetch(`/stacks/${stackName}/services/${encodeURIComponent(serviceName)}/${action}`, {
+        method: 'POST',
+      });
+      if (!r.ok) throw new Error((await r.text()) || `${action} failed`);
+      const label = action === 'restart' ? 'restarted' : action === 'stop' ? 'stopped' : 'started';
+      toast.success(`Service "${serviceName}" ${label}`);
+      const cr = await apiFetch(`/stacks/${stackName}/containers`);
+      const conts = await cr.json();
+      setContainers(Array.isArray(conts) ? conts : []);
+    } catch (e) {
+      console.error(`Failed to ${action} service "${serviceName}":`, e);
+      toast.error((e as Error).message || `Failed to ${action} service "${serviceName}"`);
+    } finally {
       refreshStacks(true);
     }
   };
@@ -1422,20 +1523,22 @@ export default function EditorLayout() {
     const previousStatus = stackStatuses[stackFile];
     setOptimisticStatus(stackFile, 'running');
     try {
-      const response = await apiFetch(`/stacks/${stackName}/update`, {
-        method: 'POST',
+      await runWithLog({ stackName, action: 'update' }, async (started) => {
+        await started;
+        const response = await apiFetch(`/stacks/${stackName}/update`, { method: 'POST' });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Update failed');
+        }
+        toast.success('Stack updated successfully!');
+        fetchImageUpdates();
+        if (selectedFile === stackFile) {
+          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+          const conts = await containersRes.json();
+          setContainers(Array.isArray(conts) ? conts : []);
+        }
+        return { ok: true };
       });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Update failed');
-      }
-      toast.success('Stack updated successfully!');
-      // Refresh containers after update
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
     } catch (error) {
       console.error('Failed to update:', error);
       if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
@@ -1862,11 +1965,13 @@ export default function EditorLayout() {
       hasPort: Boolean(stackPorts[file]),
       isBusy: isStackBusy(file),
       isPaid,
+      isAdmiral,
       canDelete: can('stack:delete', 'stack', stackName),
       isPinned: isPinned(file),
       labels,
       assignedLabelIds: (stackLabelMap[file] ?? []).map(l => l.id),
       menuVisibility: getStackMenuVisibility(file),
+      autoUpdateEnabled: autoUpdateSettings[stackName] ?? true,
       openAlertSheet: () => openAlertSheet(file),
       openAutoHeal: () => setAutoHealStackName(file),
       checkUpdates: () => checkUpdatesForStack(),
@@ -1878,6 +1983,22 @@ export default function EditorLayout() {
       remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
       pin: () => pin(file),
       unpin: () => unpin(file),
+      setAutoUpdateEnabled: async (enabled: boolean) => {
+        setAutoUpdateSettings(prev => ({ ...prev, [stackName]: enabled }));
+        try {
+          const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/auto-update`, {
+            method: 'PUT',
+            body: JSON.stringify({ enabled }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || 'Failed to update auto-update setting.');
+          }
+        } catch (err: unknown) {
+          setAutoUpdateSettings(prev => ({ ...prev, [stackName]: !enabled }));
+          toast.error((err as Error)?.message || 'Failed to update auto-update setting.');
+        }
+      },
       toggleLabel: async (labelId: number) => {
         const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
         const assigned = currentIds.includes(labelId);
@@ -1928,11 +2049,16 @@ export default function EditorLayout() {
         }
       },
       openLabelManager: () => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); },
+      openScheduleTask: () => {
+        const stackName = file.replace(/\.(yml|yaml)$/, '');
+        setSchedulePrefill({ stackName, nodeId: activeNode?.id ?? null });
+        setActiveView('scheduled-ops');
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    stackStatuses, stackPorts, isPaid, isPinned, labels, stackLabelMap,
-    pin, unpin,
+    stackStatuses, stackPorts, isPaid, isAdmiral, isPinned, labels, stackLabelMap,
+    autoUpdateSettings, pin, unpin,
   ]);
 
   const createStackSlot = can('stack:create') ? (
@@ -2273,7 +2399,7 @@ export default function EditorLayout() {
                                       aria-label={copiedDigest === first.ImageID ? 'Copied' : 'Copy digest'}
                                       onClick={() => {
                                         const id = first.ImageID as string;
-                                        void navigator.clipboard.writeText(id).then(() => {
+                                        void copyToClipboard(id).then(() => {
                                           setCopiedDigest(id);
                                           if (copiedDigestTimerRef.current !== null) {
                                             window.clearTimeout(copiedDigestTimerRef.current);
@@ -2282,7 +2408,7 @@ export default function EditorLayout() {
                                             setCopiedDigest(prev => (prev === id ? null : prev));
                                             copiedDigestTimerRef.current = null;
                                           }, 1500);
-                                        });
+                                        }).catch(() => { /* clipboard unavailable */ });
                                       }}
                                       className="inline-flex h-4 w-4 items-center justify-center rounded text-stat-subtitle hover:text-foreground hover:bg-muted/60 transition-colors"
                                     >
@@ -2302,12 +2428,12 @@ export default function EditorLayout() {
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
                                 <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                               </Button>
                             ) : (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
                               </Button>
@@ -2400,19 +2526,19 @@ export default function EditorLayout() {
                               }
 
                               const containerName = container?.Names?.[0]?.replace(/^\//, '') || container?.Id?.slice(0, 12) || 'container';
-                              const isRunning = container.State === 'running';
+                              const isActive = container.State === 'running' || container.State === 'paused';
                               const health = container.healthStatus;
-                              const uptime = isRunning ? extractUptime(container.Status) : null;
+                              const uptime = isActive ? extractUptime(container.Status) : null;
                               const hcLabel = healthcheckLabel(health);
                               const stats = containerStats[container?.Id];
                               const history = stats?.history;
 
-                              const badgeClass = health === 'unhealthy' || !isRunning
+                              const badgeClass = health === 'unhealthy' || !isActive
                                 ? 'bg-destructive text-destructive-foreground'
                                 : health === 'starting'
                                   ? 'bg-warning text-warning-foreground'
                                   : 'bg-success text-success-foreground';
-                              const badgeGlyph = health === 'unhealthy' || !isRunning ? '✗' : health === 'starting' ? '…' : '✓';
+                              const badgeGlyph = health === 'unhealthy' || !isActive ? '✗' : health === 'starting' ? '…' : '✓';
                               const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
 
                               return (
@@ -2454,7 +2580,7 @@ export default function EditorLayout() {
                                         variant="ghost"
                                         className="h-7 w-7 rounded-md"
                                         onClick={() => openLogViewer(container?.Id, containerName)}
-                                        disabled={!isRunning}
+                                        disabled={!isActive}
                                         aria-label="View logs"
                                       >
                                         <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2465,15 +2591,45 @@ export default function EditorLayout() {
                                           variant="ghost"
                                           className="h-7 w-7 rounded-md"
                                           onClick={() => openBashModal(container?.Id, containerName)}
-                                          disabled={!isRunning}
+                                          disabled={!isActive}
                                           aria-label="Open bash shell"
                                         >
                                           <Terminal className="h-3.5 w-3.5" strokeWidth={1.5} />
                                         </Button>
                                       )}
+                                      {container.Service && (
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="h-7 w-7 rounded-md"
+                                              aria-label="Service actions"
+                                            >
+                                              <MoreVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            {isActive ? (
+                                              <>
+                                                <DropdownMenuItem onSelect={() => serviceAction('restart', container.Service!)}>
+                                                  Restart service
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => serviceAction('stop', container.Service!)}>
+                                                  Stop service
+                                                </DropdownMenuItem>
+                                              </>
+                                            ) : (
+                                              <DropdownMenuItem onSelect={() => serviceAction('start', container.Service!)}>
+                                                Start service
+                                              </DropdownMenuItem>
+                                            )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      )}
                                     </div>
                                   </div>
-                                  {isRunning ? (
+                                  {isActive ? (
                                     <div className="mt-2 grid grid-cols-3 gap-2">
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">
@@ -2561,7 +2717,7 @@ export default function EditorLayout() {
                 <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-0 bg-card">
                   <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
-                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env')}>
+                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env' | 'files')}>
                         <TabsList>
                           <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
                             <TabsHighlightItem value="compose">
@@ -2569,6 +2725,12 @@ export default function EditorLayout() {
                             </TabsHighlightItem>
                             <TabsHighlightItem value="env">
                               <TabsTrigger value="env" disabled={!envExists}>.env</TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="files">
+                              <TabsTrigger value="files">
+                                <FolderOpen className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                                Files
+                              </TabsTrigger>
                             </TabsHighlightItem>
                           </TabsHighlight>
                         </TabsList>
@@ -2590,7 +2752,7 @@ export default function EditorLayout() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {can('stack:edit', 'stack', stackName) && (
+                      {activeTab !== 'files' && can('stack:edit', 'stack', stackName) && (
                         <>
                         <Button
                           size="sm"
@@ -2653,45 +2815,57 @@ export default function EditorLayout() {
                     </div>
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
-                    {activeTab === 'env' && (
-                      <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
-                        <span>
-                          Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                      {!isFileLoading && (
-                        <Editor
-                          height="100%"
-                          language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
-                          theme={isDarkMode ? 'vs-dark' : 'vs'}
-                          value={activeTab === 'compose' ? safeContent : safeEnvContent}
-                          onMount={(editor) => { monacoEditorRef.current = editor; }}
-                          onChange={(value) => {
-                            if (!isEditing) return; // Prevent changes in view mode
-                            if (activeTab === 'compose') {
-                              setContent(value || '');
-                            } else {
-                              setEnvContent(value || '');
-                            }
-                          }}
-                          options={{
-                            minimap: { enabled: false },
-                            fontFamily: "'Geist Mono', monospace",
-                            fontSize: 14,
-                            padding: { top: 10 },
-                            scrollBeyondLastLine: false,
-                            readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
-                          }}
-                        />
-                      )}
-                      {isFileLoading && (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                          Loading...
+                    {activeTab === 'files' ? (
+                      <StackFileExplorer
+                        stackName={stackName}
+                        canEdit={can('stack:edit', 'stack', stackName)}
+                        isDarkMode={isDarkMode}
+                        onNavigateToCompose={() => setActiveTab('compose')}
+                        onNavigateToEnv={() => setActiveTab('env')}
+                      />
+                    ) : (
+                      <>
+                        {activeTab === 'env' && (
+                          <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
+                            <span>
+                              Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                          {!isFileLoading && (
+                            <Editor
+                              height="100%"
+                              language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
+                              theme={isDarkMode ? 'vs-dark' : 'vs'}
+                              value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                              onMount={(editor) => { monacoEditorRef.current = editor; }}
+                              onChange={(value) => {
+                                if (!isEditing) return; // Prevent changes in view mode
+                                if (activeTab === 'compose') {
+                                  setContent(value || '');
+                                } else {
+                                  setEnvContent(value || '');
+                                }
+                              }}
+                              options={{
+                                minimap: { enabled: false },
+                                fontFamily: "'Geist Mono', monospace",
+                                fontSize: 14,
+                                padding: { top: 10 },
+                                scrollBeyondLastLine: false,
+                                readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
+                              }}
+                            />
+                          )}
+                          {isFileLoading && (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                              Loading...
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </>
+                    )}
                   </div>
                 </Card>
                 ) : (
@@ -2702,6 +2876,7 @@ export default function EditorLayout() {
                   selectedEnvFile={selectedEnvFile}
                   gitSourcePending={Boolean(gitSourcePendingMap[stackName])}
                   onEditCompose={() => setEditingCompose(true)}
+                  onOpenFiles={() => { setEditingCompose(true); setActiveTab('files'); }}
                   onOpenGitSource={() => setGitSourceOpen(true)}
                   onApplyUpdate={() => { void updateStack(); }}
                   canEdit={can('stack:edit', 'stack', stackName)}
@@ -2735,7 +2910,12 @@ export default function EditorLayout() {
             </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
-              <ScheduledOperationsView filterNodeId={filterNodeId} onClearFilter={() => setFilterNodeId(null)} />
+              <ScheduledOperationsView
+                filterNodeId={filterNodeId}
+                onClearFilter={() => setFilterNodeId(null)}
+                prefill={schedulePrefill}
+                onPrefillConsumed={handlePrefillConsumed}
+              />
             </CapabilityGate>
           ) : (
             <HomeDashboard

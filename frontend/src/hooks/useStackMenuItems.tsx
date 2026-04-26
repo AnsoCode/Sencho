@@ -3,6 +3,8 @@ import {
   Activity,
   ArrowUpRight,
   BellRing,
+  CalendarClock,
+  CircleSlash,
   Download,
   Pin,
   PinOff,
@@ -20,7 +22,7 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
     stackStatus, hasPort, isBusy, isPaid, canDelete, isPinned, labels,
     openAlertSheet, openAutoHeal, checkUpdates, openStackApp,
     deploy, stop, restart, update, remove, pin, unpin, toggleLabel,
-    menuVisibility,
+    menuVisibility, autoUpdateEnabled, setAutoUpdateEnabled, openScheduleTask,
   } = ctx;
   const { showDeploy, showStop, showRestart, showUpdate } = menuVisibility;
 
@@ -32,6 +34,12 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
     ];
     if (isPaid) {
       inspect.push({ id: 'auto-heal', label: 'Auto-Heal', icon: Activity, shortcut: 'H', onSelect: openAutoHeal });
+      inspect.push({
+        id: 'auto-update',
+        label: autoUpdateEnabled ? 'Auto-update: Enabled' : 'Auto-update: Disabled',
+        icon: autoUpdateEnabled ? RefreshCw : CircleSlash,
+        onSelect: () => setAutoUpdateEnabled(!autoUpdateEnabled),
+      });
     }
     inspect.push({ id: 'check-updates', label: 'Check updates', icon: RefreshCw, shortcut: 'U', onSelect: checkUpdates });
     if (stackStatus === 'running' && hasPort) {
@@ -67,6 +75,7 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
     if (showStop) lifecycle.push({ id: 'stop', label: 'Stop', icon: Square, shortcut: '⌘.', onSelect: stop, disabled: isBusy });
     if (showRestart) lifecycle.push({ id: 'restart', label: 'Restart', icon: RotateCw, shortcut: '⌘R', onSelect: restart, disabled: isBusy });
     if (showUpdate) lifecycle.push({ id: 'update', label: 'Update', icon: Download, shortcut: '⌘↑', onSelect: update, disabled: isBusy });
+    if (isPaid) lifecycle.push({ id: 'schedule', label: 'Schedule task', icon: CalendarClock, onSelect: openScheduleTask });
     if (lifecycle.length > 0) groups.push({ id: 'lifecycle', items: lifecycle });
 
     if (canDelete) {
@@ -80,7 +89,8 @@ export function useStackMenuItems(_file: string, ctx: StackMenuCtx): MenuGroup[]
   }, [
     stackStatus, hasPort, isBusy, isPaid, canDelete, isPinned, labels,
     showDeploy, showStop, showRestart, showUpdate,
+    autoUpdateEnabled, setAutoUpdateEnabled,
     openAlertSheet, openAutoHeal, checkUpdates, openStackApp,
-    deploy, stop, restart, update, remove, pin, unpin, toggleLabel,
+    deploy, stop, restart, update, remove, pin, unpin, toggleLabel, openScheduleTask,
   ]);
 }

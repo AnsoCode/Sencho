@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { TogglePill } from "@/components/ui/toggle-pill";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiFetch } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
 import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2, History } from 'lucide-react';
 import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
@@ -1359,7 +1360,7 @@ export default function ResourcesView() {
                                             {inspectNetwork.Id.substring(0, 12)}
                                             <button
                                                 className="text-muted-foreground hover:text-foreground transition-colors"
-                                                onClick={async () => { try { await navigator.clipboard.writeText(inspectNetwork.Id); toast.success('ID copied'); } catch { toast.error('Copy failed (HTTPS required)'); } }}
+                                                onClick={async () => { try { await copyToClipboard(inspectNetwork.Id); toast.success('ID copied'); } catch { toast.error('Copy failed.'); } }}
                                             >
                                                 <Copy className="w-3 h-3" strokeWidth={1.5} />
                                             </button>

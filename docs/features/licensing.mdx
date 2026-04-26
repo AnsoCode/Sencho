@@ -21,25 +21,48 @@ Lifetime pricing is an early-adopter offer available for a limited time only.
 
 ### Feature breakdown
 
+**Community** includes:
+- Unlimited nodes, compose editor, global logs, app store, alerts, and more
+- Two-factor authentication (TOTP)
+- Custom OIDC single sign-on (works with Authelia, Keycloak, Authentik, Zitadel, Pocket ID, or any spec-compliant OIDC identity provider)
+
 **Skipper** includes everything in Community, plus:
 - Fleet View with drill-down
 - Webhooks and stack labels
 - Atomic deployments and fleet-wide backups
 - Auto-update policies
+- One-click Google, GitHub, and Okta SSO presets
 
 **Admiral** includes everything in Skipper, plus:
 - Unlimited admin and viewer accounts
 - Scoped RBAC (deployer, node-admin, auditor roles)
-- SSO, audit log, and host console
+- LDAP / Active Directory authentication
+- Audit log and host console
 - API tokens and private registries
 - Notification routing
 - Scheduled operations
 
+<Tip>
+  **SSO is available on every tier.** Community users can integrate any OIDC-compliant identity provider through the Custom OIDC option. Paid tiers add turnkey presets (Google, GitHub, Okta) and LDAP / Active Directory.
+</Tip>
+
 ## Free trial
 
-Every new Sencho installation starts with a **14-day Skipper trial**. No license key or credit card is required. Skipper features like fleet management, webhooks, atomic deployments, and auto-update policies are unlocked during the trial so you can evaluate them with your real infrastructure. Admiral-exclusive features (SSO, audit log, host console, scoped RBAC, unlimited accounts) require an Admiral license.
+Sencho offers a **14-day Admiral trial** on monthly and annual Admiral plans so you can evaluate the flagship features (Host Console, Scheduled Operations, LDAP / Active Directory, audit log, unlimited accounts) with your real infrastructure before committing.
 
-When the trial expires, Sencho automatically reverts to the Community tier. No data is lost.
+To start a trial:
+
+1. In the Sencho dashboard, go to **Settings > License**, or visit the [pricing page](https://sencho.io/pricing).
+2. Click **Start monthly trial** or **Start annual trial**.
+3. Complete the Lemon Squeezy checkout. A valid card is required for verification; you are not charged until the trial ends.
+4. Lemon Squeezy will email your license key within a few minutes.
+5. Paste the key into the **Have a license key?** field on the License page and click **Activate**.
+
+When your trial ends, Lemon Squeezy automatically charges the card you provided and your plan continues as a paid Admiral subscription. To avoid being charged, cancel from the **Manage Subscription** button (or from the Lemon Squeezy receipt email) any time before day 14.
+
+<Tip>
+  Fresh installs land on the **Community** tier until you activate a license key. All Community features (unlimited nodes, compose editor, global logs, alerts, Custom OIDC, and more) are available immediately.
+</Tip>
 
 ## Upgrading your plan
 

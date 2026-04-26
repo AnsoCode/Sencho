@@ -196,6 +196,7 @@ export interface SSOConfig {
 export interface NotificationHistory {
     id?: number;
     level: 'info' | 'warning' | 'error';
+    category?: string;
     message: string;
     timestamp: number;
     is_read: boolean;
@@ -238,6 +239,13 @@ export interface AuditLogEntry {
 
 export type ApiTokenScope = 'read-only' | 'deploy-only' | 'full-admin';
 
+/** Map an API token's scope to the synthesized user role used during request authorization. */
+export const API_TOKEN_SCOPE_TO_ROLE: Record<ApiTokenScope, UserRole> = {
+    'read-only': 'viewer',
+    'deploy-only': 'deployer',
+    'full-admin': 'admin',
+};
+
 export interface ApiToken {
     id: number;
     token_hash: string;
@@ -256,7 +264,7 @@ export interface ScheduledTask {
     target_type: 'stack' | 'fleet' | 'system';
     target_id: string | null;
     node_id: number | null;
-    action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan';
+    action: 'restart' | 'snapshot' | 'prune' | 'update' | 'scan' | 'auto_backup' | 'auto_stop' | 'auto_down' | 'auto_start';
     cron_expression: string;
     enabled: number;
     created_by: string;
@@ -269,6 +277,7 @@ export interface ScheduledTask {
     prune_targets: string | null;
     target_services: string | null;
     prune_label_filter: string | null;
+    delete_after_run?: number;
 }
 
 export interface ScheduledTaskRun {
@@ -299,7 +308,10 @@ export interface Registry {
 export interface NotificationRoute {
     id: number;
     name: string;
+    node_id: number | null;
     stack_patterns: string[];
+    label_ids: number[] | null;
+    categories: string[] | null;
     channel_type: 'discord' | 'slack' | 'webhook';
     channel_url: string;
     priority: number;
@@ -477,11 +489,14 @@ export class DatabaseService {
         this.migrateRegistries();
         this.migrateRoleAssignments();
         this.migrateNotificationRoutes();
+        this.migrateNotificationRoutesNodeId();
+        this.migrateNotificationRoutesMatchers();
         this.migrateNotificationHistoryContext();
         this.migrateScanPolicyFleetColumns();
         this.migrateSecretMisconfigColumns();
         this.migrateAgentsAndNotificationsNodeId();
         this.migratePolicyEvaluationColumn();
+        this.migrateNotificationCategory();
     }
 
     public static getInstance(): DatabaseService {
@@ -549,6 +564,14 @@ export class DatabaseService {
         stack_name TEXT NOT NULL,
         has_update INTEGER DEFAULT 0,
         checked_at INTEGER NOT NULL,
+        PRIMARY KEY (node_id, stack_name)
+      );
+
+      CREATE TABLE IF NOT EXISTS stack_auto_update_settings (
+        node_id INTEGER NOT NULL DEFAULT 0,
+        stack_name TEXT NOT NULL,
+        auto_update_enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL,
         PRIMARY KEY (node_id, stack_name)
       );
 
@@ -927,6 +950,7 @@ export class DatabaseService {
         maybeAddCol('scheduled_tasks', 'prune_targets', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'target_services', 'TEXT DEFAULT NULL');
         maybeAddCol('scheduled_tasks', 'prune_label_filter', 'TEXT DEFAULT NULL');
+        maybeAddCol('scheduled_tasks', 'delete_after_run', 'INTEGER DEFAULT 0');
 
         // Recreate stack_update_status with composite PK (node_id, stack_name).
         // Original table had stack_name as sole PK which breaks when multiple nodes share stack names.
@@ -1113,53 +1137,47 @@ export class DatabaseService {
         try { this.db.prepare('ALTER TABLE notification_history ADD COLUMN dispatch_error TEXT').run(); } catch { /* already exists */ }
     }
 
+    private migrateNotificationRoutesNodeId(): void {
+        try {
+            this.db.prepare('ALTER TABLE notification_routes ADD COLUMN node_id INTEGER NULL').run();
+        } catch {
+            // column already present
+        }
+        this.db.prepare('CREATE INDEX IF NOT EXISTS idx_notification_routes_node_priority ON notification_routes(node_id, enabled, priority)').run();
+    }
+
+    private tryAddColumn(table: string, col: string, def: string): void {
+        try {
+            this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+        } catch {
+            /* column already present */
+        }
+    }
+
+    private migrateNotificationRoutesMatchers(): void {
+        this.tryAddColumn('notification_routes', 'label_ids', 'TEXT NULL');
+        this.tryAddColumn('notification_routes', 'categories', 'TEXT NULL');
+    }
+
     private migrateNotificationHistoryContext(): void {
-        const tryAddColumn = (col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE notification_history ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('stack_name', 'TEXT');
-        tryAddColumn('container_name', 'TEXT');
+        this.tryAddColumn('notification_history', 'stack_name', 'TEXT');
+        this.tryAddColumn('notification_history', 'container_name', 'TEXT');
     }
 
     private migrateScanPolicyFleetColumns(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
-        tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('scan_policies', 'node_identity', "TEXT NOT NULL DEFAULT ''");
+        this.tryAddColumn('scan_policies', 'replicated_from_control', 'INTEGER NOT NULL DEFAULT 0');
     }
 
     private migrateSecretMisconfigColumns(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('vulnerability_scans', 'secret_count', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('vulnerability_scans', 'misconfig_count', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
+        this.tryAddColumn('vulnerability_scans', 'secret_count', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('vulnerability_scans', 'misconfig_count', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('vulnerability_scans', 'scanners_used', "TEXT NOT NULL DEFAULT 'vuln'");
     }
 
     private migrateAgentsAndNotificationsNodeId(): void {
-        const tryAddColumn = (table: string, col: string, def: string) => {
-            try {
-                this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
-            } catch {
-                /* column already present */
-            }
-        };
-        tryAddColumn('agents', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
-        tryAddColumn('notification_history', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('agents', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
+        this.tryAddColumn('notification_history', 'node_id', 'INTEGER NOT NULL DEFAULT 0');
         const tryIndex = (sql: string, label: string) => {
             try {
                 this.db.prepare(sql).run();
@@ -1184,6 +1202,14 @@ export class DatabaseService {
                 .run();
         } catch {
             /* column already present */
+        }
+    }
+
+    private migrateNotificationCategory(): void {
+        try {
+            this.db.prepare('ALTER TABLE notification_history ADD COLUMN category TEXT').run();
+        } catch {
+            // column already present
         }
     }
 
@@ -1222,7 +1248,10 @@ export class DatabaseService {
         return {
             id: row.id as number,
             name: row.name as string,
+            node_id: row.node_id != null ? (row.node_id as number) : null,
             stack_patterns: JSON.parse(row.stack_patterns as string) as string[],
+            label_ids: row.label_ids ? JSON.parse(row.label_ids as string) as number[] : null,
+            categories: row.categories ? JSON.parse(row.categories as string) as string[] : null,
             channel_type: row.channel_type as 'discord' | 'slack' | 'webhook',
             channel_url: row.channel_url as string,
             priority: row.priority as number,
@@ -1230,6 +1259,13 @@ export class DatabaseService {
             created_at: row.created_at as number,
             updated_at: row.updated_at as number,
         };
+    }
+
+    public getStackLabelIds(nodeId: number, stackName: string): number[] {
+        const rows = this.db.prepare(
+            'SELECT label_id FROM stack_label_assignments WHERE stack_name = ? AND node_id = ?'
+        ).all(stackName, nodeId) as { label_id: number }[];
+        return rows.map(r => r.label_id);
     }
 
     public getNotificationRoutes(): NotificationRoute[] {
@@ -1251,10 +1287,13 @@ export class DatabaseService {
 
     public createNotificationRoute(route: Omit<NotificationRoute, 'id'>): NotificationRoute {
         const result = this.db.prepare(
-            'INSERT INTO notification_routes (name, stack_patterns, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO notification_routes (name, node_id, stack_patterns, label_ids, categories, channel_type, channel_url, priority, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             route.name,
+            route.node_id ?? null,
             JSON.stringify(route.stack_patterns),
+            route.label_ids ? JSON.stringify(route.label_ids) : null,
+            route.categories ? JSON.stringify(route.categories) : null,
             route.channel_type,
             route.channel_url,
             route.priority,
@@ -1270,7 +1309,10 @@ export class DatabaseService {
         const values: unknown[] = [];
 
         if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if ('node_id' in updates) { fields.push('node_id = ?'); values.push(updates.node_id ?? null); }
         if (updates.stack_patterns !== undefined) { fields.push('stack_patterns = ?'); values.push(JSON.stringify(updates.stack_patterns)); }
+        if ('label_ids' in updates) { fields.push('label_ids = ?'); values.push(updates.label_ids ? JSON.stringify(updates.label_ids) : null); }
+        if ('categories' in updates) { fields.push('categories = ?'); values.push(updates.categories ? JSON.stringify(updates.categories) : null); }
         if (updates.channel_type !== undefined) { fields.push('channel_type = ?'); values.push(updates.channel_type); }
         if (updates.channel_url !== undefined) { fields.push('channel_url = ?'); values.push(updates.channel_url); }
         if (updates.priority !== undefined) { fields.push('priority = ?'); values.push(updates.priority); }
@@ -1442,19 +1484,23 @@ export class DatabaseService {
 
     // --- Notification History ---
 
-    public getNotificationHistory(nodeId: number, limit = 50): NotificationHistory[] {
-        const stmt = this.db.prepare('SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?');
-        return stmt.all(nodeId, limit).map((row: any) => ({
+    public getNotificationHistory(nodeId: number, limit = 50, category?: string): NotificationHistory[] {
+        const sql = category
+            ? 'SELECT * FROM notification_history WHERE node_id = ? AND category = ? ORDER BY timestamp DESC LIMIT ?'
+            : 'SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?';
+        const args: (number | string)[] = category ? [nodeId, category, limit] : [nodeId, limit];
+        return this.db.prepare(sql).all(...args).map((row: any) => ({
             ...row,
             is_read: row.is_read === 1,
             stack_name: row.stack_name ?? undefined,
             container_name: row.container_name ?? undefined,
+            category: row.category ?? undefined,
         }));
     }
 
     public addNotificationHistory(nodeId: number, notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare(
-            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name) VALUES (?, ?, ?, ?, 0, ?, ?)'
+            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name, category) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
         );
         const result = stmt.run(
             nodeId,
@@ -1462,7 +1508,8 @@ export class DatabaseService {
             notification.message,
             notification.timestamp,
             notification.stack_name ?? null,
-            notification.container_name ?? null
+            notification.container_name ?? null,
+            notification.category ?? null,
         );
 
         this.db.prepare(`
@@ -1475,6 +1522,7 @@ export class DatabaseService {
         return {
             id: result.lastInsertRowid as number,
             level: notification.level,
+            category: notification.category,
             message: notification.message,
             timestamp: notification.timestamp,
             is_read: false,
@@ -1713,6 +1761,40 @@ export class DatabaseService {
 
     public clearStackUpdateStatus(nodeId: number, stackName: string): void {
         this.db.prepare('DELETE FROM stack_update_status WHERE node_id = ? AND stack_name = ?').run(nodeId, stackName);
+    }
+
+    // --- Stack Auto-Update Settings ---
+
+    public getStackAutoUpdateEnabled(nodeId: number, stackName: string): boolean {
+        const row = this.db.prepare(
+            'SELECT auto_update_enabled FROM stack_auto_update_settings WHERE node_id = ? AND stack_name = ?'
+        ).get(nodeId, stackName) as { auto_update_enabled: number } | undefined;
+        return row === undefined ? true : row.auto_update_enabled === 1;
+    }
+
+    // Returns only stacks with an explicit row. Missing keys default to true
+    // (auto-update enabled); callers must not treat absence as false.
+    public getStackAutoUpdateSettingsForNode(nodeId: number): Record<string, boolean> {
+        const rows = this.db.prepare(
+            'SELECT stack_name, auto_update_enabled FROM stack_auto_update_settings WHERE node_id = ?'
+        ).all(nodeId) as Array<{ stack_name: string; auto_update_enabled: number }>;
+        const result: Record<string, boolean> = {};
+        for (const row of rows) {
+            result[row.stack_name] = row.auto_update_enabled === 1;
+        }
+        return result;
+    }
+
+    public upsertStackAutoUpdateEnabled(nodeId: number, stackName: string, enabled: boolean): void {
+        this.db.prepare(
+            `INSERT INTO stack_auto_update_settings (node_id, stack_name, auto_update_enabled, updated_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(node_id, stack_name) DO UPDATE SET auto_update_enabled = excluded.auto_update_enabled, updated_at = excluded.updated_at`
+        ).run(nodeId, stackName, enabled ? 1 : 0, Date.now());
+    }
+
+    public clearStackAutoUpdateSetting(nodeId: number, stackName: string): void {
+        this.db.prepare('DELETE FROM stack_auto_update_settings WHERE node_id = ? AND stack_name = ?').run(nodeId, stackName);
     }
 
     public getNodeUpdateSummary(): Array<{ node_id: number; stacks_with_updates: number }> {
@@ -2391,13 +2473,13 @@ export class DatabaseService {
 
     public createScheduledTask(task: Omit<ScheduledTask, 'id'>): number {
         const result = this.db.prepare(
-            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error, prune_targets, target_services, prune_label_filter) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO scheduled_tasks (name, target_type, target_id, node_id, action, cron_expression, enabled, created_by, created_at, updated_at, last_run_at, next_run_at, last_status, last_error, prune_targets, target_services, prune_label_filter, delete_after_run) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             task.name, task.target_type, task.target_id, task.node_id,
             task.action, task.cron_expression, task.enabled, task.created_by,
             task.created_at, task.updated_at, task.last_run_at, task.next_run_at,
             task.last_status, task.last_error, task.prune_targets, task.target_services,
-            task.prune_label_filter
+            task.prune_label_filter, task.delete_after_run ?? 0
         );
         return result.lastInsertRowid as number;
     }
@@ -2414,6 +2496,7 @@ export class DatabaseService {
             last_status: updates.last_status, last_error: updates.last_error,
             prune_targets: updates.prune_targets, target_services: updates.target_services,
             prune_label_filter: updates.prune_label_filter,
+            delete_after_run: updates.delete_after_run,
         };
 
         for (const [col, val] of Object.entries(map)) {
@@ -3008,7 +3091,20 @@ export class DatabaseService {
     }
 
     public deleteScanPolicy(id: number): void {
-        this.db.prepare('DELETE FROM scan_policies WHERE id = ?').run(id);
+        // policy_evaluation is a JSON blob containing the policyId of the policy
+        // that produced it. Clear it on every scan referencing the deleted policy
+        // so cached scans no longer report stale violations after the policy is gone.
+        const clearEval = this.db.prepare(
+            `UPDATE vulnerability_scans
+                SET policy_evaluation = NULL
+              WHERE json_extract(policy_evaluation, '$.policyId') = ?`,
+        );
+        const deletePolicy = this.db.prepare('DELETE FROM scan_policies WHERE id = ?');
+        const txn = this.db.transaction((policyId: number) => {
+            clearEval.run(policyId);
+            deletePolicy.run(policyId);
+        });
+        txn(id);
     }
 
     /**

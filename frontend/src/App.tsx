@@ -5,6 +5,8 @@ import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import EditorLayout from './components/EditorLayout';
 import { MfaChallenge } from './components/MfaChallenge';
+import { DeployFeedbackProvider } from './context/DeployFeedbackContext';
+import { DeployFeedbackPortal } from './components/DeployFeedbackPortal';
 
 function AppContent() {
   const { appStatus, isAuthenticated, needsSetup, completeSetup } = useAuth();
@@ -43,7 +45,10 @@ import { ToastContainer } from './components/ui/toast';
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <DeployFeedbackProvider>
+        <AppContent />
+        <DeployFeedbackPortal />
+      </DeployFeedbackProvider>
       <ToastContainer />
     </AuthProvider>
   );

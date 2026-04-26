@@ -10,11 +10,13 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     hasPort: true,
     isBusy: false,
     isPaid: true,
+    isAdmiral: false,
     canDelete: true,
     isPinned: false,
     labels: [],
     assignedLabelIds: [],
     menuVisibility: { showDeploy: false, showStop: true, showRestart: true, showUpdate: false },
+    autoUpdateEnabled: true,
     openAlertSheet: vi.fn(),
     openAutoHeal: vi.fn(),
     checkUpdates: vi.fn(),
@@ -29,6 +31,8 @@ function makeCtx(overrides: Partial<StackMenuCtx> = {}): StackMenuCtx {
     toggleLabel: vi.fn(),
     createAndAssignLabel: vi.fn(),
     openLabelManager: vi.fn(),
+    setAutoUpdateEnabled: vi.fn(),
+    openScheduleTask: vi.fn(),
     ...overrides,
   };
 }
@@ -79,21 +83,46 @@ describe('useStackMenuItems', () => {
     expect(del.icon).toBe(Trash2);
   });
 
+  it('shows auto-update toggle in inspect when isPaid', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({ isPaid: true, autoUpdateEnabled: true })));
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    expect(inspect.items.find(i => i.id === 'auto-update')).toBeDefined();
+  });
+
+  it('hides auto-update toggle when !isPaid', () => {
+    const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({ isPaid: false })));
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    expect(inspect.items.find(i => i.id === 'auto-update')).toBeUndefined();
+  });
+
+  it('auto-update toggle calls setAutoUpdateEnabled with toggled value', () => {
+    const setAutoUpdateEnabled = vi.fn();
+    const { result } = renderHook(() =>
+      useStackMenuItems('web.yml', makeCtx({ isPaid: true, autoUpdateEnabled: true, setAutoUpdateEnabled }))
+    );
+    const inspect = result.current.find(g => g.id === 'inspect')!;
+    inspect.items.find(i => i.id === 'auto-update')!.onSelect();
+    expect(setAutoUpdateEnabled).toHaveBeenCalledWith(false);
+  });
+
   it('lifecycle items follow menuVisibility flags', () => {
     const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
       menuVisibility: { showDeploy: true, showStop: false, showRestart: false, showUpdate: true },
     })));
     const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
     const ids = lifecycle.items.map(i => i.id);
-    expect(ids).toEqual(['deploy', 'update']);
+    expect(ids).toEqual(['deploy', 'update', 'schedule']);
   });
 
-  it('disables every lifecycle item when isBusy', () => {
+  it('disables action lifecycle items when isBusy but leaves schedule enabled', () => {
     const { result } = renderHook(() => useStackMenuItems('web.yml', makeCtx({
       isBusy: true,
       menuVisibility: { showDeploy: true, showStop: true, showRestart: true, showUpdate: true },
     })));
     const lifecycle = result.current.find(g => g.id === 'lifecycle')!;
-    expect(lifecycle.items.every(i => i.disabled === true)).toBe(true);
+    const actionItems = lifecycle.items.filter(i => i.id !== 'schedule');
+    expect(actionItems.every(i => i.disabled === true)).toBe(true);
+    const scheduleItem = lifecycle.items.find(i => i.id === 'schedule')!;
+    expect(scheduleItem.disabled).toBeFalsy();
   });
 });

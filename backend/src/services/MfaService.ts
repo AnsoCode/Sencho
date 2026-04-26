@@ -1,20 +1,14 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
-import { authenticator } from 'otplib';
-import { HashAlgorithms } from '@otplib/core';
+import { OTP } from 'otplib';
+import { DatabaseService } from './DatabaseService';
+import { MFA_REPLAY_TTL_MS, MFA_REPLAY_PURGE_INTERVAL_MS } from '../helpers/constants';
+import { isDebugEnabled } from '../utils/debug';
 
-// Configure otplib for the default TOTP contract we present to users:
-//   - 6 digits
-//   - 30-second step
-//   - SHA-1 (the universally supported default for authenticator apps)
-//   - ±1 step tolerance, so the server accepts the previous, current, and next code
-//     to cover small clock drift between the device and the server.
-authenticator.options = {
-    digits: 6,
-    step: 30,
-    algorithm: HashAlgorithms.SHA1,
-    window: 1,
-};
+// TOTP configuration: 6 digits, 30-second step, SHA-1, ±1 step tolerance.
+// SHA-1 is the universally supported default for authenticator apps (RFC 6238).
+const totp = new OTP({ strategy: 'totp' });
+const TOTP_PARAMS = { algorithm: 'sha1' as const, digits: 6, period: 30 };
 
 const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Crockford-like, no 0/O/1/I/L
 const BACKUP_CODE_LENGTH = 10;
@@ -27,12 +21,47 @@ export interface BackupVerifyResult {
 }
 
 export class MfaService {
+    private static instance: MfaService;
+    private purgeTimer: NodeJS.Timeout | null = null;
+
+    public static getInstance(): MfaService {
+        if (!MfaService.instance) MfaService.instance = new MfaService();
+        return MfaService.instance;
+    }
+
+    /**
+     * Start the periodic purge of used-MFA-code rows. The replay blacklist
+     * holds (user, code, window) tuples for the last ~2 minutes; older rows
+     * are safe to drop. Idempotent: calling start() twice is a no-op.
+     */
+    public start(): void {
+        if (this.purgeTimer) return;
+        this.purgeTimer = setInterval(() => {
+            try {
+                const deleted = DatabaseService.getInstance().purgeOldMfaCodes(Date.now() - MFA_REPLAY_TTL_MS);
+                if (isDebugEnabled() && deleted > 0) {
+                    console.log('[MFA:diag] replay purge deleted=', deleted);
+                }
+            } catch (err) {
+                console.warn('[MFA] Replay purge failed:', (err as Error).message);
+            }
+        }, MFA_REPLAY_PURGE_INTERVAL_MS);
+        this.purgeTimer.unref();
+    }
+
+    public stop(): void {
+        if (this.purgeTimer) {
+            clearInterval(this.purgeTimer);
+            this.purgeTimer = null;
+        }
+    }
+
     /**
      * Generate a fresh base32 TOTP secret ready for `buildOtpauthUri` and
      * `verifyTotp`. Each user should receive a unique secret.
      */
     public static generateSecret(): string {
-        return authenticator.generateSecret();
+        return totp.generateSecret();
     }
 
     /**
@@ -41,7 +70,7 @@ export class MfaService {
      * app can label the entry clearly.
      */
     public static buildOtpauthUri(secret: string, username: string, issuer = 'Sencho'): string {
-        return authenticator.keyuri(username, issuer, secret);
+        return totp.generateURI({ issuer, label: username, secret, ...TOTP_PARAMS });
     }
 
     /**
@@ -54,7 +83,7 @@ export class MfaService {
         const trimmed = code.trim().replace(/\s+/g, '');
         if (!/^\d{6}$/.test(trimmed)) return false;
         try {
-            return authenticator.check(trimmed, secret);
+            return totp.verifySync({ secret, token: trimmed, ...TOTP_PARAMS, epochTolerance: 30 }).valid;
         } catch {
             return false;
         }

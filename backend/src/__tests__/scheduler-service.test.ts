@@ -3,6 +3,7 @@
  * license gating, cron parsing, and error handling.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ScheduledTask } from '../services/DatabaseService';
 
 // ── Hoisted mocks ──────────────────────────────────────────────────────
 
@@ -20,6 +21,11 @@ const {
   mockGetProxyTarget,
   mockIsTrivyAvailable,
   mockScanAllNodeImages,
+  mockGetStackAutoUpdateSettingsForNode,
+  mockDeleteScheduledTask,
+  mockRunCommand,
+  mockDeployStack,
+  mockBackupStackFiles,
 } = vi.hoisted(() => ({
   mockGetDueScheduledTasks: vi.fn().mockReturnValue([]),
   mockCreateScheduledTaskRun: vi.fn().mockReturnValue(1),
@@ -54,6 +60,11 @@ const {
     severity: { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 },
     violations: [],
   }),
+  mockGetStackAutoUpdateSettingsForNode: vi.fn().mockReturnValue({}),
+  mockDeleteScheduledTask: vi.fn(),
+  mockRunCommand: vi.fn().mockResolvedValue(undefined),
+  mockDeployStack: vi.fn().mockResolvedValue(undefined),
+  mockBackupStackFiles: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../services/DatabaseService', () => ({
@@ -72,6 +83,8 @@ vi.mock('../services/DatabaseService', () => ({
       clearStackUpdateStatus: mockClearStackUpdateStatus,
       markStaleRunsAsFailed: mockMarkStaleRunsAsFailed,
       deleteOldScans: mockDeleteOldScans,
+      getStackAutoUpdateSettingsForNode: mockGetStackAutoUpdateSettingsForNode,
+      deleteScheduledTask: mockDeleteScheduledTask,
     }),
   },
 }));
@@ -99,6 +112,8 @@ vi.mock('../services/ComposeService', () => ({
   ComposeService: {
     getInstance: () => ({
       updateStack: mockUpdateStack,
+      runCommand: mockRunCommand,
+      deployStack: mockDeployStack,
     }),
   },
 }));
@@ -109,6 +124,7 @@ vi.mock('../services/FileSystemService', () => ({
       getStacks: mockGetStacks,
       getStackContent: mockGetStackContent,
       getEnvContent: mockGetEnvContent,
+      backupStackFiles: mockBackupStackFiles,
     }),
   },
 }));
@@ -125,6 +141,16 @@ vi.mock('../services/NotificationService', () => ({
   NotificationService: {
     getInstance: () => ({
       dispatchAlert: mockDispatchAlert,
+    }),
+  },
+}));
+
+vi.mock('../services/CloudBackupService', () => ({
+  CloudBackupService: {
+    getInstance: () => ({
+      isEnabled: () => false,
+      isAutoUploadOn: () => false,
+      uploadSnapshot: vi.fn().mockResolvedValue(undefined),
     }),
   },
 }));
@@ -737,6 +763,93 @@ describe('SchedulerService - executeUpdate', () => {
     const svc = SchedulerService.getInstance();
     expect(svc.isTaskRunning(999)).toBe(false);
   });
+
+  it('fleet target updates all stacks whose policy allows it', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 87,
+      name: 'fleet-update',
+      action: 'update',
+      target_type: 'fleet',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: null,
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetStacks.mockResolvedValue(['app1', 'app2', 'app3']);
+    // app2 explicitly disabled; app1 and app3 default to enabled
+    mockGetStackAutoUpdateSettingsForNode.mockReturnValue({ app2: false });
+    mockGetContainersByStack.mockResolvedValue([{ Id: 'c1', Image: 'nginx:latest' }]);
+    mockCheckImage.mockResolvedValue({ hasUpdate: true });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(87);
+
+    // Only app1 and app3 should be updated
+    expect(mockUpdateStack).toHaveBeenCalledTimes(2);
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.stringContaining('auto-updates disabled; skipped'),
+      })
+    );
+  });
+
+  it('fleet target with zero eligible stacks records success', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 88,
+      name: 'fleet-update-all-off',
+      action: 'update',
+      target_type: 'fleet',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: null,
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetStacks.mockResolvedValue(['app1', 'app2']);
+    mockGetStackAutoUpdateSettingsForNode.mockReturnValue({ app1: false, app2: false });
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(88);
+
+    expect(mockUpdateStack).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: 'success' })
+    );
+  });
+
+  it('fleet target on empty node returns early with skipped message', async () => {
+    mockGetScheduledTask.mockReturnValue({
+      id: 89,
+      name: 'fleet-update-empty-node',
+      action: 'update',
+      target_type: 'fleet',
+      cron_expression: '0 4 * * *',
+      enabled: true,
+      target_id: null,
+      node_id: 1,
+      created_by: 'admin',
+      last_status: null,
+    });
+    mockGetStacks.mockResolvedValue([]);
+
+    const svc = SchedulerService.getInstance();
+    await svc.triggerTask(89);
+
+    expect(mockUpdateStack).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        status: 'success',
+        output: expect.stringContaining('No stacks found'),
+      })
+    );
+  });
 });
 
 // ── Error handling & notifications ─────────────────────────────────────
@@ -780,7 +893,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(91);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('error', expect.stringContaining('failed'), undefined);
+    expect(mockDispatchAlert).toHaveBeenCalledWith('error', 'system', expect.stringContaining('failed'), { stackName: undefined });
   });
 
   it('dispatches recovery notification when previous status was failure', async () => {
@@ -800,7 +913,7 @@ describe('SchedulerService - error handling', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(92);
 
-    expect(mockDispatchAlert).toHaveBeenCalledWith('info', expect.stringContaining('recovered'), 'my-stack');
+    expect(mockDispatchAlert).toHaveBeenCalledWith('info', 'system', expect.stringContaining('recovered'), { stackName: 'my-stack' });
   });
 });
 
@@ -856,13 +969,15 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('nightly-scan'),
-      undefined,
+      { stackName: undefined },
     );
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('Scanned 3 image(s)'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -875,8 +990,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'warning',
+      'scan_finding',
       expect.stringContaining('2 failed'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -889,8 +1005,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('completed'),
-      'web-stack',
+      { stackName: 'web-stack' },
     );
   });
 
@@ -908,8 +1025,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
     expect(mockDispatchAlert).toHaveBeenCalledTimes(1);
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('recovered-scan'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -942,8 +1060,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'error',
+      'system',
       expect.stringMatching(/failed.*Trivy/i),
-      'payment-stack',
+      { stackName: 'payment-stack' },
     );
   });
 
@@ -956,7 +1075,7 @@ describe('SchedulerService - scheduled scan notifications', () => {
     const svc = SchedulerService.getInstance();
     await svc.triggerTask(206);
 
-    const message = mockDispatchAlert.mock.calls[0][1] as string;
+    const message = mockDispatchAlert.mock.calls[0][2] as string;
     expect(message).toContain('2 critical');
     expect(message).toContain('5 high');
     expect(message).toContain('10 medium');
@@ -971,8 +1090,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('No images to scan'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -985,8 +1105,9 @@ describe('SchedulerService - scheduled scan notifications', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'info',
+      'scan_finding',
       expect.stringContaining('All 12 image(s) already scanned recently'),
-      undefined,
+      { stackName: undefined },
     );
   });
 
@@ -1106,8 +1227,9 @@ describe('SchedulerService - invalid cron at execution time', () => {
 
     expect(mockDispatchAlert).toHaveBeenCalledWith(
       'error',
+      'system',
       expect.stringContaining('failed'),
-      undefined
+      { stackName: undefined },
     );
   });
 });
@@ -1185,7 +1307,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
   it('proxies update execution to remote node', async () => {
     mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
     mockGetProxyTarget.mockReturnValue({
-      apiUrl: 'http://remote:3000',
+      apiUrl: 'http://remote:1852',
       apiToken: 'test-token',
     });
 
@@ -1211,7 +1333,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
     await svc.triggerTask(88);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://remote:3000/api/auto-update/execute',
+      'http://remote:1852/api/auto-update/execute',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ target: 'web-app' }),
@@ -1226,7 +1348,7 @@ describe('SchedulerService - executeUpdateRemote', () => {
   it('records failure when remote node returns error', async () => {
     mockGetNode.mockReturnValue({ id: 2, name: 'remote', type: 'remote', status: 'online' });
     mockGetProxyTarget.mockReturnValue({
-      apiUrl: 'http://remote:3000',
+      apiUrl: 'http://remote:1852',
       apiToken: 'test-token',
     });
 
@@ -1256,5 +1378,114 @@ describe('SchedulerService - executeUpdateRemote', () => {
       1,
       expect.objectContaining({ status: 'failure', error: expect.stringContaining('Internal error') })
     );
+  });
+});
+
+// ── Lifecycle actions (auto_backup, auto_stop, auto_down, auto_start) ───
+
+function makeLifecycleTask(action: ScheduledTask['action'], overrides: Partial<ScheduledTask> = {}): ScheduledTask {
+  return {
+    id: 300,
+    name: `lifecycle-${action}`,
+    action,
+    target_type: 'stack',
+    target_id: 'my-stack',
+    node_id: 1,
+    cron_expression: '0 2 * * *',
+    enabled: 1,
+    created_by: 'admin',
+    created_at: 0,
+    updated_at: 0,
+    last_run_at: null,
+    next_run_at: null,
+    last_status: null,
+    last_error: null,
+    prune_targets: null,
+    target_services: null,
+    prune_label_filter: null,
+    delete_after_run: 0,
+    ...overrides,
+  };
+}
+
+describe('SchedulerService - lifecycle actions', () => {
+  it('auto_stop calls runCommand with "stop"', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_stop'));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockRunCommand).toHaveBeenCalledWith('my-stack', 'stop');
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'success' }));
+  });
+
+  it('auto_down calls runCommand with "down"', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_down'));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockRunCommand).toHaveBeenCalledWith('my-stack', 'down');
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'success' }));
+  });
+
+  it('auto_start calls deployStack', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_start'));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockDeployStack).toHaveBeenCalledWith('my-stack');
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'success' }));
+  });
+
+  it('auto_backup calls backupStackFiles', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_backup'));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockBackupStackFiles).toHaveBeenCalledWith('my-stack');
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'success' }));
+  });
+
+  it('auto_stop records failure when target_id is missing', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_stop', { target_id: null }));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockRunCommand).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'failure' }));
+  });
+
+  it('auto_backup records failure when node_id is missing', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_backup', { node_id: null }));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockBackupStackFiles).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'failure' }));
+  });
+
+  it('non-admiral paid tier skips lifecycle actions', async () => {
+    mockGetTier.mockReturnValue('paid');
+    mockGetVariant.mockReturnValue('standard');
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_stop'));
+    mockGetDueScheduledTasks.mockReturnValue([makeLifecycleTask('auto_stop')]);
+
+    const svc = SchedulerService.getInstance();
+    await (svc as any).tick();
+
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+});
+
+// ── delete_after_run ────────────────────────────────────────────────────
+
+describe('SchedulerService - delete_after_run', () => {
+  it('deletes task after successful run when delete_after_run is 1', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_backup', { delete_after_run: 1 }));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockDeleteScheduledTask).toHaveBeenCalledWith(300);
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'success' }));
+  });
+
+  it('does not delete task when run fails even if delete_after_run is 1', async () => {
+    mockBackupStackFiles.mockRejectedValueOnce(new Error('disk full'));
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_backup', { delete_after_run: 1 }));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockDeleteScheduledTask).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTaskRun).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'failure' }));
+  });
+
+  it('does not delete task when delete_after_run is 0', async () => {
+    mockGetScheduledTask.mockReturnValue(makeLifecycleTask('auto_backup', { delete_after_run: 0 }));
+    await SchedulerService.getInstance().triggerTask(300);
+    expect(mockDeleteScheduledTask).not.toHaveBeenCalled();
+    expect(mockUpdateScheduledTask).toHaveBeenCalledWith(300, expect.objectContaining({ last_status: 'success' }));
   });
 });

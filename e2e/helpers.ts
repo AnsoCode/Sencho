@@ -43,6 +43,16 @@ export async function isDashboard(page: Page): Promise<boolean> {
 }
 
 /**
+ * Wait for the stacks sidebar to finish loading. Waits for the Create Stack
+ * button and the data-stacks-loaded sentinel set by the CommandList after its
+ * async refreshStacks() call resolves.
+ */
+export async function waitForStacksLoaded(page: Page): Promise<void> {
+  await expect(page.getByRole('button', { name: 'Create Stack' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-stacks-loaded="true"]')).toBeAttached({ timeout: 15_000 });
+}
+
+/**
  * Navigate to the app root, complete first-run setup if needed, then log in.
  * After this call the dashboard is guaranteed to be visible.
  */
@@ -66,11 +76,23 @@ export async function loginAs(page: Page, username = TEST_USERNAME, password = T
 
   // ── Login screen ─────────────────────────────────────────────────────────
   if (await isLoginPage(page)) {
-    await page.locator('#username').fill(username);
-    await page.locator('#password').fill(password);
-    await page.locator('button:has-text("Login"), button:has-text("Sign in")').first().click();
-    await expect(page.locator(DASHBOARD_INDICATOR)).toBeVisible({ timeout: 10_000 });
-    return;
+    // Confirm the username field is actually visible before filling. If
+    // isLoginPage was a transient false positive (e.g. login form briefly
+    // rendered before auth check redirected to dashboard), the fill would
+    // hang forever waiting for #username to come back.
+    const usernameField = page.locator('#username');
+    const usernameVisible = await usernameField
+      .waitFor({ state: 'visible', timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (usernameVisible) {
+      await usernameField.fill(username);
+      await page.locator('#password').fill(password);
+      await page.locator('button:has-text("Login"), button:has-text("Sign in")').first().click();
+      await expect(page.locator(DASHBOARD_INDICATOR)).toBeVisible({ timeout: 10_000 });
+      return;
+    }
+    // Fall through to the dashboard check below.
   }
 
   // ── Already on the dashboard ──────────────────────────────────────────────

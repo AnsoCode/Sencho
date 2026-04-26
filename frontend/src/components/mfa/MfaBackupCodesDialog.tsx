@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Check, Copy, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 import { OtpDigitField } from '@/components/auth/OtpDigitField';
@@ -92,7 +93,7 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(backupCodes.join('\n'));
+      await copyToClipboard(backupCodes.join('\n'));
       toast.success('Backup codes copied');
     } catch {
       toast.error('Could not copy to clipboard');

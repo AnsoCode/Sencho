@@ -13,7 +13,7 @@ description: Get Sencho running in under five minutes.
 ```bash
 docker run -d \
   --name sencho \
-  -p 3000:3000 \
+  -p 1852:1852 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /opt/compose:/opt/compose \
   -v sencho_data:/app/data \
@@ -21,7 +21,7 @@ docker run -d \
   saelix/sencho:latest
 ```
 
-Open `http://localhost:3000` in your browser. On first boot you'll be prompted to create an admin account.
+Open `http://localhost:1852` in your browser. On first boot you'll be prompted to create an admin account.
 
 <Note>
   Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho. A `JWT_SECRET` is generated automatically on first boot; you do not need to provide one.

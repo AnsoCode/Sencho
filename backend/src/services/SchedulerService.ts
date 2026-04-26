@@ -15,6 +15,7 @@ import { NotificationService } from './NotificationService';
 import TrivyService from './TrivyService';
 import type { ScanAllNodeImagesResult } from './TrivyService';
 import TrivyInstaller from './TrivyInstaller';
+import { CloudBackupService } from './CloudBackupService';
 
 const TRIVY_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const TRIVY_UPDATE_CHECK_STARTUP_DELAY_MS = 5 * 60 * 1000;
@@ -89,6 +90,7 @@ export class SchedulerService {
                     await trivy.detectTrivy();
                     this.safeDispatch(
                         'info',
+                        'system',
                         `Trivy updated from v${previous} to v${check.latest}`,
                     );
                     db.updateGlobalSetting('trivy_last_notified_version', check.latest);
@@ -100,6 +102,7 @@ export class SchedulerService {
                 if (lastNotified === check.latest) return;
                 this.safeDispatch(
                     'info',
+                    'system',
                     `Trivy update available: v${check.latest} (currently v${check.current ?? 'unknown'})`,
                 );
                 db.updateGlobalSetting('trivy_last_notified_version', check.latest);
@@ -159,9 +162,9 @@ export class SchedulerService {
      * Fire a notification without awaiting completion, catching any promise
      * rejection so the scheduler never crashes on a failed dispatch.
      */
-    private safeDispatch(level: 'info' | 'warning' | 'error', message: string, stackName?: string): void {
+    private safeDispatch(level: 'info' | 'warning' | 'error', category: import('./NotificationService').NotificationCategory, message: string, stackName?: string): void {
         NotificationService.getInstance()
-            .dispatchAlert(level, message, stackName)
+            .dispatchAlert(level, category, message, { stackName })
             .catch(err => console.error('[SchedulerService] Notification dispatch failed:', getErrorMessage(err, 'unknown error')));
     }
 
@@ -287,9 +290,34 @@ export class SchedulerService {
                     scanFailedCount = result.failed;
                     break;
                 }
+                case 'auto_backup':
+                    output = await this.executeAutoBackup(task);
+                    break;
+                case 'auto_stop':
+                    output = await this.executeAutoStop(task);
+                    break;
+                case 'auto_down':
+                    output = await this.executeAutoDown(task);
+                    break;
+                case 'auto_start':
+                    output = await this.executeAutoStart(task);
+                    break;
             }
 
             if (isDebugEnabled()) console.log(`[SchedulerService:debug] Task ${task.id} action completed in ${Date.now() - actionStart}ms`);
+
+            db.updateScheduledTaskRun(runId, {
+                completed_at: Date.now(),
+                status: 'success',
+                output,
+            });
+            console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
+
+            if (task.delete_after_run === 1) {
+                console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) self-deleting after successful one-shot run`);
+                db.deleteScheduledTask(task.id);
+                return;
+            }
 
             const nextRun = this.calculateNextRun(task.cron_expression);
             db.updateScheduledTask(task.id, {
@@ -299,12 +327,7 @@ export class SchedulerService {
                 last_error: null,
                 updated_at: Date.now(),
             });
-            db.updateScheduledTaskRun(runId, {
-                completed_at: Date.now(),
-                status: 'success',
-                output,
-            });
-            console.log(`[SchedulerService] Task "${task.name}" (id=${task.id}) completed successfully`);
+
             if (task.action === 'scan') {
                 const scanLevel: 'info' | 'warning' = scanFailedCount > 0 ? 'warning' : 'info';
                 if (isDebugEnabled()) {
@@ -314,12 +337,14 @@ export class SchedulerService {
                 }
                 this.safeDispatch(
                     scanLevel,
+                    'scan_finding',
                     `Scheduled scan "${task.name}" completed: ${output}`,
                     task.target_id ?? undefined
                 );
             } else if (task.last_status === 'failure') {
                 this.safeDispatch(
                     'info',
+                    'system',
                     `Scheduled task "${task.name}" (${task.action}) recovered successfully`,
                     task.target_id ?? undefined
                 );
@@ -355,6 +380,7 @@ export class SchedulerService {
             console.error(`[SchedulerService] Task "${task.name}" (id=${task.id}) failed:`, errMsg);
             this.safeDispatch(
                 'error',
+                'system',
                 `Scheduled task "${task.name}" (${task.action}) failed: ${errMsg}`,
                 task.target_id ?? undefined
             );
@@ -385,6 +411,36 @@ export class SchedulerService {
             ? ` (services: ${(JSON.parse(task.target_services) as string[]).join(', ')})`
             : '';
         return `Restarted ${filtered.length} container(s) in stack "${task.target_id}"${servicesSuffix}`;
+    }
+
+    private assertStackTarget(task: ScheduledTask, label: string): asserts task is ScheduledTask & { target_id: string; node_id: number } {
+        if (!task.target_id || task.node_id == null) {
+            throw new Error(`${label} requires target_id and node_id`);
+        }
+    }
+
+    private async executeAutoBackup(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-backup');
+        await FileSystemService.getInstance(task.node_id).backupStackFiles(task.target_id);
+        return `Backed up stack "${task.target_id}" files`;
+    }
+
+    private async executeAutoStop(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-stop');
+        await ComposeService.getInstance(task.node_id).runCommand(task.target_id, 'stop');
+        return `Stopped stack "${task.target_id}" (containers preserved)`;
+    }
+
+    private async executeAutoDown(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-down');
+        await ComposeService.getInstance(task.node_id).runCommand(task.target_id, 'down');
+        return `Took down stack "${task.target_id}" (containers removed)`;
+    }
+
+    private async executeAutoStart(task: ScheduledTask): Promise<string> {
+        this.assertStackTarget(task, 'Auto-start');
+        await ComposeService.getInstance(task.node_id).deployStack(task.target_id);
+        return `Started stack "${task.target_id}"`;
     }
 
     private async executeSnapshot(task: ScheduledTask): Promise<string> {
@@ -446,11 +502,25 @@ export class SchedulerService {
             db.insertSnapshotFiles(snapshotId, allFiles);
         }
 
-        if (isDebugEnabled()) {
-            console.debug(`[SchedulerService:debug] Snapshot task ${task.id}: captured ${capturedNodes.length} node(s), ${totalStacks} stack(s), ${allFiles.length} file(s), skipped ${skippedNodes.length}`);
+        let cloudUploadNote = '';
+        const cloudSvc = CloudBackupService.getInstance();
+        if (cloudSvc.isEnabled() && cloudSvc.isAutoUploadOn()) {
+            try {
+                await cloudSvc.uploadSnapshot(snapshotId);
+                cloudUploadNote = ', cloud upload OK';
+            } catch (err) {
+                const message = getErrorMessage(err, 'Cloud upload failed');
+                console.error('[SchedulerService] Cloud upload failed:', message);
+                this.safeDispatch('warning', 'system', `Cloud backup failed for scheduled snapshot ${snapshotId}: ${message}`);
+                cloudUploadNote = ', cloud upload FAILED';
+            }
         }
 
-        return `Fleet snapshot created (id=${snapshotId}, ${capturedNodes.length} node(s), ${totalStacks} stack(s)${skippedNodes.length > 0 ? `, ${skippedNodes.length} skipped` : ''})`;
+        if (isDebugEnabled()) {
+            console.debug(`[SchedulerService:debug] Snapshot task ${task.id}: captured ${capturedNodes.length} node(s), ${totalStacks} stack(s), ${allFiles.length} file(s), skipped ${skippedNodes.length}${cloudUploadNote}`);
+        }
+
+        return `Fleet snapshot created (id=${snapshotId}, ${capturedNodes.length} node(s), ${totalStacks} stack(s)${skippedNodes.length > 0 ? `, ${skippedNodes.length} skipped` : ''}${cloudUploadNote})`;
     }
 
     private async executePrune(task: ScheduledTask): Promise<string> {
@@ -482,41 +552,56 @@ export class SchedulerService {
     }
 
     private async executeUpdate(task: ScheduledTask): Promise<string> {
-        if (!task.target_id || task.node_id == null) {
-            throw new Error('Auto-update requires target_id (stack name or "*") and node_id');
+        if (task.node_id == null) {
+            throw new Error('Auto-update requires node_id');
         }
 
-        // For remote nodes, proxy the entire execution to the remote Sencho instance
+        const isFleet = task.target_type === 'fleet';
+
+        if (!isFleet && !task.target_id) {
+            throw new Error('Auto-update requires target_id (stack name or "*")');
+        }
+
+        // For remote nodes, proxy the entire execution to the remote Sencho instance.
+        // The remote /api/auto-update/execute endpoint already handles per-stack
+        // auto-update policy, so passing '*' for fleet is sufficient.
         const node = NodeRegistry.getInstance().getNode(task.node_id);
         if (node?.type === 'remote') {
-            return this.executeUpdateRemote(task.node_id, task.target_id);
+            return this.executeUpdateRemote(task.node_id, isFleet ? '*' : task.target_id!);
         }
 
         // Local node: execute directly
         const isWildcard = task.target_id === '*';
         let stackNames: string[];
-        if (isWildcard) {
+        if (isFleet || isWildcard) {
             stackNames = await FileSystemService.getInstance(task.node_id).getStacks();
             if (stackNames.length === 0) {
                 return 'No stacks found on node; skipped.';
             }
         } else {
-            stackNames = [task.target_id];
+            stackNames = [task.target_id!];
         }
 
         if (isDebugEnabled()) {
-            console.log(`[SchedulerService] executeUpdate: ${stackNames.length} stack(s) to check, wildcard=${isWildcard}`);
+            console.log(`[SchedulerService] executeUpdate: ${stackNames.length} stack(s) to check, fleet=${isFleet}, wildcard=${isWildcard}`);
         }
 
+        const db = DatabaseService.getInstance();
         const docker = DockerController.getInstance(task.node_id);
         const imageUpdateService = ImageUpdateService.getInstance();
         const compose = ComposeService.getInstance(task.node_id);
-        const db = DatabaseService.getInstance();
         const results: string[] = [];
+
+        // Single batch query for fleet mode; per-stack default is enabled (true) when no explicit row exists.
+        const policyMap = isFleet ? db.getStackAutoUpdateSettingsForNode(task.node_id) : null;
 
         for (const stackName of stackNames) {
             try {
-                const output = await this.executeUpdateForStack(stackName, task.node_id ?? 0, docker, imageUpdateService, compose, db, isWildcard);
+                if (isFleet && (policyMap![stackName] ?? true) === false) {
+                    results.push(`Stack "${stackName}": auto-updates disabled; skipped.`);
+                    continue;
+                }
+                const output = await this.executeUpdateForStack(stackName, task.node_id, docker, imageUpdateService, compose, db, isFleet || isWildcard);
                 results.push(output);
             } catch (e) {
                 const msg = getErrorMessage(e, String(e));
@@ -632,6 +717,7 @@ export class SchedulerService {
 
         this.safeDispatch(
             'info',
+            'image_update_applied',
             `Auto-update: stack "${stackName}" updated with new images`,
             stackName
         );
@@ -669,6 +755,7 @@ export class SchedulerService {
         for (const v of summary.violations ?? []) {
             NotificationService.getInstance().dispatchAlert(
                 'warning',
+                'scan_finding',
                 `Policy "${v.policyName}" violated by ${v.imageRef}: ${v.severity} exceeds ${v.maxSeverity}`,
             );
         }

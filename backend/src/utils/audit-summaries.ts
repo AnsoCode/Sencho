@@ -18,6 +18,12 @@ export const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /stacks/*/start': 'Started stack',
   'POST /stacks/*/stop': 'Stopped stack',
   'POST /stacks/*/restart': 'Restarted stack',
+
+  // Per-service lifecycle (resourceName = stack name; service name is in the path column)
+  'POST /stacks/*/services/*/start': 'Started stack service',
+  'POST /stacks/*/services/*/stop': 'Stopped stack service',
+  'POST /stacks/*/services/*/restart': 'Restarted stack service',
+
   'POST /stacks/*/update': 'Updated stack images',
   'POST /stacks/*/rollback': 'Rolled back stack',
 
@@ -79,6 +85,13 @@ export const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /fleet/snapshots/*/restore': 'Restored fleet backup',
   'POST /fleet/nodes/*/update': 'Triggered fleet node update',
   'POST /fleet/update-all': 'Triggered fleet-wide update',
+
+  // Cloud backup
+  'PUT /cloud-backup/config': 'Updated cloud backup config',
+  'POST /cloud-backup/test': 'Tested cloud backup connection',
+  'POST /cloud-backup/provision': 'Provisioned Sencho Cloud Backup',
+  'POST /cloud-backup/upload': 'Uploaded snapshot to cloud',
+  'DELETE /cloud-backup/object': 'Deleted cloud snapshot',
 
   // SSO
   'PUT /sso/config': 'Updated SSO configuration',

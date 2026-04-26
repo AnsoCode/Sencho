@@ -20,12 +20,15 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { NotificationItem } from './dashboard/types';
+import type { NotificationCategory, NotificationItem } from './dashboard/types';
 import type { Node } from '@/context/NodeContext';
+import { CATEGORY_LABELS } from '@/lib/notificationCategories';
 
 const NODE_FILTER_ALL = 'all' as const;
+const CATEGORY_FILTER_ALL = 'all' as const;
 type NotifFilter = 'all' | 'unread' | 'alerts';
 type NodeFilter = typeof NODE_FILTER_ALL | number;
+type CategoryFilter = typeof CATEGORY_FILTER_ALL | NotificationCategory;
 
 type LevelConfig = {
     icon: LucideIcon;
@@ -90,11 +93,13 @@ function applyFilter(
     items: NotificationItem[],
     filter: NotifFilter,
     nodeFilter: NodeFilter,
+    categoryFilter: CategoryFilter,
 ): NotificationItem[] {
     let result = items;
     if (filter === 'unread') result = result.filter((n) => !n.is_read);
     else if (filter === 'alerts') result = result.filter((n) => n.level === 'warning' || n.level === 'error');
     if (nodeFilter !== NODE_FILTER_ALL) result = result.filter((n) => n.nodeId === nodeFilter);
+    if (categoryFilter !== CATEGORY_FILTER_ALL) result = result.filter((n) => n.category === categoryFilter);
     return result;
 }
 
@@ -117,6 +122,7 @@ export function NotificationPanel({
 }: NotificationPanelProps) {
     const [filter, setFilter] = useState<NotifFilter>('all');
     const [nodeFilter, setNodeFilter] = useState<NodeFilter>(NODE_FILTER_ALL);
+    const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(CATEGORY_FILTER_ALL);
     const [open, setOpen] = useState(false);
 
     const unreadCount = useMemo(
@@ -141,8 +147,8 @@ export function NotificationPanel({
             : NODE_FILTER_ALL;
 
     const filtered = useMemo(
-        () => applyFilter(notifications, filter, effectiveNodeFilter),
-        [notifications, filter, effectiveNodeFilter],
+        () => applyFilter(notifications, filter, effectiveNodeFilter, categoryFilter),
+        [notifications, filter, effectiveNodeFilter, categoryFilter],
     );
     const groups = useMemo(() => groupByDay(filtered), [filtered]);
 
@@ -234,12 +240,7 @@ export function NotificationPanel({
                 </div>
 
                 {/* Filter segment */}
-                <div
-                    className={cn(
-                        'flex items-center gap-2 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]',
-                        showNodeFilter ? 'justify-between' : 'justify-end',
-                    )}
-                >
+                <div className="flex flex-wrap items-center gap-2 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
                     {showNodeFilter ? (
                         <Select
                             value={effectiveNodeFilter === NODE_FILTER_ALL ? NODE_FILTER_ALL : String(effectiveNodeFilter)}
@@ -247,7 +248,7 @@ export function NotificationPanel({
                         >
                             <SelectTrigger
                                 aria-label="Filter by node"
-                                className="h-7 w-[140px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
+                                className="h-7 w-[120px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
                             >
                                 <SelectValue />
                             </SelectTrigger>
@@ -263,12 +264,35 @@ export function NotificationPanel({
                             </SelectContent>
                         </Select>
                     ) : null}
-                    <SegmentedControl
-                        value={filter}
-                        options={filterOptions}
-                        onChange={setFilter}
-                        ariaLabel="Filter notifications"
-                    />
+                    <Select
+                        value={categoryFilter}
+                        onValueChange={(v) => setCategoryFilter(v as CategoryFilter)}
+                    >
+                        <SelectTrigger
+                            aria-label="Filter by category"
+                            className="h-7 w-[130px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={CATEGORY_FILTER_ALL} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                                All types
+                            </SelectItem>
+                            {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map((cat) => (
+                                <SelectItem key={cat} value={cat} className="font-mono text-[10px] uppercase tracking-[0.14em]">
+                                    {CATEGORY_LABELS[cat]}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <div className="ml-auto">
+                        <SegmentedControl
+                            value={filter}
+                            options={filterOptions}
+                            onChange={setFilter}
+                            ariaLabel="Filter notifications"
+                        />
+                    </div>
                 </div>
 
                 {/* Stream */}

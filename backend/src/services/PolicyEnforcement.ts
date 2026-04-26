@@ -60,8 +60,9 @@ export async function enforcePolicyPreDeploy(
     if (!svc.isTrivyAvailable()) {
         NotificationService.getInstance().dispatchAlert(
             'warning',
+            'scan_finding',
             `Pre-deploy scan for "${stackName}" skipped: Trivy not installed on this node`,
-            stackName,
+            { stackName },
         );
         return { ok: true, bypassed: false, policy, violations: [], trivyMissing: true };
     }

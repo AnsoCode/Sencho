@@ -18,6 +18,7 @@ import { EventEmitter } from 'events';
 
 const {
     mockDispatchAlert,
+    mockBroadcastEvent,
     mockGetGlobalSettings,
     mockGetEvents,
     mockListContainers,
@@ -26,6 +27,7 @@ const {
     mockGetDocker,
 } = vi.hoisted(() => ({
     mockDispatchAlert: vi.fn().mockResolvedValue(undefined),
+    mockBroadcastEvent: vi.fn(),
     mockGetGlobalSettings: vi.fn().mockReturnValue({ global_crash: '1' }),
     mockGetEvents: vi.fn(),
     mockListContainers: vi.fn().mockResolvedValue([]),
@@ -36,7 +38,10 @@ const {
 
 vi.mock('../services/NotificationService', () => ({
     NotificationService: {
-        getInstance: () => ({ dispatchAlert: mockDispatchAlert }),
+        getInstance: () => ({
+            dispatchAlert: mockDispatchAlert,
+            broadcastEvent: mockBroadcastEvent,
+        }),
     },
 }));
 
@@ -119,9 +124,9 @@ describe('DockerEventService - die classification', () => {
 
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('Container Crash Detected'),
-            undefined,
-            'web',
+            expect.objectContaining({ containerName: 'web' }),
         );
     });
 
@@ -144,7 +149,7 @@ describe('DockerEventService - die classification', () => {
         await vi.advanceTimersByTimeAsync(600);
 
         const crashCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('Crash'));
+            typeof c[2] === 'string' && c[2].includes('Crash'));
         expect(crashCall).toBeUndefined();
     });
 
@@ -169,7 +174,7 @@ describe('DockerEventService - die classification', () => {
         await vi.advanceTimersByTimeAsync(400); // total > 500ms
 
         const crashCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('Crash'));
+            typeof c[2] === 'string' && c[2].includes('Crash'));
         expect(crashCall).toBeUndefined();
     });
 
@@ -187,9 +192,9 @@ describe('DockerEventService - die classification', () => {
 
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('OOM Kill'),
-            undefined,
-            'hog',
+            expect.objectContaining({ containerName: 'hog' }),
         );
     });
 
@@ -220,9 +225,9 @@ describe('DockerEventService - die classification', () => {
 
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('Healthcheck failed'),
-            undefined,
-            'api',
+            expect.objectContaining({ containerName: 'api' }),
         );
     });
 
@@ -286,15 +291,15 @@ describe('DockerEventService - rate limiting', () => {
         await vi.advanceTimersByTimeAsync(600);
 
         const crashCalls = mockDispatchAlert.mock.calls.filter(c =>
-            typeof c[1] === 'string' && c[1].includes('Crash'));
+            typeof c[2] === 'string' && c[2].includes('Crash'));
         expect(crashCalls).toHaveLength(20);
 
         // After the rate window, a summary warning fires.
         await vi.advanceTimersByTimeAsync(61_000);
         const summaryCalls = mockDispatchAlert.mock.calls.filter(c =>
-            typeof c[1] === 'string' && c[1].includes('additional containers crashed'));
+            typeof c[2] === 'string' && c[2].includes('additional containers crashed'));
         expect(summaryCalls).toHaveLength(1);
-        expect(summaryCalls[0][1]).toContain('2 additional');
+        expect(summaryCalls[0][2]).toContain('2 additional');
     });
 });
 
@@ -315,9 +320,9 @@ describe('DockerEventService - malformed payloads', () => {
 
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('Container Crash Detected'),
-            undefined,
-            'ok',
+            expect.objectContaining({ containerName: 'ok' }),
         );
     });
 });
@@ -370,7 +375,7 @@ describe('DockerEventService - reconciliation', () => {
         await Promise.resolve();
 
         const massCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('daemon interruption'));
+            typeof c[2] === 'string' && c[2].includes('daemon interruption'));
         expect(massCall).toBeDefined();
     });
 
@@ -410,9 +415,9 @@ describe('DockerEventService - reconciliation', () => {
         await Promise.resolve();
 
         const crashCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('crashed-app'));
+            typeof c[2] === 'string' && c[2].includes('crashed-app'));
         expect(crashCall).toBeDefined();
-        expect(crashCall?.[2]).toBe('my-stack');
+        expect(crashCall?.[3]).toMatchObject({ stackName: 'my-stack' });
     });
 });
 
@@ -438,8 +443,8 @@ describe('DockerEventService - reconnect', () => {
 
         const warn = mockDispatchAlert.mock.calls.find(c => c[0] === 'warning');
         const info = mockDispatchAlert.mock.calls.find(c => c[0] === 'info');
-        expect(warn?.[1]).toContain('Lost connection');
-        expect(info?.[1]).toContain('Reconnected');
+        expect(warn?.[2]).toContain('Lost connection');
+        expect(info?.[2]).toContain('Reconnected');
     });
 
     it('shutdown cancels pending reconnect', async () => {
@@ -499,9 +504,9 @@ describe('DockerEventService - hardening', () => {
 
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('Container Crash Detected'),
-            undefined,
-            'app',
+            expect.objectContaining({ containerName: 'app' }),
         );
     });
 
@@ -527,9 +532,9 @@ describe('DockerEventService - hardening', () => {
         await Promise.resolve();
 
         const oomCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('OOM Kill'));
+            typeof c[2] === 'string' && c[2].includes('OOM Kill'));
         const crashCall = mockDispatchAlert.mock.calls.find(c =>
-            typeof c[1] === 'string' && c[1].includes('Crash Detected'));
+            typeof c[2] === 'string' && c[2].includes('Crash Detected'));
         expect(oomCall).toBeDefined();
         expect(crashCall).toBeUndefined();
     });
@@ -553,9 +558,9 @@ describe('DockerEventService - hardening', () => {
         // Inspect failed, so classification stays as the original 'crash'.
         expect(mockDispatchAlert).toHaveBeenCalledWith(
             'error',
+            'monitor_alert',
             expect.stringContaining('Container Crash Detected'),
-            undefined,
-            'ephemeral',
+            expect.objectContaining({ containerName: 'ephemeral' }),
         );
     });
 
@@ -580,9 +585,68 @@ describe('DockerEventService - hardening', () => {
         await vi.advanceTimersByTimeAsync(700);
 
         const crashCalls = mockDispatchAlert.mock.calls.filter(c =>
-            typeof c[1] === 'string' && c[1].includes('Crash Detected'));
+            typeof c[2] === 'string' && c[2].includes('Crash Detected'));
         expect(crashCalls).toHaveLength(1);
-        expect(crashCalls[0][1]).toContain('Code: 2');
+        expect(crashCalls[0][2]).toContain('Code: 2');
+    });
+});
+
+// ── State-invalidate broadcasts ────────────────────────────────────────
+
+describe('DockerEventService - state-invalidate broadcasts', () => {
+    it('broadcasts state-invalidate on container start', async () => {
+        service = new DockerEventService(7, 'node-7');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'start',
+            Actor: { ID: 'aaa', Attributes: { 'com.docker.compose.project': 'web' } },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(mockBroadcastEvent).toHaveBeenCalledWith(expect.objectContaining({
+            type: 'state-invalidate',
+            scope: 'stack',
+            nodeId: 7,
+            stackName: 'web',
+            containerId: 'aaa',
+            action: 'start',
+        }));
+    });
+
+    it('broadcasts state-invalidate on health_status:unhealthy', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'health_status: unhealthy',
+            Actor: { ID: 'bbb', Attributes: { 'com.docker.compose.project': 'api' } },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        const states = mockBroadcastEvent.mock.calls.filter(c =>
+            (c[0] as { type?: string }).type === 'state-invalidate');
+        expect(states.length).toBeGreaterThan(0);
+        expect(states[0][0]).toMatchObject({ action: 'health_status', stackName: 'api' });
+    });
+
+    it('does not broadcast state-invalidate on non-state actions like exec_create', async () => {
+        service = new DockerEventService(1, 'local');
+        await service.start();
+
+        stream.push({
+            Type: 'container',
+            Action: 'exec_create: /bin/sh',
+            Actor: { ID: 'ccc' },
+            time: 1,
+        });
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(mockBroadcastEvent).not.toHaveBeenCalled();
     });
 });
 

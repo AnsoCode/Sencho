@@ -242,9 +242,9 @@ export class AutoHealService {
             NotificationService.getInstance()
                 .dispatchAlert(
                     'info',
+                    'autoheal_triggered',
                     `Auto-Heal: Restarted ${containerName} on stack ${policy.stack_name} after being unhealthy for ${policy.unhealthy_duration_mins} minute(s).`,
-                    policy.stack_name,
-                    containerName,
+                    { stackName: policy.stack_name, containerName },
                 )
                 .catch(err => console.error('[AutoHeal] notification dispatch failed:', err));
         } catch (err) {
@@ -266,9 +266,9 @@ export class AutoHealService {
             NotificationService.getInstance()
                 .dispatchAlert(
                     'warning',
+                    'autoheal_triggered',
                     `Auto-Heal: Failed to restart ${containerName} on stack ${policy.stack_name}. Error: ${errorMsg}`,
-                    policy.stack_name,
-                    containerName,
+                    { stackName: policy.stack_name, containerName },
                 )
                 .catch(e => console.error('[AutoHeal] notification dispatch failed:', e));
 
@@ -299,8 +299,9 @@ export class AutoHealService {
         NotificationService.getInstance()
             .dispatchAlert(
                 'warning',
+                'autoheal_triggered',
                 `Auto-Heal: Policy for ${policy.stack_name}${policy.service_name ? '/' + policy.service_name : ''} has been auto-disabled after ${failures} consecutive failures.`,
-                policy.stack_name,
+                { stackName: policy.stack_name },
             )
             .catch(e => console.error('[AutoHeal] notification dispatch failed:', e));
     }

@@ -63,7 +63,7 @@ describe('POST /api/nodes - api_url SSRF validation (C2 fix)', () => {
       .send({
         name: 'lan-node',
         type: 'remote',
-        api_url: 'http://192.168.1.50:3000',
+        api_url: 'http://192.168.1.50:1852',
         api_token: 'sometoken',
       });
     // Should succeed (201 or 200) - not a validation error

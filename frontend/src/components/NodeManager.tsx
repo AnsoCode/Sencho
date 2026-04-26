@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import type { Node, NodeMode } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
@@ -161,14 +162,13 @@ export function NodeManager() {
 
   const copyEnrollment = async () => {
     if (!activeEnrollment) return;
-    const text = activeEnrollment.enrollment.dockerRun;
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(activeEnrollment.enrollment.dockerRun);
       setEnrollmentCopied(true);
       toast.success('Command copied to clipboard');
       setTimeout(() => setEnrollmentCopied(false), 2000);
     } catch {
-      toast.error('Could not copy automatically - please select and copy the command manually.');
+      toast.error('Could not copy automatically. Please select and copy the command manually.');
     }
   };
 
@@ -263,29 +263,12 @@ export function NodeManager() {
   const copyToken = async () => {
     if (!generatedToken) return;
     try {
-      // Clipboard API requires a secure context (HTTPS or localhost)
-      await navigator.clipboard.writeText(generatedToken);
+      await copyToClipboard(generatedToken);
       setTokenCopied(true);
       toast.success('Token copied to clipboard');
       setTimeout(() => setTokenCopied(false), 2000);
     } catch {
-      // Fallback for HTTP / non-localhost deployments where Clipboard API is unavailable
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = generatedToken;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        setTokenCopied(true);
-        toast.success('Token copied to clipboard');
-        setTimeout(() => setTokenCopied(false), 2000);
-      } catch {
-        toast.error('Could not copy automatically - please select and copy the token manually.');
-      }
+      toast.error('Could not copy automatically. Please select and copy the token manually.');
     }
   };
 
@@ -368,7 +351,7 @@ export function NodeManager() {
             <Label htmlFor="node-api-url">Sencho API URL</Label>
             <Input
               id="node-api-url"
-              placeholder="http://192.168.1.50:3000"
+              placeholder="http://192.168.1.50:1852"
               value={formData.api_url}
               onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
             />

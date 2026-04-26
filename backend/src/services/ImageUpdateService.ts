@@ -275,8 +275,9 @@ export class ImageUpdateService {
                 try {
                     await notifier.dispatchAlert(
                         'info',
+                        'image_update_available',
                         `[Node: ${nodeName}] Stack "${stackName}" has image updates available.`,
-                        stackName,
+                        { stackName },
                     );
                 } catch (e) {
                     console.error(`[ImageUpdateService] Failed to dispatch update notification for "${stackName}":`, e);
@@ -286,6 +287,7 @@ export class ImageUpdateService {
                     try {
                         db.addNotificationHistory(NodeRegistry.getInstance().getDefaultNodeId(), {
                             level: 'error',
+                            category: 'system',
                             message: `[Node: ${nodeName}] Failed to notify about image updates for stack "${stackName}": ${getErrorMessage(e, String(e))}`,
                             timestamp: Date.now(),
                         });

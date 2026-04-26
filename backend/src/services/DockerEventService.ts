@@ -1,6 +1,6 @@
 import Docker from 'dockerode';
 import { NodeRegistry } from './NodeRegistry';
-import { NotificationService } from './NotificationService';
+import { NotificationCategory, NotificationService } from './NotificationService';
 import { DatabaseService } from './DatabaseService';
 import {
     classifyDie,
@@ -62,6 +62,16 @@ const RECONNECT_JITTER_MS = 500;
 
 /** Compose project label key used by docker compose on every container it creates. */
 const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+
+/**
+ * Container-event actions that change observable stack/container state. The
+ * UI receives a lightweight `state-invalidate` signal for any of these so it
+ * can refetch immediately rather than wait for the next polling tick.
+ */
+const STATE_INVALIDATE_ACTIONS = new Set([
+    'start', 'die', 'kill', 'destroy', 'create', 'restart', 'pause', 'unpause',
+    'health_status', 'rename', 'update',
+]);
 
 /** TTL for the cached global_crash settings flag (sub-second so toggle takes effect quickly). */
 const SETTINGS_CACHE_MS = 500;
@@ -177,7 +187,7 @@ export class DockerEventService {
             this.status = 'connected';
 
             if (this.disconnectedNoticeEmitted) {
-                await this.emitInfo(`Reconnected to Docker daemon.`);
+                await this.emitInfo('system', `Reconnected to Docker daemon.`);
                 this.disconnectedNoticeEmitted = false;
             }
 
@@ -227,7 +237,7 @@ export class DockerEventService {
 
         if (!this.disconnectedNoticeEmitted) {
             this.disconnectedNoticeEmitted = true;
-            void this.emitWarning(`Lost connection to Docker daemon; monitoring paused.`);
+            void this.emitWarning('system', `Lost connection to Docker daemon; monitoring paused.`);
         }
 
         if (isDebugEnabled()) {
@@ -300,6 +310,7 @@ export class DockerEventService {
 
         if (exitRatio >= MASS_EVENT_THRESHOLD) {
             await this.emitInfo(
+                'system',
                 `Docker daemon interruption detected: ${newlyExited.length} containers exited during connection gap.`
             );
         } else {
@@ -372,6 +383,22 @@ export class DockerEventService {
         // Normalize: `health_status: unhealthy` -> base action
         const baseAction = action.startsWith('health_status') ? 'health_status' : action;
 
+        // Push a lightweight state-invalidate signal so connected UIs can
+        // refetch stack statuses immediately on a real container event,
+        // without waiting for the next polling tick. This is fire-and-forget
+        // and is NOT persisted to the alerts history.
+        if (STATE_INVALIDATE_ACTIONS.has(baseAction)) {
+            this.notifier.broadcastEvent({
+                type: 'state-invalidate',
+                scope: 'stack',
+                nodeId: this.nodeId,
+                stackName: event.Actor?.Attributes?.[COMPOSE_PROJECT_LABEL] ?? null,
+                containerId: id,
+                action: baseAction,
+                ts: Date.now(),
+            });
+        }
+
         switch (baseAction) {
             case 'kill':
                 return this.onKill(id, event);
@@ -424,6 +451,7 @@ export class DockerEventService {
             const name = state.name ?? id.slice(0, 12);
             const stackName = state.stackName;
             void this.emitError(
+                'monitor_alert',
                 `Healthcheck failed: ${name} is unhealthy.`,
                 stackName,
                 state.name,
@@ -536,7 +564,7 @@ export class DockerEventService {
         // rate-suppressed alerts don't silently lock out the next real crash.
         if (state) state.lastCrashAlertAt = Date.now();
 
-        await this.emitError(message, info.stackName, info.name);
+        await this.emitError('monitor_alert', message, info.stackName, info.name);
     }
 
     private isCrashAlertsEnabled(): boolean {
@@ -581,6 +609,7 @@ export class DockerEventService {
             this.suppressedCount = 0;
             if (count > 0) {
                 void this.emitWarning(
+                    'monitor_alert',
                     `${count} additional containers crashed in the last minute.`,
                 );
             }
@@ -598,6 +627,7 @@ export class DockerEventService {
         if (this.parseErrorCount > PARSE_ERROR_THRESHOLD && !this.parseWarningEmitted) {
             this.parseWarningEmitted = true;
             void this.emitWarning(
+                'system',
                 `Received malformed Docker event payloads. Monitoring continues but some events may be skipped.`,
             );
         }
@@ -642,16 +672,16 @@ export class DockerEventService {
     // Notification wrappers (prefix with node name for multi-node clarity)
     // ========================================================================
 
-    private async emitError(message: string, stackName?: string, containerName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('error', this.prefix(message), stackName, containerName);
+    private async emitError(category: NotificationCategory, message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('error', category, this.prefix(message), { stackName, containerName });
     }
 
-    private async emitWarning(message: string, stackName?: string, containerName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('warning', this.prefix(message), stackName, containerName);
+    private async emitWarning(category: NotificationCategory, message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('warning', category, this.prefix(message), { stackName, containerName });
     }
 
-    private async emitInfo(message: string, stackName?: string, containerName?: string): Promise<void> {
-        return this.notifier.dispatchAlert('info', this.prefix(message), stackName, containerName);
+    private async emitInfo(category: NotificationCategory, message: string, stackName?: string, containerName?: string): Promise<void> {
+        return this.notifier.dispatchAlert('info', category, this.prefix(message), { stackName, containerName });
     }
 
     private prefix(message: string): string {

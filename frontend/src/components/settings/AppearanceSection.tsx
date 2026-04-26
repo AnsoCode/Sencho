@@ -1,7 +1,9 @@
 import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useDensity } from '@/hooks/use-density';
 import type { Density } from '@/hooks/use-density';
+import { useDeployFeedbackEnabled } from '@/hooks/use-deploy-feedback-enabled';
 
 const DENSITY_OPTIONS: { value: Density; label: string }[] = [
     { value: 'comfortable', label: 'Comfortable' },
@@ -15,6 +17,7 @@ const DENSITY_DESCRIPTIONS: Record<Density, string> = {
 
 export function AppearanceSection() {
     const [density, setDensity] = useDensity();
+    const [isEnabled, setEnabled] = useDeployFeedbackEnabled();
 
     return (
         <div className="space-y-6">
@@ -32,6 +35,21 @@ export function AppearanceSection() {
                     <p className="text-xs text-stat-subtitle">
                         {DENSITY_DESCRIPTIONS[density]}
                     </p>
+                </div>
+            </div>
+            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
+                <div className="flex items-start gap-3">
+                    <Checkbox
+                        id="deploy-feedback"
+                        checked={isEnabled}
+                        onCheckedChange={(v) => setEnabled(v === true)}
+                    />
+                    <label htmlFor="deploy-feedback">
+                        <p className="text-sm font-medium cursor-pointer">Show deploy progress modal</p>
+                        <p className="text-xs text-stat-subtitle mt-0.5">
+                            Stream live output for deploy, restart, update, install, and Git operations.
+                        </p>
+                    </label>
                 </div>
             </div>
             <p className="text-xs text-stat-subtitle">

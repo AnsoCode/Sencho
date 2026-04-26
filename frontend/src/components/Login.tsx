@@ -107,7 +107,7 @@ export function Login({ className, ...props }: React.ComponentPropsWithoutRef<'d
         <div className="flex flex-col gap-7">
           <div className="flex items-start justify-between gap-4">
             <AuthStepHeader
-              kicker="SENCHO · AUTHENTICATE"
+              kicker="AUTHENTICATE"
               hero="Sign in"
               caption={
                 loginMode === 'ldap'

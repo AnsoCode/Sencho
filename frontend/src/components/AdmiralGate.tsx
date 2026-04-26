@@ -6,6 +6,9 @@ import { useLicense } from '@/context/LicenseContext';
 interface AdmiralGateProps {
     children: ReactNode;
     featureName?: string;
+    // Inline compact lock for list items (e.g. a single SSO provider card). Skips
+    // the full-page upsell and dismiss timer; always renders the blurred + pill style.
+    compact?: boolean;
 }
 
 const DISMISS_KEY = 'sencho-admiral-upgrade-prompt-dismissed';
@@ -16,13 +19,13 @@ function isDismissedFromStorage(): boolean {
     return !!dismissedAt && Date.now() - parseInt(dismissedAt, 10) < DISMISS_DURATION_MS;
 }
 
-export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralGateProps) {
+export function AdmiralGate({ children, featureName = 'This feature', compact = false }: AdmiralGateProps) {
     const { isPaid, license } = useLicense();
     const [dismissed, setDismissed] = useState(isDismissedFromStorage);
 
     if (isPaid && license?.variant === 'admiral') return <>{children}</>;
 
-    if (dismissed) {
+    if (compact || dismissed) {
         return (
             <div className="relative">
                 <div className="opacity-40 pointer-events-none select-none blur-[2px]">
@@ -46,7 +49,7 @@ export function AdmiralGate({ children, featureName = 'This feature' }: AdmiralG
             <div className="text-center max-w-md">
                 <h3 className="text-lg font-semibold mb-2">{featureName} requires Sencho Admiral</h3>
                 <p className="text-sm text-muted-foreground">
-                    Unlock team features like SSO authentication, audit logging, API tokens, and unlimited user accounts with a Sencho Admiral license.
+                    Unlock team features like LDAP / Active Directory, audit logging, API tokens, and unlimited user accounts with a Sencho Admiral license.
                     For enterprise pricing or questions, contact{' '}
                     <a href="mailto:licensing@sencho.io" className="text-brand hover:underline">licensing@sencho.io</a>.
                 </p>

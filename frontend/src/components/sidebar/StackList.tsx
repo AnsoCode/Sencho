@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { ArrowUpRight, Loader2 } from 'lucide-react';
+import { useStackKeyboardShortcuts } from '@/hooks/useStackKeyboardShortcuts';
 import { CommandItem, CommandList } from '@/components/ui/command';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Label } from '@/components/label-types';
@@ -107,6 +108,8 @@ export function StackList(props: StackListProps) {
     () => buildGroups(files, pinnedFiles, stackLabelMap, labels),
     [files, pinnedFiles, stackLabelMap, labels],
   );
+
+  useStackKeyboardShortcuts(selectedFile, buildMenuCtx);
 
   if (isLoading) {
     return (

@@ -21,7 +21,7 @@ Writes are admin-only and rejected on replica nodes (policies are managed on the
 
 ```bash
 curl -H "Authorization: Bearer YOUR_API_TOKEN" \
-  https://your-sencho-instance:3000/api/security/policies
+  https://your-sencho-instance:1852/api/security/policies
 ```
 
 **Response:**
@@ -60,7 +60,7 @@ curl -H "Authorization: Bearer YOUR_API_TOKEN" \
 | `node_id` | number or `null` | no | Scope the policy to one node. `null` applies the policy fleet-wide. |
 
 ```bash
-curl -X POST https://your-sencho-instance:3000/api/security/policies \
+curl -X POST https://your-sencho-instance:1852/api/security/policies \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -89,7 +89,7 @@ curl -X POST https://your-sencho-instance:3000/api/security/policies \
 Any of the create fields can be updated individually. Omitted fields are left unchanged.
 
 ```bash
-curl -X PUT https://your-sencho-instance:3000/api/security/policies/1 \
+curl -X PUT https://your-sencho-instance:1852/api/security/policies/1 \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "block_on_deploy": 0 }'
@@ -106,7 +106,7 @@ curl -X PUT https://your-sencho-instance:3000/api/security/policies/1 \
 **License:** Skipper or Admiral · **Role:** Admin
 
 ```bash
-curl -X DELETE https://your-sencho-instance:3000/api/security/policies/1 \
+curl -X DELETE https://your-sencho-instance:1852/api/security/policies/1 \
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
@@ -156,7 +156,7 @@ Response rows include an `active` boolean computed from the `expires_at` timesta
 | `expires_at` | number or `null` | no | Unix timestamp in milliseconds. `null` for an indefinite suppression. |
 
 ```bash
-curl -X POST https://your-sencho-instance:3000/api/security/suppressions \
+curl -X POST https://your-sencho-instance:1852/api/security/suppressions \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -179,7 +179,7 @@ curl -X POST https://your-sencho-instance:3000/api/security/suppressions \
 **License:** Skipper or Admiral · **Role:** Admin
 
 ```bash
-curl -X DELETE https://your-sencho-instance:3000/api/security/suppressions/3 \
+curl -X DELETE https://your-sencho-instance:1852/api/security/suppressions/3 \
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
@@ -201,7 +201,7 @@ Accepts an image reference and starts an asynchronous scan. The response returns
 | `scanners` | `["vuln"]` or `["vuln","secret"]` | no | Omit for vuln-only. `secret` requires Skipper or Admiral. |
 
 ```bash
-curl -X POST https://your-sencho-instance:3000/api/security/scan \
+curl -X POST https://your-sencho-instance:1852/api/security/scan \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ "imageRef": "nginx:1.27" }'
@@ -221,7 +221,7 @@ Supports filters: `imageRef`, `imageRefLike`, `status`, `limit`, `offset`. Respo
 
 ```bash
 curl -H "Authorization: Bearer YOUR_API_TOKEN" \
-  "https://your-sencho-instance:3000/api/security/scans?imageRefLike=nginx&limit=20"
+  "https://your-sencho-instance:1852/api/security/scans?imageRefLike=nginx&limit=20"
 ```
 
 ## Stack deploy with policy
@@ -266,7 +266,7 @@ HTTP 409 Conflict. The response body is parseable JSON so CI pipelines can branc
 Admins can bypass the gate on a per-deploy basis by passing `?ignorePolicy=true` on the deploy URL. The flag is only honored when the calling session resolves to an admin user; API tokens with read-only or deploy-only scope cannot bypass a policy.
 
 ```bash
-curl -X POST "https://your-sencho-instance:3000/api/stacks/myapp/deploy?ignorePolicy=true" \
+curl -X POST "https://your-sencho-instance:1852/api/stacks/myapp/deploy?ignorePolicy=true" \
   -H "Authorization: Bearer ADMIN_API_TOKEN"
 ```
 

@@ -410,7 +410,18 @@ describe('LDAP Filter Escaping', () => {
 });
 
 describe('SSO Config Validation on PUT', () => {
-  // SSO config routes require admin role but no longer require Admiral tier
+  // Validation tests exercise the required-field checks inside PUT. Per-provider
+  // tier gates run before validation, so mock the license to Admiral here to keep
+  // these tests focused on validation logic; tier-gate coverage lives in its own block.
+  beforeAll(async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
+    vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('admiral');
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
 
   it('rejects enabled LDAP config without Server URL', async () => {
     const res = await supertest(app)
@@ -621,5 +632,139 @@ describe('SSO OIDC Callback - Additional Error Handling', () => {
       .get('/api/auth/sso/oidc/oidc_custom/callback?error=consent_required&error_description=User+must+consent');
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('User');
+  });
+});
+
+describe('SSO Config Tier Gating (per-provider)', () => {
+  // Per-provider tier rules: Custom OIDC = admin only, preset OIDC (Google/GitHub/Okta) = Skipper+, LDAP = Admiral.
+  // The matrix below covers mutations only; GET /sso/config (list) intentionally stays tier-ungated so
+  // downgraded admins can still see previously-configured providers.
+  let tierSpy: ReturnType<typeof vi.spyOn>;
+  let variantSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeAll(async () => {
+    const { LicenseService } = await import('../services/LicenseService');
+    tierSpy = vi.spyOn(LicenseService.getInstance(), 'getTier');
+    variantSpy = vi.spyOn(LicenseService.getInstance(), 'getVariant');
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
+  const setTier = (tier: 'community' | 'paid', variant: 'skipper' | 'admiral' | null): void => {
+    tierSpy.mockReturnValue(tier);
+    variantSpy.mockReturnValue(variant);
+  };
+
+  describe('community tier', () => {
+    beforeAll(() => setTier('community', null));
+
+    it('PUT oidc_custom succeeds (no tier gate)', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/oidc_custom')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(200);
+    });
+
+    it('PUT oidc_google returns 403 PAID_REQUIRED', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/oidc_google')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PAID_REQUIRED');
+    });
+
+    it('PUT ldap returns 403 PAID_REQUIRED (tier check precedes variant check)', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/ldap')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PAID_REQUIRED');
+    });
+
+    it('DELETE oidc_github returns 403 PAID_REQUIRED', async () => {
+      const res = await supertest(app)
+        .delete('/api/sso/config/oidc_github')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PAID_REQUIRED');
+    });
+
+    it('POST oidc_okta/test returns 403 PAID_REQUIRED', async () => {
+      const res = await supertest(app)
+        .post('/api/sso/config/oidc_okta/test')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PAID_REQUIRED');
+    });
+
+    it('GET /sso/config (list) still returns 200 — list is tier-ungated', async () => {
+      const res = await supertest(app)
+        .get('/api/sso/config')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe('skipper tier', () => {
+    beforeAll(() => setTier('paid', 'skipper'));
+
+    it('PUT oidc_custom succeeds', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/oidc_custom')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(200);
+    });
+
+    it('PUT oidc_google succeeds', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/oidc_google')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(200);
+    });
+
+    it('PUT ldap returns 403 ADMIRAL_REQUIRED', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/ldap')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('ADMIRAL_REQUIRED');
+    });
+
+    it('DELETE ldap returns 403 ADMIRAL_REQUIRED', async () => {
+      const res = await supertest(app)
+        .delete('/api/sso/config/ldap')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('ADMIRAL_REQUIRED');
+    });
+  });
+
+  describe('admiral tier', () => {
+    beforeAll(() => setTier('paid', 'admiral'));
+
+    it('PUT ldap succeeds', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/ldap')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(200);
+    });
+
+    it('PUT oidc_okta succeeds', async () => {
+      const res = await supertest(app)
+        .put('/api/sso/config/oidc_okta')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ enabled: false });
+      expect(res.status).toBe(200);
+    });
   });
 });

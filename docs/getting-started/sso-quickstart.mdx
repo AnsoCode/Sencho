@@ -5,6 +5,10 @@ description: Step-by-step instructions for connecting Sencho to your identity pr
 
 SSO can be configured via environment variables (shown below) or from the Settings UI after first boot.
 
+<Note>
+  **Tier availability.** Custom OIDC is available on every tier, including Community. The Google, GitHub, and Okta one-click presets require Skipper or higher. LDAP / Active Directory requires Admiral. See [Licensing & Billing](/features/licensing#feature-breakdown) for the full breakdown.
+</Note>
+
 ## Google OIDC
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
@@ -158,7 +162,7 @@ services:
     image: saelix/sencho:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "1852:1852"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./sencho-data:/app/data

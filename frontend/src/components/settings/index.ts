@@ -6,6 +6,7 @@ export { SystemSection } from './SystemSection';
 export { NotificationsSection } from './NotificationsSection';
 export { WebhooksSection } from './WebhooksSection';
 export { SecuritySection } from './SecuritySection';
+export { CloudBackupSection } from './CloudBackupSection';
 export { DeveloperSection } from './DeveloperSection';
 export { AppStoreSection } from './AppStoreSection';
 export { SupportSection } from './SupportSection';

@@ -1,7 +1,27 @@
+import WebSocket from 'ws';
 import { DatabaseService, NotificationHistory } from './DatabaseService';
 import { NodeRegistry } from './NodeRegistry';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+
+export type NotificationCategory =
+    | 'deploy_success'
+    | 'deploy_failure'
+    | 'stack_started'
+    | 'stack_stopped'
+    | 'stack_restarted'
+    | 'image_update_available'
+    | 'image_update_applied'
+    | 'autoheal_triggered'
+    | 'monitor_alert'
+    | 'scan_finding'
+    | 'system';
+
+export const ALL_NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
+    'deploy_success', 'deploy_failure', 'stack_started', 'stack_stopped',
+    'stack_restarted', 'image_update_available', 'image_update_applied',
+    'autoheal_triggered', 'monitor_alert', 'scan_finding', 'system',
+];
 
 /** Webhook timeout: 10 seconds per external dispatch call. */
 const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -12,7 +32,7 @@ const ALLOWED_CHANNEL_TYPES = new Set(['discord', 'slack', 'webhook']);
 export class NotificationService {
     private static instance: NotificationService;
     private dbService: DatabaseService;
-    private broadcaster: ((notification: NotificationHistory) => void) | null = null;
+    private readonly subscribers = new Set<WebSocket>();
 
     private constructor() {
         this.dbService = DatabaseService.getInstance();
@@ -25,9 +45,49 @@ export class NotificationService {
         return NotificationService.instance;
     }
 
-    /** Wire up the WebSocket push function after the WS server is initialised. */
-    public setBroadcaster(fn: (notification: NotificationHistory) => void): void {
-        this.broadcaster = fn;
+    /**
+     * Register a WebSocket as a live-notification subscriber. Returns an
+     * unsubscribe function the caller should invoke on `'close'` / `'error'`
+     * (callers may guard against double-unsubscribe themselves; the Set
+     * handles repeated deletes safely either way).
+     */
+    public subscribe(ws: WebSocket): () => void {
+        this.subscribers.add(ws);
+        return () => this.subscribers.delete(ws);
+    }
+
+    public getSubscriberCount(): number {
+        return this.subscribers.size;
+    }
+
+    /** Push a `{type,payload}` envelope to every currently-open subscriber. */
+    private broadcastToSubscribers(notification: NotificationHistory): void {
+        if (this.subscribers.size === 0) return;
+        const msg = JSON.stringify({ type: 'notification', payload: notification });
+        for (const ws of this.subscribers) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+            }
+        }
+    }
+
+    /**
+     * Broadcast an arbitrary non-notification event envelope to every
+     * currently-open subscriber WITHOUT writing it to the alerts history.
+     *
+     * Used by DockerEventService to push lightweight `state-invalidate`
+     * signals so the UI can refetch stack statuses on a real container event
+     * instead of waiting for the next polling tick. Persisting these would
+     * spam the notifications panel; they are pure ephemeral signals.
+     */
+    public broadcastEvent(envelope: { type: string; [key: string]: unknown }): void {
+        if (this.subscribers.size === 0) return;
+        const msg = JSON.stringify(envelope);
+        for (const ws of this.subscribers) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+            }
+        }
     }
 
     /**
@@ -42,16 +102,18 @@ export class NotificationService {
      */
     public async dispatchAlert(
         level: 'info' | 'warning' | 'error',
+        category: NotificationCategory,
         message: string,
-        stackName?: string,
-        containerName?: string,
+        options?: { stackName?: string; containerName?: string },
     ) {
+        const { stackName, containerName } = options ?? {};
         // Internal writes use the middleware default so they share a row key
         // with user-initiated requests; otherwise the UI and monitors split
         // between different node_id buckets.
         const localNodeId = NodeRegistry.getInstance().getDefaultNodeId();
         const notification = this.dbService.addNotificationHistory(localNodeId, {
             level,
+            category,
             message,
             timestamp: Date.now(),
             stack_name: stackName,
@@ -59,18 +121,25 @@ export class NotificationService {
         });
 
         // 2. Push to connected browser clients via WebSocket
-        if (this.broadcaster) {
-            this.broadcaster(notification);
-        }
+        this.broadcastToSubscribers(notification);
 
-        // 3. Check notification routing rules if a stack context is available
+        // 3. Check notification routing rules — always evaluated, matchers compose AND
         const errors: string[] = [];
 
-        if (stackName) {
+        {
             const routes = this.dbService.getEnabledNotificationRoutes();
-            const matched = routes.filter(r => r.stack_patterns.includes(stackName));
+            const needsLabels = stackName !== undefined && routes.some(r => r.label_ids != null && r.label_ids.length > 0);
+            const stackLabelIds = needsLabels ? this.dbService.getStackLabelIds(localNodeId, stackName!) : [];
+
+            const matched = routes.filter(r => {
+                if (r.node_id != null && r.node_id !== localNodeId) return false;
+                if (r.stack_patterns.length > 0 && (stackName === undefined || !r.stack_patterns.includes(stackName))) return false;
+                if (r.label_ids != null && r.label_ids.length > 0 && !r.label_ids.some(id => stackLabelIds.includes(id))) return false;
+                if (r.categories != null && r.categories.length > 0 && !r.categories.includes(category)) return false;
+                return true;
+            });
             if (matched.length > 0) {
-                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName}"`);
+                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName ?? '(none)'}", category="${category}"`);
                 await Promise.allSettled(
                     matched.map(route =>
                         this.sendToChannel(route.channel_type, route.channel_url, level, message)

@@ -39,6 +39,7 @@ import {
     NotificationRoutingSection,
     WebhooksSection,
     SecuritySection,
+    CloudBackupSection,
     DeveloperSection,
     AppStoreSection,
     SupportSection,
@@ -318,6 +319,7 @@ export function SettingsModal({ isOpen, onClose, initialSection, onLabelsChanged
             case 'notification-routing': return <NotificationRoutingSection />;
             case 'webhooks': return <WebhooksSection isPaid={isPaid} />;
             case 'security': return <SecuritySection isPaid={isPaid} />;
+            case 'cloud-backup': return <CloudBackupSection />;
             case 'developer':
                 return (
                     <DeveloperSection

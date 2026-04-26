@@ -210,11 +210,11 @@ describe('TemplateService', () => {
     it('handles values with special characters', () => {
       const result = service.generateEnvString({
         PASSWORD: 'p@ss=word!',
-        URL: 'http://localhost:3000',
+        URL: 'http://localhost:1852',
       });
 
       expect(result).toContain('PASSWORD=p@ss=word!');
-      expect(result).toContain('URL=http://localhost:3000');
+      expect(result).toContain('URL=http://localhost:1852');
     });
   });
 

@@ -26,11 +26,13 @@ export interface StackMenuCtx {
   hasPort: boolean;
   isBusy: boolean;
   isPaid: boolean;
+  isAdmiral: boolean;
   canDelete: boolean;
   isPinned: boolean;
   labels: Label[];
   assignedLabelIds: number[];
   menuVisibility: { showDeploy: boolean; showStop: boolean; showRestart: boolean; showUpdate: boolean };
+  autoUpdateEnabled: boolean;
   openAlertSheet: () => void;
   openAutoHeal: () => void;
   checkUpdates: () => void;
@@ -45,6 +47,8 @@ export interface StackMenuCtx {
   toggleLabel: (labelId: number) => void;
   createAndAssignLabel: (name: string, color: LabelColor) => Promise<void>;
   openLabelManager: () => void;
+  setAutoUpdateEnabled: (enabled: boolean) => void;
+  openScheduleTask: () => void;
 }
 
 export type StackGroupKind = 'pinned' | 'labeled' | 'unlabeled';

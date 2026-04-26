@@ -224,4 +224,23 @@ describe('buildSummary', () => {
         expect(preview.summary.semver_bump).toBe('major');
         expect(preview.summary.blocked).toBe(true);
     });
+
+    it('reports update_kind="tag" when at least one image has a strictly newer tag', () => {
+        const images = [
+            baseImage({ service: 'web', has_update: true, semver_bump: 'patch', next_tag: '1.0.1', current_tag: '1.0.0' }),
+        ];
+        expect(buildSummary('stacky', images).summary.update_kind).toBe('tag');
+    });
+
+    it('reports update_kind="digest" when only same-tag rebuilds are available', () => {
+        const images = [
+            baseImage({ service: 'web', has_update: true, semver_bump: 'patch', next_tag: '10.11', current_tag: '10.11', image: 'redis:10.11' }),
+        ];
+        expect(buildSummary('stacky', images).summary.update_kind).toBe('digest');
+    });
+
+    it('reports update_kind="none" when nothing has an update', () => {
+        const images = [baseImage({ service: 'clean', has_update: false })];
+        expect(buildSummary('stacky', images).summary.update_kind).toBe('none');
+    });
 });

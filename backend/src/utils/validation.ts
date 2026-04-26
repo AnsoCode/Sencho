@@ -22,7 +22,7 @@ export function isValidRemoteUrl(
     console.warn('[Validation] URL parse failure:', (e as Error).message, '— input:', raw);
     return {
       valid: false,
-      reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:3000)',
+      reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:1852)',
     };
   }
   if (!['http:', 'https:'].includes(url.protocol)) {
@@ -70,6 +70,28 @@ export function isValidIPv4(value: string): boolean {
  */
 export function isValidDockerResourceId(id: string): boolean {
   return /^[a-f0-9]{12,64}$/i.test(id);
+}
+
+/**
+ * Compose service name. Allows dots in addition to the stack-name set
+ * (Compose spec permits `my.service`).
+ */
+export const isValidServiceName = (name: string): boolean =>
+  /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
+
+/**
+ * Validates a relative path supplied by the client for stack file operations.
+ * An empty string is allowed (it means the stack root directory).
+ * Rejects anything that could escape the stack directory or cause OS-level issues.
+ */
+export function isValidRelativeStackPath(rel: string): boolean {
+  if (rel === '') return true;
+  if (rel.includes('\0')) return false;
+  if (rel.includes('\\')) return false;
+  if (/^[a-zA-Z]:/.test(rel) || rel.startsWith('/')) return false;
+  if (rel.includes('//')) return false;
+  const segments = rel.split('/');
+  return !segments.some(seg => seg === '..' || seg === '.');
 }
 
 /**
