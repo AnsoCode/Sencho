@@ -188,6 +188,11 @@ test.describe('Deploy feedback modal', () => {
     await syncDeployFeedbackState(page);
 
     await page.getByTestId('stack-deploy-button').click();
+    // Park the cursor in a corner so the modal's onMouseEnter never fires.
+    // The modal pauses its 4s auto-close countdown on hover; without this
+    // move, the cursor lands inside the centered modal after click and the
+    // countdown never fires.
+    await page.mouse.move(0, 0);
 
     const modal = page.locator('[data-testid="deploy-feedback-modal"]');
     await expect(modal).toBeVisible({ timeout: 10_000 });
@@ -237,6 +242,9 @@ test.describe('Deploy feedback modal', () => {
     await syncDeployFeedbackState(page);
 
     await page.getByTestId('stack-deploy-button').click();
+    // Move cursor away from modal so the auto-close countdown is not paused
+    // by hover, in case the deploy completes before we click Minimize.
+    await page.mouse.move(0, 0);
 
     const modal = page.locator('[data-testid="deploy-feedback-modal"]');
     await expect(modal).toBeVisible({ timeout: 10_000 });
