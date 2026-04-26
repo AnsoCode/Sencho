@@ -82,6 +82,19 @@ async function enableDeployFeedback(page: Page): Promise<void> {
   }, DEPLOY_FEEDBACK_KEY);
 }
 
+/**
+ * Force the React hook to re-read localStorage and update its state. Used
+ * right before a deploy click to defeat any stale-state edge cases after
+ * navigation.
+ */
+async function syncDeployFeedbackState(page: Page): Promise<void> {
+  const stored = await page.evaluate((key: string) => {
+    window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
+    return window.localStorage.getItem(key);
+  }, DEPLOY_FEEDBACK_KEY);
+  expect(stored, 'deploy feedback opt-in flag missing in localStorage').toBe('true');
+}
+
 async function disableDeployFeedback(page: Page): Promise<void> {
   await page.evaluate((key: string) => {
     window.localStorage.removeItem(key);
@@ -129,6 +142,7 @@ test.describe('Deploy feedback modal', () => {
 
     await enableDeployFeedback(page);
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
+    await syncDeployFeedbackState(page);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
@@ -155,6 +169,7 @@ test.describe('Deploy feedback modal', () => {
 
     await enableDeployFeedback(page);
     await setupDeployStack(page, FAIL_STACK, FAIL_COMPOSE);
+    await syncDeployFeedbackState(page);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
@@ -176,6 +191,7 @@ test.describe('Deploy feedback modal', () => {
 
     await enableDeployFeedback(page);
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
+    await syncDeployFeedbackState(page);
 
     await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
 
