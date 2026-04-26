@@ -1233,6 +1233,7 @@ export default function EditorLayout() {
   };
 
   const saveFile = async () => {
+    if (activeTab === 'files') return;
     if (!selectedFile) return;
     const currentContent = activeTab === 'compose' ? (content || '') : (envContent || '');
     const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env?file=${encodeURIComponent(selectedEnvFile)}`;
@@ -1293,6 +1294,7 @@ export default function EditorLayout() {
   };
 
   const discardChanges = () => {
+    if (activeTab === 'files') return;
     if (activeTab === 'compose') {
       setContent(originalContent);
     } else {
