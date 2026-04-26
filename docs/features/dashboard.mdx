@@ -1,12 +1,12 @@
 ---
 title: Dashboard
-description: Real-time system stats, stack health, historical metrics, and recent alerts for your host machine.
+description: Real-time system stats, stack health, configuration overview, and recent activity for your active node.
 ---
 
-The **Home** tab is the first thing you see after logging in. It provides a live overview of your node's health, resource usage, stack status, and recent alert activity.
+The **Home** tab is the first thing you see after logging in. It provides a live overview of your node's health, resource usage, stack status, active configuration, and recent activity.
 
 <Frame>
-  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing status masthead, unified gauge strip, stack health table, and historical charts" />
+  <img src="/images/dashboard/dashboard-overview.png" alt="Sencho dashboard showing status masthead, unified gauge strip, and stack health table" />
 </Frame>
 
 ## Status masthead
@@ -57,18 +57,58 @@ A mono table of every stack discovered in your `COMPOSE_DIR`, sorted by load so 
 
 Warning rows take on a subtle amber wash; critical rows take on a rose wash. Click any row to jump to that stack's editor. If you have more than 8 stacks, the list paginates automatically.
 
-## Historical charts
+## Configuration Status
 
-Two area charts display time-series data sampled at one-minute intervals, retained for up to 24 hours:
+The Configuration Status card gives you an at-a-glance view of every toggleable automation and security feature on the active node, so nothing is silently off when you expect it to be on.
 
-- **CPU** - normalized total CPU percentage across all managed containers over host cores, stroked in cyan with the peak highlighted in amber.
-- **Memory** - total memory allocated by managed containers in GB.
+<Frame>
+  <img src="/images/dashboard/configuration-status.png" alt="Dashboard showing the Configuration Status card on the left and the Recent Activity feed on the right" />
+</Frame>
 
-Hover over a data point to see the exact value at that moment.
+The card is divided into four sections:
 
-<Note>
-  Charts only show data from the moment Sencho started collecting. If you just installed Sencho, they will be mostly empty until metrics accumulate.
-</Note>
+### Notifications & Alerts
+
+| Row | What it shows |
+|-----|---------------|
+| **Notification agents** | Which delivery agents (Discord, Slack, custom webhook) are configured and enabled |
+| **Alert rules** | Number of per-stack alert rules in effect |
+| **Notification routing** | Number of enabled routing rules that direct specific categories to specific agents |
+
+### Automation
+
+| Row | What it shows |
+|-----|---------------|
+| **Auto-heal policies** | Enabled and total crash-recovery policies across all stacks |
+| **Auto-update stacks** | Stacks enrolled in automated image-update checks |
+| **Webhooks** | Outbound webhook triggers that fire on stack events |
+| **Scheduled tasks** | Active scheduled operations (backups, restarts, scripts) |
+
+### Security
+
+| Row | What it shows |
+|-----|---------------|
+| **MFA** | Whether multi-factor authentication is set up for your account |
+| **SSO** | Whether single sign-on is enabled and the active provider |
+| **Vulnerability scanning** | Number of enabled scan policies |
+
+### Backups & Thresholds
+
+| Row | What it shows |
+|-----|---------------|
+| **Cloud Backup** | Active cloud backup provider (or Disabled) |
+| **Alert thresholds** | Current CPU, RAM, and disk alert thresholds |
+| **Crash detection** | Whether global crash detection is active |
+
+**Click any row** to jump directly to the settings section that manages it.
+
+Rows for features locked to a higher tier are shown in a muted state with an upgrade indicator. The data refreshes automatically every 60 seconds and updates immediately when any setting changes.
+
+## Recent Activity
+
+The Recent Activity feed, to the right of Configuration Status, shows the ten most recent events on the active node: deployments, image updates, auto-heal actions, vulnerability scan results, cloud backups, and system notices. Each entry shows a category icon, the event message, and a relative timestamp.
+
+If no activity has been recorded yet, the feed shows an empty state.
 
 ## Recent alerts
 

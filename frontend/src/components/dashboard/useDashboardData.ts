@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNodes } from '@/context/NodeContext';
 import { apiFetch } from '@/lib/api';
+import { visibilityInterval } from '@/lib/utils';
 import type {
   Stats,
   SystemStats,
@@ -13,43 +14,6 @@ import type {
 const DEFAULT_STATS: Stats = { active: 0, managed: 0, unmanaged: 0, exited: 0, total: 0 };
 const SPARK_BUCKETS = 20;
 const SPARK_WINDOW_MS = 10 * 60 * 1000;
-
-/**
- * Start a polling interval that pauses when the tab is hidden.
- * Returns a cleanup function that stops the interval.
- */
-function visibilityInterval(fn: () => void, ms: number): () => void {
-  let interval: ReturnType<typeof setInterval> | null = null;
-
-  const start = () => {
-    if (interval) return;
-    interval = setInterval(fn, ms);
-  };
-
-  const stop = () => {
-    if (interval) {
-      clearInterval(interval);
-      interval = null;
-    }
-  };
-
-  const onVisChange = () => {
-    if (document.hidden) {
-      stop();
-    } else {
-      fn(); // Fetch immediately on re-focus
-      start();
-    }
-  };
-
-  document.addEventListener('visibilitychange', onVisChange);
-  start();
-
-  return () => {
-    stop();
-    document.removeEventListener('visibilitychange', onVisChange);
-  };
-}
 
 function bucketCpu(points: MetricPoint[], windowMs: number, buckets: number): number[] {
   if (points.length === 0) return Array(buckets).fill(0);

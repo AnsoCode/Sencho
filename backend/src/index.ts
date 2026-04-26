@@ -38,6 +38,7 @@ import { registriesRouter } from './routes/registries';
 import { systemMaintenanceRouter } from './routes/systemMaintenance';
 import { templatesRouter } from './routes/templates';
 import { securityRouter } from './routes/security';
+import { dashboardRouter } from './routes/dashboard';
 import { containersRouter, portsRouter } from './routes/containers';
 import { nodesRouter } from './routes/nodes';
 import { stacksRouter } from './routes/stacks';
@@ -114,6 +115,7 @@ app.use('/api/templates', templatesRouter);
 app.use('/api/security', securityRouter);
 app.use('/api/containers', containersRouter);
 app.use('/api/ports', portsRouter);
+app.use('/api/dashboard', dashboardRouter);
 app.use('/api/nodes', nodesRouter);
 app.use('/api/stacks', stacksRouter);
 

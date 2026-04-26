@@ -27,6 +27,7 @@ import { apiFetch, fetchForNode } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from './PaidGate';
 import FleetSnapshots from './FleetSnapshots';
+import { FleetConfiguration } from './fleet/FleetConfiguration';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
@@ -1041,6 +1042,11 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </TabsTrigger>
                                 </TabsHighlightItem>
                             )}
+                            <TabsHighlightItem value="configuration">
+                                <TabsTrigger value="configuration">
+                                    <SlidersHorizontal className="w-4 h-4 mr-1.5" />Status
+                                </TabsTrigger>
+                            </TabsHighlightItem>
                         </TabsHighlight>
                     </TabsList>
                     <div className="flex items-center gap-2">
@@ -1337,6 +1343,9 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         <FleetSnapshots />
                     </TabsContent>
                 )}
+                <TabsContent value="configuration">
+                    <FleetConfiguration />
+                </TabsContent>
             </Tabs>
 
             {/* Reconnecting overlay shown when local node is updating */}
