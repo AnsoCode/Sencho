@@ -91,7 +91,7 @@ export function isValidRelativeStackPath(rel: string): boolean {
   if (/^[a-zA-Z]:/.test(rel) || rel.startsWith('/')) return false;
   if (rel.includes('//')) return false;
   const segments = rel.split('/');
-  return !segments.some(seg => seg === '..');
+  return !segments.some(seg => seg === '..' || seg === '.');
 }
 
 /**
