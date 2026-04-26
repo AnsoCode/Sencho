@@ -1,6 +1,17 @@
 import path from 'path';
-import { promises as fsPromises } from 'fs';
+import { promises as fsPromises, createReadStream } from 'fs';
+import type { Readable } from 'stream';
 import { NodeRegistry } from './NodeRegistry';
+import { isPathWithinBase } from '../utils/validation';
+import { isBinaryBuffer } from '../utils/binaryDetect';
+
+export interface FileEntry {
+  name: string;
+  type: 'file' | 'directory' | 'symlink';
+  size: number;
+  mtime: number;
+  isProtected: boolean;
+}
 
 /**
  * Resolves the writable Sencho data directory (same one DatabaseService /
@@ -13,6 +24,22 @@ function getBackupBaseDir(): string {
 }
 
 import { isDebugEnabled } from '../utils/debug';
+
+const PROTECTED_STACK_FILES = new Set([
+  'compose.yaml',
+  'compose.yml',
+  'docker-compose.yaml',
+  'docker-compose.yml',
+  '.env',
+]);
+
+const MIME_MAP: Record<string, string> = {
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.json': 'application/json',
+  '.sh': 'text/x-sh',
+  '.env': 'text/plain',
+};
 
 /**
  * FileSystemService - local-only file I/O for compose stack management.
@@ -319,5 +346,200 @@ export class FileSystemService {
     } catch {
       return { exists: false, timestamp: null };
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stack-scoped file explorer methods
+  // ---------------------------------------------------------------------------
+
+  private guessMime(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    return MIME_MAP[ext] ?? 'text/plain';
+  }
+
+  private async resolveSafeStackPath(stackName: string, relPath: string): Promise<string> {
+    const stackDir = path.join(this.baseDir, stackName);
+    const target = relPath === '' ? stackDir : path.resolve(stackDir, relPath);
+
+    if (!isPathWithinBase(target, stackDir)) {
+      throw Object.assign(new Error('Path escapes stack directory'), { code: 'INVALID_PATH' });
+    }
+
+    let realTarget: string;
+    try {
+      realTarget = await fsPromises.realpath(target);
+    } catch (err: unknown) {
+      const fsErr = err as NodeJS.ErrnoException;
+      if (fsErr.code !== 'ENOENT') throw err;
+
+      // Walk up to the deepest existing ancestor, then reattach the suffix.
+      let existing = target;
+      const suffix: string[] = [];
+      while (true) {
+        const parent = path.dirname(existing);
+        if (parent === existing) {
+          // Reached filesystem root without finding an existing path.
+          throw Object.assign(new Error('Path escapes stack directory'), { code: 'INVALID_PATH' });
+        }
+        suffix.unshift(path.basename(existing));
+        existing = parent;
+        try {
+          const realExisting = await fsPromises.realpath(existing);
+          if (!isPathWithinBase(realExisting, stackDir)) {
+            throw Object.assign(new Error('Symlink escapes stack directory'), { code: 'SYMLINK_ESCAPE' });
+          }
+          realTarget = path.join(realExisting, ...suffix);
+          break;
+        } catch (innerErr: unknown) {
+          const innerFsErr = innerErr as NodeJS.ErrnoException;
+          if (innerFsErr.code !== 'ENOENT') throw innerErr;
+          // Continue walking up.
+        }
+      }
+    }
+
+    if (!isPathWithinBase(realTarget, stackDir)) {
+      throw Object.assign(new Error('Symlink escapes stack directory'), { code: 'SYMLINK_ESCAPE' });
+    }
+
+    return realTarget;
+  }
+
+  async listStackDirectory(stackName: string, relPath: string): Promise<FileEntry[]> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    const dirents = await fsPromises.readdir(safePath, { withFileTypes: true });
+
+    const entries = await Promise.all(
+      dirents.map(async (dirent): Promise<FileEntry> => {
+        const entryPath = path.join(safePath, dirent.name);
+        let size = 0;
+        let mtime = 0;
+        try {
+          const st = await fsPromises.stat(entryPath);
+          size = dirent.isDirectory() ? 0 : st.size;
+          mtime = st.mtimeMs;
+        } catch {
+          // stat can fail for broken symlinks; use defaults.
+        }
+        const type: FileEntry['type'] = dirent.isDirectory()
+          ? 'directory'
+          : dirent.isSymbolicLink()
+          ? 'symlink'
+          : 'file';
+        return {
+          name: dirent.name,
+          type,
+          size,
+          mtime,
+          isProtected: PROTECTED_STACK_FILES.has(dirent.name),
+        };
+      })
+    );
+
+    return entries.sort((a, b) => {
+      if (a.type === 'directory' && b.type !== 'directory') return -1;
+      if (a.type !== 'directory' && b.type === 'directory') return 1;
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+  }
+
+  async readStackFile(
+    stackName: string,
+    relPath: string,
+    maxBytes: number = 2 * 1024 * 1024
+  ): Promise<{ content?: string; binary: boolean; oversized: boolean; size: number; mime: string }> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    const stat = await fsPromises.stat(safePath);
+    const mime = this.guessMime(safePath);
+
+    if (stat.isDirectory()) {
+      throw Object.assign(new Error('Target is a directory'), { code: 'IS_DIRECTORY' });
+    }
+
+    if (stat.size > maxBytes) {
+      return { binary: false, oversized: true, size: stat.size, mime };
+    }
+
+    const buf = await fsPromises.readFile(safePath);
+
+    if (isBinaryBuffer(buf)) {
+      return { binary: true, oversized: false, size: stat.size, mime };
+    }
+
+    return { binary: false, oversized: false, size: stat.size, mime, content: buf.toString('utf-8') };
+  }
+
+  async streamStackFile(
+    stackName: string,
+    relPath: string
+  ): Promise<{ stream: Readable; size: number; filename: string; mime: string }> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    const stat = await fsPromises.stat(safePath);
+
+    if (stat.isDirectory()) {
+      throw Object.assign(new Error('Target is a directory'), { code: 'IS_DIRECTORY' });
+    }
+
+    return {
+      stream: createReadStream(safePath),
+      size: stat.size,
+      filename: path.basename(safePath),
+      mime: this.guessMime(safePath),
+    };
+  }
+
+  async writeStackFile(stackName: string, relPath: string, content: string): Promise<void> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    await fsPromises.mkdir(path.dirname(safePath), { recursive: true });
+    await fsPromises.writeFile(safePath, content, 'utf-8');
+  }
+
+  async deleteStackPath(stackName: string, relPath: string, recursive: boolean = false): Promise<void> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    const stat = await fsPromises.stat(safePath);
+
+    if (stat.isDirectory()) {
+      if (!recursive) {
+        try {
+          await fsPromises.rmdir(safePath);
+        } catch (err: unknown) {
+          const fsErr = err as NodeJS.ErrnoException;
+          if (fsErr.code === 'ENOTEMPTY' || fsErr.code === 'EEXIST') {
+            throw Object.assign(new Error('Directory is not empty'), { code: 'NOT_EMPTY' });
+          }
+          throw err;
+        }
+      } else {
+        await fsPromises.rm(safePath, { recursive: true, force: true });
+      }
+    } else {
+      await fsPromises.unlink(safePath);
+    }
+  }
+
+  async mkdirStackPath(stackName: string, relPath: string): Promise<void> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    await fsPromises.mkdir(safePath, { recursive: true });
+  }
+
+  async statStackEntry(stackName: string, relPath: string): Promise<FileEntry> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    // Use lstat so symlinks are reported as 'symlink' rather than resolved to target type.
+    const stat = await fsPromises.lstat(safePath);
+    const name = path.basename(safePath);
+
+    const type: FileEntry['type'] = stat.isDirectory()
+      ? 'directory'
+      : stat.isSymbolicLink()
+      ? 'symlink'
+      : 'file';
+
+    return {
+      name,
+      type,
+      size: stat.isDirectory() ? 0 : stat.size,
+      mtime: stat.mtimeMs,
+      isProtected: PROTECTED_STACK_FILES.has(name),
+    };
   }
 }
