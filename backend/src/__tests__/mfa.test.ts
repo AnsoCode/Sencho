@@ -13,8 +13,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { authenticator } from 'otplib';
-import { HashAlgorithms } from '@otplib/core';
+import { OTP } from 'otplib';
 import {
   setupTestDb,
   cleanupTestDb,
@@ -25,12 +24,8 @@ import {
 
 // Match the server-side otplib configuration so test-generated OTPs are
 // accepted by the verify path.
-authenticator.options = {
-  digits: 6,
-  step: 30,
-  algorithm: HashAlgorithms.SHA1,
-  window: 1,
-};
+const authenticator = new OTP({ strategy: 'totp' });
+const TOTP_PARAMS = { algorithm: 'sha1' as const, digits: 6, period: 30 };
 
 let tmpDir: string;
 let app: import('express').Express;
@@ -92,7 +87,7 @@ afterAll(() => {
 describe('MfaService', () => {
   it('verifyTotp accepts a freshly generated code', () => {
     const secret = MfaService.generateSecret();
-    const code = authenticator.generate(secret);
+    const code = authenticator.generateSync({ secret, ...TOTP_PARAMS });
     expect(MfaService.verifyTotp(secret, code)).toBe(true);
   });
 
@@ -190,7 +185,7 @@ describe('POST /api/auth/login/mfa', () => {
 
   it('accepts a valid TOTP, clears pending cookie, issues session', async () => {
     const pendingCookie = await startChallenge();
-    const code = authenticator.generate(secret);
+    const code = authenticator.generateSync({ secret, ...TOTP_PARAMS });
 
     const res = await request(app)
       .post('/api/auth/login/mfa')
@@ -216,7 +211,7 @@ describe('POST /api/auth/login/mfa', () => {
 
     const login = await request(app).post('/api/auth/login').send({ username: u, password: p });
     const pending = findCookie(login.headers, 'sencho_mfa_pending')!;
-    const code = authenticator.generate(s);
+    const code = authenticator.generateSync({ secret: s, ...TOTP_PARAMS });
 
     const ok = await request(app).post('/api/auth/login/mfa').set('Cookie', pending).send({ code });
     expect(ok.status).toBe(200);
@@ -346,7 +341,7 @@ describe('MFA enrol + confirm', () => {
       .send({ code: '000000' });
     expect(wrong.status).toBe(401);
 
-    const code = authenticator.generate(startRes.body.secret as string);
+    const code = authenticator.generateSync({ secret: startRes.body.secret as string, ...TOTP_PARAMS });
     const confirm = await request(app)
       .post('/api/auth/mfa/enroll/confirm')
       .set('Authorization', `Bearer ${userToken}`)
@@ -488,7 +483,7 @@ describe('MfaService.verifyTotp drift handling', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(baseMs);
-      const code = authenticator.generate(secret);
+      const code = authenticator.generateSync({ secret, ...TOTP_PARAMS });
       // Advance three full 30s windows so the code is outside the +-1 tolerance.
       vi.setSystemTime(baseMs + 3 * 30_000);
       expect(MfaService.verifyTotp(secret, code)).toBe(false);
@@ -499,7 +494,7 @@ describe('MfaService.verifyTotp drift handling', () => {
 
   it('still accepts a fresh code generated in the current window', () => {
     const secret = MfaService.generateSecret();
-    const code = authenticator.generate(secret);
+    const code = authenticator.generateSync({ secret, ...TOTP_PARAMS });
     expect(MfaService.verifyTotp(secret, code)).toBe(true);
   });
 });
@@ -555,7 +550,7 @@ describe('POST /api/auth/login/mfa edge cases', () => {
     const ok = await request(app)
       .post('/api/auth/login/mfa')
       .set('Cookie', pending)
-      .send({ code: authenticator.generate(secret) });
+      .send({ code: authenticator.generateSync({ secret, ...TOTP_PARAMS }) });
     expect(ok.status).toBe(200);
 
     const after = db.getUserMfa(userId)!;
@@ -578,7 +573,7 @@ describe('POST /api/auth/login/mfa edge cases', () => {
     const ok = await request(app)
       .post('/api/auth/login/mfa')
       .set('Cookie', pending)
-      .send({ code: authenticator.generate(secret) });
+      .send({ code: authenticator.generateSync({ secret, ...TOTP_PARAMS }) });
     expect(ok.status).toBe(200);
 
     const after = db.getUserMfa(userId)!;
@@ -618,7 +613,7 @@ describe('MFA enrol/start overwrites a prior pending secret', () => {
     expect(secondSecret).not.toBe(firstSecret);
 
     // First secret no longer verifies against the stored (now-overwritten) secret.
-    const wrongCode = authenticator.generate(firstSecret);
+    const wrongCode = authenticator.generateSync({ secret: firstSecret, ...TOTP_PARAMS });
     const rejected = await request(app)
       .post('/api/auth/mfa/enroll/confirm')
       .set('Authorization', `Bearer ${token}`)
@@ -637,7 +632,7 @@ describe('MFA enrol/start overwrites a prior pending secret', () => {
     const ok = await request(app)
       .post('/api/auth/mfa/enroll/confirm')
       .set('Authorization', `Bearer ${token}`)
-      .send({ code: authenticator.generate(secondSecret) });
+      .send({ code: authenticator.generateSync({ secret: secondSecret, ...TOTP_PARAMS }) });
     expect(ok.status).toBe(200);
     expect(ok.body.backupCodes).toHaveLength(10);
   });
