@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import bcrypt from 'bcrypt';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { setupTestDb, cleanupTestDb, loginAsTestAdmin } from './helpers/setupTestDb';
@@ -25,7 +26,9 @@ const isWindows = process.platform === 'win32';
 let tmpDir: string;
 let app: import('express').Express;
 let LicenseService: typeof import('../services/LicenseService').LicenseService;
+let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
 let adminCookie: string;
+let viewerCookie: string;
 let stacksDir: string;
 const STACK = 'teststack';
 
@@ -39,6 +42,7 @@ beforeAll(async () => {
   await fs.writeFile(path.join(stacksDir, STACK, '.env'), 'KEY=val\n');
 
   ({ LicenseService } = await import('../services/LicenseService'));
+  ({ DatabaseService } = await import('../services/DatabaseService'));
 
   // Default: paid tier so most tests pass the tier gate
   vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
@@ -47,6 +51,12 @@ beforeAll(async () => {
 
   ({ app } = await import('../index'));
   adminCookie = await loginAsTestAdmin(app);
+
+  const viewerHash = await bcrypt.hash('viewerpass', 1);
+  DatabaseService.getInstance().addUser({ username: 'files-viewer', password_hash: viewerHash, role: 'viewer' });
+  const viewerRes = await request(app).post('/api/auth/login').send({ username: 'files-viewer', password: 'viewerpass' });
+  const viewerCookies = viewerRes.headers['set-cookie'] as string | string[];
+  viewerCookie = Array.isArray(viewerCookies) ? viewerCookies[0] : viewerCookies;
 });
 
 afterAll(async () => {
@@ -58,6 +68,8 @@ beforeEach(() => {
   // overrides via mockReturnValueOnce don't accumulate across tests.
   vi.restoreAllMocks();
   vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('paid');
+  vi.spyOn(LicenseService.getInstance(), 'getVariant').mockReturnValue('skipper');
+  vi.spyOn(LicenseService.getInstance(), 'getSeatLimits').mockReturnValue({ maxAdmins: null, maxViewers: null });
 });
 
 // ── GET /:stackName/files ─────────────────────────────────────────────────────
@@ -92,7 +104,7 @@ describe('GET /api/stacks/:stackName/files', () => {
       .set('Cookie', adminCookie);
     // Express may normalise the URL before it reaches the handler;
     // the important thing is we never get 200
-    expect(res.status).not.toBe(200);
+    expect([400, 404]).toContain(res.status);
   });
 
   it('returns 400 for a stack name with special characters', async () => {
@@ -139,6 +151,22 @@ describe('GET /api/stacks/:stackName/files/content', () => {
       .set('Cookie', adminCookie);
     expect(res.status).toBe(404);
   });
+
+  it('returns oversized:true for a file larger than the 2 MB read limit', async () => {
+    const bigPath = path.join(stacksDir, STACK, 'oversized.txt');
+    await fs.writeFile(bigPath, 'x'.repeat(3 * 1024 * 1024));
+
+    const res = await request(app)
+      .get(`/api/stacks/${STACK}/files/content`)
+      .query({ path: 'oversized.txt' })
+      .set('Cookie', adminCookie);
+    expect(res.status).toBe(200);
+    expect(res.body.oversized).toBe(true);
+    expect(res.body.binary).toBe(false);
+    expect(res.body.content).toBeUndefined();
+
+    await fs.unlink(bigPath);
+  }, 15000);
 });
 
 // ── GET /:stackName/files/download ────────────────────────────────────────────
@@ -218,6 +246,18 @@ describe('POST /api/stacks/:stackName/files/upload', () => {
     // Verify the file was written
     const content = await fs.readFile(path.join(stacksDir, STACK, 'uploaded.txt'), 'utf-8');
     expect(content).toBe('uploaded content');
+  });
+
+  it('returns 204 and writes into a subdirectory when ?path= is provided', async () => {
+    const res = await request(app)
+      .post(`/api/stacks/${STACK}/files/upload`)
+      .query({ path: 'subdir' })
+      .set('Cookie', adminCookie)
+      .attach('file', Buffer.from('subdir content'), 'sub.txt');
+    expect(res.status).toBe(204);
+
+    const content = await fs.readFile(path.join(stacksDir, STACK, 'subdir', 'sub.txt'), 'utf-8');
+    expect(content).toBe('subdir content');
   });
 });
 
@@ -315,6 +355,20 @@ describe('DELETE /api/stacks/:stackName/files', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('NOT_EMPTY');
   });
+
+  it.skipIf(isWindows)('returns 204 and removes a non-empty directory when recursive=1 (Linux/macOS only)', async () => {
+    const dirPath = path.join(stacksDir, STACK, 'recursivedir');
+    await fs.mkdir(dirPath, { recursive: true });
+    await fs.writeFile(path.join(dirPath, 'child.txt'), 'data');
+
+    const res = await request(app)
+      .delete(`/api/stacks/${STACK}/files`)
+      .query({ path: 'recursivedir', recursive: '1' })
+      .set('Cookie', adminCookie);
+    expect(res.status).toBe(204);
+
+    await expect(fs.access(dirPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
 
 // ── POST /:stackName/files/folder ─────────────────────────────────────────────
@@ -352,5 +406,42 @@ describe('POST /api/stacks/:stackName/files/folder', () => {
 
     const stat = await fs.stat(path.join(stacksDir, STACK, 'mynewdir'));
     expect(stat.isDirectory()).toBe(true);
+  });
+});
+
+// ── permission gating ─────────────────────────────────────────────────────────
+
+describe('permission gating', () => {
+  it('viewer receives 403 from PUT /files/content', async () => {
+    const res = await request(app)
+      .put(`/api/stacks/${STACK}/files/content`)
+      .query({ path: 'new.txt' })
+      .set('Cookie', viewerCookie)
+      .send({ content: 'hello' });
+    expect(res.status).toBe(403);
+  });
+
+  it('viewer receives 403 from POST /files/upload', async () => {
+    const res = await request(app)
+      .post(`/api/stacks/${STACK}/files/upload`)
+      .set('Cookie', viewerCookie)
+      .attach('file', Buffer.from('data'), 'test.txt');
+    expect(res.status).toBe(403);
+  });
+
+  it('viewer receives 403 from DELETE /files', async () => {
+    const res = await request(app)
+      .delete(`/api/stacks/${STACK}/files`)
+      .query({ path: 'compose.yaml' })
+      .set('Cookie', viewerCookie);
+    expect(res.status).toBe(403);
+  });
+
+  it('viewer receives 403 from POST /files/folder', async () => {
+    const res = await request(app)
+      .post(`/api/stacks/${STACK}/files/folder`)
+      .query({ path: 'somedir' })
+      .set('Cookie', viewerCookie);
+    expect(res.status).toBe(403);
   });
 });

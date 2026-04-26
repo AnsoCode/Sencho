@@ -319,5 +319,14 @@ describe('FileSystemService stack methods', () => {
       const service = FileSystemService.getInstance();
       await expect(service.readStackFile('../other', 'file.txt')).rejects.toMatchObject({ code: 'INVALID_PATH' });
     });
+
+    it.skipIf(isWindows)('throws SYMLINK_ESCAPE when a symlink inside the stack points outside it (Linux/macOS only)', async () => {
+      const externalFile = path.join(tmpBase, 'secret.txt');
+      await fs.writeFile(externalFile, 'secret');
+      await fs.symlink(externalFile, path.join(stackDir, 'escape-link'));
+
+      const service = FileSystemService.getInstance();
+      await expect(service.readStackFile(STACK, 'escape-link')).rejects.toMatchObject({ code: 'SYMLINK_ESCAPE' });
+    });
   });
 });
