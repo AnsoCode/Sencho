@@ -15,6 +15,7 @@ import { NotificationService } from './NotificationService';
 import TrivyService from './TrivyService';
 import type { ScanAllNodeImagesResult } from './TrivyService';
 import TrivyInstaller from './TrivyInstaller';
+import { CloudBackupService } from './CloudBackupService';
 
 const TRIVY_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const TRIVY_UPDATE_CHECK_STARTUP_DELAY_MS = 5 * 60 * 1000;
@@ -501,11 +502,25 @@ export class SchedulerService {
             db.insertSnapshotFiles(snapshotId, allFiles);
         }
 
-        if (isDebugEnabled()) {
-            console.debug(`[SchedulerService:debug] Snapshot task ${task.id}: captured ${capturedNodes.length} node(s), ${totalStacks} stack(s), ${allFiles.length} file(s), skipped ${skippedNodes.length}`);
+        let cloudUploadNote = '';
+        const cloudSvc = CloudBackupService.getInstance();
+        if (cloudSvc.isEnabled() && cloudSvc.isAutoUploadOn()) {
+            try {
+                await cloudSvc.uploadSnapshot(snapshotId);
+                cloudUploadNote = ', cloud upload OK';
+            } catch (err) {
+                const message = getErrorMessage(err, 'Cloud upload failed');
+                console.error('[SchedulerService] Cloud upload failed:', message);
+                this.safeDispatch('warning', 'system', `Cloud backup failed for scheduled snapshot ${snapshotId}: ${message}`);
+                cloudUploadNote = ', cloud upload FAILED';
+            }
         }
 
-        return `Fleet snapshot created (id=${snapshotId}, ${capturedNodes.length} node(s), ${totalStacks} stack(s)${skippedNodes.length > 0 ? `, ${skippedNodes.length} skipped` : ''})`;
+        if (isDebugEnabled()) {
+            console.debug(`[SchedulerService:debug] Snapshot task ${task.id}: captured ${capturedNodes.length} node(s), ${totalStacks} stack(s), ${allFiles.length} file(s), skipped ${skippedNodes.length}${cloudUploadNote}`);
+        }
+
+        return `Fleet snapshot created (id=${snapshotId}, ${capturedNodes.length} node(s), ${totalStacks} stack(s)${skippedNodes.length > 0 ? `, ${skippedNodes.length} skipped` : ''}${cloudUploadNote})`;
     }
 
     private async executePrune(task: ScheduledTask): Promise<string> {

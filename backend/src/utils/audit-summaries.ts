@@ -86,6 +86,13 @@ export const AUDIT_ROUTE_SUMMARIES: Record<string, string> = {
   'POST /fleet/nodes/*/update': 'Triggered fleet node update',
   'POST /fleet/update-all': 'Triggered fleet-wide update',
 
+  // Cloud backup
+  'PUT /cloud-backup/config': 'Updated cloud backup config',
+  'POST /cloud-backup/test': 'Tested cloud backup connection',
+  'POST /cloud-backup/provision': 'Provisioned Sencho Cloud Backup',
+  'POST /cloud-backup/upload': 'Uploaded snapshot to cloud',
+  'DELETE /cloud-backup/object': 'Deleted cloud snapshot',
+
   // SSO
   'PUT /sso/config': 'Updated SSO configuration',
   'DELETE /sso/config': 'Deleted SSO configuration',

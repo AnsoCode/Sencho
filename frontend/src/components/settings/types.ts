@@ -37,6 +37,7 @@ export type SectionId =
     | 'notifications'
     | 'webhooks'
     | 'security'
+    | 'cloud-backup'
     | 'developer'
     | 'nodes'
     | 'appstore'
