@@ -234,7 +234,6 @@ export function DeployFeedbackModal({ isMinimized, onMinimize }: DeployFeedbackM
           style={{ height: showRaw ? '200px' : 0, overflow: 'hidden' }}
         >
           <TerminalComponent
-            stackName={stackName}
             onReady={onTerminalReady}
             onMessage={onMessage}
           />
