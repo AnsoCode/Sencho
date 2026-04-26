@@ -43,6 +43,8 @@ function AppContent() {
 import { ToastContainer } from './components/ui/toast';
 
 function App() {
+  // eslint-disable-next-line no-console
+  console.log('[deploy-feedback-debug] App component rendering');
   return (
     <AuthProvider>
       <DeployFeedbackProvider>
