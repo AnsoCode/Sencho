@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { cn } from '@/lib/utils';
 import { formatTimeAgo } from '@/lib/relativeTime';
 import type { NotificationItem } from '@/components/dashboard/types';
 
-const ONE_HOUR_S = 60 * 60;
-const NOW_TICK_MS = 30_000;
+const NOW_TICK_MS = 10_000;
 
 interface SidebarActivityTickerProps {
   notifications: NotificationItem[];
@@ -13,16 +12,16 @@ interface SidebarActivityTickerProps {
 }
 
 export function SidebarActivityTicker({ notifications, connected, onNavigate }: SidebarActivityTickerProps) {
-  const [nowS, setNowS] = useState(() => Math.floor(Date.now() / 1000));
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
-    const id = setInterval(() => setNowS(Math.floor(Date.now() / 1000)), NOW_TICK_MS);
+    const id = setInterval(forceUpdate, NOW_TICK_MS);
     return () => clearInterval(id);
   }, []);
   const latest = useMemo(() => {
     return notifications
-      .filter(n => n.stack_name && nowS - n.timestamp <= ONE_HOUR_S)
+      .filter(n => n.stack_name)
       .sort((a, b) => b.timestamp - a.timestamp)[0] ?? null;
-  }, [notifications, nowS]);
+  }, [notifications]);
 
   const idle = latest === null;
   const dotClass = connected
