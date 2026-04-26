@@ -353,12 +353,16 @@ export class FileSystemService {
   // ---------------------------------------------------------------------------
 
   private guessMime(filePath: string): string {
+    if (path.basename(filePath) === '.env') return 'text/plain';
     const ext = path.extname(filePath).toLowerCase();
     return MIME_MAP[ext] ?? 'text/plain';
   }
 
   private async resolveSafeStackPath(stackName: string, relPath: string): Promise<string> {
     const stackDir = path.join(this.baseDir, stackName);
+    if (!isPathWithinBase(stackDir, this.baseDir)) {
+      throw Object.assign(new Error('Stack name escapes compose directory'), { code: 'INVALID_PATH' });
+    }
     const target = relPath === '' ? stackDir : path.resolve(stackDir, relPath);
 
     if (!isPathWithinBase(target, stackDir)) {
@@ -457,7 +461,12 @@ export class FileSystemService {
     }
 
     if (stat.size > maxBytes) {
-      return { binary: false, oversized: true, size: stat.size, mime };
+      const fd = await fsPromises.open(safePath, 'r');
+      const probe = Buffer.allocUnsafe(8192);
+      const { bytesRead } = await fd.read(probe, 0, 8192, 0);
+      await fd.close();
+      const binary = isBinaryBuffer(probe.subarray(0, bytesRead));
+      return { binary, oversized: true, size: stat.size, mime };
     }
 
     const buf = await fsPromises.readFile(safePath);
@@ -496,24 +505,28 @@ export class FileSystemService {
 
   async deleteStackPath(stackName: string, relPath: string, recursive: boolean = false): Promise<void> {
     const safePath = await this.resolveSafeStackPath(stackName, relPath);
-    const stat = await fsPromises.stat(safePath);
 
-    if (stat.isDirectory()) {
-      if (!recursive) {
+    if (recursive) {
+      await fsPromises.rm(safePath, { recursive: true, force: true });
+      return;
+    }
+    try {
+      await fsPromises.unlink(safePath);
+    } catch (err: unknown) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === 'EISDIR') {
         try {
           await fsPromises.rmdir(safePath);
-        } catch (err: unknown) {
-          const fsErr = err as NodeJS.ErrnoException;
-          if (fsErr.code === 'ENOTEMPTY' || fsErr.code === 'EEXIST') {
+        } catch (inner: unknown) {
+          const ie = inner as NodeJS.ErrnoException;
+          if (ie.code === 'ENOTEMPTY' || ie.code === 'EEXIST') {
             throw Object.assign(new Error('Directory is not empty'), { code: 'NOT_EMPTY' });
           }
-          throw err;
+          throw inner;
         }
       } else {
-        await fsPromises.rm(safePath, { recursive: true, force: true });
+        throw err;
       }
-    } else {
-      await fsPromises.unlink(safePath);
     }
   }
 
