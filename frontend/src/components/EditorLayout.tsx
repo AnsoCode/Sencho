@@ -1385,7 +1385,13 @@ export default function EditorLayout() {
   const deployStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
+    // eslint-disable-next-line no-console
+    console.log(`[deploy-feedback] deployStack clicked selectedFile=${selectedFile} isBusy=${selectedFile ? isStackBusy(selectedFile) : 'n/a'}`);
+    if (!selectedFile || isStackBusy(selectedFile)) {
+      // eslint-disable-next-line no-console
+      console.log('[deploy-feedback] deployStack early-return (no selectedFile or busy)');
+      return;
+    }
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'deploy');
