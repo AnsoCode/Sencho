@@ -93,15 +93,9 @@ export function DeployFeedbackProvider({ children }: { children: React.ReactNode
       params: { stackName: string; action: ActionVerb },
       run: (deployStarted: Promise<void>) => Promise<RunResult>
     ): Promise<RunResult> => {
-      // eslint-disable-next-line no-console
-      console.log(`[deploy-feedback] runWithLog enter isEnabled=${isEnabled} action=${params.action} stackName=${params.stackName}`);
       if (!isEnabled) {
-        // eslint-disable-next-line no-console
-        console.log('[deploy-feedback] runWithLog early-return-disabled');
         return run(Promise.resolve());
       }
-      // eslint-disable-next-line no-console
-      console.log('[deploy-feedback] runWithLog opening modal');
 
       // Cancel any existing session before starting a new one.
       sessionIdRef.current += 1;

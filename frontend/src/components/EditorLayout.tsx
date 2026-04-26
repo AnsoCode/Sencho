@@ -1385,13 +1385,7 @@ export default function EditorLayout() {
   const deployStack = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // eslint-disable-next-line no-console
-    console.log(`[deploy-feedback] deployStack clicked selectedFile=${selectedFile} isBusy=${selectedFile ? isStackBusy(selectedFile) : 'n/a'}`);
-    if (!selectedFile || isStackBusy(selectedFile)) {
-      // eslint-disable-next-line no-console
-      console.log('[deploy-feedback] deployStack early-return (no selectedFile or busy)');
-      return;
-    }
+    if (!selectedFile || isStackBusy(selectedFile)) return;
     const stackFile = selectedFile;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
     setStackAction(stackFile, 'deploy');
@@ -2430,12 +2424,12 @@ export default function EditorLayout() {
                         {can('stack:deploy', 'stack', stackName) && (
                           <div className="flex items-center gap-2 flex-wrap">
                             {isRunning ? (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
                                 <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
                               </Button>
                             ) : (
-                              <Button type="button" size="sm" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
+                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
                                 <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                 {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
                               </Button>

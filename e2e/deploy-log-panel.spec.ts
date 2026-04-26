@@ -137,9 +137,7 @@ async function setupDeployStack(page: Page, name: string, composeContent: string
   ]);
 
   // Wait for the editor's action bar to render with the deploy/start button.
-  await expect(
-    page.getByRole('button', { name: /Deploy|Start/i }).first(),
-  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('stack-deploy-button')).toBeVisible({ timeout: 10_000 });
 
   // Settle remaining state updates and any follow-up fetches the editor
   // triggers (env file, container list, backup info). Without this the click
@@ -151,11 +149,14 @@ async function setupDeployStack(page: Page, name: string, composeContent: string
 
 test.describe('Deploy feedback modal', () => {
   test.beforeEach(async ({ page }, testInfo) => {
-    // Mirror browser console output into Playwright's test output so failures
-    // come with React errors / network errors that would otherwise be lost.
+    // Surface React errors and network failures from the browser so test
+    // failures arrive with diagnostic context instead of just "modal not
+    // visible". Skip noisy info/log/debug messages.
     page.on('console', (msg) => {
-      // eslint-disable-next-line no-console
-      console.log(`[browser ${msg.type()}] [${testInfo.title}] ${msg.text()}`);
+      if (msg.type() === 'error' || msg.type() === 'warning') {
+        // eslint-disable-next-line no-console
+        console.log(`[browser ${msg.type()}] [${testInfo.title}] ${msg.text()}`);
+      }
     });
     page.on('pageerror', (err) => {
       // eslint-disable-next-line no-console
@@ -171,7 +172,7 @@ test.describe('Deploy feedback modal', () => {
     await disableDeployFeedback(page);
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
 
-    await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
+    await page.getByTestId('stack-deploy-button').click();
 
     // Modal must not appear when opt-in is disabled
     await expect(page.locator('[data-testid="deploy-feedback-modal"]')).not.toBeVisible({
@@ -186,7 +187,7 @@ test.describe('Deploy feedback modal', () => {
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
     await syncDeployFeedbackState(page);
 
-    await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
+    await page.getByTestId('stack-deploy-button').click();
 
     const modal = page.locator('[data-testid="deploy-feedback-modal"]');
     await expect(modal).toBeVisible({ timeout: 10_000 });
@@ -213,7 +214,7 @@ test.describe('Deploy feedback modal', () => {
     await setupDeployStack(page, FAIL_STACK, FAIL_COMPOSE);
     await syncDeployFeedbackState(page);
 
-    await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
+    await page.getByTestId('stack-deploy-button').click();
 
     const modal = page.locator('[data-testid="deploy-feedback-modal"]');
     await expect(modal).toBeVisible({ timeout: 10_000 });
@@ -235,7 +236,7 @@ test.describe('Deploy feedback modal', () => {
     await setupDeployStack(page, HAPPY_STACK, HAPPY_COMPOSE);
     await syncDeployFeedbackState(page);
 
-    await page.getByRole('button', { name: /Deploy|Start/i }).first().click();
+    await page.getByTestId('stack-deploy-button').click();
 
     const modal = page.locator('[data-testid="deploy-feedback-modal"]');
     await expect(modal).toBeVisible({ timeout: 10_000 });
