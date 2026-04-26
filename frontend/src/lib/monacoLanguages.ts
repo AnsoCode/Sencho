@@ -5,7 +5,7 @@ export function extensionToLanguage(filename: string): string {
   // extension, but ".env*" files should be treated as ini.
   const basename = filename.includes('/') ? filename.slice(filename.lastIndexOf('/') + 1) : filename;
 
-  if (basename.startsWith('.env')) return 'ini';
+  if (basename === '.env' || /^\.env(\.|$)/.test(basename)) return 'ini';
 
   const dotIndex = basename.lastIndexOf('.');
 
