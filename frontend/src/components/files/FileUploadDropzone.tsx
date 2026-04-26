@@ -22,12 +22,14 @@ export function FileUploadDropzone({
 
   if (!isPaid) {
     return (
-      <div
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs"
+      <button
+        type="button"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs cursor-pointer hover:border-brand/50 transition-colors"
+        onClick={() => window.open('https://sencho.io/pricing', '_blank')}
       >
         <Compass className="w-3 h-3" />
-        Upgrade for upload
-      </div>
+        Upgrade to unlock upload, edit, and delete
+      </button>
     );
   }
 
