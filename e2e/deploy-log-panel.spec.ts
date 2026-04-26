@@ -93,6 +93,11 @@ async function syncDeployFeedbackState(page: Page): Promise<void> {
     return window.localStorage.getItem(key);
   }, DEPLOY_FEEDBACK_KEY);
   expect(stored, 'deploy feedback opt-in flag missing in localStorage').toBe('true');
+  // Allow React to process the state update from the dispatched event before
+  // the next user interaction. The click fires synchronously, but React
+  // re-renders in a microtask; without this wait the click handler can run
+  // against the stale closure where isEnabled was still false.
+  await page.waitForTimeout(200);
 }
 
 async function disableDeployFeedback(page: Page): Promise<void> {
