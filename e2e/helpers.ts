@@ -8,16 +8,10 @@
  *   E2E_USERNAME=admin E2E_PASSWORD=mypassword npx playwright test
  */
 import { Page, expect } from '@playwright/test';
-import { authenticator } from 'otplib';
-import { HashAlgorithms } from '@otplib/core';
+import { OTP } from 'otplib';
 
-// Match backend configuration so generated codes are accepted.
-authenticator.options = {
-  digits: 6,
-  step: 30,
-  algorithm: HashAlgorithms.SHA1,
-  window: 1,
-};
+const totp = new OTP({ strategy: 'totp' });
+const TOTP_PARAMS = { algorithm: 'sha1' as const, digits: 6, period: 30 };
 
 export const TEST_USERNAME = process.env.E2E_USERNAME ?? 'admin';
 export const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'password123';
@@ -27,7 +21,7 @@ export const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'password123';
  * E2E tests to drive the login challenge without a real authenticator app.
  */
 export function totpNow(secret: string): string {
-  return authenticator.generate(secret.replace(/\s+/g, ''));
+  return totp.generateSync({ secret: secret.replace(/\s+/g, ''), ...TOTP_PARAMS });
 }
 
 /** Selector for the dashboard - only present in EditorLayout, not on login/setup pages */
