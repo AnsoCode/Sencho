@@ -247,8 +247,10 @@ export function AppStoreView({ onDeploySuccess }: AppStoreViewProps) {
     }, [filtered, searchQuery]);
 
     const gridTemplates = useMemo(() => {
-        if (!featuredTemplate) return filtered;
-        return filtered.filter(t => t.title !== featuredTemplate.title);
+        const base = featuredTemplate
+            ? filtered.filter(t => t.title !== featuredTemplate.title)
+            : filtered;
+        return [...base].sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0));
     }, [filtered, featuredTemplate]);
 
     return (
