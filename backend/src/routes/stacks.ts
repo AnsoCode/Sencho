@@ -929,7 +929,7 @@ stacksRouter.get('/:stackName/files/download', async (req: Request, res: Respons
     res.setHeader('Content-Type', result.mime);
     res.setHeader('Content-Length', result.size);
     const encodedFilename = encodeURIComponent(result.filename);
-    const safeFilename = result.filename.replace(/[\\\"]/g, '');
+    const safeFilename = result.filename.replace(/[\\"]/g, '');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
     result.stream.on('error', (streamErr) => {
       console.error('[files] stream error:', streamErr);

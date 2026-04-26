@@ -39,11 +39,6 @@ export function FileTree({
   useEffect(() => {
     stackNameRef.current = stackName;
     let cancelled = false;
-    setRootLoading(true);
-    setError(null);
-    setExpandedDirs(new Set());
-    setDirContents(new Map());
-    setLoadingDirs(new Set());
 
     listStackDirectory(stackName, '')
       .then((entries) => {
