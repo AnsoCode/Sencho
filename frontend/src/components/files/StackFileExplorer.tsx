@@ -141,6 +141,7 @@ export function StackFileExplorer({
               variant="ghost"
               size="sm"
               className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+              data-testid="file-action-delete"
               onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
