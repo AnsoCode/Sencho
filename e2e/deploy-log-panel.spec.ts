@@ -121,8 +121,12 @@ async function setupDeployStack(page: Page, name: string, composeContent: string
   await deleteStackViaApi(page, name);
   await page.waitForTimeout(300);
   await createStackViaApi(page, name, composeContent);
+  // Reload preserves auth cookies, so the page lands back on the dashboard
+  // without needing a fresh login. Calling loginAs() here was racing the
+  // login-page detection during the brief render where the auth context
+  // was still loading, then waiting forever on a #username field that
+  // never re-appeared once the dashboard committed.
   await page.reload();
-  await loginAs(page);
   await waitForStacksLoaded(page);
 
   await Promise.all([
