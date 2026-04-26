@@ -43,7 +43,7 @@ async function createStackViaApi(page: Page, name: string, composeContent: strin
         throw new Error(`Failed to create stack: ${createRes.status}`);
       }
 
-      const writeRes = await fetch(`/api/stacks/${stackName}/files/docker-compose.yml`, {
+      const writeRes = await fetch(`/api/stacks/${stackName}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
