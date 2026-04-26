@@ -80,6 +80,21 @@ export const isValidServiceName = (name: string): boolean =>
   /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
 
 /**
+ * Validates a relative path supplied by the client for stack file operations.
+ * An empty string is allowed (it means the stack root directory).
+ * Rejects anything that could escape the stack directory or cause OS-level issues.
+ */
+export function isValidRelativeStackPath(rel: string): boolean {
+  if (rel === '') return true;
+  if (rel.includes('\0')) return false;
+  if (rel.includes('\\')) return false;
+  if (/^[a-zA-Z]:/.test(rel) || rel.startsWith('/')) return false;
+  if (rel.includes('//')) return false;
+  const segments = rel.split('/');
+  return !segments.some(seg => seg === '..');
+}
+
+/**
  * Asserts that a resolved file path stays within a given base directory.
  * Returns true if the path is safe, false if it escapes the base.
  */
