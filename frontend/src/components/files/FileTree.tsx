@@ -9,6 +9,7 @@ import { FileTreeNode } from './FileTreeNode';
 
 interface FileTreeProps {
   stackName: string;
+  refreshKey?: number;
   selectedPath: string;
   onSelectFile: (relPath: string, entry: FileEntry) => void;
   onNavigateToCompose?: () => void;
@@ -21,6 +22,7 @@ const MAX_ENTRIES = 500;
 
 export function FileTree({
   stackName,
+  refreshKey,
   selectedPath,
   onSelectFile,
   onNavigateToCompose,
@@ -62,7 +64,7 @@ export function FileTree({
     return () => {
       cancelled = true;
     };
-  }, [stackName]);
+  }, [stackName, refreshKey]);
 
   function handleDirClick(dirRelPath: string) {
     if (expandedDirs.has(dirRelPath)) {
