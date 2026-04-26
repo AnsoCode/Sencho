@@ -111,6 +111,11 @@ async function disableDeployFeedback(page: Page): Promise<void> {
  * Delete any leftover stack, create a fresh one, reload so the sidebar picks
  * it up, and click it to open the editor. Returns with the stack selected and
  * the Deploy button ready.
+ *
+ * The stack click and the file fetch that follows are awaited together so
+ * the editor's selectedFile state is committed before the test continues.
+ * Without this, deployStack() returns early at the !selectedFile guard and
+ * never calls runWithLog, leaving the modal closed.
  */
 async function setupDeployStack(page: Page, name: string, composeContent: string): Promise<void> {
   await deleteStackViaApi(page, name);
@@ -119,7 +124,23 @@ async function setupDeployStack(page: Page, name: string, composeContent: string
   await page.reload();
   await loginAs(page);
   await waitForStacksLoaded(page);
-  await page.getByText(name, { exact: true }).first().click();
+
+  await Promise.all([
+    page.waitForResponse(
+      (res) =>
+        res.url().endsWith(`/api/stacks/${name}`) &&
+        res.request().method() === 'GET' &&
+        res.ok(),
+      { timeout: 10_000 },
+    ),
+    page.getByText(name, { exact: true }).first().click(),
+  ]);
+
+  // Wait for the editor's action bar to render with the deploy/start button.
+  // This confirms selectedFile is committed before the test triggers a deploy.
+  await expect(
+    page.getByRole('button', { name: /Deploy|Start/i }).first(),
+  ).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Deploy feedback modal', () => {
