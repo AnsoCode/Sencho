@@ -128,6 +128,7 @@ export function DeleteFileConfirm({
           </Button>
           <Button
             size="sm"
+            data-testid="delete-confirm-btn"
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={handleDelete}
             disabled={deleting || !protectedOk}

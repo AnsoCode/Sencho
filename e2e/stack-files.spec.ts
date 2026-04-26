@@ -38,7 +38,7 @@ async function dismissUpgradeOverlays(page: Page): Promise<void> {
 }
 
 /**
- * Click the test stack in the sidebar, then click the "files" link in the
+ * Click the test stack in the sidebar, then click the "files" button in the
  * anatomy panel header to enter the Files tab. This works regardless of the
  * current license tier because the Files panel itself is always rendered
  * (isPaid only gates edit/upload/delete within the panel).
@@ -57,22 +57,17 @@ async function openFilesTab(page: Page): Promise<void> {
   // Click the stack in the sidebar
   await page.getByText(TEST_STACK, { exact: true }).first().click();
 
-  // Give the anatomy panel a moment to settle and load stack data
-  await page.waitForTimeout(500);
-
   // Dismiss any upgrade/capability-gate overlays that block navigation
   await dismissUpgradeOverlays(page);
 
-  // The anatomy panel header has a plain <button> labelled "files"
-  const filesBtn = page.locator('button').filter({ hasText: /^files$/i }).first();
+  // The anatomy panel header has a stable testid on the "files" button.
+  const filesBtn = page.getByTestId('anatomy-files-btn');
   await expect(filesBtn).toBeVisible({ timeout: 8_000 });
   await filesBtn.click();
 
-  // We are now inside the editor view with the Files tab active.
-  // Wait for the file tree to load (root-level entries visible, not skeletons).
-  await expect(
-    page.locator('span.font-mono').first()
-  ).toBeVisible({ timeout: 10_000 });
+  // Wait for the file tree to populate: span.font-mono appears once the
+  // tree data has loaded for both paid and community tiers.
+  await expect(page.locator('span.font-mono').first()).toBeVisible({ timeout: 10_000 });
 }
 
 /**
@@ -133,6 +128,36 @@ async function teardownTestStack(page: Page): Promise<void> {
   }, TEST_STACK);
 }
 
+/**
+ * Open a new page, login, seed the test stack, then close the page.
+ * Used as a beforeAll body so each describe suite shares one seed call.
+ */
+async function seedSuite(browser: import('@playwright/test').Browser): Promise<void> {
+  const page = await browser.newPage();
+  try {
+    await loginAs(page);
+    await seedTestStack(page);
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * Open a new page, login, tear down the test stack, then close the page.
+ * Logs a warning on failure so a teardown error never masks test failures.
+ */
+async function teardownSuite(browser: import('@playwright/test').Browser, label: string): Promise<void> {
+  const page = await browser.newPage();
+  try {
+    await loginAs(page);
+    await teardownTestStack(page);
+  } catch (e) {
+    console.warn(`teardown failed (${label}):`, e);
+  } finally {
+    await page.close();
+  }
+}
+
 const COMMUNITY_LICENSE_BODY = JSON.stringify({
   tier: 'community',
   status: 'community',
@@ -159,15 +184,17 @@ async function mockCommunityLicense(context: BrowserContext): Promise<void> {
 // ---------------------------------------------------------------------------
 
 test.describe('File explorer - community (read-only)', () => {
-  // Increase timeout: each test seeds fixtures + navigates
+  // Increase timeout: seeding + navigation add overhead
   test.setTimeout(60_000);
 
-  test.beforeEach(async ({ page, context }) => {
-    // Login first (without the license stub) so we can seed fixture files via the paid API.
-    await loginAs(page);
-    await seedTestStack(page);
+  test.beforeAll(async ({ browser }) => { await seedSuite(browser); });
+  test.afterAll(async ({ browser }) => { await teardownSuite(browser, 'community'); });
 
-    // Now install the community-tier stub and reload so the frontend picks it up.
+  test.beforeEach(async ({ page, context }) => {
+    // Login without the license stub first so cookies are established.
+    await loginAs(page);
+
+    // Install the community-tier stub and reload so the frontend picks it up.
     await mockCommunityLicense(context);
     await page.reload();
     await loginAs(page);
@@ -175,12 +202,9 @@ test.describe('File explorer - community (read-only)', () => {
     await openFilesTab(page);
   });
 
-  test.afterEach(async ({ page, context }) => {
-    // Remove the stub before teardown so the delete API goes through (paid required).
+  test.afterEach(async ({ context }) => {
+    // Remove the stub so subsequent requests use the real license state.
     await context.unroute('/api/license');
-    await page.reload();
-    await loginAs(page);
-    await teardownTestStack(page);
   });
 
   test('upgrade pill is visible in the left pane', async ({ page }) => {
@@ -217,14 +241,12 @@ test.describe('File explorer - community (read-only)', () => {
 test.describe('File explorer - skipper+ (full CRUD)', () => {
   test.setTimeout(60_000);
 
+  test.beforeAll(async ({ browser }) => { await seedSuite(browser); });
+  test.afterAll(async ({ browser }) => { await teardownSuite(browser, 'skipper'); });
+
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
-    await seedTestStack(page);
     await openFilesTab(page);
-  });
-
-  test.afterEach(async ({ page }) => {
-    await teardownTestStack(page);
   });
 
   test('upload a text file and verify it appears in the tree', async ({ page }) => {
@@ -266,6 +288,7 @@ test.describe('File explorer - skipper+ (full CRUD)', () => {
     // Save button must be present and initially disabled (no changes yet)
     const saveBtn = page.getByRole('button', { name: /^save$/i });
     await expect(saveBtn).toBeVisible({ timeout: 8_000 });
+    await expect(saveBtn).toBeDisabled();
 
     // Edit the file content via Monaco
     const editorTextarea = page.locator('.monaco-editor textarea').first();
@@ -301,12 +324,9 @@ test.describe('File explorer - skipper+ (full CRUD)', () => {
     await expect(actionBarDeleteBtn).toBeVisible({ timeout: 5_000 });
     await actionBarDeleteBtn.click();
 
-    // DeleteFileConfirm opens a Radix <Dialog> (role="dialog").
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible({ timeout: 8_000 });
-    // The confirm button says "Delete". It is always the last button in the footer
-    // (after Cancel). Click it to confirm deletion.
-    await dialog.getByRole('button', { name: /delete/i }).last().click();
+    // Wait for the DeleteFileConfirm dialog to open, then confirm deletion.
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 8_000 });
+    await page.getByTestId('delete-confirm-btn').click();
 
     // Use the tree-specific class (text-sm) to avoid a strict-mode violation:
     // the FileViewer header renders the same filename in a different span until

@@ -333,6 +333,7 @@ export default function StackAnatomyPanel({
           {onOpenFiles && (
             <button
               type="button"
+              data-testid="anatomy-files-btn"
               onClick={onOpenFiles}
               className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-stat-subtitle hover:text-brand transition-colors"
             >
