@@ -93,6 +93,8 @@ export function DeployFeedbackProvider({ children }: { children: React.ReactNode
       params: { stackName: string; action: ActionVerb },
       run: (deployStarted: Promise<void>) => Promise<RunResult>
     ): Promise<RunResult> => {
+      // eslint-disable-next-line no-console
+      console.log('[deploy-feedback] runWithLog called', { isEnabled, action: params.action, stackName: params.stackName });
       if (!isEnabled) {
         return run(Promise.resolve());
       }

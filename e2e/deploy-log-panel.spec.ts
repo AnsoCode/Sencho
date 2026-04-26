@@ -154,9 +154,15 @@ test.describe('Deploy feedback modal', () => {
     // Mirror browser console output into Playwright's test output so failures
     // come with React errors / network errors that would otherwise be lost.
     page.on('console', (msg) => {
-      if (msg.type() === 'error' || msg.type() === 'warning') {
+      const text = msg.text();
+      // Capture our deploy-feedback debug logs plus errors and warnings
+      if (
+        text.includes('[deploy-feedback]') ||
+        msg.type() === 'error' ||
+        msg.type() === 'warning'
+      ) {
         // eslint-disable-next-line no-console
-        console.log(`[browser ${msg.type()}] [${testInfo.title}] ${msg.text()}`);
+        console.log(`[browser ${msg.type()}] [${testInfo.title}] ${text}`);
       }
     });
     page.on('pageerror', (err) => {
