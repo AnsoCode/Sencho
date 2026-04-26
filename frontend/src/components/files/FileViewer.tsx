@@ -54,10 +54,12 @@ function SpecialFilePanel({
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch (e) {
-      toast.error((e as Error).message ?? 'Download failed.');
+      toast.error(e instanceof Error ? e.message : 'Download failed.');
     } finally {
       setDownloading(false);
     }
@@ -116,6 +118,18 @@ export function FileViewer({
 
   const readOnly = !canEdit || !isPaid;
 
+  const editorOptions = useMemo(
+    () => ({
+      readOnly,
+      minimap: { enabled: false },
+      fontFamily: "'Geist Mono', monospace",
+      fontSize: 13,
+      padding: { top: 8 },
+      scrollBeyondLastLine: false,
+    }),
+    [readOnly],
+  );
+
   useEffect(() => {
     if (!selectedPath) {
       setContent('');
@@ -148,7 +162,7 @@ export function FileViewer({
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setError((e as Error).message ?? 'Failed to load file.');
+        setError(e instanceof Error ? e.message : 'Failed to load file.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -169,7 +183,7 @@ export function FileViewer({
       toast.success('Saved.');
       onSaved?.();
     } catch (e) {
-      toast.error((e as Error).message ?? 'Save failed.');
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
     } finally {
       toast.dismiss(loadingId);
       setSaving(false);
@@ -232,18 +246,6 @@ export function FileViewer({
   }
 
   const hasChanges = content !== originalContent;
-
-  const editorOptions = useMemo(
-    () => ({
-      readOnly,
-      minimap: { enabled: false },
-      fontFamily: "'Geist Mono', monospace",
-      fontSize: 13,
-      padding: { top: 8 },
-      scrollBeyondLastLine: false,
-    }),
-    [readOnly],
-  );
 
   return (
     <div className="flex flex-col h-full">

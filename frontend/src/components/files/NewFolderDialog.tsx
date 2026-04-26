@@ -58,11 +58,12 @@ export function NewFolderDialog({
     const relPath = currentDir ? `${currentDir}/${trimmed}` : trimmed;
     try {
       await mkdirStackPath(stackName, relPath);
+      toast.success('Folder created.');
       onCreated();
       onOpenChange(false);
       setName('');
     } catch (e) {
-      toast.error((e as Error).message ?? 'Failed to create folder.');
+      toast.error(e instanceof Error ? e.message : 'Failed to create folder.');
     } finally {
       setCreating(false);
     }

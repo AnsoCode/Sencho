@@ -23,8 +23,7 @@ export function FileUploadDropzone({
   if (!isPaid) {
     return (
       <div
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs cursor-pointer"
-        onClick={() => { /* upsell gate placeholder */ }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs"
       >
         <Compass className="w-3 h-3" />
         Upgrade for upload

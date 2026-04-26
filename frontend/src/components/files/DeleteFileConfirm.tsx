@@ -95,7 +95,7 @@ export function DeleteFileConfirm({
           </DialogDescription>
         </DialogHeader>
 
-        {isProtected && !notEmpty && (
+        {isProtected && (
           <div className="space-y-2">
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.5} />
