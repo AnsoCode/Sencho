@@ -20,6 +20,8 @@ import { getLatestVersion } from '../utils/version-check';
 import { isValidStackName } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { CloudBackupService } from '../services/CloudBackupService';
+import { NotificationService } from '../services/NotificationService';
 
 const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -817,6 +819,17 @@ fleetRouter.post('/snapshots', authMiddleware, async (req: Request, res: Respons
 
     if (allFiles.length > 0) {
       db.insertSnapshotFiles(snapshotId, allFiles);
+    }
+
+    const cloudSvc = CloudBackupService.getInstance();
+    if (cloudSvc.isEnabled() && cloudSvc.isAutoUploadOn()) {
+      void cloudSvc.uploadSnapshot(snapshotId).catch(uploadErr => {
+        const message = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+        console.error('[Fleet Snapshot] Cloud upload failed:', message);
+        void NotificationService.getInstance()
+          .dispatchAlert('error', 'system', `Cloud backup upload failed for snapshot ${snapshotId}: ${message}`)
+          .catch(() => { /* notification dispatch is best-effort */ });
+      });
     }
 
     console.log('[Fleet] Snapshot created:', capturedNodes.length, 'nodes,', totalStacks, 'stacks');

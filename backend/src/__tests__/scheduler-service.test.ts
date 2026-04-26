@@ -145,6 +145,16 @@ vi.mock('../services/NotificationService', () => ({
   },
 }));
 
+vi.mock('../services/CloudBackupService', () => ({
+  CloudBackupService: {
+    getInstance: () => ({
+      isEnabled: () => false,
+      isAutoUploadOn: () => false,
+      uploadSnapshot: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
 vi.mock('../services/NodeRegistry', () => ({
   NodeRegistry: {
     getInstance: () => ({
