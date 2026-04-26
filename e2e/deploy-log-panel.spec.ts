@@ -137,14 +137,32 @@ async function setupDeployStack(page: Page, name: string, composeContent: string
   ]);
 
   // Wait for the editor's action bar to render with the deploy/start button.
-  // This confirms selectedFile is committed before the test triggers a deploy.
   await expect(
     page.getByRole('button', { name: /Deploy|Start/i }).first(),
   ).toBeVisible({ timeout: 10_000 });
+
+  // Settle remaining state updates and any follow-up fetches the editor
+  // triggers (env file, container list, backup info). Without this the click
+  // can race with React committing selectedFile, leaving deployStack to bail
+  // at its !selectedFile guard.
+  await page.waitForLoadState('networkidle', { timeout: 10_000 });
+  await page.waitForTimeout(500);
 }
 
 test.describe('Deploy feedback modal', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    // Mirror browser console output into Playwright's test output so failures
+    // come with React errors / network errors that would otherwise be lost.
+    page.on('console', (msg) => {
+      if (msg.type() === 'error' || msg.type() === 'warning') {
+        // eslint-disable-next-line no-console
+        console.log(`[browser ${msg.type()}] [${testInfo.title}] ${msg.text()}`);
+      }
+    });
+    page.on('pageerror', (err) => {
+      // eslint-disable-next-line no-console
+      console.log(`[browser pageerror] [${testInfo.title}] ${err.message}`);
+    });
     await loginAs(page);
     await waitForStacksLoaded(page);
   });
