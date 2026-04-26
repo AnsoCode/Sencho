@@ -10,13 +10,21 @@
  *
  * 2. Skipper+ flow (full CRUD): the real license state (paid) is used.
  *    Upload, edit-and-save, delete, and download are exercised end-to-end.
+ *    These tests skip gracefully when the instance is community tier (CI).
  *
- * Fixture files (config/app.conf and assets/logo.png) are seeded once via the
- * paid API in a beforeAll hook, and the entire test stack is torn down in
- * afterAll. Each beforeEach navigates to the stack and opens the Files panel.
+ * Fixture files (config/app.conf and assets/logo.png) are seeded once via
+ * direct filesystem writes in a beforeAll hook so seeding works on any tier.
+ * The entire test stack is torn down in afterAll.
  */
+import * as fs from 'node:fs/promises';
+import * as nodePath from 'node:path';
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { loginAs, waitForStacksLoaded } from './helpers';
+
+// Matches the COMPOSE_DIR passed to the backend in CI (start-app default) and
+// in local dev. The test runner and the backend share the same host so both
+// see the same path.
+const COMPOSE_DIR = process.env.COMPOSE_DIR ?? '/tmp/compose';
 
 const TEST_STACK = 'e2e-files-test';
 
@@ -71,51 +79,32 @@ async function openFilesTab(page: Page): Promise<void> {
 }
 
 /**
- * Seed the test stack with fixture files using the paid API.
- * Called once in a beforeAll so the files are present for every test.
+ * Seed the test stack with fixture files.
+ *
+ * Stack creation uses the API (community-allowed) so the backend registry
+ * stays in sync. Fixture files are written directly via Node fs so seeding
+ * works on any tier without hitting the paid upload/mkdir endpoints.
  */
 async function seedTestStack(page: Page): Promise<void> {
+  // Create the stack via API (community-OK; ignore 409 if already exists).
   await page.evaluate(async (name: string) => {
-    // Create the stack (ignore 409 if it already exists)
-    const createRes = await fetch('/api/stacks', {
+    const res = await fetch('/api/stacks', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stackName: name }),
     });
-    if (!createRes.ok && createRes.status !== 409) {
-      throw new Error(`Failed to create stack: ${createRes.status}`);
-    }
-
-    async function mkdir(dir: string): Promise<void> {
-      await fetch(
-        `/api/stacks/${encodeURIComponent(name)}/files/folder?path=${encodeURIComponent(dir)}`,
-        { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' },
-      );
-    }
-
-    async function upload(dir: string, filename: string, blob: Blob): Promise<void> {
-      const fd = new FormData();
-      fd.append('file', blob, filename);
-      const res = await fetch(
-        `/api/stacks/${encodeURIComponent(name)}/files/upload?path=${encodeURIComponent(dir)}`,
-        { method: 'POST', credentials: 'include', body: fd },
-      );
-      if (!res.ok) throw new Error(`Failed to upload ${dir}/${filename}: ${res.status}`);
-    }
-
-    // Seed both directories in parallel: each mkdir must finish before its upload.
-    const pngB64 =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==';
-    const pngData = atob(pngB64);
-    const pngBytes = new Uint8Array(pngData.length);
-    for (let i = 0; i < pngData.length; i++) pngBytes[i] = pngData.charCodeAt(i);
-
-    await Promise.all([
-      mkdir('config').then(() => upload('config', 'app.conf', new Blob(['key=value\n'], { type: 'text/plain' }))),
-      mkdir('assets').then(() => upload('assets', 'logo.png', new Blob([pngBytes], { type: 'image/png' }))),
-    ]);
+    if (!res.ok && res.status !== 409) throw new Error(`stack create: ${res.status}`);
   }, TEST_STACK);
+
+  // Write fixture files directly on the host filesystem.
+  const stackDir = nodePath.join(COMPOSE_DIR, TEST_STACK);
+  await fs.mkdir(nodePath.join(stackDir, 'config'), { recursive: true });
+  await fs.mkdir(nodePath.join(stackDir, 'assets'), { recursive: true });
+  await fs.writeFile(nodePath.join(stackDir, 'config', 'app.conf'), 'key=value\n');
+  const pngB64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==';
+  await fs.writeFile(nodePath.join(stackDir, 'assets', 'logo.png'), Buffer.from(pngB64, 'base64'));
 }
 
 /** Delete the test stack via the authenticated browser session. */
@@ -246,6 +235,14 @@ test.describe('File explorer - skipper+ (full CRUD)', () => {
 
   test.beforeEach(async ({ page }) => {
     await loginAs(page);
+    // Skip when the instance is community tier: upload/edit/delete/download
+    // all require Skipper+ and would 403. Same pattern as auto-heal-policies.
+    const tier = await page.evaluate(async () => {
+      const res = await fetch('/api/license', { credentials: 'include' });
+      const json = await res.json() as { tier?: string };
+      return json.tier;
+    });
+    test.skip(tier !== 'paid', 'Skipper+ tier required; instance is community.');
     await openFilesTab(page);
   });
 
