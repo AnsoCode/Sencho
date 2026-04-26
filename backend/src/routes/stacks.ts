@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import path from 'path';
 import YAML from 'yaml';
 import multer from 'multer';
@@ -860,7 +860,7 @@ stacksRouter.get('/:stackName/backup', async (req: Request, res: Response) => {
 
 // ── File explorer endpoints ──
 
-type FsErrorCode = 'INVALID_PATH' | 'SYMLINK_ESCAPE' | 'IS_DIRECTORY' | 'NOT_EMPTY' | 'ENOENT';
+type FsErrorCode = 'INVALID_PATH' | 'SYMLINK_ESCAPE' | 'IS_DIRECTORY' | 'NOT_EMPTY' | 'NOT_FOUND' | 'TOO_LARGE';
 
 function sendFsError(
   res: Response,
@@ -904,7 +904,8 @@ stacksRouter.get('/:stackName/files/content', async (req: Request, res: Response
   const stackName = req.params.stackName as string;
   if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   const relPath = getRelPath(req);
-  if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
+  if (!relPath) return res.status(400).json({ error: 'path query parameter is required', code: 'INVALID_PATH' });
+  if (!isValidRelativeStackPath(relPath)) {
     return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
   }
   try {
@@ -927,11 +928,15 @@ stacksRouter.get('/:stackName/files/download', async (req: Request, res: Respons
     const result = await FileSystemService.getInstance(req.nodeId).streamStackFile(stackName, relPath);
     res.setHeader('Content-Type', result.mime);
     res.setHeader('Content-Length', result.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    const encodedFilename = encodeURIComponent(result.filename);
+    const safeFilename = result.filename.replace(/[\\\"]/g, '');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
     result.stream.on('error', (streamErr) => {
       console.error('[files] stream error:', streamErr);
-      res.destroy();
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
     });
+    req.on('close', () => result.stream.destroy());
     result.stream.pipe(res);
     return;
   } catch (err: unknown) {
@@ -941,7 +946,10 @@ stacksRouter.get('/:stackName/files/download', async (req: Request, res: Respons
 
 stacksRouter.post(
   '/:stackName/files/upload',
-  (req: Request, res: Response, next) => {
+  (req: Request, res: Response, next: NextFunction) => {
+    const stackName = req.params.stackName as string;
+    if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
+    if (!requirePaid(req, res)) return;
     upload.single('file')(req, res, (err) => {
       if (err && (err as multer.MulterError).code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File exceeds 25 MB limit', code: 'TOO_LARGE' });
@@ -951,9 +959,7 @@ stacksRouter.post(
     });
   },
   async (req: Request, res: Response) => {
-    if (!requirePaid(req, res)) return;
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
     if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -962,7 +968,11 @@ stacksRouter.post(
     if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
       return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
     }
-    const targetRelPath = relPath ? `${relPath}/${req.file.originalname}` : req.file.originalname;
+    const safeName = path.basename(req.file.originalname);
+    if (!safeName || safeName === '.' || safeName === '..') {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const targetRelPath = relPath ? `${relPath}/${safeName}` : safeName;
     try {
       await FileSystemService.getInstance(req.nodeId).writeStackFileBuffer(stackName, targetRelPath, req.file.buffer);
       return res.status(204).send();
