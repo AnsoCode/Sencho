@@ -249,7 +249,7 @@ export class CloudBackupService {
         } catch (err) {
             const message = getErrorMessage(err, 'Cloud upload failed.');
             this.setStatus(snapshotId, { status: 'failed', objectKey, error: message, updatedAt: Date.now() });
-            throw new Error(message, { cause: err });
+            throw new Error(message);
         }
     }
 
