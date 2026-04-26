@@ -25,15 +25,15 @@ templatesRouter.get('/', authMiddleware, async (req: Request, res: Response) => 
     const imageRefs = templates.map(t => t.image).filter((i): i is string => !!i);
     const scanSummary = DatabaseService.getInstance().getLatestScanSummaryByImageRefs(req.nodeId, imageRefs);
 
-    let featuredIndex = -1;
-    let featuredStars = 0;
-    templates.forEach((t, i) => {
-      const s = t.stars ?? 0;
-      if (s > featuredStars) {
-        featuredStars = s;
-        featuredIndex = i;
-      }
-    });
+    const topCandidates = templates
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => (t.stars ?? 0) > 0)
+      .sort((a, b) => (b.t.stars ?? 0) - (a.t.stars ?? 0))
+      .slice(0, 5);
+    const weekIndex = Math.floor(Date.now() / (7 * 86_400_000));
+    const featuredIndex = topCandidates.length > 0
+      ? topCandidates[weekIndex % topCandidates.length].i
+      : -1;
 
     const enriched = templates.map((t, i) => {
       const summary = t.image ? scanSummary.get(t.image) : undefined;
