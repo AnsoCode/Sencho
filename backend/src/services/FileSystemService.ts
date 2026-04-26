@@ -503,6 +503,12 @@ export class FileSystemService {
     await fsPromises.writeFile(safePath, content, 'utf-8');
   }
 
+  async writeStackFileBuffer(stackName: string, relPath: string, buffer: Buffer): Promise<void> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    await fsPromises.mkdir(path.dirname(safePath), { recursive: true });
+    await fsPromises.writeFile(safePath, buffer);
+  }
+
   async deleteStackPath(stackName: string, relPath: string, recursive: boolean = false): Promise<void> {
     const safePath = await this.resolveSafeStackPath(stackName, relPath);
 
