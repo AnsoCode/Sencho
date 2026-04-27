@@ -170,6 +170,18 @@ jobs:
           format: 'table'
           trivy-config: trivy.yaml
 
+      # Mirror of the release-time pre-publish smoke gate in docker-publish.yml.
+      # Catches the class of failure where the source-built Docker CLI or
+      # Compose plugin compiles cleanly but does not exec at runtime (e.g. -o
+      # pointed at a non-main Go package, ABI breakage in a base image bump).
+      # The release workflow additionally polls /api/health; PR CI keeps just
+      # the binary check to bound job duration without losing the gate.
+      - name: Smoke test built image (binaries)
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh sencho:pr-test -c \
+            'docker --version && docker compose version'
+
   # ---------------------------------------------------------------------------
   # E2E Tests (PRs only, skipped for release-please PRs)
   # ---------------------------------------------------------------------------

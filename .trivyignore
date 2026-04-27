@@ -23,3 +23,14 @@
 # BSD operating systems and Sencho ships linux/amd64 + linux/arm64 only.
 # See security/vex/sencho.openvex.json for the full impact statement.
 CVE-2026-39883
+
+# Justification: covered by VEX statement for CVE-2026-34040 (Moby authz
+# bypass on oversized request body). compose v5.1.2 bundles the legacy
+# github.com/docker/docker@v28.5.2+incompatible as a client-side library
+# for API types and codecs; the daemon-side authz hook code path the CVE
+# affects is unreachable from a CLI client. The advisory's fix in
+# Docker Engine 29.3.1 ships under the new github.com/moby/moby/v2
+# module path which compose v5.1.2 does not yet import, so v28.5.2 is
+# the only Go-module-resolvable version reachable from compose. See
+# security/vex/sencho.openvex.json for the full impact statement.
+CVE-2026-34040
