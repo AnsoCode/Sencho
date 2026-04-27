@@ -44,6 +44,7 @@ function SummaryRow({ icon: Icon, label, value, locked, requiredTier }: {
 }
 
 function NodeCard({ node }: { node: FleetNodeConfiguration }) {
+  const isRemote = node.type === 'remote';
   if (!node.configuration) {
     return (
       <Card className="bg-card shadow-card-bevel">
@@ -51,7 +52,7 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
           <div className="flex items-center gap-2 mb-3">
             <span className="font-medium text-sm text-stat-value">{node.name}</span>
             <Badge variant="outline" className="text-[10px] font-normal py-0 px-1.5 text-stat-subtitle">
-              {node.type === 'remote' ? 'Remote' : 'Local'}
+              {isRemote ? 'Remote' : 'Local'}
             </Badge>
             <WifiOff className="h-3.5 w-3.5 text-stat-subtitle ml-auto" strokeWidth={1.5} />
             <span className="text-xs text-stat-subtitle">Offline</span>
@@ -76,7 +77,7 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
         <div className="flex items-center gap-2 mb-3">
           <span className="font-medium text-sm text-stat-value">{node.name}</span>
           <Badge variant="outline" className="text-[10px] font-normal py-0 px-1.5 text-stat-subtitle">
-            {node.type === 'remote' ? 'Remote' : 'Local'}
+            {isRemote ? 'Remote' : 'Local'}
           </Badge>
           <div className="ml-auto flex items-center gap-1">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" strokeWidth={1.5} />
@@ -101,8 +102,10 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
             }
             locked={automation.webhooks.locked}
             requiredTier={automation.webhooks.locked ? automation.webhooks.requiredTier : undefined} />
-          <SummaryRow icon={Shield} label="MFA"
-            value={security.mfaEnabled === null ? 'Not set' : security.mfaEnabled ? 'On' : 'Off'} />
+          {!isRemote && (
+            <SummaryRow icon={Shield} label="MFA"
+              value={security.mfaEnabled === null ? 'Not set' : security.mfaEnabled ? 'On' : 'Off'} />
+          )}
           <SummaryRow icon={Shield} label="Scanning"
             value={
               security.scanPolicies.locked
@@ -111,14 +114,16 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
             }
             locked={security.scanPolicies.locked}
             requiredTier={security.scanPolicies.locked ? security.scanPolicies.requiredTier : undefined} />
-          <SummaryRow icon={HardDrive} label="Backup"
-            value={
-              backup.locked
-                ? ''
-                : backup.provider === 'disabled' ? 'Disabled' : 'Enabled'
-            }
-            locked={backup.locked}
-            requiredTier={backup.locked ? backup.requiredTier : undefined} />
+          {!isRemote && (
+            <SummaryRow icon={HardDrive} label="Backup"
+              value={
+                backup.locked
+                  ? ''
+                  : backup.provider === 'disabled' ? 'Disabled' : 'Enabled'
+              }
+              locked={backup.locked}
+              requiredTier={backup.locked ? backup.requiredTier : undefined} />
+          )}
           <SummaryRow icon={HardDrive} label="Crash detect"
             value={thresholds.globalCrash ? 'On' : 'Off'} />
         </div>
