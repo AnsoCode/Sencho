@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.64.0](https://github.com/AnsoCode/Sencho/compare/v0.63.0...v0.64.0) (2026-04-27)
+
+
+### Added
+
+* **app-store:** sort grid by stars and rotate featured weekly ([#787](https://github.com/AnsoCode/Sencho/issues/787)) ([dcf8794](https://github.com/AnsoCode/Sencho/commit/dcf8794047b1eb72d9e8c767c969d26a4168b945))
+* **auto-update:** per-stack auto-update enable/disable toggle ([#771](https://github.com/AnsoCode/Sencho/issues/771)) ([af9cb0a](https://github.com/AnsoCode/Sencho/commit/af9cb0aa63f73f54fc516869a167771a1712bd9b))
+* **auto-update:** show pending image updates fleet-wide on the Auto-Updates page ([#770](https://github.com/AnsoCode/Sencho/issues/770)) ([58df1a5](https://github.com/AnsoCode/Sencho/commit/58df1a50b399defd5f155d53b7d4470dfcf06031))
+* change default listen port from 3000 to 1852 ([#756](https://github.com/AnsoCode/Sencho/issues/756)) ([ed553f1](https://github.com/AnsoCode/Sencho/commit/ed553f1f19fd8a7abc930fd52e2f65ea86b323fd))
+* **cloud-backup:** mirror fleet snapshots to S3-compatible storage ([#782](https://github.com/AnsoCode/Sencho/issues/782)) ([03f91cd](https://github.com/AnsoCode/Sencho/commit/03f91cd5bbbf76394efb432ed177ddfc5ab554b4))
+* **dashboard:** replace 24h charts with Configuration Status and Recent Activity ([#785](https://github.com/AnsoCode/Sencho/issues/785)) ([d7d8f9b](https://github.com/AnsoCode/Sencho/commit/d7d8f9bfe87ade1b19e7a0905275f873b6f1ac28))
+* **deploy-logs:** opt-in deploy progress modal with structured log rows ([#779](https://github.com/AnsoCode/Sencho/issues/779)) ([dd9d338](https://github.com/AnsoCode/Sencho/commit/dd9d33813b32188027f05b7439f867ca9dd08778))
+* **events:** broadcast state-invalidate on docker events so dashboard updates live ([#768](https://github.com/AnsoCode/Sencho/issues/768)) ([5c50218](https://github.com/AnsoCode/Sencho/commit/5c5021846a274c4e975ff1872e3e2a4bc445b0f6))
+* **files:** per-stack file explorer ([#780](https://github.com/AnsoCode/Sencho/issues/780)) ([801a098](https://github.com/AnsoCode/Sencho/commit/801a098a5b550dbc8089117b288a0834fcfe6e95))
+* **license:** replace local auto-trial with Lemon Squeezy hosted trial flow ([#755](https://github.com/AnsoCode/Sencho/issues/755)) ([d6b744e](https://github.com/AnsoCode/Sencho/commit/d6b744e8e6a55d85478b2b47f750c5098f68c59c))
+* **notifications:** add structured category enum to dispatcher and history ([#774](https://github.com/AnsoCode/Sencho/issues/774)) ([44dba59](https://github.com/AnsoCode/Sencho/commit/44dba59cabc001a007d40bf5ce143f091523a6db))
+* **notifications:** match routing rules by labels and categories ([#776](https://github.com/AnsoCode/Sencho/issues/776)) ([e003413](https://github.com/AnsoCode/Sencho/commit/e0034132b4251b9adc13059b3af9f90b243e3bf7))
+* **scheduler:** add auto_backup, auto_stop, auto_down, auto_start and delete_after_run one-shot mode ([#777](https://github.com/AnsoCode/Sencho/issues/777)) ([abee078](https://github.com/AnsoCode/Sencho/commit/abee078741333b873abf6042f1147bcb62f49444))
+* **scheduler:** support fleet-wide auto-update schedules per node ([#773](https://github.com/AnsoCode/Sencho/issues/773)) ([a74564f](https://github.com/AnsoCode/Sencho/commit/a74564fd61df0236a387d9ed67fd1180cb878dd5))
+* **security:** add SBOM attestations, VEX document, and retire .trivyignore ([#790](https://github.com/AnsoCode/Sencho/issues/790)) ([3668c71](https://github.com/AnsoCode/Sencho/commit/3668c71860e49a6acb45237b7b358a32ab7e9cf5))
+* **security:** rebuild Docker CLI/Compose from source, pin base image digests ([#789](https://github.com/AnsoCode/Sencho/issues/789)) ([7e4ea71](https://github.com/AnsoCode/Sencho/commit/7e4ea714c1d72dd4e63a345f2a7d73025859f1dd))
+* **sidebar:** keyboard shortcuts for stack menu actions ([#729](https://github.com/AnsoCode/Sencho/issues/729)) ([1ef9658](https://github.com/AnsoCode/Sencho/commit/1ef96582e10264f0113615650a95d9d2fba6ac3e))
+* **sso:** split SSO providers by delivery model across tiers ([#754](https://github.com/AnsoCode/Sencho/issues/754)) ([a502da5](https://github.com/AnsoCode/Sencho/commit/a502da54ee2d6befdbe414d54b8d8182f42cdde8))
+* **stacks:** add optional volume prune to delete confirmation ([#788](https://github.com/AnsoCode/Sencho/issues/788)) ([38a9f27](https://github.com/AnsoCode/Sencho/commit/38a9f277c679cd58b26076403a923734cfa31542))
+* **stacks:** add Schedule task shortcut to stack context and kebab menus ([#772](https://github.com/AnsoCode/Sencho/issues/772)) ([819d2a6](https://github.com/AnsoCode/Sencho/commit/819d2a63fcfd124609e3041f5dbae186660dd8dd))
+* **stacks:** per-service start/stop/restart lifecycle actions ([#778](https://github.com/AnsoCode/Sencho/issues/778)) ([6986b92](https://github.com/AnsoCode/Sencho/commit/6986b927e301bacc78aeffa55bd250dec9647df0))
+
+
+### Fixed
+
+* **auto-update:** label same-tag rebuilds as 'Rebuild available' instead of '10.11 -&gt; 10.11' ([#766](https://github.com/AnsoCode/Sencho/issues/766)) ([584cda7](https://github.com/AnsoCode/Sencho/commit/584cda718238f379c014f686edd27b32069e52db))
+* **backend:** restore remote proxy mount order before local routers ([#747](https://github.com/AnsoCode/Sencho/issues/747)) ([43a5959](https://github.com/AnsoCode/Sencho/commit/43a595905b1474908d96260f70a49dbf16812e32))
+* **env:** return empty body for missing .env files; surface non-OK responses cleanly ([#767](https://github.com/AnsoCode/Sencho/issues/767)) ([a962654](https://github.com/AnsoCode/Sencho/commit/a962654a3b96e9822df2aca387d8c9e525d39e1c))
+* **frontend:** clear sidebar update dot after toolbar Update click ([#763](https://github.com/AnsoCode/Sencho/issues/763)) ([5746104](https://github.com/AnsoCode/Sencho/commit/57461043b06f3c5f4f86312a93ffc7086c4db8ac))
+* **frontend:** make copy buttons work over plain HTTP ([#757](https://github.com/AnsoCode/Sencho/issues/757)) ([4c35226](https://github.com/AnsoCode/Sencho/commit/4c352267198f94e69a3fab85228a5484c0f7363e))
+* **frontend:** stream log lines on next paint and show ms-precision timestamps ([#764](https://github.com/AnsoCode/Sencho/issues/764)) ([c9657b1](https://github.com/AnsoCode/Sencho/commit/c9657b1d46746b43310c3045a06f58a773d73099))
+* **login:** remove branding duplication, add shimmer and ping dot ([#727](https://github.com/AnsoCode/Sencho/issues/727)) ([d47f6b4](https://github.com/AnsoCode/Sencho/commit/d47f6b40e4b2f01fac3b9151318b1ada3e74d6fc))
+* **logs:** drop millisecond suffix from log timestamp display ([#769](https://github.com/AnsoCode/Sencho/issues/769)) ([c7cdcd0](https://github.com/AnsoCode/Sencho/commit/c7cdcd082d64281dcfe2b031b699c2fd3e83bdb6))
+* **monitor:** include node name in janitor alert and stop firing on near-empty hosts ([#765](https://github.com/AnsoCode/Sencho/issues/765)) ([9e0f521](https://github.com/AnsoCode/Sencho/commit/9e0f521ea8fb8809367de1fa646dc263e8d93fd9))
+* **notifications:** scope routing rules to nodes via node_id column ([#775](https://github.com/AnsoCode/Sencho/issues/775)) ([fcbdd59](https://github.com/AnsoCode/Sencho/commit/fcbdd59ec24d9bac180a19310eee29334d6eadb6))
+* **security:** clear cached policy evaluations when a scan policy is deleted ([#758](https://github.com/AnsoCode/Sencho/issues/758)) ([24c0a28](https://github.com/AnsoCode/Sencho/commit/24c0a2833ba527bcb56e2b8dce682194f182a8f2))
+* **sidebar:** remove 1-hour staleness filter from activity ticker ([#786](https://github.com/AnsoCode/Sencho/issues/786)) ([f94b2ce](https://github.com/AnsoCode/Sencho/commit/f94b2ce85cddd6774c1dd7be83c6bbbe89d0697b))
+
 ## [0.63.0](https://github.com/AnsoCode/Sencho/compare/v0.62.0...v0.63.0) (2026-04-21)
 
 
