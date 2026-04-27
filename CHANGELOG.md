@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.64.1](https://github.com/AnsoCode/Sencho/compare/v0.64.0...v0.64.1) (2026-04-27)
+
+
+### Fixed
+
+* **docker:** build compose plugin from ./cmd, not ./cmd/compose ([#803](https://github.com/AnsoCode/Sencho/issues/803)) ([06d9ef5](https://github.com/AnsoCode/Sencho/commit/06d9ef5904d5d75be5a7c698c0ccc8abeb477518))
+
 ## [0.64.0](https://github.com/AnsoCode/Sencho/compare/v0.63.0...v0.64.0) (2026-04-27)
 
 
