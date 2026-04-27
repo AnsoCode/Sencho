@@ -994,7 +994,7 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
 
     if (isDebugEnabled()) {
       const fileNames = files.map(f => f.filename).join(', ');
-      console.debug(`[Fleet:debug] Restore: snapshot=${snapshotId}, node=${nodeId}, stack="${sanitizeForLog(stackName)}", files=[${sanitizeForLog(fileNames)}], redeploy=${redeploy}`);
+      console.debug('[Fleet:debug] Restore: snapshot=%s, node=%s, stack="%s", files=[%s], redeploy=%s', snapshotId, nodeId, sanitizeForLog(stackName), sanitizeForLog(fileNames), sanitizeForLog(redeploy));
     }
 
     const node = db.getNode(nodeId);
@@ -1066,7 +1066,7 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
       }
     }
 
-    console.log('[Fleet] Snapshot restore:', snapshotId, 'node=', nodeId, 'stack=', sanitizeForLog(stackName));
+    console.log('[Fleet] Snapshot restore: snapshot=%s node=%s stack=%s', snapshotId, sanitizeForLog(nodeId), sanitizeForLog(stackName));
     res.json({ message: 'Stack restored successfully', redeployed: redeploy });
   } catch (error) {
     console.error('[Fleet Snapshot] Restore error:', error);

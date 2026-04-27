@@ -207,11 +207,11 @@ stackGitSourceRouter.post('/:stackName/git-source/apply', async (req: Request, r
     invalidateNodeCaches(req.nodeId);
     const shortSha = commitSha.trim().slice(0, 7);
     if (result.deployed) {
-      console.log(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)} (deployed)`);
+      console.log('[GitSource] Applied commit %s to %s (deployed)', sanitizeForLog(shortSha), sanitizeForLog(stackName));
     } else if (result.deployError) {
-      console.warn(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)}, deploy failed: ${sanitizeForLog(result.deployError)}`);
+      console.warn('[GitSource] Applied commit %s to %s, deploy failed: %s', sanitizeForLog(shortSha), sanitizeForLog(stackName), sanitizeForLog(result.deployError));
     } else {
-      console.log(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)}`);
+      console.log('[GitSource] Applied commit %s to %s', sanitizeForLog(shortSha), sanitizeForLog(stackName));
     }
     res.json(result);
     if (result.deployed) {

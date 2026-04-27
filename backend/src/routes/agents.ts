@@ -35,8 +35,8 @@ agentsRouter.post('/', authMiddleware, async (req: Request, res: Response): Prom
     }
     const nodeId = req.nodeId ?? 0;
     DatabaseService.getInstance().upsertAgent(nodeId, { type, url, enabled });
-    console.log(`[Agents] Agent ${type} updated`);
-    if (isDebugEnabled()) console.log(`[Agents:diag] Agent ${sanitizeForLog(type)} upsert: enabled=${enabled}`);
+    console.log('[Agents] Agent %s updated', sanitizeForLog(type));
+    if (isDebugEnabled()) console.log('[Agents:diag] Agent %s upsert: enabled=%s', sanitizeForLog(type), sanitizeForLog(enabled));
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to update agent:', error);

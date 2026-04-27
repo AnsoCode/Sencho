@@ -99,6 +99,6 @@ export async function triggerPostDeployScan(
       }
     }
   } catch (err) {
-    console.error(`[Security] triggerPostDeployScan error for ${sanitizeForLog(stackName)}:`, sanitizeForLog(getErrorMessage(err, 'unknown error')));
+    console.error('[Security] triggerPostDeployScan error for %s:', sanitizeForLog(stackName), sanitizeForLog(getErrorMessage(err, 'unknown error')));
   }
 }

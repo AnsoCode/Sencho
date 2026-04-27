@@ -257,7 +257,7 @@ autoUpdateRouter.post('/execute', authMiddleware, async (req: Request, res: Resp
           } catch (e) {
             const errMsg = getErrorMessage(e, String(e));
             checkErrors.push(errMsg);
-            console.warn(`[AutoUpdate] Failed to check image ${sanitizeForLog(imageRef)}:`, e);
+            console.warn('[AutoUpdate] Failed to check image %s:', sanitizeForLog(imageRef), sanitizeForLog((e as Error)?.message ?? String(e)));
           }
         }
 

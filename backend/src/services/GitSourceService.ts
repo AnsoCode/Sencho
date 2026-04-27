@@ -743,7 +743,7 @@ export class GitSourceService {
                 throw new GitSourceError('GIT_ERROR', 'No pending pull to apply. Fetch the source again.');
             }
             if (src.pending_commit_sha !== commitSha) {
-                if (diag) console.log(`[GitSource:diag] apply sha mismatch stack=${sanitizeForLog(stackName)} expected=${commitSha.slice(0, 7)} pending=${src.pending_commit_sha.slice(0, 7)}`);
+                if (diag) console.log('[GitSource:diag] apply sha mismatch stack=%s expected=%s pending=%s', sanitizeForLog(stackName), sanitizeForLog(commitSha.slice(0, 7)), sanitizeForLog(src.pending_commit_sha.slice(0, 7)));
                 throw new GitSourceError('GIT_ERROR', 'Pending commit has changed since this pull was fetched. Please review the latest diff.');
             }
 
@@ -771,7 +771,7 @@ export class GitSourceService {
             db.markGitSourceApplied(stackName, commitSha, hash);
 
             const shouldDeploy = opts.deploy ?? src.auto_deploy_on_apply;
-            if (diag) console.log(`[GitSource:diag] apply wrote stack=${sanitizeForLog(stackName)} sha=${commitSha.slice(0, 7)} deploy=${shouldDeploy}`);
+            if (diag) console.log('[GitSource:diag] apply wrote stack=%s sha=%s deploy=%s', sanitizeForLog(stackName), sanitizeForLog(commitSha.slice(0, 7)), sanitizeForLog(shouldDeploy));
 
             if (shouldDeploy) {
                 try {

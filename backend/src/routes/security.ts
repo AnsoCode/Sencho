@@ -188,7 +188,7 @@ securityRouter.post('/scan', authMiddleware, (req: Request, res: Response): void
   res.status(202).json({ scanId });
 
   svc.finishScan(scanId, imageRef, nodeId, { useCache: !force, scanners }).catch((err) => {
-    console.error(`[Security] Scan failed for ${sanitizeForLog(imageRef)}:`, sanitizeForLog((err as Error).message));
+    console.error('[Security] Scan failed for %s:', sanitizeForLog(imageRef), sanitizeForLog((err as Error).message));
   });
 });
 

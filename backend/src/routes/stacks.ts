@@ -28,7 +28,7 @@ function notifyActionFailure(action: string, stackName: string, error: unknown):
   const message = getErrorMessage(error, `Failed to ${action} stack`);
   NotificationService.getInstance()
     .dispatchAlert('error', 'deploy_failure', message, { stackName })
-    .catch(err => console.error(`[Stacks] Failed to dispatch failure notification for ${sanitizeForLog(stackName)}:`, err));
+    .catch(err => console.error('[Stacks] Failed to dispatch failure notification for %s:', sanitizeForLog(stackName), err));
 }
 
 async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
@@ -91,7 +91,7 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
     }
     return existing;
   } catch (error) {
-    console.warn(`Could not parse compose.yaml for env_file resolution in stack "${sanitizeForLog(stackName)}":`, error);
+    console.warn('Could not parse compose.yaml for env_file resolution in stack "%s":', sanitizeForLog(stackName), error);
   }
 
   try {
@@ -522,7 +522,7 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
         const result = await DockerController.getInstance().pruneManagedOnly('volumes', [stackName]);
         console.log(`[Stacks] Pruned volumes for ${sanitizeForLog(stackName)}: ${result.reclaimedBytes} bytes reclaimed`);
       } catch (pruneErr) {
-        console.warn(`[Stacks] Volume prune failed for ${sanitizeForLog(stackName)}, continuing delete:`, pruneErr);
+        console.warn('[Stacks] Volume prune failed for %s, continuing delete:', sanitizeForLog(stackName), pruneErr);
       }
     }
 
@@ -531,7 +531,7 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
       await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
     } catch (err) {
       fsErr = err;
-      console.error(`[Stacks] File deletion failed for ${sanitizeForLog(stackName)}, continuing with DB cleanup:`, err);
+      console.error('[Stacks] File deletion failed for %s, continuing with DB cleanup:', sanitizeForLog(stackName), err);
     }
 
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
@@ -545,7 +545,7 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
     console.log(`[Stacks] Stack deleted: ${sanitizeForLog(stackName)}`);
     res.json({ success: true });
   } catch (error: unknown) {
-    console.error(`[Stacks] Failed to delete stack ${sanitizeForLog(stackName)}:`, error);
+    console.error('[Stacks] Failed to delete stack %s:', sanitizeForLog(stackName), error);
     const message = getErrorMessage(error, 'Failed to delete stack');
     res.status(500).json({ error: message });
   }
@@ -590,12 +590,12 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
     if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
     res.json({ message: 'Deployed successfully' });
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
-      console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stackName)}:`, err),
+      console.error('[Security] Post-deploy scan failed for %s:', sanitizeForLog(stackName), err),
     );
   } catch (error: unknown) {
-    console.error(`[Stacks] Deploy failed: ${sanitizeForLog(stackName)}`, error);
+    console.error('[Stacks] Deploy failed: %s', sanitizeForLog(stackName), error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
-    if (rolledBack) console.warn(`[Stacks] Deploy failed, rolled back: ${sanitizeForLog(stackName)}`);
+    if (rolledBack) console.warn('[Stacks] Deploy failed, rolled back: %s', sanitizeForLog(stackName));
     const message = getErrorMessage(error, 'Failed to deploy stack');
     notifyActionFailure('deploy', stackName, error);
     res.status(500).json({ error: message, rolledBack });
@@ -611,7 +611,7 @@ stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
     console.log(`[Stacks] Down completed: ${sanitizeForLog(stackName)}`);
     res.json({ status: 'Command started' });
   } catch (error: unknown) {
-    console.error(`[Stacks] Down failed: ${sanitizeForLog(stackName)}`, error);
+    console.error('[Stacks] Down failed: %s', sanitizeForLog(stackName), error);
     notifyActionFailure('down', stackName, error);
     res.status(500).json({ error: 'Failed to start command' });
   }
@@ -646,7 +646,7 @@ async function bulkContainerOp(
     console.log(`[Stacks] ${titleCase} completed: ${sanitizeForLog(stackName)} (${containers.length} containers)`);
     res.json({ success: true, message: `${titleCase} completed via Engine API.` });
   } catch (error: unknown) {
-    console.error(`[Stacks] ${titleCase} failed: ${sanitizeForLog(stackName)}`, error);
+    console.error('[Stacks] %s failed: %s', sanitizeForLog(titleCase), sanitizeForLog(stackName), error);
     const message = getErrorMessage(error, `Failed to ${action} containers`);
     if (action !== 'start') {
       notifyActionFailure(action, stackName, error);
@@ -702,7 +702,7 @@ async function handleServiceAction(
       count: matching.length,
     });
   } catch (error: unknown) {
-    console.error(`[Stacks] Service ${sanitizeForLog(action)} failed: ${sanitizeForLog(stackName)}/${sanitizeForLog(serviceName)}`, error);
+    console.error('[Stacks] Service %s failed: %s/%s', sanitizeForLog(action), sanitizeForLog(stackName), sanitizeForLog(serviceName), error);
     res.status(500).json({ error: getErrorMessage(error, `Failed to ${action} service`) });
   }
 }
@@ -720,7 +720,7 @@ stacksRouter.get('/:stackName/update-preview', async (req: Request, res: Respons
     const preview = await UpdatePreviewService.getInstance().getPreview(req.nodeId, stackName);
     res.json(preview);
   } catch (error) {
-    console.error(`[Stacks] Update preview failed: ${sanitizeForLog(stackName)}`, sanitizeForLog(getErrorMessage(error, 'unknown')));
+    console.error('[Stacks] Update preview failed: %s', sanitizeForLog(stackName), sanitizeForLog(getErrorMessage(error, 'unknown')));
     res.status(500).json({ error: 'Failed to compute update preview' });
   }
 });
@@ -741,10 +741,10 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
     if (debug) console.debug(`[Stacks:debug] Update finished in ${Date.now() - t0}ms`);
     res.json({ status: 'Update completed' });
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
-      console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stackName)}:`, err),
+      console.error('[Security] Post-deploy scan failed for %s:', sanitizeForLog(stackName), err),
     );
   } catch (error: unknown) {
-    console.error(`[Stacks] Update failed: ${sanitizeForLog(stackName)}`, error);
+    console.error('[Stacks] Update failed: %s', sanitizeForLog(stackName), error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${sanitizeForLog(stackName)}`);
     notifyActionFailure('update', stackName, error);
@@ -769,7 +769,7 @@ stacksRouter.post('/:stackName/rollback', async (req: Request, res: Response) =>
     console.log(`[Stacks] Rollback completed: ${sanitizeForLog(stackName)}`);
     res.json({ message: 'Stack rolled back successfully.' });
   } catch (error: unknown) {
-    console.error(`[Stacks] Rollback failed: ${sanitizeForLog(stackName)}`, error);
+    console.error('[Stacks] Rollback failed: %s', sanitizeForLog(stackName), error);
     const message = getErrorMessage(error, 'Rollback failed.');
     res.status(500).json({ error: message });
   }
