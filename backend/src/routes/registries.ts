@@ -11,17 +11,14 @@ function isValidRegistryUrl(url: string, type: string): boolean {
   if (type === 'dockerhub') return true;
   const trimmed = url.trim();
   if (!trimmed) return false;
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('file:') || lower.startsWith('ftp:')) {
-    return false;
-  }
+  let parsed: URL;
   try {
-    const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    if (!parsed.hostname) return false;
+    parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
   } catch {
     return false;
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (!parsed.hostname) return false;
   return true;
 }
 

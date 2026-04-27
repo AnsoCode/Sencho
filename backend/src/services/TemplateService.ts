@@ -233,7 +233,9 @@ export class TemplateService {
                     console.log(`[Templates] Fetching from registry: ${registryUrl}`);
                     const debug = isDebugEnabled();
 
-                    if (registryUrl.includes('api.linuxserver.io')) {
+                    let registryHost = '';
+                    try { registryHost = new URL(registryUrl).hostname.toLowerCase(); } catch { /* invalid URL, treated as non-LSIO */ }
+                    if (registryHost === 'api.linuxserver.io') {
                         const response = await axios.get<LsioApiResponse>(registryUrl, { timeout: 20_000 });
                         // Official LSIO API Schema Mapping
                         const lsioApps = response.data?.data?.repositories?.linuxserver ?? {};
