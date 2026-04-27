@@ -104,13 +104,17 @@
             {
               "@id": "pkg:golang/go.opentelemetry.io/otel/sdk@v1.38.0",
               "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            },
+            {
+              "@id": "pkg:golang/go.opentelemetry.io/otel/sdk@v1.42.0",
+              "location": "/usr/local/bin/docker"
             }
           ]
         }
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
-      "impact_statement": "The BSD kenv PATH hijacking code path executes only on BSD operating systems (FreeBSD, OpenBSD, NetBSD). Sencho publishes linux/amd64 and linux/arm64 images only. The vulnerable code path is never executed in our runtime environment."
+      "impact_statement": "The BSD kenv PATH hijacking code path executes only on BSD operating systems (FreeBSD, OpenBSD, NetBSD). Sencho publishes linux/amd64 and linux/arm64 images only. The vulnerable code path is never executed in our runtime environment. Both the docker-compose plugin (otel/sdk v1.38.0) and the rebuilt Docker CLI binary (otel/sdk v1.42.0) bundle vulnerable versions; the same justification applies to both."
     }
   ]
 }
