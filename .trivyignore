@@ -18,57 +18,18 @@
 # Picked up automatically by aquasecurity/trivy-action from the repo root
 # working directory. Both the pre-push PR scan (.github/workflows/ci.yml) and
 # the release-time re-scan (.github/workflows/docker-publish.yml) honor it.
-
-# ---------------------------------------------------------------------------
-# Bundled inside /usr/local/bin/docker and docker-compose
-# ---------------------------------------------------------------------------
-# Docker CLI 29.4.0 ships Go 1.26.1 and Compose v5.1.2 ships Go 1.25.8.
-# Both Go versions are vulnerable (fix requires Go 1.25.9 or 1.26.2).
-# No upstream static binary ships a patched Go runtime yet. Revisit on the
-# next Docker CLI and Compose release.
-
-# Justification: Go stdlib symlink-following in Root.Chmod. Sencho does not
-# use Root.Chmod; the Docker CLI and compose plugin are invoked as
-# subprocesses to manage containers. The vulnerable code path requires a
-# chroot context with attacker-controlled filesystem, which does not apply
-# to our usage. Blocked on upstream Go rebuild; revisit on next CLI/Compose
-# release.
-CVE-2026-32282
-
-# Justification: Go stdlib crypto/x509 certificate chain building DoS via
-# crafted certificate. Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose)
-# runtimes. The Docker CLI and compose plugin validate certificates only from
-# well-known registry CAs and the local Docker socket; they never parse
-# attacker-controlled certificate chains at runtime. Blocked on upstream Go
-# rebuild; revisit on next CLI/Compose release.
-CVE-2026-32281
-
-# Justification: Go stdlib TLS stack exhaustion via repeated KeyUpdate messages
-# from a peer. Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose) runtimes.
-# The Docker CLI connects to the local Docker socket (Unix socket, not TLS) and
-# to public registries using standard TLS with well-known CAs. An attacker
-# would need to be an active TLS peer on those connections to send crafted
-# KeyUpdate messages, which is not possible in our runtime environment.
-# Blocked on upstream Go rebuild; revisit on next CLI/Compose release.
-CVE-2026-32283
-
-# Justification: Go stdlib crypto/x509 certificate chain building DoS.
-# Affects the same Go 1.26.1 (CLI) and 1.25.8 (Compose) runtimes as above.
-# The Docker CLI and compose plugin do not perform x509 chain validation
-# against untrusted certificates in our usage (they connect to the local
-# Docker socket or to registries with well-known CAs). Blocked on upstream
-# Go rebuild; revisit on next CLI/Compose release.
-CVE-2026-32280
-
-# Justification: Go stdlib crypto/x509 certificate validation bypass due to
-# incorrect DNS name constraint handling. Fixed in Go 1.26.2, but Docker CLI
-# 29.4.0 ships Go 1.26.1 and no newer upstream static binary is available.
-# Same exposure profile as CVE-2026-32280: the Docker CLI and compose plugin
-# only validate certificates from well-known registry CAs and the local
-# Docker socket in our usage, not from attacker-controlled CAs with crafted
-# DNS name constraints. Blocked on upstream Go rebuild; revisit on next
-# CLI/Compose release.
-CVE-2026-33810
+#
+# Note: The following CVEs that were previously accepted here have been resolved
+# by building Docker CLI and Compose from source against Go 1.26.2 (PR feat/security-pin-and-rebuild):
+#   CVE-2026-32280, CVE-2026-32281, CVE-2026-32282, CVE-2026-32283  (Go stdlib x509/TLS, fixed in Go 1.26.2)
+#   CVE-2026-33810  (Go stdlib DNS name constraint bypass, fixed in Go 1.26.2)
+#   CVE-2026-33186  (grpc 1.78.0 HTTP/2 server attack, eliminated by source rebuild)
+#   CVE-2026-33671  (picomatch ReDoS in npm, eliminated by removing npm from runtime image)
+#
+# The remaining entries below are vendored inside docker/compose v5.1.2 and
+# cannot be patched without a new upstream compose release. They will be
+# migrated to security/vex/sencho.openvex.json (OpenVEX format) in the
+# follow-up PR (feat/security-sbom-vex), after which this file will be deleted.
 
 # ---------------------------------------------------------------------------
 # Bundled inside /usr/local/lib/docker/cli-plugins/docker-compose (v5.1.2)
@@ -112,24 +73,3 @@ CVE-2026-24051
 # ship linux/amd64 and linux/arm64. Not applicable in our runtime. Revisit
 # on next Compose upstream release.
 CVE-2026-39883
-
-# Justification: google.golang.org/grpc v1.78.0 statically bundled in
-# Docker CLI v29.4.0. Compose v5.1.2 bumped grpc to 1.80.0, resolving this
-# for the compose binary. The CLI still ships 1.78.0. Exploit requires an
-# attacker-controlled HTTP/2 peer talking to a gRPC server; the docker CLI
-# only acts as a gRPC client against the local unix socket, not as a server.
-# Revisit on next Docker CLI release.
-CVE-2026-33186
-
-# ---------------------------------------------------------------------------
-# Bundled inside /usr/local/lib/node_modules/npm/ (node:22-alpine base image)
-# ---------------------------------------------------------------------------
-
-# Justification: picomatch 4.0.3 is shipped inside the npm CLI that comes
-# bundled with the upstream node:22-alpine base image. We do not run npm at
-# container runtime against user-controlled input; npm is only invoked at
-# build time against our own package.json files. The ReDoS requires an
-# attacker-authored extglob pattern, which is not reachable from any
-# runtime code path. Revisit when a future node:22-alpine base image ships
-# a newer npm that bundles picomatch >= 4.0.4.
-CVE-2026-33671

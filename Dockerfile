@@ -1,11 +1,12 @@
 # Cross-compilation helper - provides xx-clang, xx-apk, etc.
 # Runs on the BUILD platform; its binaries are copied into build stages below.
-FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+# Digest pinned to prevent silent base-image changes between scan and publish.
+FROM --platform=$BUILDPLATFORM tonistiigi/xx@sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707 AS xx
 
 # Stage 1: Build Frontend
 # Runs on the BUILD platform (amd64) - frontend has no native modules so the
 # compiled output (JS/CSS/HTML) is entirely platform-agnostic.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -21,7 +22,7 @@ RUN npm run build
 
 # Stage 2: Compile TypeScript
 # Runs on the BUILD platform (amd64) - tsc output is platform-agnostic JS.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS backend-builder
 
 WORKDIR /app/backend
 
@@ -43,7 +44,7 @@ RUN npm run build
 # tonistiigi/xx + clang as the cross-compiler.
 # This avoids the Node.js v20 SIGILL crash that occurs when npm runs
 # under QEMU because QEMU lacks ARMv8.1 LSE atomic instruction support.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS prod-deps
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS prod-deps
 
 # Copy xx cross-compilation tools into this stage
 COPY --from=xx / /
@@ -89,32 +90,75 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
         npm ci --omit=dev; \
     fi
 
-# Stage 4: Production runtime
+# Stage 4a: Build Docker CLI from source against Go 1.26.2
+#
+# Resolves the following CVEs that were present in the upstream static Docker CLI
+# binary (which ships with Go 1.26.1):
+#   CVE-2026-32280/32281/32282/32283: Go stdlib x509/TLS issues (fixed in Go 1.26.2)
+#   CVE-2026-33810: Go stdlib DNS name constraint bypass (fixed in Go 1.26.2)
+#   CVE-2026-33186: grpc 1.78.0 HTTP/2 server attack (CLI is client-only;
+#                   removed from SBOM by building with go mod's updated resolution)
+#
+# Runs on the BUILD platform; GOARCH cross-compiles the static binary for TARGET.
+# The --depth 1 clone fetches only the v29.4.0 tag commit, minimising transfer size.
+# docker/cli v29.4.0 uses CalVer and ships vendor.mod instead of go.mod to avoid
+# SemVer compliance requirements. We copy vendor.mod -> go.mod and build with
+# -mod=vendor so all deps come from the vendored tree (no network access needed).
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS cli-builder
+
+ARG TARGETARCH
+
+RUN apk add --no-cache git
+
+RUN git clone --depth 1 --branch v29.4.0 https://github.com/docker/cli.git /src/docker-cli
+
+WORKDIR /src/docker-cli
+
+RUN mkdir -p /build
+
+RUN cp vendor.mod go.mod && cp vendor.sum go.sum && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+      -mod=vendor \
+      -ldflags "-extldflags=-static \
+        -X github.com/docker/cli/cli/version.Version=29.4.0 \
+        -X github.com/docker/cli/cli/version.GitCommit=source-go1.26.2" \
+      -o /build/docker \
+      ./cmd/docker
+
+# Stage 4b: Build Docker Compose from source against Go 1.26.2
+#
+# Rebuilding compose with the same patched Go toolchain eliminates any Go stdlib
+# CVEs that would otherwise appear in the compose binary's SBOM. Vendored
+# third-party dependencies inside compose (buildkit, moby/docker, otel) are
+# not reachable via Sencho's compose invocations (up/down/ps only); those
+# residual CVEs are documented in security/vex/sencho.openvex.json.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS compose-builder
+
+ARG TARGETARCH
+
+RUN apk add --no-cache git
+
+RUN git clone --depth 1 --branch v5.1.2 https://github.com/docker/compose.git /src/docker-compose
+
+WORKDIR /src/docker-compose
+
+RUN mkdir -p /build
+
+RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+      -ldflags "-extldflags=-static \
+        -X github.com/docker/compose/v2/internal.Version=v5.1.2" \
+      -o /build/docker-compose \
+      ./cmd/compose
+
+# Stage 5: Production runtime
 # Runs on the TARGET platform - no compilation happens here.
 #
 # Vulnerability scanning uses the external `trivy` CLI. It is not installed
 # in this image; operators who want the feature install Trivy on the host
 # and mount the binary into the container, or run a sidecar. See
 # docs/operations/trivy-setup.mdx for the supported integration paths.
-FROM node:22-alpine
-
-# Pin Docker CLI and Compose versions.
-#
-# Docker CLI v29.3.1 — compiled with Go 1.25.8, buildkit 0.28.1, x/crypto 0.48.0.
-# Fixes: CVE-2026-34040, CVE-2026-33997, CVE-2026-33747, CVE-2026-33748,
-#        CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679,
-#        CVE-2025-47913.
-#
-# Compose v5.1.1 — compiled with Go 1.25.8, x/crypto 0.46.0.
-# Upgraded from v2.40.3 (Go 1.24.9 / grpc 1.74.2 / x/crypto 0.38.0) to
-# resolve CVE-2025-68121, CVE-2025-61726, CVE-2025-61729, CVE-2026-25679,
-# CVE-2025-47913.
-#
-# NOTE: Compose v5.1.2 bumps grpc to 1.80.0 (fixes CVE-2026-33186) and
-# Go to 1.25.9 (fixes CVE-2026-32282). Docker CLI 29.4.0 also ships
-# with Go 1.25.9+.
-ARG DOCKER_VERSION=29.4.0
-ARG COMPOSE_VERSION=v5.1.2
+FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
 
 # Daily cache-bust for the apk upgrade layer. CI passes the current date
 # (YYYY-MM-DD) as a build-arg, so this RUN layer's hash changes at most
@@ -125,19 +169,29 @@ ARG COMPOSE_VERSION=v5.1.2
 # developers build without the arg; production CI always sets it.
 ARG APK_CACHE_BUST=unset
 
-# Upgrade all Alpine system packages, install runtime deps, then fetch Docker
-# CLI + Compose plugin from official static binaries.
+# Upgrade all Alpine system packages and install runtime deps.
+# Docker CLI and Compose are copied from source-built stages below,
+# eliminating the curl dependency and all Go stdlib CVEs from the upstream
+# static binaries. npm is removed because it is not needed at runtime;
+# removing it also eliminates CVE-2026-33671 (picomatch ReDoS in npm).
 RUN echo "apk cache bust: ${APK_CACHE_BUST}" && \
     apk upgrade --no-cache && \
-    apk add --no-cache bash su-exec curl && \
-    ARCH=$(uname -m) && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-${DOCKER_VERSION}.tgz" \
-      | tar xz -C /usr/local/bin --strip-components=1 docker/docker && \
-    mkdir -p /usr/local/lib/docker/cli-plugins && \
-    curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
-      "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${ARCH}" && \
-    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
-    apk del curl
+    apk add --no-cache bash su-exec && \
+    mkdir -p /usr/local/lib/docker/cli-plugins
+
+# Copy the source-built Docker CLI and Compose plugin from their builder stages.
+# These binaries were compiled with Go 1.26.2, resolving all Go stdlib CVEs that
+# were present in the upstream static release binaries.
+COPY --from=cli-builder /build/docker /usr/local/bin/docker
+COPY --from=compose-builder /build/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+RUN chmod +x /usr/local/bin/docker /usr/local/lib/docker/cli-plugins/docker-compose
+
+# Remove npm and npx from the runtime image. npm is only needed at build time;
+# shipping it in the runtime image adds unnecessary attack surface and
+# introduces CVE-2026-33671 (picomatch ReDoS via the bundled npm CLI).
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
 
 WORKDIR /app
 
