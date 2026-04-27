@@ -4,32 +4,20 @@ import type { BlogPost } from '../types'
 
 export const __EXPORT_NAME__: BlogPost = {
   slug: '__SLUG__',
-  title: 'v__VERSION__: TODO headline',
-  description:
-    'TODO: SEO description, about 160 characters, covering the headline feature of this rollup.',
+  title: '__TITLE__',
+  description: '__DESCRIPTION__',
   date: '__DATE__',
   category: 'release',
   version: '__VERSION__',
   tags: ['release'],
-  readingTime: 'TODO min read',
+  readingTime: '__READING_TIME__',
   content: (
     <Prose>
       <p>
-        TODO: write a short narrative introduction that highlights the most
-        user-visible change across versions __COVERED_VERSIONS__. Link the
-        relevant docs section at{' '}
-        <a href="https://docs.sencho.io/">https://docs.sencho.io</a>.
+        This rollup covers __COVERED_VERSIONS_PROSE__. Head to the{' '}
+        <a href="https://docs.sencho.io/">Sencho docs</a> for setup guides and
+        full feature walkthroughs.
       </p>
-
-      <h2>Highlight</h2>
-      <p>
-        TODO: embed at least one screenshot of the headline feature.
-      </p>
-      <img
-        src="/screenshots/__SLUG__.png"
-        alt="TODO describe the screenshot"
-        loading="lazy"
-      />
 
       <h2>What&apos;s in this release</h2>
 __ADDED_BLOCK__
