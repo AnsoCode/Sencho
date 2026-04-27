@@ -3,10 +3,12 @@
 // triggered this run completes a run of 5 releases since the last post's anchor.
 // Invoked by .github/workflows/release-blog-scaffold.yml. See website/CLAUDE.md
 // for the cadence rules this script enforces.
+//
+// Auto-publish mode: the script generates a complete, TODO-free post and the
+// workflow commits it directly to website main. No PR is created or required.
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -67,7 +69,8 @@ function findLastAnchor(websiteRoot) {
   const versions = []
   for (const f of files) {
     const body = readFileSync(join(postsDir, f), 'utf8')
-    if (!/category:\s*['"]release['"]/m.test(body)) continue
+    // Any post with a version: field is an anchor regardless of category.
+    // This lets narrative retrospective articles anchor the window too.
     const m = body.match(/version:\s*['"]([0-9]+\.[0-9]+\.[0-9]+)['"]/)
     if (m) versions.push(m[1])
   }
@@ -96,8 +99,7 @@ function windowSinceAnchor(tags, anchor, tag) {
   const anchorTag = `v${anchor}`
   const anchorIdx = tags.indexOf(anchorTag)
   if (anchorIdx === -1) {
-    // Anchor tag was deleted or renamed. Fall back to bootstrap so the run does
-    // not hard-fail; a human will still review the resulting PR.
+    // Anchor tag was deleted or renamed. Fall back to bootstrap so the run does not hard-fail.
     console.warn(`WARN: anchor tag ${anchorTag} not found; falling back to bootstrap window`)
     return tags.slice(0, tagIdx + 1)
   }
@@ -179,14 +181,84 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// ---------------------------------------------------------------------------
+// Auto-generation helpers
+// ---------------------------------------------------------------------------
+
+function stripScope(item) {
+  return item.replace(/^\*\*[^*]+\*\*:\s*/, '')
+}
+
+function stripLeadingVerb(s) {
+  return s.replace(/^(?:add|remove|update|change|replace|implement|introduce|redesign)\s+/i, '')
+}
+
+function toFirstUpper(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function summarize(item, maxLen) {
+  const len = maxLen ?? 44
+  const plain = toFirstUpper(stripLeadingVerb(stripScope(item)))
+  return plain.length > len ? plain.slice(0, len - 3) + '...' : plain
+}
+
+function buildHeadline(addedItems, totalCount, version) {
+  if (addedItems.length === 0) {
+    return `Sencho v${version}: ${totalCount} improvements`
+  }
+  const top = addedItems.slice(0, 2)
+  const extra = totalCount - top.length
+  if (top.length === 1) {
+    const a = summarize(top[0])
+    return extra > 0 ? `Sencho v${version}: ${a} and ${extra} more` : `Sencho v${version}: ${a}`
+  }
+  const a = summarize(top[0])
+  const b = summarize(top[1])
+  return `Sencho v${version}: ${a}, ${b}, and ${extra} more`
+}
+
+function buildDescription(vStart, vEnd, addedItems) {
+  const maxLen = 160
+  const prefix =
+    vStart === vEnd
+      ? `Sencho v${vEnd}. Key additions: `
+      : `Covers ${vStart} through ${vEnd}. Key additions: `
+  const items = addedItems.slice(0, 3).map((s) => summarize(s, 50))
+  let desc = prefix + items.join(', ') + '.'
+  if (desc.length > maxLen) desc = desc.slice(0, maxLen - 3) + '...'
+  return desc
+}
+
+function calcReadingTime(grouped) {
+  const allItems = [...grouped.added, ...grouped.fixed, ...grouped.changed]
+  const wordCount = allItems.reduce((sum, s) => sum + s.split(/\s+/).length, 0) + 80
+  const minutes = Math.max(1, Math.ceil(wordCount / 200))
+  return `${minutes} min read`
+}
+
+function coveredVersionsProse(versions) {
+  if (versions.length === 0) return ''
+  if (versions.length === 1) return `v${versions[0]}`
+  return `v${versions[0]} through v${versions[versions.length - 1]}`
+}
+
+// ---------------------------------------------------------------------------
+
 function renderPost(version, coveredVersions, grouped) {
   const template = readFileSync(TEMPLATE_PATH, 'utf8')
+  const totalCount = grouped.added.length + grouped.fixed.length + grouped.changed.length
+  const vStart = coveredVersions[0]
+  const vEnd = coveredVersions[coveredVersions.length - 1]
   const replacements = {
     __EXPORT_NAME__: exportNameFor(version),
     __SLUG__: slugFor(version),
+    __TITLE__: buildHeadline(grouped.added, totalCount, version),
+    __DESCRIPTION__: buildDescription(vStart, vEnd, grouped.added),
     __VERSION__: version,
     __DATE__: todayIso(),
-    __COVERED_VERSIONS__: coveredVersions.join(', '),
+    __READING_TIME__: calcReadingTime(grouped),
+    __COVERED_VERSIONS_PROSE__: coveredVersionsProse(coveredVersions),
     __ADDED_BLOCK__: renderChangelogBlock('added', grouped.added),
     __FIXED_BLOCK__: renderChangelogBlock('fixed', grouped.fixed),
     __CHANGED_BLOCK__: renderChangelogBlock('changed', grouped.changed),
@@ -224,23 +296,23 @@ function updateIndex(websiteRoot, exportName, fileBase) {
   return `${before}${arrOpen}${newBody}${arrClose}${after}`
 }
 
-function renderPrBody(tag, version, coveredVersions) {
-  const screenshotName = `${slugFor(version)}.png`
-  return [
-    `Scaffolded automatically from the \`${tag}\` tag on the Sencho repo.`,
-    `Covers versions: \`${coveredVersions.join(', ')}\`.`,
-    '',
-    '## Before marking ready',
-    '',
-    '- [ ] Write the narrative intro (replace the TODO paragraph)',
-    '- [ ] Set the title to something user-facing (replace `TODO headline`)',
-    '- [ ] Fill in the SEO description (~160 chars)',
-    `- [ ] Capture a headline screenshot and drop it at \`public/screenshots/${screenshotName}\``,
-    '- [ ] Add at least one link to https://docs.sencho.io/',
-    '- [ ] Finalize `readingTime`',
-    '- [ ] Review the grouped changelog items, trim or rephrase any that read too much like commit messages',
-    '',
+function updateMeta(websiteRoot, slug, title, description, date) {
+  const metaPath = join(websiteRoot, 'src', 'data', 'blog', 'meta.ts')
+  if (!existsSync(metaPath)) return null
+  const body = readFileSync(metaPath, 'utf8')
+  if (body.includes(`slug: '${slug}'`)) return body
+  const entry = [
+    '  {',
+    `    slug: '${slug}',`,
+    `    title: '${title.replace(/'/g, "\\'")}',`,
+    `    description:`,
+    `      '${description.replace(/'/g, "\\'")}',`,
+    `    date: '${date}',`,
+    '  },',
   ].join('\n')
+  // Insert before the closing bracket of the array.
+  const lastBracket = body.lastIndexOf(']')
+  return body.slice(0, lastBracket) + entry + '\n' + body.slice(lastBracket)
 }
 
 function writeGithubOutput(kv) {
@@ -283,39 +355,49 @@ function main() {
     `Collected items: added=${grouped.added.length}, fixed=${grouped.fixed.length}, changed=${grouped.changed.length}`,
   )
 
-  const post = renderPost(newVersion, windowVersions, grouped)
+  const exportName = exportNameFor(newVersion)
+  const slug = slugFor(newVersion)
   const date = todayIso()
-  const fileBase = `${date}-${slugFor(newVersion)}`
+  const fileBase = `${date}-${slug}`
   const postPath = join(args.website, 'src', 'data', 'blog', 'posts', `${fileBase}.tsx`)
   const indexPath = join(args.website, 'src', 'data', 'blog', 'index.ts')
-  const newIndex = updateIndex(args.website, exportNameFor(newVersion), fileBase)
+  const metaPath = join(args.website, 'src', 'data', 'blog', 'meta.ts')
 
-  const prBody = renderPrBody(args.tag, newVersion, windowVersions)
-  const bodyFile = join(process.env.RUNNER_TEMP ?? tmpdir(), 'release-post-pr-body.md')
+  const totalCount = grouped.added.length + grouped.fixed.length + grouped.changed.length
+  const title = buildHeadline(grouped.added, totalCount, newVersion)
+  const description = buildDescription(
+    windowVersions[0],
+    windowVersions[windowVersions.length - 1],
+    grouped.added,
+  )
+
+  const post = renderPost(newVersion, windowVersions, grouped)
+  const newIndex = updateIndex(args.website, exportName, fileBase)
+  const newMeta = updateMeta(args.website, slug, title, description, date)
 
   if (args.dryRun) {
     console.log('\n--- Post file (dry-run): ' + postPath)
     console.log(post)
     console.log('\n--- index.ts (dry-run): ' + indexPath)
     console.log(newIndex)
-    console.log('\n--- PR body (dry-run): ' + bodyFile)
-    console.log(prBody)
+    if (newMeta) {
+      console.log('\n--- meta.ts (dry-run): ' + metaPath)
+      console.log(newMeta)
+    }
   } else {
     writeFileSync(postPath, post, 'utf8')
     writeFileSync(indexPath, newIndex, 'utf8')
-    writeFileSync(bodyFile, prBody, 'utf8')
+    if (newMeta) writeFileSync(metaPath, newMeta, 'utf8')
     console.log(`Wrote ${postPath}`)
     console.log(`Updated ${indexPath}`)
-    console.log(`Wrote PR body: ${bodyFile}`)
+    if (newMeta) console.log(`Updated ${metaPath}`)
   }
 
   writeGithubOutput({
     scaffold: 'true',
     version: newVersion,
-    slug: slugFor(newVersion),
-    branch: `release-post/${args.tag}`,
+    slug,
     post_path: `src/data/blog/posts/${fileBase}.tsx`,
-    body_file: bodyFile,
     covered: windowVersions.join(','),
   })
 }

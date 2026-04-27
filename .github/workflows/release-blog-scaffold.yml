@@ -1,10 +1,9 @@
 name: Release Blog Scaffold
 
 # Fires on every v* tag push. Computes whether this tag completes the next
-# every-5th-release window (source of truth = the latest release post's
-# `version` field in the sencho-website repo). If yes, opens a DRAFT PR in
-# sencho-website containing a pre-filled blog post scaffold; a human writes
-# the narrative, adds the screenshot, and marks the PR ready.
+# every-5th-release window (source of truth = the latest post with a version:
+# field in the sencho-website repo). If yes, generates a complete, TODO-free
+# blog post and commits it directly to sencho-website main. No PR is opened.
 on:
   push:
     tags:
@@ -37,7 +36,6 @@ jobs:
             Sencho
             sencho-website
           permission-contents: write
-          permission-pull-requests: write
 
       - name: Resolve target tag
         id: target
@@ -79,42 +77,19 @@ jobs:
             --changelog CHANGELOG.md \
             --website website-repo
 
-      - name: Commit and open draft PR in sencho-website
+      - name: Commit and push release post to sencho-website
         if: steps.scaffold.outputs.scaffold == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: ${{ steps.target.outputs.tag }}
-          BRANCH: ${{ steps.scaffold.outputs.branch }}
           POST_PATH: ${{ steps.scaffold.outputs.post_path }}
-          BODY_FILE: ${{ steps.scaffold.outputs.body_file }}
-          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           cd website-repo
-          # Short-circuit if a scaffold PR for this branch already exists (e.g.,
-          # a manual workflow_dispatch retry against the same tag).
-          existing=$(gh pr list \
-            --repo "${OWNER}/sencho-website" \
-            --head "${BRANCH}" \
-            --state open \
-            --json number --jq '.[0].number // empty')
-          if [ -n "${existing}" ]; then
-            echo "PR already exists for ${BRANCH} (#${existing}); nothing to do."
-            exit 0
-          fi
           git config user.name  "sencho-release-bot[bot]"
           git config user.email "sencho-release-bot[bot]@users.noreply.github.com"
-          git checkout -B "${BRANCH}"
-          git add "${POST_PATH}" src/data/blog/index.ts
-          git commit -m "chore: scaffold release post for ${TAG}"
-          git push -u origin "${BRANCH}" --force-with-lease
-          gh pr create \
-            --repo "${OWNER}/sencho-website" \
-            --base main \
-            --head "${BRANCH}" \
-            --title "chore: scaffold release post for ${TAG}" \
-            --body-file "${BODY_FILE}" \
-            --draft
+          git add "${POST_PATH}" src/data/blog/index.ts src/data/blog/meta.ts
+          git commit -m "chore(blog): auto-publish release post for ${TAG}"
+          git push origin main
 
       - name: Report skip
         if: steps.scaffold.outputs.scaffold != 'true'
