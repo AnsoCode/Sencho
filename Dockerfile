@@ -144,12 +144,28 @@ WORKDIR /src/docker-compose
 
 RUN mkdir -p /build
 
+# Build target is ./cmd (the package main with plugin.Run), per docker/compose
+# v5.1.2's Makefile. The directory ./cmd/compose is package compose (cobra
+# command definitions only, not main). The module path moved from /v2 to /v5
+# in the v5 release, so the Version ldflag must reference /v5/internal.
 RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
-      -ldflags "-extldflags=-static \
-        -X github.com/docker/compose/v2/internal.Version=v5.1.2" \
+      -trimpath \
+      -ldflags "-s -w -extldflags=-static \
+        -X github.com/docker/compose/v5/internal.Version=v5.1.2" \
       -o /build/docker-compose \
-      ./cmd/compose
+      ./cmd
+
+# Sanity check: fail the stage immediately if go build did not produce an ELF
+# executable. Catches the failure mode where -o file points to a non-main
+# package and Go writes an ar-format archive that passes COPY + chmod but is
+# not exec-able by the kernel, surfacing only as an opaque plugin-not-found
+# error from the Docker CLI plugin manager hundreds of build steps later.
+# `od -tx1` is used instead of `-c` because busybox and GNU coreutils render
+# `-c` with different field padding; hex output is stable across both.
+RUN test -f /build/docker-compose \
+ && magic=$(dd if=/build/docker-compose bs=1 count=4 status=none | od -An -tx1 | tr -d ' \n') \
+ && [ "$magic" = "7f454c46" ]
 
 # Stage 5: Production runtime
 # Runs on the TARGET platform - no compilation happens here.
