@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.64.2](https://github.com/AnsoCode/Sencho/compare/v0.64.1...v0.64.2) (2026-04-27)
+
+
+### Fixed
+
+* **backend:** use URL parser for registry scheme + template host check ([#808](https://github.com/AnsoCode/Sencho/issues/808)) ([6ac02c7](https://github.com/AnsoCode/Sencho/commit/6ac02c792a6a768091d402e6d7ceb54e208f394e))
+* **deps:** bump dompurify to 3.4.0 to resolve four advisories ([#801](https://github.com/AnsoCode/Sencho/issues/801)) ([c18d369](https://github.com/AnsoCode/Sencho/commit/c18d3696e9a4f8185ccb6527a4809b0fec9160e2))
+
 ## [0.64.1](https://github.com/AnsoCode/Sencho/compare/v0.64.0...v0.64.1) (2026-04-27)
 
 
