@@ -1,0 +1,25 @@
+# Trivy ignore list (CI build-and-scan only)
+#
+# The OpenVEX document at security/vex/sencho.openvex.json is the canonical
+# source of truth for accepted CVEs. It is consumed by Trivy via trivy.yaml
+# and attached as a cosign attestation on every published image, so any
+# downstream consumer who scans saelix/sencho:<tag> sees the same triage.
+#
+# This file exists only because the OpenVEX product purl matching does not
+# resolve for locally-built images that have no RepoDigests. Trivy does not
+# generate an OCI purl for such images (see aquasecurity/trivy#9399), so the
+# product `pkg:oci/sencho` in our VEX statements never matches the artifact
+# under test in the PR-time scan against `sencho:pr-test`. Once the image is
+# pushed and acquires a digest, VEX matching resolves and this file is no
+# longer load-bearing for that scan.
+#
+# Rule: every entry here MUST already have a corresponding statement in
+# security/vex/sencho.openvex.json with a justification. Do not add a CVE
+# here without first adding the VEX statement; the VEX file is what users
+# audit, not this one.
+
+# Justification: covered by VEX statement for CVE-2026-39883 (otel/sdk
+# BSD kenv PATH hijacking). The vulnerable code path executes only on
+# BSD operating systems and Sencho ships linux/amd64 + linux/arm64 only.
+# See security/vex/sencho.openvex.json for the full impact statement.
+CVE-2026-39883
