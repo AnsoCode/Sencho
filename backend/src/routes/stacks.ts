@@ -616,73 +616,47 @@ stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
   }
 });
 
-stacksRouter.post('/:stackName/restart', async (req: Request, res: Response) => {
+type StackContainerAction = 'restart' | 'stop' | 'start';
+
+async function bulkContainerOp(
+  req: Request,
+  res: Response,
+  action: StackContainerAction,
+): Promise<void> {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
+  const titleCase = action.charAt(0).toUpperCase() + action.slice(1);
   try {
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
 
     if (!containers || containers.length === 0) {
-      return res.status(404).json({ error: 'No containers found for this stack.' });
+      res.status(404).json({ error: 'No containers found for this stack.' });
+      return;
     }
 
-    await Promise.all(containers.map(c => dockerController.restartContainer(c.Id)));
+    const op =
+      action === 'restart' ? (id: string) => dockerController.restartContainer(id)
+        : action === 'stop' ? (id: string) => dockerController.stopContainer(id)
+          : (id: string) => dockerController.startContainer(id);
+
+    await Promise.all(containers.map(c => op(c.Id)));
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Restart completed: ${stackName} (${containers.length} containers)`);
-    res.json({ success: true, message: 'Restart completed via Engine API.' });
+    console.log(`[Stacks] ${titleCase} completed: ${stackName} (${containers.length} containers)`);
+    res.json({ success: true, message: `${titleCase} completed via Engine API.` });
   } catch (error: unknown) {
-    console.error(`[Stacks] Restart failed: ${stackName}`, error);
-    const message = getErrorMessage(error, 'Failed to restart containers');
-    notifyActionFailure('restart', stackName, error);
-    res.status(500).json({ error: message });
-  }
-});
-
-stacksRouter.post('/:stackName/stop', async (req: Request, res: Response) => {
-  const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getContainersByStack(stackName);
-
-    if (!containers || containers.length === 0) {
-      return res.status(404).json({ error: 'No containers found for this stack.' });
+    console.error(`[Stacks] ${titleCase} failed: ${stackName}`, error);
+    const message = getErrorMessage(error, `Failed to ${action} containers`);
+    if (action !== 'start') {
+      notifyActionFailure(action, stackName, error);
     }
-
-    await Promise.all(containers.map(c => dockerController.stopContainer(c.Id)));
-    invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Stop completed: ${stackName} (${containers.length} containers)`);
-    res.json({ success: true, message: 'Stop completed via Engine API.' });
-  } catch (error: unknown) {
-    console.error(`[Stacks] Stop failed: ${stackName}`, error);
-    const message = getErrorMessage(error, 'Failed to stop containers');
-    notifyActionFailure('stop', stackName, error);
     res.status(500).json({ error: message });
   }
-});
+}
 
-stacksRouter.post('/:stackName/start', async (req: Request, res: Response) => {
-  const stackName = req.params.stackName as string;
-  if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  try {
-    const dockerController = DockerController.getInstance(req.nodeId);
-    const containers = await dockerController.getContainersByStack(stackName);
-
-    if (!containers || containers.length === 0) {
-      return res.status(404).json({ error: 'No containers found for this stack.' });
-    }
-
-    await Promise.all(containers.map(c => dockerController.startContainer(c.Id)));
-    invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Start completed: ${stackName} (${containers.length} containers)`);
-    res.json({ success: true, message: 'Start completed via Engine API.' });
-  } catch (error: unknown) {
-    console.error(`[Stacks] Start failed: ${stackName}`, error);
-    const message = getErrorMessage(error, 'Failed to start containers');
-    res.status(500).json({ error: message });
-  }
-});
+stacksRouter.post('/:stackName/restart', (req, res) => bulkContainerOp(req, res, 'restart'));
+stacksRouter.post('/:stackName/stop', (req, res) => bulkContainerOp(req, res, 'stop'));
+stacksRouter.post('/:stackName/start', (req, res) => bulkContainerOp(req, res, 'start'));
 
 type ServiceAction = 'start' | 'stop' | 'restart';
 
