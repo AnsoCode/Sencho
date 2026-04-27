@@ -12,6 +12,7 @@ import { applySuppressions } from '../utils/suppression-filter';
 import { generateSarif } from '../services/SarifExporter';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
+import { blockIfReplica } from '../middleware/fleetSyncGuards';
 
 const CVE_ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA-[\w-]{14,})$/;
 
@@ -420,10 +421,7 @@ securityRouter.get('/policies', authMiddleware, (req: Request, res: Response): v
 securityRouter.post('/policies', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const { name, node_id, stack_pattern, max_severity, block_on_deploy, enabled } = req.body ?? {};
   if (!name || typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Policy name is required' }); return;
@@ -455,10 +453,7 @@ securityRouter.post('/policies', authMiddleware, (req: Request, res: Response): 
 securityRouter.put('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
@@ -492,10 +487,7 @@ securityRouter.put('/policies/:id', authMiddleware, (req: Request, res: Response
 securityRouter.delete('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
@@ -518,10 +510,7 @@ securityRouter.get('/suppressions', authMiddleware, (req: Request, res: Response
 securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const body = req.body ?? {};
   const cveId = typeof body.cve_id === 'string' ? body.cve_id.trim() : '';
   if (!CVE_ID_RE.test(cveId)) {
@@ -574,10 +563,7 @@ securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Respons
 securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid suppression id' }); return;
@@ -615,10 +601,7 @@ securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Resp
 securityRouter.delete('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid suppression id' }); return;
