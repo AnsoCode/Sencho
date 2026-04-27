@@ -112,6 +112,14 @@ function getRelPath(req: Request): string {
 
 export const stacksRouter = Router();
 
+stacksRouter.param('stackName', (req, res, next, stackName) => {
+  if (typeof stackName !== 'string' || !isValidStackName(stackName)) {
+    res.status(400).json({ error: 'Invalid stack name' });
+    return;
+  }
+  next();
+});
+
 stacksRouter.get('/', async (req: Request, res: Response) => {
   try {
     const stacks = await FileSystemService.getInstance(req.nodeId).getStacks();
@@ -159,10 +167,6 @@ stacksRouter.get('/auto-update-settings', (req: Request, res: Response): void =>
 stacksRouter.get('/:stackName/auto-update', (req: Request, res: Response): void => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      res.status(400).json({ error: 'Invalid stack name' });
-      return;
-    }
     const enabled = DatabaseService.getInstance().getStackAutoUpdateEnabled(req.nodeId, stackName);
     res.json({ enabled });
   } catch (error) {
@@ -176,10 +180,6 @@ stacksRouter.put('/:stackName/auto-update', (req: Request, res: Response): void 
   if (!requireAdmin(req, res)) return;
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      res.status(400).json({ error: 'Invalid stack name' });
-      return;
-    }
     const { enabled } = req.body as { enabled?: unknown };
     if (typeof enabled !== 'boolean') {
       res.status(400).json({ error: '"enabled" must be a boolean' });
@@ -204,9 +204,6 @@ stacksRouter.put('/:stackName/auto-update', (req: Request, res: Response): void 
 stacksRouter.get('/:stackName', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     res.send(content);
   } catch (error) {
@@ -217,9 +214,6 @@ stacksRouter.get('/:stackName', async (req: Request, res: Response) => {
 stacksRouter.put('/:stackName', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     const { content } = req.body;
     if (typeof content !== 'string') {
@@ -239,9 +233,6 @@ stacksRouter.put('/:stackName', async (req: Request, res: Response) => {
 stacksRouter.get('/:stackName/envs', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
     res.json({ envFiles: envPaths });
   } catch (error) {
@@ -252,9 +243,6 @@ stacksRouter.get('/:stackName/envs', async (req: Request, res: Response) => {
 stacksRouter.get('/:stackName/env', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const requestedFile = req.query.file as string | undefined;
     const envPaths = await resolveAllEnvFilePaths(req.nodeId, stackName);
 
@@ -320,9 +308,6 @@ stacksRouter.get('/:stackName/env', async (req: Request, res: Response) => {
 stacksRouter.put('/:stackName/env', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     const { content } = req.body;
     if (typeof content !== 'string') {
@@ -523,9 +508,6 @@ stacksRouter.post('/from-git', async (req: Request, res: Response) => {
 stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:delete', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   const pruneVolumes = req.query.pruneVolumes === 'true';
   try {
     try {
@@ -571,9 +553,6 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
 stacksRouter.get('/:stackName/containers', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const dockerController = DockerController.getInstance(req.nodeId);
     const containers = await dockerController.getContainersByStack(stackName);
     res.json(containers);
@@ -585,9 +564,6 @@ stacksRouter.get('/:stackName/containers', async (req: Request, res: Response) =
 stacksRouter.get('/:stackName/services', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const content = await FileSystemService.getInstance(req.nodeId).getStackContent(stackName);
     const parsed = YAML.parse(content);
     const services = parsed?.services ? Object.keys(parsed.services) : [];
@@ -601,9 +577,6 @@ stacksRouter.get('/:stackName/services', async (req: Request, res: Response) => 
 stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
@@ -631,9 +604,6 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
 stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', getTerminalWs());
     invalidateNodeCaches(req.nodeId);
@@ -655,10 +625,6 @@ async function bulkContainerOp(
 ): Promise<void> {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    res.status(400).json({ error: 'Invalid stack name' });
-    return;
-  }
   const titleCase = action.charAt(0).toUpperCase() + action.slice(1);
   try {
     const dockerController = DockerController.getInstance(req.nodeId);
@@ -702,10 +668,6 @@ async function handleServiceAction(
   const stackName = req.params.stackName as string;
   const serviceName = req.params.serviceName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    res.status(400).json({ error: 'Invalid stack name' });
-    return;
-  }
   if (!isValidServiceName(serviceName)) {
     res.status(400).json({ error: 'Invalid service name' });
     return;
@@ -753,9 +715,6 @@ stacksRouter.post('/:stackName/services/:serviceName/start', (req, res) =>
 
 stacksRouter.get('/:stackName/update-preview', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     const preview = await UpdatePreviewService.getInstance().getPreview(req.nodeId, stackName);
     res.json(preview);
@@ -768,9 +727,6 @@ stacksRouter.get('/:stackName/update-preview', async (req: Request, res: Respons
 stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
@@ -799,9 +755,6 @@ stacksRouter.post('/:stackName/rollback', async (req: Request, res: Response) =>
   const stackName = req.params.stackName as string;
   if (!requirePermission(req, res, 'stack:deploy', 'stack', stackName)) return;
   if (!requirePaid(req, res)) return;
-  if (!isValidStackName(stackName)) {
-    return res.status(400).json({ error: 'Invalid stack name' });
-  }
   try {
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const backupInfo = await fsSvc.getBackupInfo(stackName);
@@ -824,9 +777,6 @@ stacksRouter.post('/:stackName/rollback', async (req: Request, res: Response) =>
 stacksRouter.get('/:stackName/backup', async (req: Request, res: Response) => {
   try {
     const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) {
-      return res.status(400).json({ error: 'Invalid stack name' });
-    }
     const fsSvc = FileSystemService.getInstance(req.nodeId);
     const info = await fsSvc.getBackupInfo(stackName);
     res.json(info);
@@ -866,7 +816,6 @@ function sendFsError(
 
 stacksRouter.get('/:stackName/files', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   const relPath = getRelPath(req);
   if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
     return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
@@ -881,7 +830,6 @@ stacksRouter.get('/:stackName/files', async (req: Request, res: Response) => {
 
 stacksRouter.get('/:stackName/files/content', async (req: Request, res: Response) => {
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   const relPath = getRelPath(req);
   if (!relPath) return res.status(400).json({ error: 'path query parameter is required', code: 'INVALID_PATH' });
   if (!isValidRelativeStackPath(relPath)) {
@@ -898,7 +846,6 @@ stacksRouter.get('/:stackName/files/content', async (req: Request, res: Response
 stacksRouter.get('/:stackName/files/download', async (req: Request, res: Response) => {
   if (!requirePaid(req, res)) return;
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   const relPath = getRelPath(req);
   if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
     return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
@@ -926,8 +873,6 @@ stacksRouter.get('/:stackName/files/download', async (req: Request, res: Respons
 stacksRouter.post(
   '/:stackName/files/upload',
   (req: Request, res: Response, next: NextFunction) => {
-    const stackName = req.params.stackName as string;
-    if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
     if (!requirePaid(req, res)) return;
     upload.single('file')(req, res, (err) => {
       if (err && (err as multer.MulterError).code === 'LIMIT_FILE_SIZE') {
@@ -964,7 +909,6 @@ stacksRouter.post(
 stacksRouter.put('/:stackName/files/content', async (req: Request, res: Response) => {
   if (!requirePaid(req, res)) return;
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   const relPath = getRelPath(req);
   if (relPath !== '' && !isValidRelativeStackPath(relPath)) {
@@ -985,7 +929,6 @@ stacksRouter.put('/:stackName/files/content', async (req: Request, res: Response
 stacksRouter.delete('/:stackName/files', async (req: Request, res: Response) => {
   if (!requirePaid(req, res)) return;
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   const relPath = getRelPath(req);
   if (relPath === '') return res.status(400).json({ error: 'Path is required for delete' });
@@ -1004,7 +947,6 @@ stacksRouter.delete('/:stackName/files', async (req: Request, res: Response) => 
 stacksRouter.post('/:stackName/files/folder', async (req: Request, res: Response) => {
   if (!requirePaid(req, res)) return;
   const stackName = req.params.stackName as string;
-  if (!isValidStackName(stackName)) return res.status(400).json({ error: 'Invalid stack name' });
   if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
   const relPath = getRelPath(req);
   if (relPath === '') return res.status(400).json({ error: 'Path is required to create a folder' });
