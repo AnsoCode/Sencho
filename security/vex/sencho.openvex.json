@@ -1,0 +1,120 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/AnsoCode/Sencho/security/vex/sencho.openvex.json",
+  "author": "Studio Saelix",
+  "role": "Vendor",
+  "timestamp": "2026-04-26T00:00:00Z",
+  "last_updated": "2026-04-26T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://www.cve.org/CVERecord?id=CVE-2026-34040",
+        "name": "CVE-2026-34040",
+        "description": "Moby/Docker daemon authorization bypass"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/sencho",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/docker/docker@v28.5.2",
+              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The authz bypass applies to Docker daemon plugin authorization hooks. docker-compose v5.1.2 statically bundles docker/docker v28.5.2 as a library but never acts as a daemon and never runs authorization hooks. Sencho invokes compose only for up/down/ps operations against local user-authored compose files. The daemon authz code path is not reachable."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://www.cve.org/CVERecord?id=CVE-2026-33747",
+        "name": "CVE-2026-33747",
+        "description": "BuildKit arbitrary file write via untrusted frontend"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/sencho",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/moby/buildkit@v0.27.1",
+              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "docker-compose v5.1.2 statically bundles buildkit v0.27.1. The arbitrary file write vulnerability is exploitable only when buildkit processes an attacker-controlled frontend (e.g. a malicious Dockerfile image reference). Sencho invokes compose only for up/down/ps operations against user-authored compose files. Compose does not invoke the buildkit frontend execution path in this usage."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://www.cve.org/CVERecord?id=CVE-2026-33748",
+        "name": "CVE-2026-33748",
+        "description": "BuildKit Git URL fragment subdir path traversal"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/sencho",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/moby/buildkit@v0.27.1",
+              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The Git URL fragment subdir traversal is exploitable only when buildkit fetches an attacker-controlled Git repository URL as a build context. Sencho invokes compose for up/down/ps against local user-authored compose files only. Compose does not pass Git URLs to buildkit in this usage."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://www.cve.org/CVERecord?id=CVE-2026-24051",
+        "name": "CVE-2026-24051",
+        "description": "OpenTelemetry SDK PATH hijacking on process start"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/sencho",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/go.opentelemetry.io/otel/sdk@v1.38.0",
+              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "inline_mitigations_already_exist",
+      "impact_statement": "The PATH hijacking requires an attacker to control the process PATH environment variable before compose starts. The container's PATH is set to /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin at image build time. Both directories are owned by root with mode 755. Unprivileged processes cannot inject malicious binaries into these directories."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://www.cve.org/CVERecord?id=CVE-2026-39883",
+        "name": "CVE-2026-39883",
+        "description": "OpenTelemetry SDK BSD kenv PATH hijacking"
+      },
+      "products": [
+        {
+          "@id": "pkg:oci/sencho",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/go.opentelemetry.io/otel/sdk@v1.38.0",
+              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
+            },
+            {
+              "@id": "pkg:golang/go.opentelemetry.io/otel/sdk@v1.42.0",
+              "location": "/usr/local/bin/docker"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The BSD kenv PATH hijacking code path executes only on BSD operating systems (FreeBSD, OpenBSD, NetBSD). Sencho publishes linux/amd64 and linux/arm64 images only. The vulnerable code path is never executed in our runtime environment. Both the docker-compose plugin (otel/sdk v1.38.0) and the rebuilt Docker CLI binary (otel/sdk v1.42.0) bundle vulnerable versions; the same justification applies to both."
+    }
+  ]
+}

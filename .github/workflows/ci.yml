@@ -152,15 +152,23 @@ jobs:
             APK_CACHE_BUST=${{ steps.apk-bust.outputs.date }}
 
       - name: Scan image for vulnerabilities (Trivy)
-        # Hard-fails the PR on any HIGH or CRITICAL finding that is not listed
-        # in .trivyignore at the repo root. To accept a CVE, add it to that
-        # file with a human-readable justification comment, not here.
+        # Hard-fails the PR on any HIGH or CRITICAL finding not suppressed by
+        # the OpenVEX document at security/vex/sencho.openvex.json (loaded via
+        # trivy.yaml) or by .trivyignore at the repo root. The VEX document is
+        # the canonical triage record and is also attached as a cosign
+        # attestation on the published image. .trivyignore exists only to
+        # mirror VEX entries that cannot be resolved here because Trivy does
+        # not emit an OCI purl for local images without a digest, so VEX
+        # product matching against `sencho:pr-test` is a no-op (see
+        # aquasecurity/trivy#9399). Add the VEX statement first, then mirror
+        # the CVE id in .trivyignore with a pointer to the VEX justification.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: sencho:pr-test
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
+          trivy-config: trivy.yaml
 
   # ---------------------------------------------------------------------------
   # E2E Tests (PRs only, skipped for release-please PRs)

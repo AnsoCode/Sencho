@@ -23,8 +23,9 @@ jobs:
     # a manual-approval gate without any workflow change.
     environment: production
     permissions:
-      contents: read
-      # Required for cosign keyless signing via GitHub OIDC.
+      contents: write
+      # Required for cosign keyless signing via GitHub OIDC and for uploading
+      # SBOM/VEX files to GitHub Releases via softprops/action-gh-release.
       id-token: write
     steps:
       - name: Check out the repo
@@ -102,14 +103,16 @@ jobs:
 
       - name: Re-scan release image for vulnerabilities (Trivy)
         # Gates the release on the same HIGH/CRITICAL policy as the PR scan.
-        # Entries in .trivyignore at the repo root are honored so the acknowledged
-        # CVE list is the single source of truth across PR CI and release CI.
+        # CVEs suppressed via the OpenVEX document (trivy.yaml -> security/vex/
+        # sencho.openvex.json) are the single source of truth across PR CI and
+        # release CI.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: localhost/sencho:release-scan
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
+          trivy-config: trivy.yaml
 
       # Start the scanned image headless on the runner and poll /api/health
       # until it returns 200. Catches entrypoint regressions, native module
@@ -168,6 +171,8 @@ jobs:
         #   cosign verify saelix/sencho:<tag> \
         #     --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
         #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+        # Each ref is pinned to the immutable digest so signatures are bound to
+        # the exact manifest, not the mutable tag pointer.
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -186,3 +191,43 @@ jobs:
           else
             echo "No tags to sign (likely a workflow_dispatch run on a non-tag ref)."
           fi
+
+      - name: Generate CycloneDX SBOM
+        # syft scans the published manifest by digest for richer package
+        # extraction than the BuildKit-native SBOM. Also installs syft into
+        # PATH so the SPDX step below can reuse the OCI layer cache.
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.20.2
+        with:
+          image: saelix/sencho@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - name: Generate SPDX SBOM
+        # Reuses the syft binary and OCI layer cache from the prior step.
+        run: |
+          syft saelix/sencho@${{ steps.build.outputs.digest }} \
+            -o spdx-json=sbom.spdx.json
+
+      - name: Attest SBOMs and VEX with cosign (keyless)
+        # Attaches CycloneDX SBOM, SPDX SBOM, and OpenVEX document as signed
+        # OCI referrer attestations on the published digest. Verification
+        # commands are documented in docs/operations/verifying-images.mdx.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          IMAGE_REF="saelix/sencho@${DIGEST}"
+          cosign attest --yes --predicate sbom.cdx.json  --type cyclonedx "${IMAGE_REF}"
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson  "${IMAGE_REF}"
+          cosign attest --yes --predicate security/vex/sencho.openvex.json --type openvex "${IMAGE_REF}"
+
+      - name: Upload SBOM and VEX to GitHub Release
+        # Fallback for consumers who do not use cosign; files are also
+        # available as signed OCI attestations via the attest step above.
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.3.2
+        with:
+          files: |
+            sbom.cdx.json
+            sbom.spdx.json
+            security/vex/sencho.openvex.json

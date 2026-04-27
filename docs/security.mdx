@@ -233,9 +233,15 @@ For multi-node setup, see [Multi-Node Management](/features/multi-node).
 
 ## Supply chain security
 
-Sencho Docker images are signed with [Sigstore cosign](https://www.sigstore.dev/) and include SBOM (Software Bill of Materials) and SLSA provenance attestations. Dependency versions are pinned in the Dockerfile for reproducible builds.
+Every Sencho release image ships a set of verifiable supply-chain artifacts:
 
-For verification instructions, see [Verifying Images](/reference/verifying-images). For CVE remediation history, see [Security Advisories](/reference/security-advisories).
+- **Cosign signature** (keyless, GitHub OIDC): every tag is signed by digest and recorded in the Sigstore Rekor transparency log. No private key is stored anywhere.
+- **SLSA provenance attestation**: produced by BuildKit at build time, describes the exact source commit, build inputs, and build steps.
+- **CycloneDX 1.6 SBOM**: full package inventory in CycloneDX format, attached as a cosign attestation and downloadable as a GitHub Release asset (`sbom.cdx.json`).
+- **SPDX 2.3 SBOM**: same inventory in SPDX format (`sbom.spdx.json`).
+- **OpenVEX document**: triage decisions for CVEs that appear in vendored third-party dependencies but are not reachable via Sencho's usage of those dependencies (`sencho.openvex.json`).
+
+For copy-paste verification commands, see [Verifying Images](/operations/verifying-images).
 
 ## Production hardening checklist
 
@@ -248,7 +254,7 @@ For verification instructions, see [Verifying Images](/reference/verifying-image
 3. **Enroll all admin accounts in 2FA** to protect against credential theft. See [Two-Factor Authentication](/features/two-factor-authentication).
 4. **Use scoped API tokens** instead of sharing admin credentials with CI/CD pipelines. See [API Tokens](/features/api-tokens).
 5. **Set `FRONTEND_URL`** to restrict CORS to your domain. See [Configuration](/getting-started/configuration).
-6. **Verify Docker image signatures** before deploying to confirm the image has not been tampered with. See [Verifying Images](/reference/verifying-images).
+6. **Verify Docker image signatures** before deploying to confirm the image has not been tampered with. See [Verifying Images](/operations/verifying-images).
 7. **Review the audit log regularly** or assign a dedicated Auditor-role user for ongoing compliance monitoring. See [Audit Log](/features/audit-log).
 8. **Keep Sencho updated** to receive security patches and dependency upgrades. See [Upgrade](/operations/upgrade).
 

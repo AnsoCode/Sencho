@@ -1,0 +1,113 @@
+---
+title: Verifying Published Images
+description: How to verify signatures, provenance, SBOMs, and CVE triage for Sencho Docker images.
+---
+
+Every Sencho release image published to Docker Hub is signed and carries verifiable supply-chain artifacts. This page explains how to check each one.
+
+## Prerequisites
+
+Install the following tools once:
+
+```bash
+# cosign (Sigstore)
+brew install cosign          # macOS
+# or: https://github.com/sigstore/cosign/releases
+
+# syft (optional, for inspecting SBOM content)
+brew install syft
+# or: https://github.com/anchore/syft/releases
+
+# Trivy (optional, for local vulnerability scan with VEX)
+brew install trivy
+# or: https://github.com/aquasecurity/trivy/releases
+```
+
+## Verify the image signature
+
+Every published tag is signed with cosign keyless signing via GitHub Actions OIDC. No private key is stored anywhere; the signing identity is bound to the GitHub Actions workflow that published the image.
+
+```bash
+cosign verify saelix/sencho:<tag> \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+A successful verification prints the verified payload and exits 0. The Rekor transparency log entry is included in the output; you can also query it directly:
+
+```bash
+cosign tree saelix/sencho:<tag>
+```
+
+## Verify SLSA provenance
+
+BuildKit produces an SLSA v1 provenance attestation during every multi-arch build. Retrieve and verify it:
+
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
+```
+
+## Retrieve the CycloneDX SBOM
+
+```bash
+cosign verify-attestation \
+  --type cyclonedx \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
+```
+
+Alternatively, download `sbom.cdx.json` directly from the GitHub Release assets for the matching version.
+
+## Retrieve the SPDX SBOM
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
+```
+
+`sbom.spdx.json` is also available as a GitHub Release asset.
+
+## Retrieve the VEX document
+
+The OpenVEX document explains Sencho's triage decisions for any CVEs that appear in vendored dependencies but are not reachable via Sencho's usage of those dependencies:
+
+```bash
+cosign verify-attestation \
+  --type openvex \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
+```
+
+`sencho.openvex.json` is also available as a GitHub Release asset and at `security/vex/sencho.openvex.json` in the source repository.
+
+## Run a local vulnerability scan with VEX applied
+
+To reproduce the same scan that gates every release:
+
+```bash
+# Download the VEX document
+curl -Lo sencho.openvex.json \
+  https://github.com/AnsoCode/Sencho/releases/latest/download/sencho.openvex.json
+
+# Scan with VEX applied (exit 1 if any unresolved HIGH/CRITICAL CVE)
+trivy image \
+  --vex sencho.openvex.json \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  saelix/sencho:<tag>
+```
+
+A clean result means no unresolved HIGH or CRITICAL CVEs. CVEs listed as `not_affected` in the VEX document are suppressed with their justification visible in the VEX file.
+
+<Note>
+Trivy 0.36.0 or later is required for `--vex` flag support.
+</Note>
