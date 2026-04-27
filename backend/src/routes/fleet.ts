@@ -994,7 +994,7 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
 
     if (isDebugEnabled()) {
       const fileNames = files.map(f => f.filename).join(', ');
-      console.debug('[Fleet:debug] Restore: snapshot=%s, node=%s, stack="%s", files=[%s], redeploy=%s', snapshotId, nodeId, sanitizeForLog(stackName), sanitizeForLog(fileNames), sanitizeForLog(redeploy));
+      console.debug('[Fleet:debug] Restore: snapshot=%s, node=%s, stack="%s", files=[%s], redeploy=%s', sanitizeForLog(snapshotId), sanitizeForLog(nodeId), sanitizeForLog(stackName), sanitizeForLog(fileNames), sanitizeForLog(redeploy));
     }
 
     const node = db.getNode(nodeId);
