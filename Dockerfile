@@ -101,7 +101,9 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 #
 # Runs on the BUILD platform; GOARCH cross-compiles the static binary for TARGET.
 # The --depth 1 clone fetches only the v29.4.0 tag commit, minimising transfer size.
-# The Go module cache (type=cache mount) persists across builds for faster rebuilds.
+# docker/cli v29.4.0 uses CalVer and ships vendor.mod instead of go.mod to avoid
+# SemVer compliance requirements. We copy vendor.mod -> go.mod and build with
+# -mod=vendor so all deps come from the vendored tree (no network access needed).
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS cli-builder
 
 ARG TARGETARCH
@@ -114,8 +116,9 @@ WORKDIR /src/docker-cli
 
 RUN mkdir -p /build
 
-RUN --mount=type=cache,id=go-mod,sharing=locked,target=/root/go/pkg/mod \
+RUN cp vendor.mod go.mod && cp vendor.sum go.sum && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+      -mod=vendor \
       -ldflags "-extldflags=-static \
         -X github.com/docker/cli/cli/version.Version=29.4.0 \
         -X github.com/docker/cli/cli/version.GitCommit=source-go1.26.2" \
@@ -141,7 +144,7 @@ WORKDIR /src/docker-compose
 
 RUN mkdir -p /build
 
-RUN --mount=type=cache,id=go-mod,sharing=locked,target=/root/go/pkg/mod \
+RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
       -ldflags "-extldflags=-static \
         -X github.com/docker/compose/v2/internal.Version=v5.1.2" \
