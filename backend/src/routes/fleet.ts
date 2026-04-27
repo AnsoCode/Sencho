@@ -20,6 +20,7 @@ import { getLatestVersion } from '../utils/version-check';
 import { isValidStackName } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { POLICY_SEVERITIES } from '../utils/severity';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { NotificationService } from '../services/NotificationService';
 import { buildLocalConfigurationStatus, type ConfigurationStatus } from './dashboard';
@@ -47,7 +48,6 @@ const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
 const MAX_SYNC_ROWS = 5000;
-const VALID_SEVERITY = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
 const CVE_ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA-[\w-]{14,})$/;
 
 const isIntFlag = (v: unknown): v is 0 | 1 => v === 0 || v === 1;
@@ -56,7 +56,7 @@ function validateScanPolicyRow(row: unknown): string | null {
   if (!row || typeof row !== 'object') return 'row must be an object';
   const r = row as Record<string, unknown>;
   if (typeof r.name !== 'string' || r.name.length === 0 || r.name.length > 200) return 'name must be a non-empty string';
-  if (typeof r.max_severity !== 'string' || !VALID_SEVERITY.has(r.max_severity)) return 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW';
+  if (typeof r.max_severity !== 'string' || !POLICY_SEVERITIES.has(r.max_severity)) return 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW';
   if (r.stack_pattern !== null && typeof r.stack_pattern !== 'string') return 'stack_pattern must be a string or null';
   if (typeof r.stack_pattern === 'string' && r.stack_pattern.length > 200) return 'stack_pattern is too long';
   if (typeof r.node_identity !== 'string') return 'node_identity must be a string';
