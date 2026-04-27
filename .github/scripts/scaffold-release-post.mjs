@@ -304,9 +304,9 @@ function updateMeta(websiteRoot, slug, title, description, date) {
   const entry = [
     '  {',
     `    slug: '${slug}',`,
-    `    title: '${title.replace(/'/g, "\\'")}',`,
+    `    title: '${escapeTsxString(title)}',`,
     `    description:`,
-    `      '${description.replace(/'/g, "\\'")}',`,
+    `      '${escapeTsxString(description)}',`,
     `    date: '${date}',`,
     '  },',
   ].join('\n')
