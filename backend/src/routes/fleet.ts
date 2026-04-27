@@ -26,7 +26,7 @@ import { sanitizeForLog } from '../utils/safeLog';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { NotificationService } from '../services/NotificationService';
 import { buildLocalConfigurationStatus, type ConfigurationStatus } from './dashboard';
-import { LicenseService } from '../services/LicenseService';
+import { LicenseService, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../services/LicenseService';
 
 const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -330,8 +330,9 @@ fleetRouter.get('/configuration', authMiddleware, async (req: Request, res: Resp
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const userId = req.user?.userId ?? 0;
-    const localTier = LicenseService.getInstance().getTier();
-    const localVariant = LicenseService.getInstance().getVariant();
+    const ls = LicenseService.getInstance();
+    const localTier = ls.getTier();
+    const localVariant = ls.getVariant();
 
     const results = await Promise.allSettled(
       nodes.map(async (node: Node): Promise<FleetNodeConfiguration> => {
@@ -352,7 +353,14 @@ fleetRouter.get('/configuration', authMiddleware, async (req: Request, res: Resp
         try {
           const resp = await fetch(
             `${node.api_url.replace(/\/$/, '')}/api/dashboard/configuration`,
-            { headers: { Authorization: `Bearer ${node.api_token}` }, signal: AbortSignal.timeout(10000) },
+            {
+              headers: {
+                Authorization: `Bearer ${node.api_token}`,
+                [PROXY_TIER_HEADER]: localTier,
+                [PROXY_VARIANT_HEADER]: localVariant ?? '',
+              },
+              signal: AbortSignal.timeout(10000),
+            },
           );
           const configuration = resp.ok ? (await resp.json() as ConfigurationStatus) : null;
           return {
