@@ -8,6 +8,7 @@ import { rejectApiTokenScope } from '../middleware/apiTokenScope';
 import { BCRYPT_SALT_ROUNDS, MIN_PASSWORD_LENGTH } from '../helpers/constants';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage, isSqliteUniqueViolation } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const USERS_SCOPE_MESSAGE = 'API tokens cannot access user management.';
 const VALID_USER_ROLES: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin', 'auditor'];
@@ -218,11 +219,8 @@ usersRouter.post('/:id/mfa/reset', authMiddleware, (req: Request, res: Response)
   if (rejectApiTokenScope(req, res, USERS_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (!Number.isFinite(id)) {
-      res.status(400).json({ error: 'Invalid user id' });
-      return;
-    }
+    const id = parseIntParam(req, res, 'id', 'user id');
+    if (id === null) return;
     const db = DatabaseService.getInstance();
     const target = db.getUser(id);
     if (!target) {

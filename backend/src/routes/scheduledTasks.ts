@@ -6,6 +6,7 @@ import { SchedulerService } from '../services/SchedulerService';
 import { requirePaid, requireAdmin, requireScheduledTaskTier } from '../middleware/tierGates';
 import { escapeCsvField } from '../utils/csv';
 import { getErrorMessage } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const VALID_TARGET_TYPES = ['stack', 'fleet', 'system'] as const;
 const VALID_ACTIONS = ['restart', 'snapshot', 'prune', 'update', 'scan', 'auto_backup', 'auto_stop', 'auto_down', 'auto_start'] as const;
@@ -16,15 +17,6 @@ type TargetType = typeof VALID_TARGET_TYPES[number];
 type ScheduledAction = typeof VALID_ACTIONS[number];
 
 const STACK_ONLY_ACTIONS = new Set<ScheduledAction>(['auto_backup', 'auto_stop', 'auto_down', 'auto_start']);
-
-function parseTaskId(req: Request, res: Response): number | null {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: 'Invalid task ID' });
-    return null;
-  }
-  return id;
-}
 
 /**
  * Validate that the target_type is compatible with the action. Each action
@@ -190,7 +182,7 @@ scheduledTasksRouter.get('/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
     const task = DatabaseService.getInstance().getScheduledTask(id);
     if (!task) { res.status(404).json({ error: 'Scheduled task not found' }); return; }
@@ -206,7 +198,7 @@ scheduledTasksRouter.put('/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();
@@ -286,7 +278,7 @@ scheduledTasksRouter.delete('/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();
@@ -307,7 +299,7 @@ scheduledTasksRouter.patch('/:id/toggle', (req: Request, res: Response): void =>
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();
@@ -337,7 +329,7 @@ scheduledTasksRouter.post('/:id/run', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();
@@ -368,7 +360,7 @@ scheduledTasksRouter.get('/:id/runs/export', (req: Request, res: Response): void
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();
@@ -404,7 +396,7 @@ scheduledTasksRouter.get('/:id/runs', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseTaskId(req, res);
+    const id = parseIntParam(req, res, 'id', 'task ID');
     if (id === null) return;
 
     const db = DatabaseService.getInstance();

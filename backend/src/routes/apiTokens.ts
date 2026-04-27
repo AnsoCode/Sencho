@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth';
 import { requireAdmin, requireAdmiral } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
 import { isDebugEnabled } from '../utils/debug';
+import { parseIntParam } from '../utils/parseIntParam';
 
 // JWT ceiling exceeds the longest user-selectable expiry (365d) so the DB
 // check (expires_at) is always the tighter bound.
@@ -109,8 +110,8 @@ apiTokensRouter.delete('/:id', authMiddleware, async (req: Request, res: Respons
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid token ID.' }); return; }
+    const id = parseIntParam(req, res, 'id', 'token ID');
+    if (id === null) return;
 
     const apiToken = DatabaseService.getInstance().getApiTokenById(id);
     if (!apiToken) { res.status(404).json({ error: 'API token not found.' }); return; }
