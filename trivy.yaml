@@ -1,2 +1,3 @@
 vulnerability:
-  vex: security/vex/sencho.openvex.json
+  vex:
+    - security/vex/sencho.openvex.json
