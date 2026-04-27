@@ -899,8 +899,7 @@ stacksRouter.get('/:stackName/files/download', async (req: Request, res: Respons
 stacksRouter.post(
   '/:stackName/files/upload',
   (req: Request, res: Response, next: NextFunction) => {
-    const stackName = req.params.stackName as string;
-      if (!requirePaid(req, res)) return;
+    if (!requirePaid(req, res)) return;
     upload.single('file')(req, res, (err) => {
       if (err && (err as multer.MulterError).code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ error: 'File exceeds 25 MB limit', code: 'TOO_LARGE' });
