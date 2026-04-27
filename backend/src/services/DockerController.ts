@@ -10,6 +10,7 @@ import { NodeRegistry } from './NodeRegistry';
 import { CacheService } from './CacheService';
 import { isPathWithinBase } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const execAsync = promisify(exec);
 const COMPOSE_DIR = process.env.COMPOSE_DIR || '/app/compose';
@@ -644,7 +645,7 @@ class DockerController {
             } catch (err: unknown) {
               const code = (err as NodeJS.ErrnoException)?.code;
               if (code !== 'ENOENT' && code !== 'ENOTDIR') {
-                console.error(`[DockerController] Failed to read ${filePath}:`, err);
+                console.error('[DockerController] Failed to read %s:', sanitizeForLog(filePath), sanitizeForLog((err as Error)?.message ?? String(err)));
                 break;
               }
             }
@@ -790,7 +791,7 @@ class DockerController {
             containers = lines.map(line => JSON.parse(line) as ComposeContainer);
           } catch (innerError) {
             // Log parsing failure with stderr for debugging
-            console.error(`Docker Compose JSON Parse Error for ${stackName}:`, stderr || (parseError as Error).message);
+            console.error('Docker Compose JSON Parse Error for %s:', sanitizeForLog(stackName), sanitizeForLog(stderr || (parseError as Error).message));
             // Don't return empty - trigger smart fallback below
           }
         }
@@ -827,7 +828,7 @@ class DockerController {
     } catch (error) {
       // If command fails (e.g., stack not deployed, invalid YAML, missing env_file)
       const execError = error as { stderr?: string; message?: string };
-      console.error(`Docker Compose Error for ${stackName}:`, execError.stderr || execError.message);
+      console.error('Docker Compose Error for %s:', sanitizeForLog(stackName), sanitizeForLog(execError.stderr || execError.message || 'unknown'));
 
       // Try smart fallback even on error
       return await this.enrichContainers(await this.smartFallback(stackName, stackDir));
@@ -930,7 +931,7 @@ class DockerController {
         };
       });
     } catch (fallbackError) {
-      console.error(`Smart Fallback failed for ${stackName}:`, fallbackError);
+      console.error('Smart Fallback failed for %s:', sanitizeForLog(stackName), sanitizeForLog((fallbackError as Error)?.message ?? String(fallbackError)));
       return [];
     }
   }
@@ -1053,7 +1054,7 @@ class DockerController {
         await container.remove({ force: true });
         results.push({ id, success: true });
       } catch (error: any) {
-        console.error(`Failed to remove container ${id}:`, error.message);
+        console.error('Failed to remove container %s:', sanitizeForLog(id), sanitizeForLog(error.message));
         results.push({ id, success: false, error: error.message });
       }
     }

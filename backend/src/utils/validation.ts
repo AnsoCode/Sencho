@@ -1,4 +1,5 @@
 import path from 'path';
+import { sanitizeForLog } from './safeLog';
 
 /**
  * Stack name must only contain URL-safe characters with no path separators.
@@ -19,7 +20,7 @@ export function isValidRemoteUrl(
   try {
     url = new URL(raw);
   } catch (e) {
-    console.warn('[Validation] URL parse failure:', (e as Error).message, '— input:', raw);
+    console.warn('[Validation] URL parse failure:', sanitizeForLog((e as Error).message), 'input:', sanitizeForLog(raw));
     return {
       valid: false,
       reason: 'API URL must be a valid URL (e.g. https://my-server.example.com:1852)',

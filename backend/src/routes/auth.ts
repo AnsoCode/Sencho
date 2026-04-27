@@ -13,6 +13,7 @@ import {
 import { authRateLimiter } from '../middleware/rateLimiters';
 import { requireAdmin } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
+import { sanitizeForLog } from '../utils/safeLog';
 import {
   BCRYPT_SALT_ROUNDS,
   COOKIE_NAME,
@@ -143,7 +144,7 @@ authRouter.post('/login', authRateLimiter, async (req: Request, res: Response): 
       }
     }
 
-    console.warn('[Auth] Login failed for username:', username);
+    console.warn('[Auth] Login failed for username:', sanitizeForLog(username));
     res.status(401).json({ error: 'Invalid credentials' });
   } catch (error) {
     console.error('Login error:', error);

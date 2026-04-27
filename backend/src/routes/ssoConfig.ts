@@ -3,6 +3,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { SSOService, type SSOProviderConfig } from '../services/SSOService';
 import { requireAdmin, requireTierForSsoProvider } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const VALID_SSO_PROVIDERS = ['ldap', 'oidc_google', 'oidc_github', 'oidc_okta', 'oidc_custom'] as const;
 const SSO_SCOPE_MESSAGE = 'API tokens cannot access SSO configuration.';
@@ -85,7 +86,7 @@ ssoConfigRouter.put('/:provider', (req: Request, res: Response): void => {
     }
 
     SSOService.getInstance().saveProviderConfig(config);
-    console.log(`[SSO] Config updated: ${provider} ${config.enabled ? 'enabled' : 'disabled'}`);
+    console.log(`[SSO] Config updated: ${sanitizeForLog(provider)} ${config.enabled ? 'enabled' : 'disabled'}`);
     res.json({ success: true, message: 'SSO configuration saved' });
   } catch (error) {
     console.error('[SSO] Failed to save SSO config:', error);
@@ -101,7 +102,7 @@ ssoConfigRouter.delete('/:provider', (req: Request, res: Response): void => {
   if (!requireTierForSsoProvider(provider, req, res)) return;
   try {
     SSOService.getInstance().deleteProviderConfig(provider);
-    console.log(`[SSO] Config deleted: ${provider}`);
+    console.log(`[SSO] Config deleted: ${sanitizeForLog(provider)}`);
     res.json({ success: true, message: 'SSO configuration deleted' });
   } catch (error) {
     console.error('[SSO] Failed to delete SSO config:', error);

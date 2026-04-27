@@ -3,6 +3,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { authMiddleware } from '../middleware/auth';
 import { requireAdmin } from '../middleware/tierGates';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 import { NOTIFICATION_CHANNEL_TYPES, validateHttpsUrl } from '../helpers/notificationChannels';
 
 export const agentsRouter = Router();
@@ -34,8 +35,8 @@ agentsRouter.post('/', authMiddleware, async (req: Request, res: Response): Prom
     }
     const nodeId = req.nodeId ?? 0;
     DatabaseService.getInstance().upsertAgent(nodeId, { type, url, enabled });
-    console.log(`[Agents] Agent ${type} updated`);
-    if (isDebugEnabled()) console.log(`[Agents:diag] Agent ${type} upsert: enabled=${enabled}`);
+    console.log('[Agents] Agent %s updated', sanitizeForLog(type));
+    if (isDebugEnabled()) console.log('[Agents:diag] Agent %s upsert: enabled=%s', sanitizeForLog(type), sanitizeForLog(enabled));
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to update agent:', error);

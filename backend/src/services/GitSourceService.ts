@@ -11,6 +11,7 @@ import { DatabaseService, type StackGitSource, type GitSourceAuthType } from './
 import { FileSystemService } from './FileSystemService';
 import { ComposeService } from './ComposeService';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 
 /**
  * GitSourceService - fetch compose files from a Git repository and apply
@@ -380,7 +381,7 @@ export class GitSourceService {
         const diag = isDebugEnabled();
         if (diag) {
             console.log(
-                `[GitSource:diag] fetch start host=${repoHost(repoUrl)} branch=${branch} compose=${composePath} envSync=${envPath ? 'true' : 'false'} timeoutMs=${timeoutMs}`
+                `[GitSource:diag] fetch start host=${sanitizeForLog(repoHost(repoUrl))} branch=${sanitizeForLog(branch)} compose=${sanitizeForLog(composePath)} envSync=${envPath ? 'true' : 'false'} timeoutMs=${timeoutMs}`
             );
         }
 
@@ -444,7 +445,7 @@ export class GitSourceService {
                 throw new GitSourceError('GIT_ERROR', scrubCredentials((e as Error).message));
             }
             if (isLfsPointer(composeContent)) {
-                console.error(`[GitSource] LFS pointer detected in ${composePath}`);
+                console.error(`[GitSource] LFS pointer detected in ${sanitizeForLog(composePath)}`);
                 throw new GitSourceError(
                     'GIT_ERROR',
                     `Compose file at ${composePath} is stored in Git LFS, which is not supported. Commit the plain file or replace the LFS pointer before linking this repository.`,
@@ -470,7 +471,7 @@ export class GitSourceService {
                     }
                 }
                 if (envContent !== null && isLfsPointer(envContent)) {
-                    console.error(`[GitSource] LFS pointer detected in ${envPath}`);
+                    console.error(`[GitSource] LFS pointer detected in ${sanitizeForLog(envPath)}`);
                     throw new GitSourceError(
                         'GIT_ERROR',
                         `Env file at ${envPath} is stored in Git LFS, which is not supported. Commit the plain file or replace the LFS pointer before linking this repository.`,
@@ -489,7 +490,7 @@ export class GitSourceService {
 
             if (diag) {
                 console.log(
-                    `[GitSource:diag] fetch ok host=${repoHost(repoUrl)} branch=${branch} sha=${commitSha.slice(0, 7)} env=${envContent !== null ? 'present' : 'absent'} warnings=${warnings.length} elapsedMs=${Date.now() - startedAt}`
+                    `[GitSource:diag] fetch ok host=${sanitizeForLog(repoHost(repoUrl))} branch=${sanitizeForLog(branch)} sha=${commitSha.slice(0, 7)} env=${envContent !== null ? 'present' : 'absent'} warnings=${warnings.length} elapsedMs=${Date.now() - startedAt}`
                 );
             }
             return { composeContent, envContent, commitSha, warnings };
@@ -497,7 +498,7 @@ export class GitSourceService {
             if (diag) {
                 const msg = err instanceof GitSourceError ? `${err.code}: ${err.message}` : (err as Error).message;
                 console.log(
-                    `[GitSource:diag] fetch fail host=${repoHost(repoUrl)} branch=${branch} elapsedMs=${Date.now() - startedAt} err=${scrubCredentials(msg)}`
+                    `[GitSource:diag] fetch fail host=${sanitizeForLog(repoHost(repoUrl))} branch=${sanitizeForLog(branch)} elapsedMs=${Date.now() - startedAt} err=${sanitizeForLog(scrubCredentials(msg))}`
                 );
             }
             throw err;
@@ -742,7 +743,7 @@ export class GitSourceService {
                 throw new GitSourceError('GIT_ERROR', 'No pending pull to apply. Fetch the source again.');
             }
             if (src.pending_commit_sha !== commitSha) {
-                if (diag) console.log(`[GitSource:diag] apply sha mismatch stack=${stackName} expected=${commitSha.slice(0, 7)} pending=${src.pending_commit_sha.slice(0, 7)}`);
+                if (diag) console.log('[GitSource:diag] apply sha mismatch stack=%s expected=%s pending=%s', sanitizeForLog(stackName), sanitizeForLog(commitSha.slice(0, 7)), sanitizeForLog(src.pending_commit_sha.slice(0, 7)));
                 throw new GitSourceError('GIT_ERROR', 'Pending commit has changed since this pull was fetched. Please review the latest diff.');
             }
 
@@ -770,7 +771,7 @@ export class GitSourceService {
             db.markGitSourceApplied(stackName, commitSha, hash);
 
             const shouldDeploy = opts.deploy ?? src.auto_deploy_on_apply;
-            if (diag) console.log(`[GitSource:diag] apply wrote stack=${stackName} sha=${commitSha.slice(0, 7)} deploy=${shouldDeploy}`);
+            if (diag) console.log('[GitSource:diag] apply wrote stack=%s sha=%s deploy=%s', sanitizeForLog(stackName), sanitizeForLog(commitSha.slice(0, 7)), sanitizeForLog(shouldDeploy));
 
             if (shouldDeploy) {
                 try {

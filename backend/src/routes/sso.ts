@@ -7,6 +7,7 @@ import { authRateLimiter, ssoRateLimiter } from '../middleware/rateLimiters';
 import { isSecureRequest } from '../helpers/cookies';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 
 // Seed SSO config from environment variables on module load. One-shot side
 // effect at startup; safe to repeat (upsert).
@@ -22,7 +23,7 @@ function getSSOBaseUrl(req: Request, res: Response): string | null {
     return null;
   }
   if (!process.env.SSO_CALLBACK_URL && isDebugEnabled()) {
-    console.debug('[SSO:debug] SSO_CALLBACK_URL not set; using Host header for callback URL:', host);
+    console.debug('[SSO:debug] SSO_CALLBACK_URL not set; using Host header for callback URL:', sanitizeForLog(host));
   }
   return process.env.SSO_CALLBACK_URL || `${req.protocol}://${host}`;
 }

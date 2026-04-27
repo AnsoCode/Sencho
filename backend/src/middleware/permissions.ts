@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { DatabaseService, type UserRole, type ResourceType } from '../services/DatabaseService';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 import { effectiveVariant } from './tierGates';
 
 // --- Scoped RBAC Permission Engine (Admiral) ---
@@ -44,7 +45,7 @@ export function checkPermission(
 
   const globalRole = req.user.role;
 
-  if (isDebugEnabled()) console.log('[RBAC:diag] checkPermission:', action, 'user:', req.user.username, 'globalRole:', globalRole, 'resource:', resourceType, resourceId);
+  if (isDebugEnabled()) console.log('[RBAC:diag] checkPermission:', sanitizeForLog(action), 'user:', sanitizeForLog(req.user.username), 'globalRole:', globalRole, 'resource:', sanitizeForLog(resourceType), sanitizeForLog(resourceId));
 
   if (globalRole === 'admin') return true;
   if (ROLE_PERMISSIONS[globalRole]?.includes(action)) return true;

@@ -9,6 +9,7 @@ import { BCRYPT_SALT_ROUNDS, MIN_PASSWORD_LENGTH } from '../helpers/constants';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage, isSqliteUniqueViolation } from '../utils/errors';
 import { parseIntParam } from '../utils/parseIntParam';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const USERS_SCOPE_MESSAGE = 'API tokens cannot access user management.';
 const VALID_USER_ROLES: UserRole[] = ['admin', 'viewer', 'deployer', 'node-admin', 'auditor'];
@@ -95,7 +96,7 @@ usersRouter.post('/', authMiddleware, async (req: Request, res: Response): Promi
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
     const id = db.addUser({ username, password_hash: passwordHash, role });
-    console.log('[Users] Created:', username, 'role:', role, 'by:', req.user!.username);
+    console.log('[Users] Created:', sanitizeForLog(username), 'role:', sanitizeForLog(role), 'by:', sanitizeForLog(req.user!.username));
     res.status(201).json({ id, username, role });
   } catch (error) {
     console.error('[Users] Create error:', error);
@@ -304,7 +305,7 @@ usersRouter.post('/:id/roles', authMiddleware, (req: Request, res: Response): vo
 
     try {
       const id = db.addRoleAssignment({ user_id: userId, role, resource_type, resource_id });
-      console.log('[Roles] Assigned', role, 'on', resource_type, resource_id, 'to user', userId, 'by:', req.user!.username);
+      console.log('[Roles] Assigned', sanitizeForLog(role), 'on', sanitizeForLog(resource_type), sanitizeForLog(resource_id), 'to user', userId, 'by:', sanitizeForLog(req.user!.username));
       res.status(201).json({ id, user_id: userId, role, resource_type, resource_id });
     } catch (err: unknown) {
       if (isSqliteUniqueViolation(err)) {

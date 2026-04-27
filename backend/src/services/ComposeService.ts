@@ -12,6 +12,7 @@ import { RegistryService } from './RegistryService';
 
 import { isDebugEnabled } from '../utils/debug';
 import { isPathWithinBase, isValidStackName } from '../utils/validation';
+import { sanitizeForLog } from '../utils/safeLog';
 
 /**
  * ComposeService - local docker compose CLI execution.
@@ -141,7 +142,7 @@ export class ComposeService {
         await fsSvc.backupStackFiles(stackName);
         sendOutput('=== Backup created for atomic deployment ===\n');
       } catch (e) {
-        console.warn(`Failed to backup stack files for ${stackName}:`, e);
+        console.warn('Failed to backup stack files for %s:', sanitizeForLog(stackName), e);
       }
     }
 
@@ -154,7 +155,7 @@ export class ComposeService {
           await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
         }
       } catch (e) {
-        console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+        console.warn('Failed to clean up legacy containers for %s:', sanitizeForLog(stackName), e);
       }
 
       await this.withRegistryAuth(async (env) => {
@@ -196,7 +197,7 @@ export class ComposeService {
           }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
-          console.error(`Rollback failed for ${stackName}:`, rollbackError);
+          console.error('Rollback failed for %s:', sanitizeForLog(stackName), rollbackError);
           sendOutput('=== Rollback failed - manual intervention may be required ===\n');
         }
       }
@@ -331,7 +332,7 @@ export class ComposeService {
         await fsSvc.backupStackFiles(stackName);
         sendOutput('=== Backup created for atomic update ===\n');
       } catch (e) {
-        console.warn(`Failed to backup stack files for ${stackName}:`, e);
+        console.warn('Failed to backup stack files for %s:', sanitizeForLog(stackName), e);
       }
     }
 
@@ -344,7 +345,7 @@ export class ComposeService {
           await dockerController.removeContainers(legacyContainers.map((c: any) => c.Id));
         }
       } catch (e) {
-        console.warn(`Failed to clean up legacy containers for ${stackName}:`, e);
+        console.warn('Failed to clean up legacy containers for %s:', sanitizeForLog(stackName), e);
       }
 
       await this.withRegistryAuth(async (env) => {
@@ -392,7 +393,7 @@ export class ComposeService {
           }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
-          console.error(`Rollback failed for ${stackName}:`, rollbackError);
+          console.error('Rollback failed for %s:', sanitizeForLog(stackName), rollbackError);
           sendOutput('=== Rollback failed - manual intervention may be required ===\n');
         }
       }
@@ -405,7 +406,7 @@ export class ComposeService {
     try {
       await this.execute('docker', ['compose', 'down', '--volumes', '--remove-orphans'], stackPath, undefined, false);
     } catch (error) {
-      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
+      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${sanitizeForLog(stackName)}`);
     }
   }
 

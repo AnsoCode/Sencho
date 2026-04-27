@@ -13,6 +13,7 @@ import { authMiddleware } from '../middleware/auth';
 import { requireAdmin, requirePaid } from '../middleware/tierGates';
 import { buildPolicyGateOptions } from '../helpers/policyGate';
 import { isValidStackName } from '../utils/validation';
+import { sanitizeForLog } from '../utils/safeLog';
 import { getErrorMessage } from '../utils/errors';
 
 // Fleet aggregation cache: 2-minute TTL, shared across dashboard tabs.
@@ -189,7 +190,7 @@ autoUpdateRouter.post('/execute', authMiddleware, async (req: Request, res: Resp
   if (!requireAdmin(req, res)) return;
   try {
     const { target } = req.body as { target?: string };
-    console.log(`[AutoUpdate] Execute requested: target="${target || ''}"`);
+    console.log(`[AutoUpdate] Execute requested: target="${sanitizeForLog(target || '')}"`);
     if (!target || typeof target !== 'string') {
       res.status(400).json({ error: 'Missing "target" (stack name or "*" for all)' });
       return;
@@ -256,7 +257,7 @@ autoUpdateRouter.post('/execute', authMiddleware, async (req: Request, res: Resp
           } catch (e) {
             const errMsg = getErrorMessage(e, String(e));
             checkErrors.push(errMsg);
-            console.warn(`[AutoUpdate] Failed to check image ${imageRef}:`, e);
+            console.warn('[AutoUpdate] Failed to check image %s:', sanitizeForLog(imageRef), sanitizeForLog((e as Error)?.message ?? String(e)));
           }
         }
 

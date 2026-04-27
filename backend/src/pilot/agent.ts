@@ -13,6 +13,7 @@ import {
     wsDataToBuffer,
     wsDataToString,
 } from './protocol';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -168,7 +169,7 @@ class PilotAgent {
                 this.handleJsonFrame(frame);
             }
         } catch (err) {
-            console.warn('[Pilot] Malformed frame from primary:', (err as Error).message);
+            console.warn('[Pilot] Malformed frame from primary:', sanitizeForLog((err as Error).message));
         }
     }
 
@@ -178,7 +179,7 @@ class PilotAgent {
         switch (frame.t) {
             case 'hello': {
                 if (frame.version !== PROTOCOL_VERSION) {
-                    console.error(`[Pilot] Protocol version ${frame.version} from primary is incompatible with agent (${PROTOCOL_VERSION}); exiting.`);
+                    console.error(`[Pilot] Protocol version ${sanitizeForLog(frame.version)} from primary is incompatible with agent (${PROTOCOL_VERSION}); exiting.`);
                     this.shuttingDown = true;
                     try { ws.close(1002, 'incompatible version'); } catch { /* ignore */ }
                     process.exit(1);

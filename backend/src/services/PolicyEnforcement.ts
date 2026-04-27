@@ -13,6 +13,7 @@ import { DatabaseService } from './DatabaseService';
 import type { ScanPolicy, VulnSeverity } from './DatabaseService';
 import { FleetSyncService } from './FleetSyncService';
 import { NotificationService } from './NotificationService';
+import { sanitizeForLog } from '../utils/safeLog';
 import TrivyService from './TrivyService';
 import { isSeverityAtLeast } from '../utils/severity';
 import { validateImageRef } from '../utils/image-ref';
@@ -72,7 +73,7 @@ export async function enforcePolicyPreDeploy(
         imageRefs = await ComposeService.getInstance(nodeId).listStackImages(stackName);
     } catch (err) {
         const message = getErrorMessage(err, 'compose parse failed');
-        console.error(`[Policy] listStackImages failed for ${stackName}:`, message);
+        console.error('[Policy] listStackImages failed for %s:', sanitizeForLog(stackName), sanitizeForLog(message));
         return {
             ok: false,
             bypassed: false,

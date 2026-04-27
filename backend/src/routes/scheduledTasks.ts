@@ -7,6 +7,7 @@ import { requirePaid, requireAdmin, requireScheduledTaskTier } from '../middlewa
 import { escapeCsvField } from '../utils/csv';
 import { getErrorMessage } from '../utils/errors';
 import { parseIntParam } from '../utils/parseIntParam';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const VALID_TARGET_TYPES = ['stack', 'fleet', 'system'] as const;
 const VALID_ACTIONS = ['restart', 'snapshot', 'prune', 'update', 'scan', 'auto_backup', 'auto_stop', 'auto_down', 'auto_start'] as const;
@@ -140,7 +141,7 @@ scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
     if (optionalErr) { res.status(400).json({ error: optionalErr }); return; }
 
     try { CronExpressionParser.parse(cron_expression); } catch (e) {
-      console.warn('[Scheduler] Invalid cron expression rejected:', cron_expression, getErrorMessage(e, 'unknown'));
+      console.warn('[Scheduler] Invalid cron expression rejected:', sanitizeForLog(cron_expression), sanitizeForLog(getErrorMessage(e, 'unknown')));
       res.status(400).json({ error: 'Invalid cron expression.' }); return;
     }
 
@@ -169,7 +170,7 @@ scheduledTasksRouter.post('/', (req: Request, res: Response): void => {
       delete_after_run: delete_after_run ? 1 : 0,
     });
 
-    console.log(`[ScheduledTasks] Created task id=${id} action=${action} target=${target_id || 'none'}`);
+    console.log(`[ScheduledTasks] Created task id=${id} action=${sanitizeForLog(action)} target=${sanitizeForLog(target_id || 'none')}`);
     const task = DatabaseService.getInstance().getScheduledTask(id);
     res.status(201).json(task);
   } catch (error) {
@@ -238,7 +239,7 @@ scheduledTasksRouter.put('/:id', (req: Request, res: Response): void => {
 
     if (cron_expression) {
       try { CronExpressionParser.parse(cron_expression); } catch (e) {
-        console.warn('[Scheduler] Invalid cron expression rejected:', cron_expression, getErrorMessage(e, 'unknown'));
+        console.warn('[Scheduler] Invalid cron expression rejected:', sanitizeForLog(cron_expression), sanitizeForLog(getErrorMessage(e, 'unknown')));
         res.status(400).json({ error: 'Invalid cron expression.' }); return;
       }
     }

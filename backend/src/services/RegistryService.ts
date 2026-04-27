@@ -3,6 +3,7 @@ import http from 'http';
 import { CryptoService } from './CryptoService';
 import { DatabaseService, type Registry, type RegistryType } from './DatabaseService';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ function httpGet(
                     nextHeaders = rest;
                 }
                 if (isDebugEnabled()) {
-                    console.debug(`[RegistryService][debug] redirect ${status} ${url} -> ${nextUrl.toString()} (auth ${nextHeaders === headers ? 'kept' : 'stripped'})`);
+                    console.debug(`[RegistryService][debug] redirect ${status} ${sanitizeForLog(url)} -> ${sanitizeForLog(nextUrl.toString())} (auth ${nextHeaders === headers ? 'kept' : 'stripped'})`);
                 }
                 httpGet(nextUrl.toString(), nextHeaders, timeoutMs, false).then(resolve, reject);
                 return;
@@ -208,7 +209,7 @@ export class RegistryService {
             created_at: now,
             updated_at: now,
         });
-        console.info(`[RegistryService] Registry created: id=${id} type=${input.type} name="${input.name}"`);
+        console.info(`[RegistryService] Registry created: id=${id} type=${sanitizeForLog(input.type)} name="${sanitizeForLog(input.name)}"`);
         return id;
     }
 
@@ -282,7 +283,7 @@ export class RegistryService {
                     return { success: false, error: 'AWS region is required for ECR registries.' };
                 }
                 if (isDebugEnabled()) {
-                    console.debug(`[RegistryService][debug] testWithCredentials ECR region=${input.aws_region}`);
+                    console.debug(`[RegistryService][debug] testWithCredentials ECR region=${sanitizeForLog(input.aws_region)}`);
                 }
                 await this.fetchEcrToken(input.username, input.secret, input.aws_region);
                 if (isDebugEnabled()) {
@@ -294,7 +295,7 @@ export class RegistryService {
             const probeUrl = toProbeUrl(input.url, input.type);
             const basicAuth = Buffer.from(`${input.username}:${input.secret}`).toString('base64');
             if (isDebugEnabled()) {
-                console.debug(`[RegistryService][debug] testWithCredentials probing ${probeUrl}/v2/`);
+                console.debug(`[RegistryService][debug] testWithCredentials probing ${sanitizeForLog(probeUrl)}/v2/`);
             }
             const res = await httpGet(`${probeUrl}/v2/`, { Authorization: `Basic ${basicAuth}` });
 

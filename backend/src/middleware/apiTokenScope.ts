@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 import type { ApiTokenScope } from '../services/DatabaseService';
 
 /**
@@ -28,14 +29,14 @@ const DEPLOY_ALLOWED_PATTERNS: RegExp[] = [
 ];
 
 const deny = (res: Response, req: Request, error: string, scope: ApiTokenScope | 'unknown'): void => {
-  if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', req.method, req.path, 'scope:', scope);
+  if (isDebugEnabled()) console.log('[ApiTokenScope:diag] Denied:', sanitizeForLog(req.method), sanitizeForLog(req.path), 'scope:', scope);
   res.status(403).json({ error, code: 'SCOPE_DENIED' });
 };
 
 export const enforceApiTokenScope: RequestHandler = (req: Request, res: Response, next: NextFunction): void => {
   const scope = req.apiTokenScope;
   if (!scope) { next(); return; } // Not an API token request
-  if (isDebugEnabled()) console.log('[ApiTokenScope:diag]', req.method, req.path, 'scope:', scope);
+  if (isDebugEnabled()) console.log('[ApiTokenScope:diag]', sanitizeForLog(req.method), sanitizeForLog(req.path), 'scope:', scope);
   if (scope === 'full-admin') { next(); return; }
 
   if (scope === 'read-only') {

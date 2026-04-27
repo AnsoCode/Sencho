@@ -6,6 +6,7 @@ import { invalidateNodeCaches } from '../helpers/cacheInvalidation';
 import { isValidDockerResourceId, isValidCidr, isValidIPv4 } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 
 export const systemMaintenanceRouter = Router();
 
@@ -32,11 +33,11 @@ systemMaintenanceRouter.post('/prune/orphans', async (req: Request, res: Respons
     if (invalidIds.length > 0) {
       return res.status(400).json({ error: 'One or more container IDs have an invalid format' });
     }
-    console.log(`[Resources] Prune orphans: ${containerIds.length} container(s) requested`);
+    console.log(`[Resources] Prune orphans: ${sanitizeForLog(containerIds.length)} container(s) requested`);
     const dockerController = DockerController.getInstance(req.nodeId);
     const results = await dockerController.removeContainers(containerIds);
     const succeeded = results.filter((r: { success: boolean }) => r.success).length;
-    console.log(`[Resources] Prune orphans completed: ${succeeded}/${containerIds.length} removed`);
+    console.log(`[Resources] Prune orphans completed: ${succeeded}/${sanitizeForLog(containerIds.length)} removed`);
     invalidateNodeCaches(req.nodeId);
     res.json({ results });
   } catch (error) {
@@ -158,7 +159,7 @@ systemMaintenanceRouter.post('/volumes/delete', async (req: Request, res: Respon
   try {
     const { id } = req.body;
     if (!id || typeof id !== 'string') return res.status(400).json({ error: 'Volume name is required' });
-    console.log(`[Resources] Delete volume: ${id}`);
+    console.log(`[Resources] Delete volume: ${sanitizeForLog(id)}`);
     const dockerController = DockerController.getInstance(req.nodeId);
     await dockerController.removeVolume(id);
     invalidateNodeCaches(req.nodeId);
@@ -246,7 +247,7 @@ systemMaintenanceRouter.post('/networks', async (req: Request, res: Response) =>
 
     const dockerController = DockerController.getInstance(req.nodeId);
     const network = await dockerController.createNetwork(options);
-    console.log(`[Resources] Network created: ${name}`);
+    console.log(`[Resources] Network created: ${sanitizeForLog(name)}`);
     invalidateNodeCaches(req.nodeId);
     res.status(201).json({ success: true, message: 'Network created', id: network.id });
   } catch (error: unknown) {

@@ -9,6 +9,7 @@ import { ImageUpdateService } from './ImageUpdateService';
 import type { ImageCheckResult } from './ImageUpdateService';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 import { captureLocalNodeFiles, captureRemoteNodeFiles } from '../utils/snapshot-capture';
 import { NodeRegistry } from './NodeRegistry';
 import { NotificationService } from './NotificationService';
@@ -698,7 +699,7 @@ export class SchedulerService {
             } catch (e) {
                 const msg = getErrorMessage(e, String(e));
                 checkErrors.push(msg);
-                console.warn(`[SchedulerService] Failed to check image ${imageRef}:`, e);
+                console.warn(`[SchedulerService] Failed to check image ${sanitizeForLog(imageRef)}:`, sanitizeForLog((e as Error)?.message ?? String(e)));
             }
         }
 

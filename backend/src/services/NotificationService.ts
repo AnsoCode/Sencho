@@ -3,6 +3,7 @@ import { DatabaseService, NotificationHistory } from './DatabaseService';
 import { NodeRegistry } from './NodeRegistry';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 
 export type NotificationCategory =
     | 'deploy_success'
@@ -139,7 +140,7 @@ export class NotificationService {
                 return true;
             });
             if (matched.length > 0) {
-                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${stackName ?? '(none)'}", category="${category}"`);
+                if (isDebugEnabled()) console.log(`[Notify:diag] Matched ${matched.length} route(s) for stack "${sanitizeForLog(stackName ?? '(none)')}", category="${sanitizeForLog(category)}"`);
                 await Promise.allSettled(
                     matched.map(route =>
                         this.sendToChannel(route.channel_type, route.channel_url, level, message)

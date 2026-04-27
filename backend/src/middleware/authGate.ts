@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
 import { isDebugEnabled } from '../utils/debug';
 import { getAuditSummary } from '../utils/audit-summaries';
+import { sanitizeForLog } from '../utils/safeLog';
 import { WEBHOOK_TRIGGER_RE } from '../helpers/routePatterns';
 import { authMiddleware } from './auth';
 
@@ -40,7 +41,7 @@ export const auditLog: RequestHandler = (req: Request, res: Response, next: Next
   res.on('finish', () => {
     try {
       if (isDebugEnabled()) {
-        console.log(`[Audit:diag] ${req.method} /api${apiPath} by=${username} status=${res.statusCode} node=${nodeId ?? 'local'} ip=${ip}`);
+        console.log(`[Audit:diag] ${sanitizeForLog(req.method)} /api${sanitizeForLog(apiPath)} by=${sanitizeForLog(username)} status=${res.statusCode} node=${nodeId ?? 'local'} ip=${sanitizeForLog(ip)}`);
       }
       DatabaseService.getInstance().insertAuditLog({
         timestamp: Date.now(),
