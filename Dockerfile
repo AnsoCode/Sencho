@@ -148,6 +148,17 @@ RUN mkdir -p /build
 # v5.1.2's Makefile. The directory ./cmd/compose is package compose (cobra
 # command definitions only, not main). The module path moved from /v2 to /v5
 # in the v5 release, so the Version ldflag must reference /v5/internal.
+#
+# The bundled github.com/docker/docker dependency stays at v28.5.2+incompatible
+# (compose v5.1.2's go.mod). It cannot be upgraded to docker-v29.3.1 (the
+# release that contains the CVE-2026-34040 authz fix) because moby/moby's
+# docker-29.x branch declares its module path as github.com/moby/moby/v2,
+# making it unreachable through the legacy github.com/docker/docker import
+# that compose v5.1.2 still uses. The Go module proxy reflects this and lists
+# v28.5.2+incompatible as the highest resolvable version. The CVE only affects
+# Docker Engine's daemon authz hook code path; compose runs as a CLI client
+# and never executes that path. See security/vex/sencho.openvex.json for the
+# full not_affected justification, which Trivy honours via trivy.yaml.
 RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
       -trimpath \

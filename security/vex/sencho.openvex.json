@@ -26,7 +26,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The authz bypass applies to Docker daemon plugin authorization hooks. docker-compose v5.1.2 statically bundles docker/docker v28.5.2+incompatible as a library but never acts as a daemon and never runs authorization hooks. Sencho invokes compose only for up/down/ps operations against local user-authored compose files. The daemon authz code path is not reachable."
+      "impact_statement": "The authz bypass affects Docker Engine's daemon-side plugin authorization hook on oversized request bodies. docker-compose v5.1.2 statically bundles docker/docker v28.5.2+incompatible as a client-side library for API types and codecs; it never acts as a daemon and never runs authorization hooks. Sencho invokes compose only for up/down/ps operations against local user-authored compose files. The daemon authz code path is not reachable. Note on remediation: the advisory's 'fixed in 29.3.1' refers to Docker Engine the daemon product. The Go library that contains the corresponding source fix is github.com/moby/moby/v2 (a new module path adopted on the docker-29.x branch), not github.com/docker/docker which compose v5.1.2 still imports. Until upstream compose migrates to the v2 import path the v28.5.2+incompatible bundled library is the only Go-module-resolvable version, and the not_affected status is the principled triage rather than a deferred upgrade."
     },
     {
       "vulnerability": {
