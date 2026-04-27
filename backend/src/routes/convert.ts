@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 // @ts-ignore - composerize lacks proper type definitions
 import composerize from 'composerize';
 import { authMiddleware } from '../middleware/auth';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const MAX_DOCKER_RUN_LENGTH = 8192;
 
@@ -37,7 +38,7 @@ convertRouter.post('/', authMiddleware, async (req: Request, res: Response): Pro
   }
 
   if (typeof yaml !== 'string' || !yaml.includes('services:')) {
-    console.warn('Converter produced unexpected output for input:', trimmed.slice(0, 200));
+    console.warn('Converter produced unexpected output for input:', sanitizeForLog(trimmed.slice(0, 200)));
     res.status(422).json({ error: 'Could not parse command. Check syntax and supported flags.' });
     return;
   }

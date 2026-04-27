@@ -13,6 +13,7 @@ import {
 import { FileSystemService } from './FileSystemService';
 import { RegistryService } from './RegistryService';
 import { disableCapability, enableCapability } from './CapabilityRegistry';
+import { sanitizeForLog } from '../utils/safeLog';
 import TrivyInstaller, { type TrivySource } from './TrivyInstaller';
 import { FleetSyncService } from './FleetSyncService';
 import { getErrorMessage } from '../utils/errors';
@@ -26,7 +27,7 @@ const SBOM_TIMEOUT_MS = 3 * 60 * 1000;
 export const DIGEST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function diag(msg: string, ...args: unknown[]): void {
-    if (isDebugEnabled()) console.log(`[Trivy:diag] ${msg}`, ...args);
+    if (isDebugEnabled()) console.log(`[Trivy:diag] ${sanitizeForLog(msg)}`, ...args);
 }
 
 interface TrivyRawVulnerability {

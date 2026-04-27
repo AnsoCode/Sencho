@@ -5,6 +5,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
 import TrivyService, { DIGEST_CACHE_TTL_MS } from '../services/TrivyService';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 
 // Bypass requires `?ignorePolicy=true` AND `req.user.role === 'admin'`. The
 // `stack:deploy` permission alone is not sufficient because the `deployer`
@@ -98,6 +99,6 @@ export async function triggerPostDeployScan(
       }
     }
   } catch (err) {
-    console.error(`[Security] triggerPostDeployScan error for ${stackName}:`, getErrorMessage(err, 'unknown error'));
+    console.error(`[Security] triggerPostDeployScan error for ${sanitizeForLog(stackName)}:`, sanitizeForLog(getErrorMessage(err, 'unknown error')));
   }
 }

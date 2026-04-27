@@ -9,6 +9,7 @@ import { NotificationService } from './NotificationService';
 import { parseImageRef, getRemoteDigest } from './registry-api';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const BACKFILL_KEY = 'image_update_notifications_backfilled';
 
@@ -239,7 +240,7 @@ export class ImageUpdateService {
             try {
                 imageUpdateMap.set(imageRef, await this.checkImage(docker, imageRef));
             } catch (e) {
-                console.error(`[ImageUpdateService] Error checking ${imageRef}:`, e);
+                console.error(`[ImageUpdateService] Error checking ${sanitizeForLog(imageRef)}:`, sanitizeForLog((e as Error)?.message ?? String(e)));
                 imageUpdateMap.set(imageRef, { hasUpdate: false, error: String(e) });
             }
             await sleep(ImageUpdateService.INTER_IMAGE_DELAY_MS);

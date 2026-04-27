@@ -17,6 +17,7 @@ import { NotificationService } from '../services/NotificationService';
 import { isValidStackName, isValidServiceName, isPathWithinBase, isValidRelativeStackPath } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
+import { sanitizeForLog } from '../utils/safeLog';
 import { sendGitSourceError } from '../utils/gitSourceHttp';
 import { buildPolicyGateOptions, runPolicyGate, triggerPostDeployScan } from '../helpers/policyGate';
 import { invalidateNodeCaches } from '../helpers/cacheInvalidation';
@@ -27,7 +28,7 @@ function notifyActionFailure(action: string, stackName: string, error: unknown):
   const message = getErrorMessage(error, `Failed to ${action} stack`);
   NotificationService.getInstance()
     .dispatchAlert('error', 'deploy_failure', message, { stackName })
-    .catch(err => console.error(`[Stacks] Failed to dispatch failure notification for ${stackName}:`, err));
+    .catch(err => console.error(`[Stacks] Failed to dispatch failure notification for ${sanitizeForLog(stackName)}:`, err));
 }
 
 async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
@@ -90,7 +91,7 @@ async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promis
     }
     return existing;
   } catch (error) {
-    console.warn(`Could not parse compose.yaml for env_file resolution in stack "${stackName}":`, error);
+    console.warn(`Could not parse compose.yaml for env_file resolution in stack "${sanitizeForLog(stackName)}":`, error);
   }
 
   try {
@@ -217,15 +218,15 @@ stacksRouter.put('/:stackName', async (req: Request, res: Response) => {
   try {
     const { content } = req.body;
     if (typeof content !== 'string') {
-      console.error('Content is not a string:', content);
+      console.error('Content is not a string, got:', typeof content);
       return res.status(400).json({ error: 'Content must be a string' });
     }
     await FileSystemService.getInstance(req.nodeId).saveStackContent(stackName, content);
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Compose file saved: ${stackName}`);
+    console.log(`[Stacks] Compose file saved: ${sanitizeForLog(stackName)}`);
     res.json({ message: 'Stack saved successfully' });
   } catch (error) {
-    console.error('Failed to save stack:', error);
+    console.error('Failed to save stack:', sanitizeForLog(getErrorMessage(error, 'unknown')));
     res.status(500).json({ error: 'Failed to save stack' });
   }
 });
@@ -331,7 +332,7 @@ stacksRouter.put('/:stackName/env', async (req: Request, res: Response) => {
     await fsService.writeFile(envPath, content, 'utf-8');
     invalidateNodeCaches(req.nodeId);
     const envFileName = path.basename(envPath);
-    console.log(`[Stacks] Env file saved: ${stackName}/${envFileName}`);
+    console.log(`[Stacks] Env file saved: ${sanitizeForLog(stackName)}/${sanitizeForLog(envFileName)}`);
     res.json({ message: 'Env file saved successfully' });
   } catch (error) {
     console.error('[Stacks] Failed to save env file:', error);
@@ -351,7 +352,7 @@ stacksRouter.post('/', async (req: Request, res: Response) => {
     }
     await FileSystemService.getInstance(req.nodeId).createStack(stackName);
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Stack created: ${stackName}`);
+    console.log(`[Stacks] Stack created: ${sanitizeForLog(stackName)}`);
     res.json({ message: 'Stack created successfully', name: stackName });
   } catch (error: unknown) {
     const message = getErrorMessage(error, '');
@@ -433,7 +434,7 @@ stacksRouter.post('/from-git', async (req: Request, res: Response) => {
 
     if (fromGitDiag) {
       console.log(
-        `[Stacks:diag] from-git start stack=${stack_name} nodeId=${req.nodeId ?? 'local'} host=${gitRepoHost(repo_url)} branch=${branch} composePath=${compose_path} envPath=${resolvedEnvPath ?? 'none'} authType=${resolvedAuthType} autoApplyOnWebhook=${Boolean(auto_apply_on_webhook)} autoDeployOnApply=${Boolean(auto_deploy_on_apply)} deployNow=${deploy_now === true}`
+        `[Stacks:diag] from-git start stack=${sanitizeForLog(stack_name)} nodeId=${req.nodeId ?? 'local'} host=${sanitizeForLog(gitRepoHost(repo_url))} branch=${sanitizeForLog(branch)} composePath=${sanitizeForLog(compose_path)} envPath=${sanitizeForLog(resolvedEnvPath ?? 'none')} authType=${sanitizeForLog(resolvedAuthType)} autoApplyOnWebhook=${Boolean(auto_apply_on_webhook)} autoDeployOnApply=${Boolean(auto_deploy_on_apply)} deployNow=${deploy_now === true}`
       );
     }
 
@@ -469,15 +470,15 @@ stacksRouter.post('/from-git', async (req: Request, res: Response) => {
           invalidateNodeCaches(req.nodeId);
         } catch (e) {
           deployError = getErrorMessage(e, 'Deploy failed');
-          console.error(`[Stacks] Deploy after create-from-git failed for ${stack_name}:`, deployError);
+          console.error(`[Stacks] Deploy after create-from-git failed for ${sanitizeForLog(stack_name)}:`, deployError);
         }
       }
     }
 
-    console.log(`[Stacks] Stack created from Git: ${stack_name} at ${result.commitSha.slice(0, 7)}`);
+    console.log(`[Stacks] Stack created from Git: ${sanitizeForLog(stack_name)} at ${result.commitSha.slice(0, 7)}`);
     if (fromGitDiag) {
       console.log(
-        `[Stacks:diag] from-git ok stack=${stack_name} sha=${result.commitSha.slice(0, 7)} deployed=${deployed} envWritten=${result.envWritten} warnings=${result.warnings.length} elapsedMs=${Date.now() - fromGitStartedAt}`
+        `[Stacks:diag] from-git ok stack=${sanitizeForLog(stack_name)} sha=${result.commitSha.slice(0, 7)} deployed=${deployed} envWritten=${result.envWritten} warnings=${result.warnings.length} elapsedMs=${Date.now() - fromGitStartedAt}`
       );
     }
     res.json({
@@ -491,14 +492,14 @@ stacksRouter.post('/from-git', async (req: Request, res: Response) => {
     });
     if (deployed) {
       triggerPostDeployScan(stack_name, req.nodeId).catch(err =>
-        console.error(`[Security] Post-deploy scan failed for ${stack_name}:`, err),
+        console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stack_name)}:`, err),
       );
     }
   } catch (error) {
     if (fromGitDiag) {
       const code = error instanceof GitSourceError ? error.code : 'UNKNOWN';
       console.log(
-        `[Stacks:diag] from-git fail stack=${fromGitStackName} code=${code} elapsedMs=${Date.now() - fromGitStartedAt}`
+        `[Stacks:diag] from-git fail stack=${sanitizeForLog(fromGitStackName)} code=${code} elapsedMs=${Date.now() - fromGitStartedAt}`
       );
     }
     sendGitSourceError(res, error);
@@ -513,15 +514,15 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
     try {
       await ComposeService.getInstance(req.nodeId).downStack(stackName);
     } catch (downErr) {
-      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${stackName}`);
+      console.warn(`[Teardown] Docker down failed or nothing to clean up for ${sanitizeForLog(stackName)}`);
     }
 
     if (pruneVolumes) {
       try {
         const result = await DockerController.getInstance().pruneManagedOnly('volumes', [stackName]);
-        console.log(`[Stacks] Pruned volumes for ${stackName}: ${result.reclaimedBytes} bytes reclaimed`);
+        console.log(`[Stacks] Pruned volumes for ${sanitizeForLog(stackName)}: ${result.reclaimedBytes} bytes reclaimed`);
       } catch (pruneErr) {
-        console.warn(`[Stacks] Volume prune failed for ${stackName}, continuing delete:`, pruneErr);
+        console.warn(`[Stacks] Volume prune failed for ${sanitizeForLog(stackName)}, continuing delete:`, pruneErr);
       }
     }
 
@@ -530,7 +531,7 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
       await FileSystemService.getInstance(req.nodeId).deleteStack(stackName);
     } catch (err) {
       fsErr = err;
-      console.error(`[Stacks] File deletion failed for ${stackName}, continuing with DB cleanup:`, err);
+      console.error(`[Stacks] File deletion failed for ${sanitizeForLog(stackName)}, continuing with DB cleanup:`, err);
     }
 
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
@@ -541,10 +542,10 @@ stacksRouter.delete('/:stackName', async (req: Request, res: Response) => {
     if (fsErr) throw fsErr;
 
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Stack deleted: ${stackName}`);
+    console.log(`[Stacks] Stack deleted: ${sanitizeForLog(stackName)}`);
     res.json({ success: true });
   } catch (error: unknown) {
-    console.error(`[Stacks] Failed to delete stack ${stackName}:`, error);
+    console.error(`[Stacks] Failed to delete stack ${sanitizeForLog(stackName)}:`, error);
     const message = getErrorMessage(error, 'Failed to delete stack');
     res.status(500).json({ error: message });
   }
@@ -569,7 +570,7 @@ stacksRouter.get('/:stackName/services', async (req: Request, res: Response) => 
     const services = parsed?.services ? Object.keys(parsed.services) : [];
     res.json(services);
   } catch (error) {
-    console.error('[Stacks] Failed to fetch services:', error);
+    console.error('[Stacks] Failed to fetch services:', sanitizeForLog(getErrorMessage(error, 'unknown')));
     res.status(500).json({ error: 'Failed to fetch services' });
   }
 });
@@ -585,16 +586,16 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
     const t0 = Date.now();
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), atomic);
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Deploy completed: ${stackName}`);
+    console.log(`[Stacks] Deploy completed: ${sanitizeForLog(stackName)}`);
     if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
     res.json({ message: 'Deployed successfully' });
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
-      console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+      console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stackName)}:`, err),
     );
   } catch (error: unknown) {
-    console.error(`[Stacks] Deploy failed: ${stackName}`, error);
+    console.error(`[Stacks] Deploy failed: ${sanitizeForLog(stackName)}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
-    if (rolledBack) console.warn(`[Stacks] Deploy failed, rolled back: ${stackName}`);
+    if (rolledBack) console.warn(`[Stacks] Deploy failed, rolled back: ${sanitizeForLog(stackName)}`);
     const message = getErrorMessage(error, 'Failed to deploy stack');
     notifyActionFailure('deploy', stackName, error);
     res.status(500).json({ error: message, rolledBack });
@@ -607,10 +608,10 @@ stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
   try {
     await ComposeService.getInstance(req.nodeId).runCommand(stackName, 'down', getTerminalWs());
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Down completed: ${stackName}`);
+    console.log(`[Stacks] Down completed: ${sanitizeForLog(stackName)}`);
     res.json({ status: 'Command started' });
   } catch (error: unknown) {
-    console.error(`[Stacks] Down failed: ${stackName}`, error);
+    console.error(`[Stacks] Down failed: ${sanitizeForLog(stackName)}`, error);
     notifyActionFailure('down', stackName, error);
     res.status(500).json({ error: 'Failed to start command' });
   }
@@ -642,10 +643,10 @@ async function bulkContainerOp(
 
     await Promise.all(containers.map(c => op(c.Id)));
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] ${titleCase} completed: ${stackName} (${containers.length} containers)`);
+    console.log(`[Stacks] ${titleCase} completed: ${sanitizeForLog(stackName)} (${containers.length} containers)`);
     res.json({ success: true, message: `${titleCase} completed via Engine API.` });
   } catch (error: unknown) {
-    console.error(`[Stacks] ${titleCase} failed: ${stackName}`, error);
+    console.error(`[Stacks] ${titleCase} failed: ${sanitizeForLog(stackName)}`, error);
     const message = getErrorMessage(error, `Failed to ${action} containers`);
     if (action !== 'start') {
       notifyActionFailure(action, stackName, error);
@@ -693,7 +694,7 @@ async function handleServiceAction(
     await Promise.all(matching.map(c => op(c.Id)));
     invalidateNodeCaches(req.nodeId);
     console.log(
-      `[Stacks] Service ${action} completed: ${stackName}/${serviceName} (${matching.length} containers)`,
+      `[Stacks] Service ${sanitizeForLog(action)} completed: ${sanitizeForLog(stackName)}/${sanitizeForLog(serviceName)} (${matching.length} containers)`,
     );
     res.json({
       success: true,
@@ -701,7 +702,7 @@ async function handleServiceAction(
       count: matching.length,
     });
   } catch (error: unknown) {
-    console.error(`[Stacks] Service ${action} failed: ${stackName}/${serviceName}`, error);
+    console.error(`[Stacks] Service ${sanitizeForLog(action)} failed: ${sanitizeForLog(stackName)}/${sanitizeForLog(serviceName)}`, error);
     res.status(500).json({ error: getErrorMessage(error, `Failed to ${action} service`) });
   }
 }
@@ -719,7 +720,7 @@ stacksRouter.get('/:stackName/update-preview', async (req: Request, res: Respons
     const preview = await UpdatePreviewService.getInstance().getPreview(req.nodeId, stackName);
     res.json(preview);
   } catch (error) {
-    console.error(`[Stacks] Update preview failed: ${stackName}`, error);
+    console.error(`[Stacks] Update preview failed: ${sanitizeForLog(stackName)}`, sanitizeForLog(getErrorMessage(error, 'unknown')));
     res.status(500).json({ error: 'Failed to compute update preview' });
   }
 });
@@ -736,16 +737,16 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, getTerminalWs(), atomic);
     DatabaseService.getInstance().clearStackUpdateStatus(req.nodeId, stackName);
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Update completed: ${stackName}`);
+    console.log(`[Stacks] Update completed: ${sanitizeForLog(stackName)}`);
     if (debug) console.debug(`[Stacks:debug] Update finished in ${Date.now() - t0}ms`);
     res.json({ status: 'Update completed' });
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
-      console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+      console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stackName)}:`, err),
     );
   } catch (error: unknown) {
-    console.error(`[Stacks] Update failed: ${stackName}`, error);
+    console.error(`[Stacks] Update failed: ${sanitizeForLog(stackName)}`, error);
     const rolledBack = LicenseService.getInstance().getTier() === 'paid';
-    if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${stackName}`);
+    if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${sanitizeForLog(stackName)}`);
     notifyActionFailure('update', stackName, error);
     res.status(500).json({ error: getErrorMessage(error, 'Failed to update'), rolledBack });
   }
@@ -761,14 +762,14 @@ stacksRouter.post('/:stackName/rollback', async (req: Request, res: Response) =>
     if (!backupInfo.exists) {
       return res.status(404).json({ error: 'No backup available for this stack.' });
     }
-    console.log(`[Stacks] Rollback initiated: ${stackName}`);
+    console.log(`[Stacks] Rollback initiated: ${sanitizeForLog(stackName)}`);
     await fsSvc.restoreStackFiles(stackName);
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), false);
     invalidateNodeCaches(req.nodeId);
-    console.log(`[Stacks] Rollback completed: ${stackName}`);
+    console.log(`[Stacks] Rollback completed: ${sanitizeForLog(stackName)}`);
     res.json({ message: 'Stack rolled back successfully.' });
   } catch (error: unknown) {
-    console.error(`[Stacks] Rollback failed: ${stackName}`, error);
+    console.error(`[Stacks] Rollback failed: ${sanitizeForLog(stackName)}`, error);
     const message = getErrorMessage(error, 'Rollback failed.');
     res.status(500).json({ error: message });
   }

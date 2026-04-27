@@ -7,6 +7,7 @@ import { invalidateNodeCaches } from '../helpers/cacheInvalidation';
 import { triggerPostDeployScan } from '../helpers/policyGate';
 import { isValidStackName } from '../utils/validation';
 import { sendGitSourceError } from '../utils/gitSourceHttp';
+import { sanitizeForLog } from '../utils/safeLog';
 
 // Reasonable upper bounds so a caller cannot flood the service with huge
 // payloads. Generous compared to anything a real Git provider emits.
@@ -206,16 +207,16 @@ stackGitSourceRouter.post('/:stackName/git-source/apply', async (req: Request, r
     invalidateNodeCaches(req.nodeId);
     const shortSha = commitSha.trim().slice(0, 7);
     if (result.deployed) {
-      console.log(`[GitSource] Applied commit ${shortSha} to ${stackName} (deployed)`);
+      console.log(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)} (deployed)`);
     } else if (result.deployError) {
-      console.warn(`[GitSource] Applied commit ${shortSha} to ${stackName}, deploy failed: ${result.deployError}`);
+      console.warn(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)}, deploy failed: ${sanitizeForLog(result.deployError)}`);
     } else {
-      console.log(`[GitSource] Applied commit ${shortSha} to ${stackName}`);
+      console.log(`[GitSource] Applied commit ${shortSha} to ${sanitizeForLog(stackName)}`);
     }
     res.json(result);
     if (result.deployed) {
       triggerPostDeployScan(stackName, req.nodeId).catch(err =>
-        console.error(`[Security] Post-deploy scan failed for ${stackName}:`, err),
+        console.error(`[Security] Post-deploy scan failed for ${sanitizeForLog(stackName)}:`, err),
       );
     }
   } catch (error) {

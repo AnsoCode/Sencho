@@ -5,6 +5,7 @@ import { requireAdmiral } from '../middleware/tierGates';
 import { requirePermission } from '../middleware/permissions';
 import { isDebugEnabled } from '../utils/debug';
 import { escapeCsvField } from '../utils/csv';
+import { sanitizeForLog } from '../utils/safeLog';
 
 export const auditLogRouter = Router();
 
@@ -23,7 +24,7 @@ auditLogRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     const withAnomalies = req.query.with_anomalies === '1';
 
     if (isDebugEnabled()) {
-      console.log(`[Audit:diag] Query: page=${page} limit=${limit} username=${username || '-'} method=${method || '-'} search=${search || '-'}`);
+      console.log(`[Audit:diag] Query: page=${page} limit=${limit} username=${sanitizeForLog(username || '-')} method=${sanitizeForLog(method || '-')} search=${sanitizeForLog(search || '-')}`);
     }
     const db = DatabaseService.getInstance();
     const result = db.getAuditLogs({ page, limit, username, method, from, to, search });

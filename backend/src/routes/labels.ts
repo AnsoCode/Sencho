@@ -13,6 +13,7 @@ import { isValidStackName } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage, isSqliteUniqueViolation } from '../utils/errors';
 import { parseIntParam } from '../utils/parseIntParam';
+import { sanitizeForLog } from '../utils/safeLog';
 
 const activeBulkActions = new Set<string>();
 
@@ -231,7 +232,7 @@ labelsRouter.post('/:id/action', authMiddleware, async (req: Request, res: Respo
 
       const succeeded = results.filter(r => r.success).length;
       const failed = results.length - succeeded;
-      console.log(`[Labels] Bulk ${action} on label ${id}: ${validStacks.length} stacks (${succeeded} succeeded, ${failed} failed)`);
+      console.log(`[Labels] Bulk ${sanitizeForLog(action)} on label ${id}: ${validStacks.length} stacks (${succeeded} succeeded, ${failed} failed)`);
       if (isDebugEnabled()) console.debug('[Labels:debug] Bulk action complete:', { id, action, total: results.length, succeeded, failed });
 
       if (succeeded > 0) {

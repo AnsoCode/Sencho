@@ -4,6 +4,7 @@ import type { Readable } from 'stream';
 import { NodeRegistry } from './NodeRegistry';
 import { isPathWithinBase, isValidStackName } from '../utils/validation';
 import { isBinaryBuffer } from '../utils/binaryDetect';
+import { sanitizeForLog } from '../utils/safeLog';
 
 export interface FileEntry {
   name: string;
@@ -133,7 +134,7 @@ export class FileSystemService {
       const filePath = await this.getComposeFilePath(stackName);
       return await fsPromises.readFile(filePath, 'utf-8');
     } catch (error) {
-      console.error('Error reading stack content:', error);
+      console.error('Error reading stack content:', sanitizeForLog((error as Error)?.message ?? String(error)));
       throw new Error(`Failed to read stack: ${stackName}`);
     }
   }

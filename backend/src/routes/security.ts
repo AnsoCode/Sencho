@@ -10,6 +10,7 @@ import { LicenseService } from '../services/LicenseService';
 import { validateImageRef } from '../utils/image-ref';
 import { applySuppressions } from '../utils/suppression-filter';
 import { generateSarif } from '../services/SarifExporter';
+import { sanitizeForLog } from '../utils/safeLog';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 import { blockIfReplica } from '../middleware/fleetSyncGuards';
@@ -187,7 +188,7 @@ securityRouter.post('/scan', authMiddleware, (req: Request, res: Response): void
   res.status(202).json({ scanId });
 
   svc.finishScan(scanId, imageRef, nodeId, { useCache: !force, scanners }).catch((err) => {
-    console.error(`[Security] Scan failed for ${imageRef}:`, (err as Error).message);
+    console.error(`[Security] Scan failed for ${sanitizeForLog(imageRef)}:`, sanitizeForLog((err as Error).message));
   });
 });
 
