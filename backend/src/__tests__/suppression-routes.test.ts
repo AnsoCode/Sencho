@@ -140,7 +140,7 @@ describe('POST /api/security/suppressions', () => {
       .set('Authorization', adminAuthHeader)
       .send(validBody);
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/control node/i);
+    expect(res.body.code).toBe('REPLICA_READ_ONLY');
   });
 
   it('rejects malformed CVE identifiers', async () => {

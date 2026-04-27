@@ -12,6 +12,8 @@ import { applySuppressions } from '../utils/suppression-filter';
 import { generateSarif } from '../services/SarifExporter';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
+import { blockIfReplica } from '../middleware/fleetSyncGuards';
+import { FINDING_SEVERITIES, POLICY_SEVERITIES } from '../utils/severity';
 
 const CVE_ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA-[\w-]{14,})$/;
 
@@ -269,8 +271,7 @@ securityRouter.get(
     const severity = typeof req.query.severity === 'string'
       ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
       : undefined;
-    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
-    if (severity && !validSeverities.has(severity)) {
+    if (severity && !FINDING_SEVERITIES.has(severity)) {
       res.status(400).json({ error: 'Invalid severity filter' }); return;
     }
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
@@ -299,8 +300,7 @@ securityRouter.get(
     const severity = typeof req.query.severity === 'string'
       ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
       : undefined;
-    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
-    if (severity && !validSeverities.has(severity)) {
+    if (severity && !FINDING_SEVERITIES.has(severity)) {
       res.status(400).json({ error: 'Invalid severity filter' }); return;
     }
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
@@ -326,8 +326,7 @@ securityRouter.get(
     const severity = typeof req.query.severity === 'string'
       ? (req.query.severity.toUpperCase() as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN')
       : undefined;
-    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']);
-    if (severity && !validSeverities.has(severity)) {
+    if (severity && !FINDING_SEVERITIES.has(severity)) {
       res.status(400).json({ error: 'Invalid severity filter' }); return;
     }
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
@@ -420,16 +419,12 @@ securityRouter.get('/policies', authMiddleware, (req: Request, res: Response): v
 securityRouter.post('/policies', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const { name, node_id, stack_pattern, max_severity, block_on_deploy, enabled } = req.body ?? {};
   if (!name || typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Policy name is required' }); return;
   }
-  const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
-  if (!validSeverities.has(max_severity)) {
+  if (!POLICY_SEVERITIES.has(max_severity)) {
     res.status(400).json({ error: 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW' }); return;
   }
   try {
@@ -455,10 +450,7 @@ securityRouter.post('/policies', authMiddleware, (req: Request, res: Response): 
 securityRouter.put('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
@@ -473,8 +465,7 @@ securityRouter.put('/policies/:id', authMiddleware, (req: Request, res: Response
   }
   if (body.stack_pattern !== undefined) updates.stack_pattern = body.stack_pattern ? String(body.stack_pattern) : null;
   if (body.max_severity !== undefined) {
-    const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
-    if (!validSeverities.has(body.max_severity)) {
+    if (!POLICY_SEVERITIES.has(body.max_severity)) {
       res.status(400).json({ error: 'max_severity must be CRITICAL, HIGH, MEDIUM, or LOW' }); return;
     }
     updates.max_severity = body.max_severity;
@@ -492,10 +483,7 @@ securityRouter.put('/policies/:id', authMiddleware, (req: Request, res: Response
 securityRouter.delete('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'Security policies are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'security policies')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid policy id' }); return;
@@ -518,10 +506,7 @@ securityRouter.get('/suppressions', authMiddleware, (req: Request, res: Response
 securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const body = req.body ?? {};
   const cveId = typeof body.cve_id === 'string' ? body.cve_id.trim() : '';
   if (!CVE_ID_RE.test(cveId)) {
@@ -574,10 +559,7 @@ securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Respons
 securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid suppression id' }); return;
@@ -615,10 +597,7 @@ securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Resp
 securityRouter.delete('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  if (FleetSyncService.getRole() === 'replica') {
-    res.status(403).json({ error: 'CVE suppressions are managed from the control node.' });
-    return;
-  }
+  if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
     res.status(400).json({ error: 'Invalid suppression id' }); return;
