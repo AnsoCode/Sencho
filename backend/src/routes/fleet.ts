@@ -20,6 +20,7 @@ import { getLatestVersion } from '../utils/version-check';
 import { isValidStackName } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 import { POLICY_SEVERITIES } from '../utils/severity';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { NotificationService } from '../services/NotificationService';
@@ -28,22 +29,6 @@ import { LicenseService } from '../services/LicenseService';
 
 const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * Parse a numeric route param. Writes a 400 response and returns null when
- * the value isn't a valid integer; callers early-return on null. Collapses
- * the 7 copies of the `parseInt ... isNaN ... 400 'Invalid X ID'` shape
- * across the fleet router.
- */
-function parseIdParam(req: Request, res: Response, paramName: string, label: string): number | null {
-  const raw = req.params[paramName] as string | undefined;
-  const parsed = parseInt(raw ?? '', 10);
-  if (isNaN(parsed)) {
-    res.status(400).json({ error: `Invalid ${label}` });
-    return null;
-  }
-  return parsed;
-}
 const UPDATE_TIMEOUT_MSG = 'Node did not come back online within 5 minutes.';
 const EARLY_FAIL_MS = 180 * 1000; // 3 minutes before declaring a probable pull failure
 
@@ -399,7 +384,7 @@ fleetRouter.get('/node/:nodeId/stacks', authMiddleware, async (req: Request, res
   if (!requirePaid(req, res)) return;
 
   try {
-    const nodeId = parseIdParam(req, res, 'nodeId', 'node ID');
+    const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
     const node = DatabaseService.getInstance().getNode(nodeId);
     if (!node) {
@@ -439,7 +424,7 @@ fleetRouter.get('/node/:nodeId/stacks/:stackName/containers', authMiddleware, as
   if (!requirePaid(req, res)) return;
 
   try {
-    const nodeId = parseIdParam(req, res, 'nodeId', 'node ID');
+    const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
     const stackName = req.params.stackName as string;
     if (!isValidStackName(stackName)) {
@@ -633,7 +618,7 @@ fleetRouter.post('/nodes/:nodeId/update', authMiddleware, async (req: Request, r
   if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
   try {
-    const nodeId = parseIdParam(req, res, 'nodeId', 'node ID');
+    const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
     const db = DatabaseService.getInstance();
     const node = db.getNode(nodeId);
@@ -786,7 +771,7 @@ fleetRouter.post('/update-all', authMiddleware, async (req: Request, res: Respon
 fleetRouter.delete('/nodes/:nodeId/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   try {
-    const nodeId = parseIdParam(req, res, 'nodeId', 'node ID');
+    const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
     const node = DatabaseService.getInstance().getNode(nodeId);
     if (!node) {
@@ -934,7 +919,7 @@ fleetRouter.get('/snapshots/:id', authMiddleware, async (req: Request, res: Resp
   if (!requirePaid(req, res)) return;
 
   try {
-    const id = parseIdParam(req, res, 'id', 'snapshot ID');
+    const id = parseIntParam(req, res, 'id', 'snapshot ID');
     if (id === null) return;
     const db = DatabaseService.getInstance();
     const snapshot = db.getSnapshot(id);
@@ -980,7 +965,7 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
   if (!requirePaid(req, res)) return;
 
   try {
-    const snapshotId = parseIdParam(req, res, 'id', 'snapshot ID');
+    const snapshotId = parseIntParam(req, res, 'id', 'snapshot ID');
     if (snapshotId === null) return;
     const { nodeId, stackName, redeploy = false } = req.body;
 
@@ -1093,7 +1078,7 @@ fleetRouter.delete('/snapshots/:id', authMiddleware, async (req: Request, res: R
   if (!requirePaid(req, res)) return;
 
   try {
-    const id = parseIdParam(req, res, 'id', 'snapshot ID');
+    const id = parseIntParam(req, res, 'id', 'snapshot ID');
     if (id === null) return;
     const db = DatabaseService.getInstance();
     const snapshot = db.getSnapshot(id);

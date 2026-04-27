@@ -12,17 +12,9 @@ import {
 } from '../helpers/notificationChannels';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const VALID_CATEGORIES: ReadonlySet<NotificationCategory> = new Set(ALL_NOTIFICATION_CATEGORIES);
-
-function parseRouteId(req: Request, res: Response): number | null {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: 'Invalid route ID' });
-    return null;
-  }
-  return id;
-}
 
 function validateNodeId(nodeId: unknown, res: Response): number | null | false {
   if (nodeId === undefined || nodeId === null) return null;
@@ -81,8 +73,8 @@ notificationsRouter.post('/read', authMiddleware, async (req: Request, res: Resp
 
 notificationsRouter.delete('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid notification ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'notification ID');
+    if (id === null) return;
     const nodeId = req.nodeId ?? 0;
     DatabaseService.getInstance().deleteNotification(nodeId, id);
     res.json({ success: true });
@@ -193,7 +185,7 @@ notificationRoutesRouter.put('/:id', authMiddleware, async (req: Request, res: R
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseRouteId(req, res);
+    const id = parseIntParam(req, res, 'id', 'route ID');
     if (id === null) return;
 
     const existing = DatabaseService.getInstance().getNotificationRoute(id);
@@ -269,7 +261,7 @@ notificationRoutesRouter.delete('/:id', authMiddleware, (req: Request, res: Resp
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseRouteId(req, res);
+    const id = parseIntParam(req, res, 'id', 'route ID');
     if (id === null) return;
 
     const changes = DatabaseService.getInstance().deleteNotificationRoute(id);
@@ -286,7 +278,7 @@ notificationRoutesRouter.post('/:id/test', authMiddleware, async (req: Request, 
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseRouteId(req, res);
+    const id = parseIntParam(req, res, 'id', 'route ID');
     if (id === null) return;
 
     const route = DatabaseService.getInstance().getNotificationRoute(id);

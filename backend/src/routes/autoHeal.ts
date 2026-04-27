@@ -4,6 +4,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { authMiddleware } from '../middleware/auth';
 import { requirePaid, requireAdmin } from '../middleware/tierGates';
 import { getErrorMessage } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const AutoHealPolicyCreateSchema = z.object({
   stack_name: z.string().min(1).max(255),
@@ -14,15 +15,6 @@ const AutoHealPolicyCreateSchema = z.object({
   auto_disable_after_failures: z.coerce.number().int().min(1).max(100).default(5),
 });
 const AutoHealPolicyUpdateSchema = AutoHealPolicyCreateSchema.partial().omit({ stack_name: true });
-
-function parsePolicyId(req: Request, res: Response): number | null {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: 'Invalid id' });
-    return null;
-  }
-  return id;
-}
 
 export const autoHealRouter = Router();
 
@@ -71,7 +63,7 @@ autoHealRouter.post('/policies', authMiddleware, (req: Request, res: Response): 
 autoHealRouter.patch('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  const id = parsePolicyId(req, res);
+  const id = parseIntParam(req, res, 'id');
   if (id === null) return;
   const parsed = AutoHealPolicyUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -92,7 +84,7 @@ autoHealRouter.patch('/policies/:id', authMiddleware, (req: Request, res: Respon
 autoHealRouter.delete('/policies/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requirePaid(req, res)) return;
-  const id = parsePolicyId(req, res);
+  const id = parseIntParam(req, res, 'id');
   if (id === null) return;
   try {
     const db = DatabaseService.getInstance();
@@ -107,7 +99,7 @@ autoHealRouter.delete('/policies/:id', authMiddleware, (req: Request, res: Respo
 
 autoHealRouter.get('/policies/:id/history', authMiddleware, (req: Request, res: Response): void => {
   if (!requirePaid(req, res)) return;
-  const id = parsePolicyId(req, res);
+  const id = parseIntParam(req, res, 'id');
   if (id === null) return;
   const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 100);
   try {

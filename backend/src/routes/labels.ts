@@ -12,6 +12,7 @@ import { VALID_LABEL_COLORS, MAX_LABELS_PER_NODE } from '../helpers/constants';
 import { isValidStackName } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
 import { getErrorMessage, isSqliteUniqueViolation } from '../utils/errors';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const activeBulkActions = new Set<string>();
 
@@ -105,8 +106,8 @@ labelsRouter.put('/:id', authMiddleware, async (req: Request, res: Response): Pr
   if (!requirePaid(req, res)) return;
   if (!requireBody(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'label ID');
+    if (id === null) return;
     const nodeId = req.nodeId ?? 0;
     const { name, color } = req.body;
 
@@ -148,8 +149,8 @@ labelsRouter.put('/:id', authMiddleware, async (req: Request, res: Response): Pr
 labelsRouter.delete('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requirePaid(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'label ID');
+    if (id === null) return;
     const nodeId = req.nodeId ?? 0;
     if (isDebugEnabled()) console.debug('[Labels:debug] Delete label:', { id, nodeId });
     DatabaseService.getInstance().deleteLabel(id, nodeId);
@@ -165,8 +166,8 @@ labelsRouter.post('/:id/action', authMiddleware, async (req: Request, res: Respo
   if (!requireAdmin(req, res)) return;
   if (!requireBody(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid label ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'label ID');
+    if (id === null) return;
     const { action } = req.body;
     const validActions = ['deploy', 'stop', 'restart'];
     if (!action || !validActions.includes(action)) {

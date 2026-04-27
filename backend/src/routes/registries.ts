@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { RegistryService } from '../services/RegistryService';
 import { requireAdmin, requireAdmiral } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
+import { parseIntParam } from '../utils/parseIntParam';
 
 const VALID_REGISTRY_TYPES = ['dockerhub', 'ghcr', 'ecr', 'custom'] as const;
 const REGISTRY_SCOPE_MESSAGE = 'API tokens cannot manage registry credentials.';
@@ -80,8 +81,8 @@ registriesRouter.put('/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'registry ID');
+    if (id === null) return;
 
     const existing = RegistryService.getInstance().getById(id);
     if (!existing) { res.status(404).json({ error: 'Registry not found' }); return; }
@@ -118,8 +119,8 @@ registriesRouter.delete('/:id', (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'registry ID');
+    if (id === null) return;
 
     const existing = RegistryService.getInstance().getById(id);
     if (!existing) { res.status(404).json({ error: 'Registry not found' }); return; }
@@ -137,8 +138,8 @@ registriesRouter.post('/:id/test', async (req: Request, res: Response): Promise<
   if (!requireAdmin(req, res)) return;
   if (!requireAdmiral(req, res)) return;
   try {
-    const id = parseInt(req.params.id as string, 10);
-    if (isNaN(id)) { res.status(400).json({ error: 'Invalid registry ID' }); return; }
+    const id = parseIntParam(req, res, 'id', 'registry ID');
+    if (id === null) return;
 
     const result = await RegistryService.getInstance().testConnection(id);
     res.json(result);
