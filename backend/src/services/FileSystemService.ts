@@ -2,7 +2,7 @@ import path from 'path';
 import { promises as fsPromises, createReadStream } from 'fs';
 import type { Readable } from 'stream';
 import { NodeRegistry } from './NodeRegistry';
-import { isPathWithinBase } from '../utils/validation';
+import { isPathWithinBase, isValidStackName } from '../utils/validation';
 import { isBinaryBuffer } from '../utils/binaryDetect';
 
 export interface FileEntry {
@@ -61,7 +61,23 @@ export class FileSystemService {
     return new FileSystemService(nodeId);
   }
 
+  private assertWithinBase(filePath: string): void {
+    if (!isPathWithinBase(filePath, this.baseDir)) {
+      throw Object.assign(new Error('Path escapes compose directory'), { code: 'INVALID_PATH' });
+    }
+  }
+
+  private resolveStackDir(stackName: string): string {
+    if (!isValidStackName(stackName)) {
+      throw Object.assign(new Error('Invalid stack name'), { code: 'INVALID_STACK_NAME' });
+    }
+    const stackDir = path.join(this.baseDir, stackName);
+    this.assertWithinBase(stackDir);
+    return stackDir;
+  }
+
   async hasComposeFile(dir: string): Promise<boolean> {
+    this.assertWithinBase(dir);
     const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
     for (const file of composeFiles) {
       try {
@@ -75,7 +91,7 @@ export class FileSystemService {
   }
 
   private async getComposeFilePath(stackName: string): Promise<string> {
-    const stackDir = path.join(this.baseDir, stackName);
+    const stackDir = this.resolveStackDir(stackName);
     const composeFiles = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
     for (const file of composeFiles) {
       const filePath = path.join(stackDir, file);
@@ -123,7 +139,8 @@ export class FileSystemService {
   }
 
   async saveStackContent(stackName: string, content: string): Promise<void> {
-    const filePath = path.join(this.baseDir, stackName, 'compose.yaml');
+    const stackDir = this.resolveStackDir(stackName);
+    const filePath = path.join(stackDir, 'compose.yaml');
     try {
       await fsPromises.writeFile(filePath, content, 'utf-8');
     } catch (error) {
@@ -133,8 +150,9 @@ export class FileSystemService {
   }
 
   async envExists(stackName: string): Promise<boolean> {
+    const stackDir = this.resolveStackDir(stackName);
     try {
-      await fsPromises.access(path.join(this.baseDir, stackName, '.env'));
+      await fsPromises.access(path.join(stackDir, '.env'));
       return true;
     } catch {
       return false;
@@ -142,19 +160,23 @@ export class FileSystemService {
   }
 
   async readFile(filePath: string, encoding: BufferEncoding = 'utf-8'): Promise<string> {
+    this.assertWithinBase(filePath);
     return fsPromises.readFile(filePath, encoding);
   }
 
   async writeFile(filePath: string, content: string, encoding: BufferEncoding = 'utf-8'): Promise<void> {
+    this.assertWithinBase(filePath);
     return fsPromises.writeFile(filePath, content, encoding);
   }
 
   async access(filePath: string): Promise<void> {
+    this.assertWithinBase(filePath);
     return fsPromises.access(filePath);
   }
 
   async getEnvContent(stackName: string): Promise<string> {
-    const envPath = path.join(this.baseDir, stackName, '.env');
+    const stackDir = this.resolveStackDir(stackName);
+    const envPath = path.join(stackDir, '.env');
     try {
       return await fsPromises.readFile(envPath, 'utf-8');
     } catch (error) {
@@ -164,7 +186,8 @@ export class FileSystemService {
   }
 
   async saveEnvContent(stackName: string, content: string): Promise<void> {
-    const envPath = path.join(this.baseDir, stackName, '.env');
+    const stackDir = this.resolveStackDir(stackName);
+    const envPath = path.join(stackDir, '.env');
     try {
       await fsPromises.writeFile(envPath, content, 'utf-8');
     } catch (error) {
@@ -174,11 +197,7 @@ export class FileSystemService {
   }
 
   async createStack(stackName: string): Promise<void> {
-    if (!stackName || !/^[a-zA-Z0-9_-]+$/.test(stackName)) {
-      throw new Error('Stack name must contain only alphanumeric characters, underscores, or hyphens');
-    }
-
-    const stackDir = path.join(this.baseDir, stackName);
+    const stackDir = this.resolveStackDir(stackName);
 
     try {
       await fsPromises.access(stackDir);
@@ -205,7 +224,7 @@ export class FileSystemService {
   }
 
   public async deleteStack(stackName: string): Promise<void> {
-    const stackDir = path.join(this.baseDir, stackName);
+    const stackDir = this.resolveStackDir(stackName);
     try {
       await fsPromises.rm(stackDir, { recursive: true, force: true });
     } catch (error: unknown) {
@@ -281,7 +300,7 @@ export class FileSystemService {
   async backupStackFiles(stackName: string): Promise<void> {
     const debug = isDebugEnabled();
     const t0 = Date.now();
-    const stackDir = path.join(this.baseDir, stackName);
+    const stackDir = this.resolveStackDir(stackName);
     const backupDir = path.join(getBackupBaseDir(), stackName);
     await fsPromises.mkdir(backupDir, { recursive: true });
 
@@ -320,7 +339,7 @@ export class FileSystemService {
   async restoreStackFiles(stackName: string): Promise<void> {
     const debug = isDebugEnabled();
     const t0 = Date.now();
-    const stackDir = path.join(this.baseDir, stackName);
+    const stackDir = this.resolveStackDir(stackName);
     const backupDir = path.join(getBackupBaseDir(), stackName);
 
     const items = await fsPromises.readdir(backupDir);
