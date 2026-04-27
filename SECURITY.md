@@ -28,3 +28,21 @@ Sencho manages Docker containers and has access to the Docker socket. When deplo
 - Use strong passwords and rotate JWT secrets
 - Restrict network access to the Sencho port
 - Review the [security configuration docs](https://docs.sencho.io) for hardening guidance
+
+## Verifying Release Artifacts
+
+Every published image is signed and carries verifiable supply-chain artifacts. See the full guide at [docs.sencho.io/operations/verifying-images](https://docs.sencho.io/operations/verifying-images).
+
+Quick summary:
+
+```bash
+# Verify image signature (cosign keyless, Rekor logged)
+cosign verify saelix/sencho:<tag> \
+  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Scan with VEX applied (zero unresolved HIGH/CRITICAL CVEs)
+trivy image --vex sencho.openvex.json --severity HIGH,CRITICAL saelix/sencho:<tag>
+```
+
+CycloneDX SBOM (`sbom.cdx.json`), SPDX SBOM (`sbom.spdx.json`), and the VEX document (`sencho.openvex.json`) are attached to every GitHub Release as downloadable assets and as cosign attestations on the image digest.

@@ -138,7 +138,6 @@
               "security",
               "features/node-compatibility",
               "reference/settings",
-              "reference/verifying-images",
               "reference/contact",
               "reference/security-advisories"
             ]
@@ -151,7 +150,8 @@
               "operations/upgrade",
               "operations/self-hosting",
               "operations/trivy-setup",
-              "operations/two-factor-admin"
+              "operations/two-factor-admin",
+              "operations/verifying-images"
             ]
           }
         ]
