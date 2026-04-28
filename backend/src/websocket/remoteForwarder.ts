@@ -40,13 +40,13 @@ export async function handleRemoteForwarder(
   let bearerTokenForProxy = node.api_token;
   if (isInteractiveConsolePath) {
     try {
-      const ls = LicenseService.getInstance();
+      const consoleHeaders = LicenseService.getInstance().getProxyHeaders();
       const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${node.api_token}`,
-          [PROXY_TIER_HEADER]: ls.getTier(),
-          [PROXY_VARIANT_HEADER]: ls.getVariant() || '',
+          [PROXY_TIER_HEADER]: consoleHeaders.tier,
+          [PROXY_VARIANT_HEADER]: consoleHeaders.variant || '',
         },
       });
       if (!tokenRes.ok) {
@@ -67,9 +67,9 @@ export async function handleRemoteForwarder(
   // and would fail verification on the remote. Auth is handled exclusively
   // via the Bearer token.
   delete req.headers['cookie'];
-  const wsLs = LicenseService.getInstance();
-  req.headers[PROXY_TIER_HEADER] = wsLs.getTier();
-  req.headers[PROXY_VARIANT_HEADER] = wsLs.getVariant() || '';
+  const fwdHeaders = LicenseService.getInstance().getProxyHeaders();
+  req.headers[PROXY_TIER_HEADER] = fwdHeaders.tier;
+  req.headers[PROXY_VARIANT_HEADER] = fwdHeaders.variant || '';
   // Strip nodeId from the forwarded URL so the remote treats the request as
   // local. The remote has no record of the gateway's nodeId; leaving it would
   // trigger nodeContext's 404 branch.

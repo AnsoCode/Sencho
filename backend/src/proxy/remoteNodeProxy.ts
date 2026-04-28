@@ -48,10 +48,12 @@ export function createRemoteProxyMiddleware(): RequestHandler {
         // tier to the remote node so tier-gated routes honor the main's
         // license instead of the node's local (likely Community) tier. The
         // remote's authMiddleware only trusts these headers when the request
-        // carries a valid node_proxy JWT.
-        const proxyLs = LicenseService.getInstance();
-        proxyReq.setHeader(PROXY_TIER_HEADER, proxyLs.getTier());
-        proxyReq.setHeader(PROXY_VARIANT_HEADER, proxyLs.getVariant() || '');
+        // carries a valid node_proxy JWT. The cached snapshot here invalidates
+        // on activate / deactivate / validate so the headers track license
+        // state changes within one proxy call.
+        const headers = LicenseService.getInstance().getProxyHeaders();
+        proxyReq.setHeader(PROXY_TIER_HEADER, headers.tier);
+        proxyReq.setHeader(PROXY_VARIANT_HEADER, headers.variant || '');
         // Strip the ?nodeId= query param so the remote's nodeContextMiddleware
         // doesn't reject the request with 404 ("Node X not found") - the remote
         // has no record of the gateway's node IDs and should treat the request
