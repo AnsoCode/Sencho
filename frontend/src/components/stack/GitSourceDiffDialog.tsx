@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { DiffEditor } from '@monaco-editor/react';
+import { useState, Suspense } from 'react';
+import { DiffEditor } from '@/lib/monacoLoader';
 import { AlertTriangle, GitBranch, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -124,21 +124,23 @@ export function GitSourceDiffDialog({
 
           <div className="px-6 pb-4 pt-3">
             <div className="h-[55vh] border border-glass-border rounded-md overflow-hidden">
-              <DiffEditor
-                height="100%"
-                language={effectiveTab === 'compose' ? 'yaml' : 'ini'}
-                theme={isDarkMode ? 'vs-dark' : 'vs'}
-                original={currentValue}
-                modified={incomingValue}
-                options={{
-                  readOnly: true,
-                  renderSideBySide: true,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontFamily: "'Geist Mono', monospace",
-                  fontSize: 12,
-                }}
-              />
+              <Suspense fallback={<div className="w-full h-full" aria-busy="true" />}>
+                <DiffEditor
+                  height="100%"
+                  language={effectiveTab === 'compose' ? 'yaml' : 'ini'}
+                  theme={isDarkMode ? 'vs-dark' : 'vs'}
+                  original={currentValue}
+                  modified={incomingValue}
+                  options={{
+                    readOnly: true,
+                    renderSideBySide: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontFamily: "'Geist Mono', monospace",
+                    fontSize: 12,
+                  }}
+                />
+              </Suspense>
             </div>
           </div>
 

@@ -9,8 +9,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { FileContentResult } from '@/lib/stackFilesApi';
 
-vi.mock('@monaco-editor/react', () => ({
-  default: () => <div data-testid="monaco-editor" />,
+// FileViewer now imports `Editor` from the lazy loader, not directly from
+// @monaco-editor/react. Mock the loader so tests skip Monaco's setup path
+// and the editor renders synchronously.
+vi.mock('@/lib/monacoLoader', () => ({
+  Editor: () => <div data-testid="monaco-editor" />,
+  DiffEditor: () => <div data-testid="monaco-diff-editor" />,
 }));
 
 vi.mock('@/lib/stackFilesApi', () => ({

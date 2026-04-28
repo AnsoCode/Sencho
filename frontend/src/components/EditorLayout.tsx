@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
-import Editor from '@monaco-editor/react';
+import { Editor } from '@/lib/monacoLoader';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
@@ -2841,29 +2841,31 @@ export default function EditorLayout() {
                         )}
                         <div className="flex-1 min-h-0 overflow-hidden">
                           {!isFileLoading && (
-                            <Editor
-                              height="100%"
-                              language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
-                              theme={isDarkMode ? 'vs-dark' : 'vs'}
-                              value={activeTab === 'compose' ? safeContent : safeEnvContent}
-                              onMount={(editor) => { monacoEditorRef.current = editor; }}
-                              onChange={(value) => {
-                                if (!isEditing) return; // Prevent changes in view mode
-                                if (activeTab === 'compose') {
-                                  setContent(value || '');
-                                } else {
-                                  setEnvContent(value || '');
-                                }
-                              }}
-                              options={{
-                                minimap: { enabled: false },
-                                fontFamily: "'Geist Mono', monospace",
-                                fontSize: 14,
-                                padding: { top: 10 },
-                                scrollBeyondLastLine: false,
-                                readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
-                              }}
-                            />
+                            <Suspense fallback={<div className="w-full h-full" aria-busy="true" />}>
+                              <Editor
+                                height="100%"
+                                language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
+                                theme={isDarkMode ? 'vs-dark' : 'vs'}
+                                value={activeTab === 'compose' ? safeContent : safeEnvContent}
+                                onMount={(editor) => { monacoEditorRef.current = editor; }}
+                                onChange={(value) => {
+                                  if (!isEditing) return; // Prevent changes in view mode
+                                  if (activeTab === 'compose') {
+                                    setContent(value || '');
+                                  } else {
+                                    setEnvContent(value || '');
+                                  }
+                                }}
+                                options={{
+                                  minimap: { enabled: false },
+                                  fontFamily: "'Geist Mono', monospace",
+                                  fontSize: 14,
+                                  padding: { top: 10 },
+                                  scrollBeyondLastLine: false,
+                                  readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
+                                }}
+                              />
+                            </Suspense>
                           )}
                           {isFileLoading && (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
