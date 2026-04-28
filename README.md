@@ -6,7 +6,7 @@
 
 Self-hosted Docker Compose management with self-healing infrastructure, atomic deployments, and multi-network fleet control. Built for engineers who want Kubernetes-grade reliability without the complexity.
 
-![Sencho Dashboard](docs/images/dashboard.png)
+![Sencho Dashboard](docs/images/dashboard.png?v=2)
 
 ---
 
