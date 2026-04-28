@@ -24,7 +24,10 @@ import { isDebugEnabled } from '../utils/debug';
 // Cloud backup is opt-in (Skipper+ feature) and the AWS SDK v3 client pulls
 // in dozens of @smithy/* and @aws-sdk/middleware-* packages, so installs
 // without cloud backup configured pay a real boot-parse cost they never use.
-// Lazy-load the SDK on first call and cache it for subsequent requests.
+// The package is declared as an optionalDependency: present in the default
+// install, but operators who never touch cloud backup can run
+// `npm ci --omit=optional` for a slimmer image. Lazy-load the SDK on first
+// call and surface a clear error if it has been opt-out-pruned.
 type S3Sdk = typeof import('@aws-sdk/client-s3');
 type S3Client = InstanceType<S3Sdk['S3Client']>;
 
@@ -32,7 +35,17 @@ let cachedS3Sdk: S3Sdk | undefined;
 
 async function loadS3Sdk(): Promise<S3Sdk> {
     if (!cachedS3Sdk) {
-        cachedS3Sdk = await import('@aws-sdk/client-s3');
+        try {
+            cachedS3Sdk = await import('@aws-sdk/client-s3');
+        } catch (err) {
+            throw new Error(
+                'Cloud backup requires the @aws-sdk/client-s3 package. ' +
+                'It is shipped by default; if you built this image with ' +
+                '`npm ci --omit=optional`, reinstall without that flag to ' +
+                'enable cloud backup.',
+                { cause: err },
+            );
+        }
     }
     return cachedS3Sdk;
 }

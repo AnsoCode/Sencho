@@ -439,7 +439,23 @@ export class RegistryService {
         secretAccessKey: string,
         region: string,
     ): Promise<EcrCacheEntry> {
-        const { ECRClient, GetAuthorizationTokenCommand } = await import('@aws-sdk/client-ecr');
+        // @aws-sdk/client-ecr is declared as an optionalDependency: shipped
+        // in the default install, but absent when the image was built with
+        // `npm ci --omit=optional`. Surface a clear error rather than the
+        // raw "Cannot find module" so operators know how to recover.
+        let sdk: typeof import('@aws-sdk/client-ecr');
+        try {
+            sdk = await import('@aws-sdk/client-ecr');
+        } catch (err) {
+            throw new Error(
+                'ECR registry support requires the @aws-sdk/client-ecr package. ' +
+                'It is shipped by default; if you built this image with ' +
+                '`npm ci --omit=optional`, reinstall without that flag to ' +
+                'enable ECR.',
+                { cause: err },
+            );
+        }
+        const { ECRClient, GetAuthorizationTokenCommand } = sdk;
         const client = new ECRClient({
             region,
             credentials: { accessKeyId, secretAccessKey },
