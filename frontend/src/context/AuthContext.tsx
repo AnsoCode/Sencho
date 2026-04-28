@@ -71,25 +71,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Then check if already authenticated
-      const authResponse = await fetch('/api/auth/check', {
-        credentials: 'include',
-      });
+      // Auth check and permissions fetch are independent for an authenticated
+      // session, so fire both on the wire at the same time. Await only the
+      // auth check before committing app state — otherwise a slow
+      // /permissions/me delays setAppStatus('authenticated') and races
+      // post-reload UI that expects the dashboard to commit promptly. The
+      // permissions promise updates state in the background when it resolves.
+      const authPromise = fetch('/api/auth/check', { credentials: 'include' });
+      const permsPromise = fetch('/api/permissions/me', { credentials: 'include' }).catch(() => null);
 
+      const authResponse = await authPromise;
       if (authResponse.ok) {
         const data = await authResponse.json();
         setUser(data.user ?? null);
         setAppStatus('authenticated');
 
-        // Fetch effective permissions
-        try {
-          const permsRes = await fetch('/api/permissions/me', { credentials: 'include' });
-          if (permsRes.ok) {
-            setPermissions(await permsRes.json());
+        void permsPromise.then(async (res) => {
+          if (res?.ok) {
+            try {
+              setPermissions(await res.json());
+            } catch {
+              // Permissions fetch is non-critical — fallback to global role only
+            }
           }
-        } catch {
-          // Permissions fetch is non-critical — fallback to global role only
-        }
+        });
       } else {
         setUser(null);
         setPermissions(null);
