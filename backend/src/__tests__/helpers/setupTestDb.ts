@@ -4,16 +4,23 @@
  *
  * Call this at the top of every test file *before* importing the app,
  * because DatabaseService initialises its path on first getInstance() call.
+ *
+ * The baseline DB (schema + migrations + admin seed) is built once by
+ * vitest globalSetup; this helper just copies it into the per-test temp
+ * directory so each file pays a file-copy cost instead of a full
+ * schema-init + bcrypt.hash + seed-insert.
  */
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import bcrypt from 'bcrypt';
-import crypto from 'crypto';
+import {
+  TEST_USERNAME,
+  TEST_PASSWORD,
+  TEST_JWT_SECRET,
+  BASELINE_DB_PATH,
+} from './testConstants';
 
-export const TEST_USERNAME = 'testadmin';
-export const TEST_PASSWORD = 'testpassword123';
-export let TEST_JWT_SECRET = '';
+export { TEST_USERNAME, TEST_PASSWORD, TEST_JWT_SECRET };
 
 export async function setupTestDb(): Promise<string> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sencho-test-'));
@@ -23,19 +30,29 @@ export async function setupTestDb(): Promise<string> {
   fs.mkdirSync(composeDir, { recursive: true });
   process.env.COMPOSE_DIR = composeDir;
 
-  // Initialise the DB (singleton will use DATA_DIR we just set)
+  if (!fs.existsSync(BASELINE_DB_PATH)) {
+    throw new Error(
+      `Baseline test DB not found at ${BASELINE_DB_PATH}. Vitest globalSetup ` +
+      `(backend/src/__tests__/helpers/vitestGlobalSetup.ts) is responsible for ` +
+      `building it; check that vitest.config.ts still wires globalSetup.`,
+    );
+  }
+  fs.copyFileSync(BASELINE_DB_PATH, path.join(tmpDir, 'sencho.db'));
+
+  // Initialise the DB singleton against the copied baseline. The constructor
+  // re-runs initSchema() (CREATE TABLE IF NOT EXISTS no-ops) and every
+  // migrate*() (idempotent per CLAUDE.md), so opening an already-migrated
+  // copy is fast.
   const { DatabaseService } = await import('../../services/DatabaseService');
   const db = DatabaseService.getInstance();
 
-  // Seed admin credentials
-  const passwordHash = await bcrypt.hash(TEST_PASSWORD, 1); // cost=1 for speed in tests
-  TEST_JWT_SECRET = crypto.randomBytes(32).toString('hex');
-  db.updateGlobalSetting('auth_username', TEST_USERNAME);
-  db.updateGlobalSetting('auth_password_hash', passwordHash);
-  db.updateGlobalSetting('auth_jwt_secret', TEST_JWT_SECRET);
-
-  // Also seed the users table (RBAC login reads from here)
-  db.addUser({ username: TEST_USERNAME, password_hash: passwordHash, role: 'admin' });
+  // The baseline's local node row was seeded with whatever COMPOSE_DIR was
+  // at globalSetup time (undefined, so fell back to /app/compose). Each
+  // test file resolves stack paths against process.env.COMPOSE_DIR via
+  // FileSystemService; routes that look up the node's stored compose_dir
+  // need it to match the per-file temp dir, otherwise they 400 on
+  // path-traversal or 404 on missing files. Realign here.
+  db.getDb().prepare('UPDATE nodes SET compose_dir = ? WHERE is_default = 1').run(composeDir);
 
   return tmpDir;
 }
