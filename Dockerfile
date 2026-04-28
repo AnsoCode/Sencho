@@ -13,7 +13,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json frontend/.npmrc ./
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
-    npm install
+    npm ci
 
 COPY frontend/ ./
 # vite.config.ts reads the root package.json for the app version
@@ -31,7 +31,7 @@ RUN apk add --no-cache python3 make g++
 COPY backend/package*.json backend/.npmrc ./
 RUN npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5 && \
-    npm install
+    npm ci
 
 COPY backend/ ./
 # prebuild hook (generate-version.js) reads the root package.json for the app version
