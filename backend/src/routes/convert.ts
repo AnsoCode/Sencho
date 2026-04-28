@@ -1,10 +1,18 @@
 import { Router, type Request, type Response } from 'express';
-// @ts-ignore - composerize lacks proper type definitions
-import composerize from 'composerize';
 import { authMiddleware } from '../middleware/auth';
 import { sanitizeForLog } from '../utils/safeLog';
 
 const MAX_DOCKER_RUN_LENGTH = 8192;
+
+// composerize is only used when a user pastes a `docker run` command into the
+// converter UI. Lazy-load it so cold boot does not parse the ~2 MB module.
+let cachedComposerize: ((dockerRun: string) => string) | undefined;
+async function loadComposerize(): Promise<(dockerRun: string) => string> {
+  if (!cachedComposerize) {
+    cachedComposerize = (await import('composerize')).default;
+  }
+  return cachedComposerize;
+}
 
 export const convertRouter = Router();
 
@@ -30,6 +38,7 @@ convertRouter.post('/', authMiddleware, async (req: Request, res: Response): Pro
 
   let yaml: unknown;
   try {
+    const composerize = await loadComposerize();
     yaml = composerize(trimmed);
   } catch (error) {
     console.error('Conversion error:', error);

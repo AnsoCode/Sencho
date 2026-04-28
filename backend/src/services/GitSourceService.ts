@@ -3,8 +3,6 @@ import { spawn } from 'child_process';
 import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
-import git from 'isomorphic-git';
-import gitHttp from 'isomorphic-git/http/node';
 import YAML from 'yaml';
 import { CryptoService } from './CryptoService';
 import { DatabaseService, type StackGitSource, type GitSourceAuthType } from './DatabaseService';
@@ -12,6 +10,27 @@ import { FileSystemService } from './FileSystemService';
 import { ComposeService } from './ComposeService';
 import { isDebugEnabled } from '../utils/debug';
 import { sanitizeForLog } from '../utils/safeLog';
+
+// isomorphic-git is the heaviest dependency in the backend (~5 MB) and only
+// fires when a stack is created from a Git source. Lazy-load it so cold
+// boots without any Git-sourced stacks never parse the module.
+type IsomorphicGit = typeof import('isomorphic-git')['default'];
+type IsomorphicGitHttp = typeof import('isomorphic-git/http/node')['default'];
+
+let cachedGit: IsomorphicGit | undefined;
+let cachedGitHttp: IsomorphicGitHttp | undefined;
+
+async function loadIsomorphicGit(): Promise<{ git: IsomorphicGit; gitHttp: IsomorphicGitHttp }> {
+    if (!cachedGit || !cachedGitHttp) {
+        const [gitMod, gitHttpMod] = await Promise.all([
+            import('isomorphic-git'),
+            import('isomorphic-git/http/node'),
+        ]);
+        cachedGit = gitMod.default;
+        cachedGitHttp = gitHttpMod.default;
+    }
+    return { git: cachedGit, gitHttp: cachedGitHttp };
+}
 
 /**
  * GitSourceService - fetch compose files from a Git repository and apply
@@ -393,6 +412,7 @@ export class GitSourceService {
             : undefined;
 
         try {
+            const { git, gitHttp } = await loadIsomorphicGit();
             // isomorphic-git does not natively accept an AbortSignal, so we
             // wrap the clone in a Promise.race against a timeout rejection.
             // The clone will keep running in the background until the socket
