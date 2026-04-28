@@ -39,6 +39,9 @@ export function installShutdownHandlers(server: Server): void {
       try { MfaService.getInstance().stop(); } catch (e) {
         console.warn('[Shutdown] MfaService cleanup failed:', (e as Error).message);
       }
+      try { DatabaseService.getInstance().flushAuditLogBuffer(); } catch (e) {
+        console.warn('[Shutdown] Audit log flush failed:', (e as Error).message);
+      }
       try { DatabaseService.getInstance().getDb().close(); } catch (e) {
         console.warn('[Shutdown] Database close failed:', (e as Error).message);
       }

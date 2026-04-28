@@ -47,6 +47,9 @@ export function resetMfaForUser(username: string): ResetMfaResult {
         // Audit failure should not block the reset itself.
         console.warn('[reset-mfa] audit log write failed:', (err as Error).message);
     }
+    // The audit log buffer flushes on a 1s timer that the CLI process exits
+    // before reaching, so flush explicitly to make sure the entry persists.
+    db.flushAuditLogBuffer();
     return { ok: true, message: `Two-factor authentication cleared for ${username}` };
 }
 

@@ -467,6 +467,16 @@ export interface ScanSummary {
     scan_id: number;
 }
 
+// Audit log buffering: writes are batched into a transaction either after
+// AUDIT_LOG_FLUSH_INTERVAL_MS or once the buffer hits AUDIT_LOG_FLUSH_THRESHOLD,
+// whichever comes first. Without this, every mutating /api/* request runs an
+// individual INSERT and serializes against other writers under burst load
+// (SQLite's single-writer model). All read paths (getAuditLogs,
+// getAuditLogsInRange, cleanupOldAuditLogs) drain the buffer first so callers
+// always observe a consistent view.
+const AUDIT_LOG_FLUSH_INTERVAL_MS = 1_000;
+const AUDIT_LOG_FLUSH_THRESHOLD = 100;
+
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
@@ -477,6 +487,9 @@ export class DatabaseService {
     // process is the sole writer to global_settings; sidecar tools that
     // edit the row directly will not invalidate the cache.
     private cachedGlobalSettings: Readonly<Record<string, string>> | null = null;
+    private auditLogBuffer: Array<Omit<AuditLogEntry, 'id'>> = [];
+    private auditLogFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    private auditLogInsertStmt: Database.Statement | null = null;
 
     private constructor() {
         const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
@@ -2203,9 +2216,68 @@ export class DatabaseService {
     // --- Audit Log ---
 
     public insertAuditLog(entry: Omit<AuditLogEntry, 'id'>): void {
-        this.db.prepare(
-            'INSERT INTO audit_log (timestamp, username, method, path, status_code, node_id, ip_address, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(entry.timestamp, entry.username, entry.method, entry.path, entry.status_code, entry.node_id, entry.ip_address, entry.summary);
+        this.auditLogBuffer.push(entry);
+        if (this.auditLogBuffer.length >= AUDIT_LOG_FLUSH_THRESHOLD) {
+            this.flushAuditLogBuffer();
+            return;
+        }
+        if (!this.auditLogFlushTimer) {
+            // unref(): the buffer flush should not by itself keep the process
+            // alive. The HTTP server keeps the event loop running during
+            // normal operation; on shutdown, the explicit flush in
+            // bootstrap/shutdown.ts drains the buffer before db.close().
+            this.auditLogFlushTimer = setTimeout(
+                () => this.flushAuditLogBuffer(),
+                AUDIT_LOG_FLUSH_INTERVAL_MS,
+            );
+            this.auditLogFlushTimer.unref();
+        }
+    }
+
+    /**
+     * Drain the audit-log buffer to disk in a single transaction. Safe to
+     * call from any path: read methods flush before querying so callers
+     * observe buffered writes, and the shutdown handler flushes before the
+     * DB connection closes.
+     */
+    public flushAuditLogBuffer(): void {
+        if (this.auditLogFlushTimer) {
+            clearTimeout(this.auditLogFlushTimer);
+            this.auditLogFlushTimer = null;
+        }
+        if (this.auditLogBuffer.length === 0) return;
+        // Swap the buffer reference before running the transaction. Any
+        // re-entrant insertAuditLog call (e.g. from a future hook that audits
+        // its own writes) lands on the new empty buffer and survives to the
+        // next flush, instead of being captured into the in-flight batch and
+        // potentially dropped on transaction failure.
+        const batch = this.auditLogBuffer;
+        this.auditLogBuffer = [];
+        if (!this.auditLogInsertStmt) {
+            this.auditLogInsertStmt = this.db.prepare(
+                'INSERT INTO audit_log (timestamp, username, method, path, status_code, node_id, ip_address, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            );
+        }
+        const stmt = this.auditLogInsertStmt;
+        const insertMany = this.db.transaction((entries: typeof batch) => {
+            for (const entry of entries) {
+                stmt.run(
+                    entry.timestamp,
+                    entry.username,
+                    entry.method,
+                    entry.path,
+                    entry.status_code,
+                    entry.node_id,
+                    entry.ip_address,
+                    entry.summary,
+                );
+            }
+        });
+        try {
+            insertMany(batch);
+        } catch (err) {
+            console.error('[Audit] Failed to flush audit log buffer:', err);
+        }
     }
 
     public getAuditLogs(filters: {
@@ -2217,6 +2289,7 @@ export class DatabaseService {
         to?: number;
         search?: string;
     } = {}): { entries: AuditLogEntry[]; total: number } {
+        this.flushAuditLogBuffer();
         const page = filters.page ?? 1;
         const limit = filters.limit ?? 50;
         const offset = (page - 1) * limit;
@@ -2257,11 +2330,13 @@ export class DatabaseService {
     }
 
     public cleanupOldAuditLogs(daysToKeep = 90): void {
+        this.flushAuditLogBuffer();
         const cutoff = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
         this.db.prepare('DELETE FROM audit_log WHERE timestamp < ?').run(cutoff);
     }
 
     public getAuditLogsInRange(from: number, to: number): AuditLogEntry[] {
+        this.flushAuditLogBuffer();
         return this.db.prepare(
             'SELECT * FROM audit_log WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC'
         ).all(from, to) as AuditLogEntry[];
