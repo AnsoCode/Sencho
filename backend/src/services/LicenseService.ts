@@ -123,10 +123,17 @@ interface LemonSqueezyValidationResponse {
 const LEMON_SQUEEZY_API = 'https://api.lemonsqueezy.com/v1/licenses';
 const VALIDATION_INTERVAL_MS = 72 * 60 * 60 * 1000; // 72 hours
 const OFFLINE_GRACE_DAYS = 30;
+// Short TTL for the proxy-headers cache. The remote-node proxy reads tier
+// and variant on every forwarded request; without caching, each call hits
+// system_state 5+ times. Every license_status write goes through
+// setLicenseStatus() which invalidates the cache, so the TTL is a safety
+// net against any future bypass rather than a load-bearing freshness bound.
+const PROXY_HEADERS_CACHE_TTL_MS = 30_000;
 
 export class LicenseService {
     private static instance: LicenseService;
     private validationTimer: ReturnType<typeof setInterval> | null = null;
+    private cachedProxyHeaders: { value: { tier: LicenseTier; variant: LicenseVariant }; expiresAt: number } | null = null;
 
     private constructor() { }
 
@@ -170,7 +177,7 @@ export class LicenseService {
                 return 'paid';
             }
             // Trial expired - update status
-            db.setSystemState('license_status', 'community');
+            this.setLicenseStatus('community');
             return 'community';
         }
 
@@ -181,7 +188,7 @@ export class LicenseService {
                 const daysSinceValidation = (Date.now() - parseInt(lastValidated, 10)) / (1000 * 60 * 60 * 24);
                 if (daysSinceValidation > OFFLINE_GRACE_DAYS) {
                     console.warn('[License] Offline grace period exceeded. Degrading to community.');
-                    db.setSystemState('license_status', 'community');
+                    this.setLicenseStatus('community');
                     return 'community';
                 }
             }
@@ -189,7 +196,7 @@ export class LicenseService {
             // Check expiry for subscription licenses
             const validUntil = db.getSystemState('license_valid_until');
             if (validUntil && new Date(validUntil) < new Date()) {
-                db.setSystemState('license_status', 'expired');
+                this.setLicenseStatus('expired');
                 return 'community';
             }
 
@@ -252,6 +259,35 @@ export class LicenseService {
         if (isLicenseVariant(storedType)) return normalizeVariant(storedType);
 
         return null;
+    }
+
+    /**
+     * Tier + variant snapshot for the remote-node proxy headers, cached for
+     * a short window to spare the proxy hot path from re-running getTier()
+     * and getVariant() on every forwarded request. All license-status writes
+     * route through setLicenseStatus(), which invalidates this cache, so
+     * tier changes take effect within one proxy call.
+     */
+    public getProxyHeaders(): { tier: LicenseTier; variant: LicenseVariant } {
+        const now = Date.now();
+        if (this.cachedProxyHeaders && this.cachedProxyHeaders.expiresAt > now) {
+            return this.cachedProxyHeaders.value;
+        }
+        const value = { tier: this.getTier(), variant: this.getVariant() };
+        this.cachedProxyHeaders = { value, expiresAt: now + PROXY_HEADERS_CACHE_TTL_MS };
+        return value;
+    }
+
+    /**
+     * Single chokepoint for license_status writes. Persists the new status
+     * and invalidates the proxy-headers cache so tier-gated routes on
+     * remote nodes observe the change on the next forwarded request.
+     * Every license_status write must go through this method; bypassing
+     * it leaves the cache stale until the TTL expires.
+     */
+    private setLicenseStatus(status: LicenseStatus): void {
+        DatabaseService.getInstance().setSystemState('license_status', status);
+        this.cachedProxyHeaders = null;
     }
 
     /**
@@ -322,7 +358,7 @@ export class LicenseService {
             // Store license data
             db.setSystemState('license_key', licenseKey);
             db.setSystemState('license_instance_id', data.instance?.id || '');
-            db.setSystemState('license_status', 'active');
+            this.setLicenseStatus('active');
             db.setSystemState('license_last_validated', Date.now().toString());
 
             if (data.license_key?.expires_at) {
@@ -410,7 +446,7 @@ export class LicenseService {
         for (const key of keysToRemove) {
             db.setSystemState(key, '');
         }
-        db.setSystemState('license_status', 'community');
+        this.setLicenseStatus('community');
 
         console.log('[License] Deactivated. Reverted to Community tier.');
         return { success: true };
@@ -443,7 +479,7 @@ export class LicenseService {
 
             if (!data.valid) {
                 // License revoked or invalid
-                db.setSystemState('license_status', 'disabled');
+                this.setLicenseStatus('disabled');
                 console.warn('[License] Validation failed: license is no longer valid.');
                 return { success: false, error: data.error || 'License is no longer valid' };
             }
@@ -451,15 +487,15 @@ export class LicenseService {
             // Update status based on key status
             const keyStatus = data.license_key?.status;
             if (keyStatus === 'expired') {
-                db.setSystemState('license_status', 'expired');
+                this.setLicenseStatus('expired');
                 return { success: false, error: 'License has expired' };
             }
             if (keyStatus === 'disabled') {
-                db.setSystemState('license_status', 'disabled');
+                this.setLicenseStatus('disabled');
                 return { success: false, error: 'License has been disabled' };
             }
 
-            db.setSystemState('license_status', 'active');
+            this.setLicenseStatus('active');
 
             // Update expiry if changed
             if (data.license_key?.expires_at) {
