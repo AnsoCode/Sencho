@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'rea
 
 type Theme = 'light' | 'dark' | 'auto';
 import { Editor } from '@/lib/monacoLoader';
+import { useImageUpdates } from '@/hooks/useImageUpdates';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
@@ -354,7 +355,7 @@ export default function EditorLayout() {
 
 
   // Image update checker state
-  const [stackUpdates, setStackUpdates] = useState<Record<string, boolean>>({});
+  const { stackUpdates, refresh: fetchImageUpdates } = useImageUpdates(activeNode?.id);
   const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
   const isAdmiral = license?.variant === 'admiral';
 
@@ -824,13 +825,10 @@ export default function EditorLayout() {
     }
 
     refreshStacks();
-    fetchImageUpdates();
+    // Image-update fetching + 5-minute poll are owned by useImageUpdates,
+    // which mirrors this effect's activeNode.id dependency.
     fetchAutoUpdateSettings();
     refreshGitSourcePending();
-
-    // Poll for image update results every 5 minutes so background checks are picked up
-    const imageUpdateInterval = setInterval(fetchImageUpdates, 5 * 60 * 1000);
-    return () => clearInterval(imageUpdateInterval);
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchNotifications = async () => {
@@ -877,18 +875,6 @@ export default function EditorLayout() {
     const id = setInterval(() => { fetchNotificationsRef.current(); }, 60_000);
     return () => clearInterval(id);
   }, []);
-
-  const fetchImageUpdates = async () => {
-    try {
-      const res = await apiFetch('/image-updates');
-      if (res.ok) {
-        const data = await res.json();
-        setStackUpdates(data);
-      }
-    } catch (e: unknown) {
-      console.error('[ImageUpdates] fetch failed:', e);
-    }
-  };
 
   const fetchAutoUpdateSettings = async () => {
     try {
