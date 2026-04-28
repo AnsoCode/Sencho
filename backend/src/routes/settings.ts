@@ -41,7 +41,7 @@ export const settingsRouter = Router();
 
 settingsRouter.get('/', authMiddleware, async (_req: Request, res: Response): Promise<void> => {
   try {
-    const settings = DatabaseService.getInstance().getGlobalSettings();
+    const settings = { ...DatabaseService.getInstance().getGlobalSettings() };
     for (const key of PRIVATE_SETTINGS_KEYS) {
       delete settings[key];
     }
