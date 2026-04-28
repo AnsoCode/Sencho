@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import Editor from '@monaco-editor/react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { Editor } from '@/lib/monacoLoader';
 import { AlertCircle, FileIcon, Download, Lock, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -276,16 +276,18 @@ export function FileViewer({
       </div>
 
       <div className="flex-1 min-h-0">
-        <Editor
-          height="100%"
-          language={language}
-          value={content}
-          onChange={(val) => {
-            if (!readOnly) setContent(val ?? '');
-          }}
-          theme={isDarkMode ? 'vs-dark' : 'light'}
-          options={editorOptions}
-        />
+        <Suspense fallback={<div className="w-full h-full" aria-busy="true" />}>
+          <Editor
+            height="100%"
+            language={language}
+            value={content}
+            onChange={(val) => {
+              if (!readOnly) setContent(val ?? '');
+            }}
+            theme={isDarkMode ? 'vs-dark' : 'light'}
+            options={editorOptions}
+          />
+        </Suspense>
       </div>
     </div>
   );
