@@ -179,6 +179,10 @@ describe('DockerController - getDiskUsage', () => {
         { UsageData: { RefCount: 0, Size: 400 } },      // reclaimable (unused)
         { UsageData: { RefCount: 1, Size: 300 } },      // not reclaimable (in use)
       ],
+      BuildCache: [
+        { ID: 'bc1', InUse: false, Size: 600 },          // reclaimable
+        { ID: 'bc2', InUse: true, Size: 250 },           // not reclaimable
+      ],
     });
 
     const dc = DockerController.getInstance(1);
@@ -187,6 +191,8 @@ describe('DockerController - getDiskUsage', () => {
     expect(usage.reclaimableImages).toBe(500);
     expect(usage.reclaimableContainers).toBe(200);
     expect(usage.reclaimableVolumes).toBe(400);
+    expect(usage.reclaimableBuildCache).toBe(600);
+    expect(usage.reclaimableBuildCacheCount).toBe(1);
   });
 
   it('handles empty arrays gracefully', async () => {
