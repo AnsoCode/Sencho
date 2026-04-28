@@ -72,7 +72,10 @@ Auto-update policies, scheduled operations, webhooks, and deploy enforcement let
 
 ## Architecture
 
-Sencho uses a Distributed API model. Remote nodes are managed by proxying authenticated HTTP/WebSocket requests to autonomous Sencho instances running on each server. No SSH. No remote Docker socket exposure. No polling agent. Each node speaks the same Sencho API, so the dashboard is just another client.
+Sencho's architecture combines a **Distributed API model** with an optional **Pilot Agent** for complex networks.
+
+- **Distributed API:** Remote nodes are managed by proxying authenticated HTTP/WebSocket requests to autonomous Sencho instances running on each server. No SSH. No remote Docker socket exposure. No polling agent. Each node speaks the same Sencho API, so the dashboard is just another client.
+- **Pilot Agent:** For nodes behind NAT or strict firewalls, the Pilot Agent establishes secure outbound tunnels to the primary dashboard instance. This guarantees full fleet visibility and management without requiring port-forwarding, VPNs, or inbound network access.
 
 ---
 
@@ -123,7 +126,6 @@ See the [full documentation](https://docs.sencho.io) for configuration details, 
 
 | | Community | Skipper | Admiral |
 |---|---|---|---|
-| **Price** | Free | From $5.99/mo | From $41.99/mo |
 | **Nodes** | Unlimited | Unlimited | Unlimited |
 | Stack management, logs, alerts, app store | All | All | All |
 | Two-factor authentication | Yes | Yes | Yes |
