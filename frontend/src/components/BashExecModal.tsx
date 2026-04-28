@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Terminal as TerminalIcon } from 'lucide-react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import '@xterm/xterm/css/xterm.css';
+import { loadXtermModules, type Terminal, type FitAddon, type XtermModules } from '@/lib/xtermLoader';
 
 type TerminalContainer = HTMLDivElement & { __resizeObserver?: ResizeObserver };
 
@@ -45,10 +43,13 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
       return;
     }
 
+    let cancelled = false;
     let attempts = 0;
     const maxAttempts = 15; // up to 1.5 seconds
+    let modules: XtermModules | null = null;
 
     const checkAndInit = () => {
+      if (cancelled || !modules) return;
       // If already initialized, stop.
       if (xtermRef.current) return;
 
@@ -72,23 +73,28 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
           initTimeoutRef.current = setTimeout(checkAndInit, 100);
         } else {
           console.warn('BashExecModal: terminal container has zero dimensions after 1.5s, forcing init anyway.');
-          initTerminal(container);
+          initTerminal(container, modules);
         }
         return;
       }
 
       // Node exists and has layout - safe to initialize xterm!
-      initTerminal(container);
+      initTerminal(container, modules);
     };
 
-    // Start polling
-    initTimeoutRef.current = setTimeout(checkAndInit, 50);
+    void loadXtermModules().then((mods) => {
+      if (cancelled) return;
+      modules = mods;
+      initTimeoutRef.current = setTimeout(checkAndInit, 50);
+    }).catch((err) => {
+      console.error('BashExecModal: failed to load xterm:', err);
+    });
 
-    function initTerminal(containerEl: HTMLDivElement) {
+    function initTerminal(containerEl: HTMLDivElement, mods: XtermModules) {
       // xterm.js requires literal color strings in its theme config; CSS variables
       // and oklch() are not supported by the canvas renderer. These values are
       // intentionally hardcoded to match the terminal well aesthetic.
-      const term = new Terminal({
+      const term = new mods.Terminal({
         theme: {
           background: '#0a0a0a',
           foreground: '#d4d4d4',
@@ -101,7 +107,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
         cursorBlink: true,
       });
 
-      const fitAddon = new FitAddon();
+      const fitAddon = new mods.FitAddon();
       term.loadAddon(fitAddon);
       term.open(containerEl);
 
@@ -200,6 +206,7 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
     }
 
     return () => {
+      cancelled = true;
       // Clean up ResizeObserver
       const el = terminalRef.current as TerminalContainer | null;
       if (el?.__resizeObserver) {

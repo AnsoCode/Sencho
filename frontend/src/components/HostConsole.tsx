@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { SerializeAddon } from '@xterm/addon-serialize';
 import { ArrowLeft, Copy, Trash2, Download, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { PageMasthead, type MastheadTone } from './ui/PageMasthead';
-import '@xterm/xterm/css/xterm.css';
+import { loadXtermModules, type Terminal, type FitAddon, type SerializeAddon } from '@/lib/xtermLoader';
 import { useNodes } from '@/context/NodeContext';
 import { copyToClipboard } from '@/lib/clipboard';
 
@@ -71,124 +68,131 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
         if (!container) return;
 
         let mounted = true;
+        let resizeObserver: ResizeObserver | null = null;
+        let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
 
-        const term = new Terminal({
-            theme: getTerminalTheme(),
-            fontFamily: "'Geist Mono', monospace",
-            fontSize: 14,
-            cursorBlink: true,
-        });
-
-        const fitAddon = new FitAddon();
-        const serializeAddon = new SerializeAddon();
-        term.loadAddon(fitAddon);
-        term.loadAddon(serializeAddon);
-        term.open(container);
-
-        xtermRef.current = term;
-        fitAddonRef.current = fitAddon;
-        serializeRef.current = serializeAddon;
-
-        requestAnimationFrame(() => {
-            try {
-                if (mounted) {
-                    fitAddon.fit();
-                    setDims({ cols: term.cols, rows: term.rows });
-                }
-            } catch {
-                // Ignore fit errors during initial render
-            }
-        });
-
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
-        const nodeParam = activeNodeId ? `nodeId=${activeNodeId}` : '';
-        const stackParam = stackName ? `stack=${encodeURIComponent(stackName)}` : '';
-        const queryString = [nodeParam, stackParam].filter(Boolean).join('&');
-        const wsUrl = `${wsProtocol}//${window.location.host}/api/system/host-console${queryString ? `?${queryString}` : ''}`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
+        void loadXtermModules().then((mods) => {
             if (!mounted) return;
-            setConnState('connected');
-            setLastActivityAt(Date.now());
-            term.focus();
 
-            setTimeout(() => {
+            const term = new mods.Terminal({
+                theme: getTerminalTheme(),
+                fontFamily: "'Geist Mono', monospace",
+                fontSize: 14,
+                cursorBlink: true,
+            });
+
+            const fitAddon = new mods.FitAddon();
+            const serializeAddon = new mods.SerializeAddon();
+            term.loadAddon(fitAddon);
+            term.loadAddon(serializeAddon);
+            term.open(container);
+
+            xtermRef.current = term;
+            fitAddonRef.current = fitAddon;
+            serializeRef.current = serializeAddon;
+
+            requestAnimationFrame(() => {
                 try {
                     if (mounted) {
                         fitAddon.fit();
                         setDims({ cols: term.cols, rows: term.rows });
                     }
                 } catch {
-                    // Ignore
+                    // Ignore fit errors during initial render
                 }
-                if (ws.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+            });
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const activeNodeId = localStorage.getItem('sencho-active-node') || '';
+            const nodeParam = activeNodeId ? `nodeId=${activeNodeId}` : '';
+            const stackParam = stackName ? `stack=${encodeURIComponent(stackName)}` : '';
+            const queryString = [nodeParam, stackParam].filter(Boolean).join('&');
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/system/host-console${queryString ? `?${queryString}` : ''}`;
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                if (!mounted) return;
+                setConnState('connected');
+                setLastActivityAt(Date.now());
+                term.focus();
+
+                setTimeout(() => {
+                    try {
+                        if (mounted) {
+                            fitAddon.fit();
+                            setDims({ cols: term.cols, rows: term.rows });
+                        }
+                    } catch {
+                        // Ignore
+                    }
+                    if (ws.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows,
+                        }));
+                    }
+                }, 100);
+            };
+
+            ws.onmessage = (event) => {
+                if (!mounted) return;
+                const text = typeof event.data === 'string' ? event.data : event.data.toString();
+                term.write(text);
+                setLastActivityAt(Date.now());
+            };
+
+            ws.onerror = () => {
+                if (!mounted) return;
+                term.write('\r\n\x1b[31mConnection error\x1b[0m\r\n');
+                setConnState('disconnected');
+            };
+
+            ws.onclose = () => {
+                if (!mounted) return;
+                term.write('\r\n\x1b[33mSession ended\x1b[0m\r\n');
+                setConnState('disconnected');
+            };
+
+            term.onData((data) => {
+                if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
-                        type: 'resize',
-                        cols: term.cols,
-                        rows: term.rows,
+                        type: 'input',
+                        payload: data,
                     }));
                 }
-            }, 100);
-        };
+            });
 
-        ws.onmessage = (event) => {
-            if (!mounted) return;
-            const text = typeof event.data === 'string' ? event.data : event.data.toString();
-            term.write(text);
-            setLastActivityAt(Date.now());
-        };
+            resizeObserver = new ResizeObserver(() => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    if (!mounted || !fitAddonRef.current || !wsRef.current) return;
+                    try {
+                        fitAddonRef.current.fit();
+                        setDims({ cols: term.cols, rows: term.rows });
+                    } catch {
+                        return;
+                    }
+                    if (wsRef.current.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+                        wsRef.current.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows,
+                        }));
+                    }
+                }, 50);
+            });
 
-        ws.onerror = () => {
-            if (!mounted) return;
-            term.write('\r\n\x1b[31mConnection error\x1b[0m\r\n');
-            setConnState('disconnected');
-        };
-
-        ws.onclose = () => {
-            if (!mounted) return;
-            term.write('\r\n\x1b[33mSession ended\x1b[0m\r\n');
-            setConnState('disconnected');
-        };
-
-        term.onData((data) => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'input',
-                    payload: data,
-                }));
-            }
+            resizeObserver.observe(container);
+        }).catch((err) => {
+            console.error('HostConsole: failed to load xterm:', err);
         });
-
-        let resizeTimeout: ReturnType<typeof setTimeout>;
-        const resizeObserver = new ResizeObserver(() => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                if (!mounted || !fitAddonRef.current || !wsRef.current) return;
-                try {
-                    fitAddonRef.current.fit();
-                    setDims({ cols: term.cols, rows: term.rows });
-                } catch {
-                    return;
-                }
-                if (wsRef.current.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
-                    wsRef.current.send(JSON.stringify({
-                        type: 'resize',
-                        cols: term.cols,
-                        rows: term.rows,
-                    }));
-                }
-            }, 50);
-        });
-
-        resizeObserver.observe(container);
 
         return () => {
             mounted = false;
-            resizeObserver.disconnect();
-            clearTimeout(resizeTimeout);
+            if (resizeObserver) resizeObserver.disconnect();
+            if (resizeTimeout) clearTimeout(resizeTimeout);
             if (wsRef.current) {
                 wsRef.current.close();
                 wsRef.current = null;

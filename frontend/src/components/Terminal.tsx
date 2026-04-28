@@ -1,12 +1,8 @@
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
-import { SerializeAddon } from '@xterm/addon-serialize';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Download, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
-import '@xterm/xterm/css/xterm.css';
+import { loadXtermModules, type Terminal, type FitAddon, type SearchAddon, type SerializeAddon } from '@/lib/xtermLoader';
 
 interface TerminalComponentProps {
   stackName?: string;
@@ -50,11 +46,17 @@ export default function TerminalComponent({ stackName, onReady, onMessage }: Ter
 
     let mounted = true;
 
-    const initTerminal = () => {
+    const initTerminal = async () => {
       if (!mounted || !terminalRef.current) return;
 
+      const mods = await loadXtermModules().catch((err) => {
+        console.error('Terminal: failed to load xterm:', err);
+        return null;
+      });
+      if (!mods || !mounted || !terminalRef.current) return;
+
       try {
-        const term = new Terminal({
+        const term = new mods.Terminal({
           cursorBlink: true,
           convertEol: true,
           allowProposedApi: true,
@@ -84,9 +86,9 @@ export default function TerminalComponent({ stackName, onReady, onMessage }: Ter
           scrollback: 10000,
         });
 
-        const fitAddon = new FitAddon();
-        const searchAddon = new SearchAddon();
-        const serializeAddon = new SerializeAddon();
+        const fitAddon = new mods.FitAddon();
+        const searchAddon = new mods.SearchAddon();
+        const serializeAddon = new mods.SerializeAddon();
 
         term.loadAddon(fitAddon);
         term.loadAddon(searchAddon);
@@ -167,7 +169,7 @@ export default function TerminalComponent({ stackName, onReady, onMessage }: Ter
     };
 
     // Initialize terminal after a small delay to ensure container is rendered
-    const timeoutId = setTimeout(initTerminal, 50);
+    const timeoutId = setTimeout(() => { void initTerminal(); }, 50);
 
     // Attach ResizeObserver to the terminal's parent container
     let resizeTimeout: number | undefined;
