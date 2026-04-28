@@ -71,24 +71,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Then check if already authenticated
-      const authResponse = await fetch('/api/auth/check', {
-        credentials: 'include',
-      });
+      // Auth check and permissions fetch are independent for an authenticated
+      // session, so fire them in parallel. The permissions request is wasted
+      // if the auth check fails, but the not-authenticated branch is rare
+      // (cookie expired / logged out) and saving a round-trip on the common
+      // success path is the better trade.
+      const [authResponse, permsResponse] = await Promise.all([
+        fetch('/api/auth/check', { credentials: 'include' }),
+        fetch('/api/permissions/me', { credentials: 'include' }).catch(() => null),
+      ]);
 
       if (authResponse.ok) {
         const data = await authResponse.json();
         setUser(data.user ?? null);
         setAppStatus('authenticated');
 
-        // Fetch effective permissions
-        try {
-          const permsRes = await fetch('/api/permissions/me', { credentials: 'include' });
-          if (permsRes.ok) {
-            setPermissions(await permsRes.json());
+        if (permsResponse?.ok) {
+          try {
+            setPermissions(await permsResponse.json());
+          } catch {
+            // Permissions fetch is non-critical — fallback to global role only
           }
-        } catch {
-          // Permissions fetch is non-critical — fallback to global role only
         }
       } else {
         setUser(null);
