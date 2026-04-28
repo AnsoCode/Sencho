@@ -2,10 +2,12 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.2.x+  | Yes                |
-| < 0.2   | No                 |
+| Version | Supported |
+| ------- | --------- |
+| Latest release | Yes |
+| Older releases | No |
+
+Sencho is self-hosted software. Always run the latest release to receive security patches.
 
 ## Reporting a Vulnerability
 
