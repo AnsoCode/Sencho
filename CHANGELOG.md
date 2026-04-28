@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.65.0](https://github.com/AnsoCode/Sencho/compare/v0.64.2...v0.65.0) (2026-04-28)
+
+
+### Added
+
+* **scaffold:** fully automate release blog post publishing ([#810](https://github.com/AnsoCode/Sencho/issues/810)) ([b5acfd8](https://github.com/AnsoCode/Sencho/commit/b5acfd8f58008164c3af1f7253f8cb61347c99c3))
+
+
+### Fixed
+
+* **backend:** batch audit_log inserts into a buffered transaction ([#817](https://github.com/AnsoCode/Sencho/issues/817)) ([5cf4323](https://github.com/AnsoCode/Sencho/commit/5cf4323511eb7e1bf3640f5ceac557cb64395e5d))
+* **backend:** cache global_settings reads in DatabaseService ([#814](https://github.com/AnsoCode/Sencho/issues/814)) ([836e384](https://github.com/AnsoCode/Sencho/commit/836e384d17d8e9daf7d16f900a6ed0a560c654e0))
+* **backend:** lazy-load @aws-sdk/client-s3 in CloudBackupService ([#820](https://github.com/AnsoCode/Sencho/issues/820)) ([14c25a6](https://github.com/AnsoCode/Sencho/commit/14c25a6dbc908cb8de9e89199ddc3907377bf006))
+* **backend:** lazy-load composerize and isomorphic-git ([#819](https://github.com/AnsoCode/Sencho/issues/819)) ([329b4ec](https://github.com/AnsoCode/Sencho/commit/329b4ec4e2f84e590f027511877ec9b5ed3d0ca7))
+* **backend:** mark AWS SDK clients as optional dependencies ([#821](https://github.com/AnsoCode/Sencho/issues/821)) ([04f35fd](https://github.com/AnsoCode/Sencho/commit/04f35fdf220c8e9024875750846aed96bf4c7b09))
+* **backend:** parallelize independent startup initializers ([#816](https://github.com/AnsoCode/Sencho/issues/816)) ([18cf2e6](https://github.com/AnsoCode/Sencho/commit/18cf2e65e8c4b173b1d614f52153e905b8a87ff4))
+* **backend:** parallelize pruneManagedOnly removals ([#830](https://github.com/AnsoCode/Sencho/issues/830)) ([46fae21](https://github.com/AnsoCode/Sencho/commit/46fae21e67a4f0650849c45b972efbe4c84e864a))
+* **backend:** replace docker system df shell-out with dockerode API ([#818](https://github.com/AnsoCode/Sencho/issues/818)) ([279ec62](https://github.com/AnsoCode/Sencho/commit/279ec62dff70cce1054df99f18160eb73d41aaac))
+* **build:** enable incremental tsc ([#827](https://github.com/AnsoCode/Sencho/issues/827)) ([f4338c9](https://github.com/AnsoCode/Sencho/commit/f4338c9d6bffd8673962e8896874c69bf078762a))
+* **docker:** switch builder stages to npm ci ([#822](https://github.com/AnsoCode/Sencho/issues/822)) ([eb1d627](https://github.com/AnsoCode/Sencho/commit/eb1d627096053fa3acac0576b9f66ba7d6017493))
+* **fleet:** forward main node tier to remote config fetch and hide local-only fields ([#811](https://github.com/AnsoCode/Sencho/issues/811)) ([ae8211c](https://github.com/AnsoCode/Sencho/commit/ae8211c0b415ef4ac4f4968d5867e6034a8c94cb))
+* **frontend:** lazy-load Monaco editor + diff editor ([#824](https://github.com/AnsoCode/Sencho/issues/824)) ([b5d038f](https://github.com/AnsoCode/Sencho/commit/b5d038f395d4909ecd1a35ad7feca65262f3fb97))
+* **frontend:** lazy-load xterm chunk + addons ([#825](https://github.com/AnsoCode/Sencho/issues/825)) ([e74b4db](https://github.com/AnsoCode/Sencho/commit/e74b4db44dd327b263886440c2a54a243e2d28e8))
+* **frontend:** parallelize auth bootstrap fetches ([#826](https://github.com/AnsoCode/Sencho/issues/826)) ([405f9cd](https://github.com/AnsoCode/Sencho/commit/405f9cd921f0c4868a4e2c4e774f2a598002b001))
+* **frontend:** split heavyweight vendors into manual chunks ([#823](https://github.com/AnsoCode/Sencho/issues/823)) ([f5dd8af](https://github.com/AnsoCode/Sencho/commit/f5dd8af7db0f0a4d599c4f8d10c649ea96530f3e))
+* **proxy:** cache LicenseService tier headers for the proxy hot path ([#815](https://github.com/AnsoCode/Sencho/issues/815)) ([61a7e43](https://github.com/AnsoCode/Sencho/commit/61a7e43d82ae181e4a506e031db60788d5971ffe))
+* **test:** build baseline DB once via vitest globalSetup ([#829](https://github.com/AnsoCode/Sencho/issues/829)) ([2000653](https://github.com/AnsoCode/Sencho/commit/2000653fb4c8062063503f77815b9ad5f0804ac4))
+* **test:** cap vitest fork pool at 4 workers ([#828](https://github.com/AnsoCode/Sencho/issues/828)) ([65f43b8](https://github.com/AnsoCode/Sencho/commit/65f43b803281f0743d424f2c3e0ac11df1930fbc))
+
 ## [0.64.2](https://github.com/AnsoCode/Sencho/compare/v0.64.1...v0.64.2) (2026-04-27)
 
 
