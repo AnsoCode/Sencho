@@ -470,6 +470,13 @@ export interface ScanSummary {
 export class DatabaseService {
     private static instance: DatabaseService;
     private db: Database.Database;
+    // Cache of the global_settings table, populated on first read and
+    // invalidated by updateGlobalSetting(). Hot paths (auth middleware,
+    // WS upgrade, the audit-log debug gate) read this on every request,
+    // so the round-trip to SQLite is worth eliminating. Assumes this
+    // process is the sole writer to global_settings; sidecar tools that
+    // edit the row directly will not invalidate the cache.
+    private cachedGlobalSettings: Readonly<Record<string, string>> | null = null;
 
     private constructor() {
         const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
@@ -497,6 +504,11 @@ export class DatabaseService {
         this.migrateAgentsAndNotificationsNodeId();
         this.migratePolicyEvaluationColumn();
         this.migrateNotificationCategory();
+
+        // Reset the cache once at end of constructor in case any migration
+        // populated it via getGlobalSettings() and a subsequent migration
+        // changed the underlying rows.
+        this.cachedGlobalSettings = null;
     }
 
     public static getInstance(): DatabaseService {
@@ -1330,18 +1342,20 @@ export class DatabaseService {
 
     // --- Global Settings ---
 
-    public getGlobalSettings(): Record<string, string> {
+    public getGlobalSettings(): Readonly<Record<string, string>> {
+        if (this.cachedGlobalSettings) return this.cachedGlobalSettings;
         const stmt = this.db.prepare('SELECT * FROM global_settings');
+        const rows = stmt.all() as Array<{ key: string; value: string }>;
         const settings: Record<string, string> = {};
-        stmt.all().forEach((row: any) => {
-            settings[row.key] = row.value;
-        });
-        return settings;
+        for (const row of rows) settings[row.key] = row.value;
+        this.cachedGlobalSettings = Object.freeze(settings);
+        return this.cachedGlobalSettings;
     }
 
     public updateGlobalSetting(key: string, value: string): void {
         const stmt = this.db.prepare('INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)');
         stmt.run(key, value);
+        this.cachedGlobalSettings = null;
     }
 
     // --- System State (operational/runtime values - not user-defined config) ---
