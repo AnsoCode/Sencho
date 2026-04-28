@@ -1,4 +1,4 @@
-import { execFileSync, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import DockerController from './DockerController';
@@ -63,9 +63,12 @@ class SelfUpdateService {
         return;
       }
 
-      // Verify docker compose CLI is available inside the container
+      // Verify docker compose CLI is available inside the container.
+      // execFileAsync (not Sync) so the parallel boot-task block in
+      // bootstrap/startup.ts can actually run TrivyService and DockerEventManager
+      // concurrently instead of waiting on a 5s blocking spawn here.
       try {
-        execFileSync('docker', ['compose', 'version'], { stdio: 'pipe', timeout: 5000 });
+        await execFileAsync('docker', ['compose', 'version'], { timeout: 5000 });
       } catch {
         console.log('[SelfUpdate] docker compose CLI not available in container');
         disableCapability('self-update');

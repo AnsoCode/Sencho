@@ -29,26 +29,28 @@ export async function startServer(server: Server): Promise<void> {
     console.error('Migration failed:', error);
   }
 
+  // Synchronous starts: schedule background timers and continue. None of
+  // these fire their first tick for at least a few seconds, so they
+  // safely run alongside the async initializers below.
   LicenseService.getInstance().initialize();
-
-  await SelfUpdateService.getInstance().initialize();
-
   MonitorService.getInstance().start();
   AutoHealService.getInstance().start();
-
-  await DockerEventManager.getInstance().start();
-
-  await TrivyService.getInstance().initialize();
-
   ImageUpdateService.getInstance().start();
-
   SchedulerService.getInstance().start();
+  MfaService.getInstance().start();
 
+  // Async initializers are independent of each other; run in parallel
+  // so total boot time is the slowest one rather than the sum.
+  await Promise.all([
+    SelfUpdateService.getInstance().initialize(),
+    DockerEventManager.getInstance().start(),
+    TrivyService.getInstance().initialize(),
+  ]);
+
+  // Fire-and-forget housekeeping; logged but never awaited.
   sweepStaleGitTempDirs().catch((err) => {
     console.warn('[GitSource] Temp dir sweep failed:', (err as Error).message);
   });
-
-  MfaService.getInstance().start();
 
   const isPilotAgent = process.env.SENCHO_MODE === 'pilot';
   const listenHost = isPilotAgent ? '127.0.0.1' : undefined;
