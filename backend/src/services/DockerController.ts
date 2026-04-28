@@ -334,26 +334,29 @@ class DockerController {
         return !!DockerController.resolveProjectLabel(v.Labels?.['com.docker.compose.project'], knownSet, projectToStack)
           && (v.UsageData?.RefCount ?? 1) === 0;
       });
-      for (const vol of prunable) {
+      // Removals are independent and Docker handles concurrent volume
+      // deletes; parallelize so wall time matches the slowest single
+      // remove rather than the sum of all of them.
+      await Promise.all(prunable.map(async (vol) => {
         try {
           await this.docker.getVolume(vol.Name).remove({ force: true });
           reclaimedBytes += vol.UsageData?.Size ?? 0;
         } catch (e) {
           console.error(`[pruneManagedOnly] Failed to remove volume ${vol.Name}:`, e);
         }
-      }
+      }));
     } else if (target === 'networks') {
       const rawNetworks = await this.docker.listNetworks();
       const prunable = (rawNetworks as any[]).filter((n: any) => {
         return !!DockerController.resolveProjectLabel(n.Labels?.['com.docker.compose.project'], knownSet, projectToStack);
       });
-      for (const net of prunable) {
+      await Promise.all(prunable.map(async (net) => {
         try {
           await this.docker.getNetwork(net.Id).remove({ force: true });
         } catch (e) {
           console.error(`[pruneManagedOnly] Failed to remove network ${net.Name}:`, e);
         }
-      }
+      }));
     } else if (target === 'images') {
       const allContainers = await this.docker.listContainers({ all: true });
       const resolvedBase = path.resolve(COMPOSE_DIR);
@@ -369,14 +372,14 @@ class DockerController {
       const prunable = (rawImages as any[]).filter((img: any) =>
         img.Containers === 0 && !unmanagedImageIds.has(img.Id)
       );
-      for (const img of prunable) {
+      await Promise.all(prunable.map(async (img) => {
         try {
           await this.docker.getImage(img.Id).remove({ force: true });
           reclaimedBytes += img.Size ?? 0;
         } catch (e) {
           console.error(`[pruneManagedOnly] Failed to remove image ${img.Id}:`, e);
         }
-      }
+      }));
     }
 
     return { success: true, reclaimedBytes };
