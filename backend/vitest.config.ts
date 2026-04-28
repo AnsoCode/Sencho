@@ -6,6 +6,9 @@ export default defineConfig({
     // Only run TypeScript sources - exclude the compiled dist/ output.
     include: ['src/__tests__/**/*.test.ts'],
     exclude: ['dist/**', 'node_modules/**'],
+    // Build the baseline DB (schema + migrations + admin seed) once; each
+    // test file's setupTestDb copies it instead of re-running migrations.
+    globalSetup: ['./src/__tests__/helpers/vitestGlobalSetup.ts'],
     // Each test file gets its own worker so singletons are fresh between files.
     pool: 'forks',
     // Timeout generous for DB init and HTTP calls.
