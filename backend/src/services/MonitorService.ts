@@ -1,6 +1,4 @@
 import si from 'systeminformation';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import semver from 'semver';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
@@ -9,8 +7,6 @@ import { NotificationService } from './NotificationService';
 import { isValidVersion, getSenchoVersion } from './CapabilityRegistry';
 import { getLatestVersion } from '../utils/version-check';
 import { isDebugEnabled } from '../utils/debug';
-
-const execAsync = promisify(exec);
 
 const getMetricDetails = (metric: string): { name: string, unit: string } => {
     switch (metric) {
@@ -168,39 +164,17 @@ export class MonitorService {
         try {
             const janitorLimitGb = parseFloat(settings['docker_janitor_gb']);
             if (!isNaN(janitorLimitGb) && janitorLimitGb > 0) {
-                // Run docker system df to find reclamable space
-                const { stdout } = await execAsync('docker system df --format "{{json .}}"');
-                // Output might be multiple lines of JSON (Images, Containers, Local Volumes, Build Cache)
-                let totalReclaimableBytes = 0;
-                const lines = stdout.split('\n').filter(l => l.trim().length > 0);
-                for (const line of lines) {
-                    try {
-                        const parsed = JSON.parse(line);
-                        // RECLAIMABLE might be something like "1.2GB" or "400MB" Let's parse it manually or just use raw sizes from docker api. Actually docker system df JSON format gives Reclaimable field as string e.g. "1.196GB" (or "0B").
-                        const reclaimStr = parsed.Reclaimable;
-                        if (reclaimStr) {
-                            // Extract the number and the unit. e.g "1.196GB" (92%) -> 1.196
-                            const match = reclaimStr.match(/^([0-9.]+)([a-zA-Z]+)/);
-                            if (match) {
-                                const val = parseFloat(match[1]);
-                                // Docker emits both "kB" (lowercase k) on newer versions and "KB"
-                                // historically. Normalise so neither is silently dropped, and
-                                // include "TB" for hosts with terabytes of reclaimable build cache.
-                                const unit = match[2].toUpperCase();
-                                let bytes = 0;
-                                if (unit === 'TB') bytes = val * 1024 * 1024 * 1024 * 1024;
-                                else if (unit === 'GB') bytes = val * 1024 * 1024 * 1024;
-                                else if (unit === 'MB') bytes = val * 1024 * 1024;
-                                else if (unit === 'KB') bytes = val * 1024;
-                                else if (unit === 'B') bytes = val;
-
-                                totalReclaimableBytes += bytes;
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[MonitorService] Failed to parse Docker system df output:', e);
-                    }
-                }
+                // Use the Docker Engine API directly via dockerode. The previous
+                // shell-out parsed `docker system df --format "{{json .}}"` and
+                // walked the human-readable "1.196GB" Reclaimable strings with
+                // a regex; the API returns raw byte counts and saves a fork
+                // every monitor tick (default 30 s).
+                const usage = await DockerController.getInstance().getDiskUsage();
+                const totalReclaimableBytes =
+                    usage.reclaimableImages +
+                    usage.reclaimableContainers +
+                    usage.reclaimableVolumes +
+                    usage.reclaimableBuildCache;
 
                 const reclaimGb = totalReclaimableBytes / (1024 * 1024 * 1024);
                 const JANITOR_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours

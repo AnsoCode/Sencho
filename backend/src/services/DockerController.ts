@@ -163,17 +163,27 @@ class DockerController {
       return { bytes, count: reclaimable.length };
     };
 
+    const reclaimableBuildCache = (items: any[]) => {
+      if (!items || !Array.isArray(items)) return { bytes: 0, count: 0 };
+      const reclaimable = items.filter(i => i.InUse === false);
+      const bytes = reclaimable.reduce((acc, item) => acc + (item.Size || 0), 0);
+      return { bytes, count: reclaimable.length };
+    };
+
     const images = df.Images ? reclaimableImages(df.Images) : { bytes: 0, count: 0 };
     const containers = df.Containers ? reclaimableContainers(df.Containers) : { bytes: 0, count: 0 };
     const volumes = df.Volumes ? reclaimableVolumes(df.Volumes) : { bytes: 0, count: 0 };
+    const buildCache = df.BuildCache ? reclaimableBuildCache(df.BuildCache) : { bytes: 0, count: 0 };
 
     return {
       reclaimableImages: images.bytes,
       reclaimableContainers: containers.bytes,
       reclaimableVolumes: volumes.bytes,
+      reclaimableBuildCache: buildCache.bytes,
       reclaimableImageCount: images.count,
       reclaimableContainerCount: containers.count,
       reclaimableVolumeCount: volumes.count,
+      reclaimableBuildCacheCount: buildCache.count,
     };
   }
 
@@ -376,9 +386,11 @@ class DockerController {
     reclaimableImages: number;
     reclaimableContainers: number;
     reclaimableVolumes: number;
+    reclaimableBuildCache: number;
     reclaimableImageCount: number;
     reclaimableContainerCount: number;
     reclaimableVolumeCount: number;
+    reclaimableBuildCacheCount: number;
     managedImageBytes: number;
     unmanagedImageBytes: number;
     managedVolumeBytes: number;
