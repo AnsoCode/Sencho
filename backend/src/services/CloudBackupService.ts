@@ -11,14 +11,6 @@
  * and uploads via @aws-sdk/client-s3.
  */
 
-import {
-    S3Client,
-    PutObjectCommand,
-    GetObjectCommand,
-    ListObjectsV2Command,
-    DeleteObjectCommand,
-    HeadBucketCommand,
-} from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import * as zlib from 'zlib';
 import * as tar from 'tar-stream';
@@ -28,6 +20,22 @@ import { CryptoService } from './CryptoService';
 import { LicenseService } from './LicenseService';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
+
+// Cloud backup is opt-in (Skipper+ feature) and the AWS SDK v3 client pulls
+// in dozens of @smithy/* and @aws-sdk/middleware-* packages, so installs
+// without cloud backup configured pay a real boot-parse cost they never use.
+// Lazy-load the SDK on first call and cache it for subsequent requests.
+type S3Sdk = typeof import('@aws-sdk/client-s3');
+type S3Client = InstanceType<S3Sdk['S3Client']>;
+
+let cachedS3Sdk: S3Sdk | undefined;
+
+async function loadS3Sdk(): Promise<S3Sdk> {
+    if (!cachedS3Sdk) {
+        cachedS3Sdk = await import('@aws-sdk/client-s3');
+    }
+    return cachedS3Sdk;
+}
 
 export type CloudProvider = 'disabled' | 'sencho' | 'custom';
 export type UploadStatus = 'idle' | 'uploading' | 'success' | 'failed';
@@ -215,8 +223,8 @@ export class CloudBackupService {
         const cfg = this.getResolvedConfig();
         if (!cfg) return { success: false, error: 'No cloud backup configuration is active.' };
         try {
-            const client = this.buildS3Client(cfg);
-            await client.send(new HeadBucketCommand({ Bucket: cfg.bucket }));
+            const { client, sdk } = await this.buildS3Client(cfg);
+            await client.send(new sdk.HeadBucketCommand({ Bucket: cfg.bucket }));
             return { success: true };
         } catch (err) {
             return { success: false, error: getErrorMessage(err, 'Connection test failed.') };
@@ -235,8 +243,8 @@ export class CloudBackupService {
         this.setStatus(snapshotId, { status: 'uploading', objectKey, updatedAt: Date.now() });
         try {
             const archive = await this.buildArchive(snapshot, files);
-            const client = this.buildS3Client(cfg);
-            await client.send(new PutObjectCommand({
+            const { client, sdk } = await this.buildS3Client(cfg);
+            await client.send(new sdk.PutObjectCommand({
                 Bucket: cfg.bucket,
                 Key: objectKey,
                 Body: archive,
@@ -256,8 +264,8 @@ export class CloudBackupService {
     public async downloadSnapshot(objectKey: string): Promise<Buffer> {
         const cfg = this.getResolvedConfig();
         if (!cfg) throw new Error('Cloud backup is not configured.');
-        const client = this.buildS3Client(cfg);
-        const result = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
+        const { client, sdk } = await this.buildS3Client(cfg);
+        const result = await client.send(new sdk.GetObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
         const body = result.Body as Readable | undefined;
         if (!body) throw new Error('Empty response body.');
         return await streamToBuffer(body);
@@ -266,9 +274,9 @@ export class CloudBackupService {
     public async listCloudSnapshots(): Promise<CloudSnapshotEntry[]> {
         const cfg = this.getResolvedConfig();
         if (!cfg) return [];
-        const client = this.buildS3Client(cfg);
+        const { client, sdk } = await this.buildS3Client(cfg);
         const prefix = `${cfg.pathPrefix}instances/${this.getInstanceId()}/snapshots/`;
-        const result = await client.send(new ListObjectsV2Command({
+        const result = await client.send(new sdk.ListObjectsV2Command({
             Bucket: cfg.bucket,
             Prefix: prefix,
             MaxKeys: 1000,
@@ -293,8 +301,8 @@ export class CloudBackupService {
     public async deleteCloudSnapshot(objectKey: string): Promise<void> {
         const cfg = this.getResolvedConfig();
         if (!cfg) throw new Error('Cloud backup is not configured.');
-        const client = this.buildS3Client(cfg);
-        await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
+        const { client, sdk } = await this.buildS3Client(cfg);
+        await client.send(new sdk.DeleteObjectCommand({ Bucket: cfg.bucket, Key: objectKey }));
     }
 
     // ─── Status tracking ───────────────────────────────────────────────────────
@@ -318,13 +326,15 @@ export class CloudBackupService {
 
     // ─── Internals ─────────────────────────────────────────────────────────────
 
-    private buildS3Client(cfg: ResolvedCloudConfig): S3Client {
-        return new S3Client({
+    private async buildS3Client(cfg: ResolvedCloudConfig): Promise<{ client: S3Client; sdk: S3Sdk }> {
+        const sdk = await loadS3Sdk();
+        const client = new sdk.S3Client({
             endpoint: cfg.endpoint,
             region: cfg.region,
             credentials: { accessKeyId: cfg.accessKey, secretAccessKey: cfg.secretKey },
             forcePathStyle: true,
         });
+        return { client, sdk };
     }
 
     private getInstanceId(): string {
