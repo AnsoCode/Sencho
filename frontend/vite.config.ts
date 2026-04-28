@@ -39,12 +39,14 @@ export default defineConfig({
         // Group heavyweight vendor libraries into stable chunks so a small
         // app-code change does not bust their cache key. Each chunk is
         // independently large enough to justify its own HTTP/2 stream.
-        manualChunks: {
-          monaco: ['monaco-editor', '@monaco-editor/react'],
-          xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-search', '@xterm/addon-serialize'],
-          charts: ['recharts'],
-          flow: ['@xyflow/react', '@dagrejs/dagre'],
-          motion: ['motion'],
+        // Function form (rather than the object form) because Vite 8's
+        // OutputOptions overload narrows manualChunks to the function shape.
+        manualChunks(id) {
+          if (id.includes('node_modules/monaco-editor') || id.includes('node_modules/@monaco-editor/react')) return 'monaco';
+          if (id.includes('node_modules/@xterm/')) return 'xterm';
+          if (id.includes('node_modules/recharts')) return 'charts';
+          if (id.includes('node_modules/@xyflow/react') || id.includes('node_modules/@dagrejs/dagre')) return 'flow';
+          if (id.includes('node_modules/motion/')) return 'motion';
         },
       },
     },
