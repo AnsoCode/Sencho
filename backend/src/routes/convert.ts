@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="../types/composerize.d.ts" />
 import { Router, type Request, type Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { sanitizeForLog } from '../utils/safeLog';
