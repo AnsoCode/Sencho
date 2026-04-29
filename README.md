@@ -1,8 +1,12 @@
-# Sencho
+<div align="center">
+  <img src="frontend/public/sencho-logo-dark.png" alt="Sencho Logo" width="120" />
+  
+  # Sencho
 
-[![Docker Hub](https://img.shields.io/docker/v/saelix/sencho?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/saelix/sencho)
-[![Docker Pulls](https://img.shields.io/docker/pulls/saelix/sencho)](https://hub.docker.com/r/saelix/sencho)
-[![License](https://img.shields.io/badge/license-BSL--1.1-blue)](#license)
+  [![Docker Hub](https://img.shields.io/docker/v/saelix/sencho?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/saelix/sencho)
+  [![Docker Pulls](https://img.shields.io/docker/pulls/saelix/sencho)](https://hub.docker.com/r/saelix/sencho)
+  [![License](https://img.shields.io/badge/license-BSL--1.1-blue)](#license)
+</div>
 
 Self-hosted Docker Compose management with self-healing infrastructure, atomic deployments, and multi-network fleet control. Built for engineers who want Kubernetes-grade reliability without the complexity.
 
@@ -119,26 +123,6 @@ docker compose up -d
 Then open `http://your-server:1852` and create your admin account.
 
 See the [full documentation](https://docs.sencho.io) for configuration details, multi-node setup, and more.
-
----
-
-## Tiers
-
-| | Community | Skipper | Admiral |
-|---|---|---|---|
-| **Nodes** | Unlimited | Unlimited | Unlimited |
-| Stack management, logs, alerts, app store | All | All | All |
-| Two-factor authentication | Yes | Yes | Yes |
-| SSO (custom OIDC) | Yes | Yes | Yes |
-| Atomic deployments and auto-update policies | No | Yes | Yes |
-| Fleet view, sync, and Sencho Cloud Backup | No | Yes | Yes |
-| SSO (Google, GitHub, Okta presets) | No | Yes | Yes |
-| RBAC, audit log, and host console | No | No | Yes |
-| SSO (LDAP / Active Directory) | No | No | Yes |
-| API tokens, private registries, notification routing | No | No | Yes |
-| Scheduled operations | No | No | Yes |
-
-Full tier comparison and pricing at [docs.sencho.io/features/licensing](https://docs.sencho.io/features/licensing). Lifetime licenses available for a limited time.
 
 ---
 
