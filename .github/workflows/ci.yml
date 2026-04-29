@@ -164,6 +164,7 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
+          trivy-version: 'latest'
           trivy-config: trivy.yaml
 
       # Mirror of the release-time pre-publish smoke gate in docker-publish.yml.
