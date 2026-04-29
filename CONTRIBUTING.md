@@ -51,7 +51,9 @@ The project uses `strict: true`. Write code that compiles without `any` casts or
 
 ## Tier-Gated Features
 
-Sencho has three tiers: Community, Skipper, and Admiral. If your change adds a feature that belongs behind a tier gate, use the guards from `backend/src/middleware/tierGates.ts`:
+Sencho has three tiers: Community, Skipper, and Admiral. We welcome contributions to all tiers! Often, enterprise users will contribute features they need for their own infrastructure.
+
+If your change adds a feature that belongs behind a tier gate, use the guards from `backend/src/middleware/tierGates.ts`:
 
 ```typescript
 if (!requirePaid(req, res)) return;    // Skipper and above
@@ -59,6 +61,12 @@ if (!requireAdmiral(req, res)) return; // Admiral only
 ```
 
 Call the guard at the top of the route handler with an early return. Both guards handle proxy-forwarded tier headers automatically.
+
+**Note on Tiers and Monetization:** 
+- **Community Tier:** If you contribute a feature to the free/Community tier, it stays in the Community tier. We will never take your community contribution and move it behind a paywall.
+- **Commercial Tiers:** By contributing to a Skipper or Admiral feature, you acknowledge that your code will be part of Sencho's commercial offering. 
+
+Before writing code for a new gated feature, please open an issue to discuss it with the maintainers. You will also be required to sign our Contributor License Agreement (CLA) when you open your first Pull Request.
 
 ## Pull Request Process
 
