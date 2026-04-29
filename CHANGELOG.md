@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.65.1](https://github.com/AnsoCode/Sencho/compare/v0.65.0...v0.65.1) (2026-04-29)
+
+
+### Fixed
+
+* **backend:** resolve ts-node dynamic import and TS2322 narrowing errors ([#839](https://github.com/AnsoCode/Sencho/issues/839)) ([7d4390a](https://github.com/AnsoCode/Sencho/commit/7d4390a7e49c3fc7631f8a32162c5d5b02cb7b43))
+* **cla:** ensure signatures file has no BOM ([1f21526](https://github.com/AnsoCode/Sencho/commit/1f21526367d74d9968f0016de531c3f97f763dc5))
+* **cla:** strictly enforce no-BOM UTF8 for signatures ([1a67c6c](https://github.com/AnsoCode/Sencho/commit/1a67c6c35b2c2f2d3900390dcc08235f697605a9))
+* **convert:** resolve TS7016 and TS2322 for composerize dynamic import ([#837](https://github.com/AnsoCode/Sencho/issues/837)) ([219dee7](https://github.com/AnsoCode/Sencho/commit/219dee720e1f4b6435666fe710acf702621f2784))
+* **docker:** upgrade CLI to v29.4.1 and Compose to v5.1.3, clear VEX ([#836](https://github.com/AnsoCode/Sencho/issues/836)) ([e124874](https://github.com/AnsoCode/Sencho/commit/e124874dac9b2c97ad0647be63d7f50316e6fb41))
+
 ## [0.65.0](https://github.com/AnsoCode/Sencho/compare/v0.64.2...v0.65.0) (2026-04-28)
 
 
