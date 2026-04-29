@@ -15,13 +15,7 @@
       },
       "products": [
         {
-          "@id": "pkg:oci/sencho",
-          "subcomponents": [
-            {
-              "@id": "pkg:golang/github.com/docker/docker@v28.5.2+incompatible",
-              "location": "/usr/local/lib/docker/cli-plugins/docker-compose"
-            }
-          ]
+          "@id": "pkg:golang/github.com/docker/docker@v28.5.2+incompatible"
         }
       ],
       "status": "not_affected",
