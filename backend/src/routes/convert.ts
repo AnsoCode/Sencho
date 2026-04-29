@@ -1,3 +1,4 @@
+/// <reference path="../types/composerize.d.ts" />
 import { Router, type Request, type Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { sanitizeForLog } from '../utils/safeLog';
@@ -11,7 +12,7 @@ async function loadComposerize(): Promise<(dockerRun: string) => string> {
   if (!cachedComposerize) {
     cachedComposerize = (await import('composerize')).default;
   }
-  return cachedComposerize;
+  return cachedComposerize!;
 }
 
 export const convertRouter = Router();
