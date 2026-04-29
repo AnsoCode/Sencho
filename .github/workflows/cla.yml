@@ -26,4 +26,4 @@ jobs:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/studio-saelix/sencho/blob/main/CLA.md'
           branch: 'main'
-          allowlist: 'dependabot[bot],greenkeeper[bot],github-actions[bot],release-please[bot],sencho-quartermaster[bot]'
+          allowlist: 'AnsoCode,dependabot[bot],greenkeeper[bot],github-actions[bot],release-please[bot],sencho-quartermaster[bot]'
