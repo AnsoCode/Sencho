@@ -112,6 +112,7 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           format: 'table'
+          trivy-version: 'latest'
           trivy-config: trivy.yaml
 
       # Start the scanned image headless on the runner and poll /api/health
