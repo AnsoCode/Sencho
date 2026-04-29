@@ -92,25 +92,24 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
 
 # Stage 4a: Build Docker CLI from source against Go 1.26.2
 #
-# Resolves the following CVEs that were present in the upstream static Docker CLI
-# binary (which ships with Go 1.26.1):
-#   CVE-2026-32280/32281/32282/32283: Go stdlib x509/TLS issues (fixed in Go 1.26.2)
-#   CVE-2026-33810: Go stdlib DNS name constraint bypass (fixed in Go 1.26.2)
-#   CVE-2026-33186: grpc 1.78.0 HTTP/2 server attack (CLI is client-only;
-#                   removed from SBOM by building with go mod's updated resolution)
+# CLI v29.4.1 ships otel/sdk v1.43.0, resolving CVE-2026-39883 (BSD kenv) and
+# CVE-2026-39882 (OTLP response OOM). It also carries the CVE-2025-15558 fix
+# (Windows plugin search path LPE, fixed since v29.2.0). Building from source
+# with Go 1.26.2 additionally eliminates Go stdlib CVEs present in the upstream
+# static binary.
 #
 # Runs on the BUILD platform; GOARCH cross-compiles the static binary for TARGET.
-# The --depth 1 clone fetches only the v29.4.0 tag commit, minimising transfer size.
-# docker/cli v29.4.0 uses CalVer and ships vendor.mod instead of go.mod to avoid
-# SemVer compliance requirements. We copy vendor.mod -> go.mod and build with
-# -mod=vendor so all deps come from the vendored tree (no network access needed).
+# The --depth 1 clone fetches only the v29.4.1 tag commit, minimising transfer size.
+# docker/cli uses CalVer and ships vendor.mod instead of go.mod to avoid SemVer
+# compliance requirements. We copy vendor.mod -> go.mod and build with -mod=vendor
+# so all deps come from the vendored tree (no network access needed).
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS cli-builder
 
 ARG TARGETARCH
 
 RUN apk add --no-cache git
 
-RUN git clone --depth 1 --branch v29.4.0 https://github.com/docker/cli.git /src/docker-cli
+RUN git clone --depth 1 --branch v29.4.1 https://github.com/docker/cli.git /src/docker-cli
 
 WORKDIR /src/docker-cli
 
@@ -120,50 +119,59 @@ RUN cp vendor.mod go.mod && cp vendor.sum go.sum && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
       -mod=vendor \
       -ldflags "-extldflags=-static \
-        -X github.com/docker/cli/cli/version.Version=29.4.0 \
+        -X github.com/docker/cli/cli/version.Version=29.4.1 \
         -X github.com/docker/cli/cli/version.GitCommit=source-go1.26.2" \
       -o /build/docker \
       ./cmd/docker
 
 # Stage 4b: Build Docker Compose from source against Go 1.26.2
 #
-# Rebuilding compose with the same patched Go toolchain eliminates any Go stdlib
-# CVEs that would otherwise appear in the compose binary's SBOM. Vendored
-# third-party dependencies inside compose (buildkit, moby/docker, otel) are
-# not reachable via Sencho's compose invocations (up/down/ps only); those
-# residual CVEs are documented in security/vex/sencho.openvex.json.
+# Compose v5.1.3 removed the direct dependency on github.com/docker/docker
+# (replaced by moby/moby/api + moby/moby/client), eliminating CVE-2026-34040
+# and CVE-2026-33997 at the dependency level. Rebuilding with the patched Go
+# toolchain eliminates Go stdlib CVEs from the binary's SBOM.
+#
+# Compose v5.1.3 still bundles otel/sdk v1.42.0 transitively via buildkit
+# v0.29.0. The go get step below bumps otel to v1.43.0 to resolve
+# CVE-2026-39883 (BSD kenv) and CVE-2026-39882 (OTLP response OOM) so that
+# the compose binary scans completely clean.
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS compose-builder
 
 ARG TARGETARCH
 
 RUN apk add --no-cache git
 
-RUN git clone --depth 1 --branch v5.1.2 https://github.com/docker/compose.git /src/docker-compose
+RUN git clone --depth 1 --branch v5.1.3 https://github.com/docker/compose.git /src/docker-compose
 
 WORKDIR /src/docker-compose
 
 RUN mkdir -p /build
 
-# Build target is ./cmd (the package main with plugin.Run), per docker/compose
-# v5.1.2's Makefile. The directory ./cmd/compose is package compose (cobra
-# command definitions only, not main). The module path moved from /v2 to /v5
-# in the v5 release, so the Version ldflag must reference /v5/internal.
-#
-# The bundled github.com/docker/docker dependency stays at v28.5.2+incompatible
-# (compose v5.1.2's go.mod). It cannot be upgraded to docker-v29.3.1 (the
-# release that contains the CVE-2026-34040 authz fix) because moby/moby's
-# docker-29.x branch declares its module path as github.com/moby/moby/v2,
-# making it unreachable through the legacy github.com/docker/docker import
-# that compose v5.1.2 still uses. The Go module proxy reflects this and lists
-# v28.5.2+incompatible as the highest resolvable version. The CVE only affects
-# Docker Engine's daemon authz hook code path; compose runs as a CLI client
-# and never executes that path. See security/vex/sencho.openvex.json for the
-# full not_affected justification, which Trivy honours via trivy.yaml.
+# Patch otel/sdk and exporters from v1.42.0 → v1.43.0 to clear CVE-2026-39883
+# and CVE-2026-39882. This is a targeted security bump; otel 1.42→1.43 is a
+# patch-level fix with no breaking API changes.
+RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
+    go get go.opentelemetry.io/otel@v1.43.0 \
+           go.opentelemetry.io/otel/sdk@v1.43.0 \
+           go.opentelemetry.io/otel/sdk/metric@v1.43.0 \
+           go.opentelemetry.io/otel/metric@v1.43.0 \
+           go.opentelemetry.io/otel/trace@v1.43.0 \
+           go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.43.0 \
+           go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.43.0 \
+           go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@v1.43.0 \
+           go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc@v1.43.0 \
+           go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp@v1.43.0 && \
+    go mod tidy
+
+# Build target is ./cmd (the package main with plugin.Run), per docker/compose's
+# Makefile. The directory ./cmd/compose is package compose (cobra command
+# definitions only, not main). The module path moved from /v2 to /v5 in the
+# v5 release, so the Version ldflag must reference /v5/internal.
 RUN --mount=type=cache,id=go-mod,sharing=locked,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
       -trimpath \
       -ldflags "-s -w -extldflags=-static \
-        -X github.com/docker/compose/v5/internal.Version=v5.1.2" \
+        -X github.com/docker/compose/v5/internal.Version=v5.1.3" \
       -o /build/docker-compose \
       ./cmd
 
