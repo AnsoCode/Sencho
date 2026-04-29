@@ -23,7 +23,7 @@ export function SupportSection() {
                         </div>
                         <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
                     </a>
-                    <a href="https://github.com/AnsoCode/Sencho/issues" target="_blank" rel="noopener noreferrer"
+                    <a href="https://github.com/studio-saelix/sencho/issues" target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-3 p-3 rounded-lg border border-glass-border hover:bg-muted/50 transition-colors">
                         <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
                             <Bug className="w-4 h-4" />

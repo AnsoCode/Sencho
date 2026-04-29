@@ -252,7 +252,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: Sencho
+          repositories: sencho
           permission-contents: write
           permission-pull-requests: write
 
@@ -339,7 +339,7 @@ jobs:
         run: |
           rm -rf sencho-docs
 
-          REMOTE="https://x-access-token:${DOCS_TOKEN}@github.com/AnsoCode/sencho-docs.git"
+          REMOTE="https://x-access-token:${DOCS_TOKEN}@github.com/studio-saelix/sencho-docs.git"
 
           if git clone "${REMOTE}" sencho-docs 2>/dev/null; then
             echo "Cloned existing sencho-docs."

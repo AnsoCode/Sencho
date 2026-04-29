@@ -29,7 +29,7 @@ Every published tag is signed with cosign keyless signing via GitHub Actions OID
 
 ```bash
 cosign verify saelix/sencho:<tag> \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -46,7 +46,7 @@ BuildKit produces an SLSA v1 provenance attestation during every multi-arch buil
 ```bash
 cosign verify-attestation \
   --type slsaprovenance \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
 ```
@@ -56,7 +56,7 @@ cosign verify-attestation \
 ```bash
 cosign verify-attestation \
   --type cyclonedx \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
 ```
@@ -68,7 +68,7 @@ Alternatively, download `sbom.cdx.json` directly from the GitHub Release assets 
 ```bash
 cosign verify-attestation \
   --type spdxjson \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
 ```
@@ -82,7 +82,7 @@ The OpenVEX document explains Sencho's triage decisions for any CVEs that appear
 ```bash
 cosign verify-attestation \
   --type openvex \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   saelix/sencho:<tag> | jq -r '.payload' | base64 -d | jq
 ```
@@ -96,7 +96,7 @@ To reproduce the same scan that gates every release:
 ```bash
 # Download the VEX document
 curl -Lo sencho.openvex.json \
-  https://github.com/AnsoCode/Sencho/releases/latest/download/sencho.openvex.json
+  https://github.com/studio-saelix/sencho/releases/latest/download/sencho.openvex.json
 
 # Scan with VEX applied (exit 1 if any unresolved HIGH/CRITICAL CVE)
 trivy image \

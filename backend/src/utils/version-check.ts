@@ -8,7 +8,7 @@ import { CacheService } from '../services/CacheService';
  */
 
 async function fetchFromGitHub(): Promise<string | null> {
-  const res = await fetch('https://api.github.com/repos/AnsoCode/Sencho/releases/latest', {
+  const res = await fetch('https://api.github.com/repos/studio-saelix/sencho/releases/latest', {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sencho' },
     signal: AbortSignal.timeout(10000),
   });

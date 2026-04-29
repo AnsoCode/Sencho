@@ -16,7 +16,7 @@ Sencho is self-hosted software. Always run the latest release to receive securit
 You can report security issues in two ways:
 
 1. **Email:** Send details to **security@sencho.io**
-2. **GitHub:** Use [private vulnerability reporting](https://github.com/AnsoCode/Sencho/security/advisories/new) in the Security tab
+2. **GitHub:** Use [private vulnerability reporting](https://github.com/studio-saelix/sencho/security/advisories/new) in the Security tab
 
 In your report, include: steps to reproduce, impact assessment, and any suggested fixes.
 
@@ -40,7 +40,7 @@ Quick summary:
 ```bash
 # Verify image signature (cosign keyless, Rekor logged)
 cosign verify saelix/sencho:<tag> \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Scan with VEX applied (zero unresolved HIGH/CRITICAL CVEs)

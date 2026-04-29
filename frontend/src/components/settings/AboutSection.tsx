@@ -32,7 +32,7 @@ export function AboutSection() {
                 <h4 className="text-sm font-medium">Links</h4>
                 <div className="flex flex-col gap-1.5">
                     <a
-                        href="https://github.com/AnsoCode/Sencho/blob/main/CHANGELOG.md"
+                        href="https://github.com/studio-saelix/sencho/blob/main/CHANGELOG.md"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm text-muted-foreground hover:text-foreground transition-colors"

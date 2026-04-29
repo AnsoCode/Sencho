@@ -15,7 +15,7 @@ Every image also ships with an embedded SBOM (Software Bill of Materials) and [S
 
 Verification guarantees:
 
-1. The image was built from the [AnsoCode/Sencho](https://github.com/AnsoCode/Sencho) repository on GitHub.
+1. The image was built from the [studio-saelix/sencho](https://github.com/studio-saelix/sencho) repository on GitHub.
 2. The build ran inside a GitHub Actions workflow, not on someone's laptop.
 3. The image has not been tampered with between publish and pull.
 
@@ -51,9 +51,14 @@ Replace `<tag>` with the version you intend to pull, for example `0.42.7`, `0.42
 
 ```bash
 cosign verify saelix/sencho:<tag> \
-  --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+  --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+<Note>
+  Images released before the repository migration (prior to v0.65.x) were signed with the identity `https://github.com/AnsoCode/Sencho/...`. To verify those older images, use the combined regexp:
+  `"https://github.com/(AnsoCode/Sencho|studio-saelix/sencho)/.*"`
+</Note>
 
 A successful verification prints the signature, the Rekor transparency log entry, and the certificate that signed it. If the image is not signed by the official Sencho pipeline, the command exits with a non-zero status and you should not run that image.
 

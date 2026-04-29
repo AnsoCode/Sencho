@@ -1,7 +1,7 @@
 {
   "name": "sencho",
   "version": "0.65.0",
-  "description": "",
+  "description": "Self-hosted Docker control plane for Compose with atomic deployments, self-healing, and fleet-wide automation.",
   "main": "index.js",
   "scripts": {
     "test": "cd backend && npm test",
@@ -10,16 +10,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AnsoCode/Sencho.git"
+    "url": "git+https://github.com/studio-saelix/sencho.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Studio Saelix",
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/AnsoCode/Sencho/issues"
+    "url": "https://github.com/studio-saelix/sencho/issues"
   },
-  "homepage": "https://github.com/AnsoCode/Sencho#readme",
+  "homepage": "https://github.com/studio-saelix/sencho#readme",
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "otplib": "^13.4.0"

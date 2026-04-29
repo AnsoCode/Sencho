@@ -80,7 +80,7 @@ Before writing code for a new gated feature, please open an issue to discuss it 
 
 ## Reporting Bugs
 
-Use the [bug report template](https://github.com/AnsoCode/Sencho/issues/new?template=bug_report.yml). Include: deployment method, Sencho version, browser (for UI issues), steps to reproduce, and expected vs actual behavior.
+Use the [bug report template](https://github.com/studio-saelix/sencho/issues/new?template=bug_report.yml). Include: deployment method, Sencho version, browser (for UI issues), steps to reproduce, and expected vs actual behavior.
 
 ## Code Style
 

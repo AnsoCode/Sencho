@@ -24,6 +24,6 @@ jobs:
           # PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
-          path-to-document: 'https://github.com/AnsoCode/Sencho/blob/main/CLA.md'
+          path-to-document: 'https://github.com/studio-saelix/sencho/blob/main/CLA.md'
           branch: 'main'
           allowlist: 'dependabot[bot],greenkeeper[bot],github-actions[bot],release-please[bot],sencho-quartermaster[bot]'

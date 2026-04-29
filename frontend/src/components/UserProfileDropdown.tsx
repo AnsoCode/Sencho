@@ -151,7 +151,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                     <MenuRow
                         icon={MessageSquare}
                         label="Feedback"
-                        href="https://github.com/AnsoCode/Sencho/issues"
+                        href="https://github.com/studio-saelix/sencho/issues"
                         external
                     />
                 </div>

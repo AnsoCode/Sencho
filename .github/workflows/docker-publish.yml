@@ -170,7 +170,7 @@ jobs:
         # Signs every tag produced by metadata-action using the ambient GitHub
         # OIDC token. No private keys, no secrets. Users verify with:
         #   cosign verify saelix/sencho:<tag> \
-        #     --certificate-identity-regexp "https://github.com/AnsoCode/Sencho/.*" \
+        #     --certificate-identity-regexp "https://github.com/studio-saelix/sencho/.*" \
         #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
         # Each ref is pinned to the immutable digest so signatures are bound to
         # the exact manifest, not the mutable tag pointer.

@@ -29,7 +29,7 @@
     "links": [
       {
         "type": "github",
-        "href": "https://github.com/AnsoCode/Sencho"
+        "href": "https://github.com/studio-saelix/sencho"
       }
     ],
     "primary": {
@@ -40,7 +40,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/AnsoCode/Sencho"
+      "github": "https://github.com/studio-saelix/sencho"
     },
     "links": [
       {
@@ -48,14 +48,14 @@
         "items": [
           { "label": "Website", "href": "https://sencho.io" },
           { "label": "Pricing", "href": "https://sencho.io/#pricing" },
-          { "label": "Changelog", "href": "https://github.com/AnsoCode/Sencho/releases" }
+          { "label": "Changelog", "href": "https://github.com/studio-saelix/sencho/releases" }
         ]
       },
       {
         "header": "Community",
         "items": [
-          { "label": "GitHub", "href": "https://github.com/AnsoCode/Sencho" },
-          { "label": "Contributing", "href": "https://github.com/AnsoCode/Sencho/blob/main/CONTRIBUTING.md" }
+          { "label": "GitHub", "href": "https://github.com/studio-saelix/sencho" },
+          { "label": "Contributing", "href": "https://github.com/studio-saelix/sencho/blob/main/CONTRIBUTING.md" }
         ]
       },
       {
