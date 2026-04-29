@@ -11,7 +11,7 @@ async function loadComposerize(): Promise<(dockerRun: string) => string> {
   if (!cachedComposerize) {
     cachedComposerize = (await import('composerize')).default;
   }
-  return cachedComposerize;
+  return cachedComposerize!;
 }
 
 export const convertRouter = Router();
