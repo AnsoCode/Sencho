@@ -5,8 +5,8 @@ import { LabelDot } from '@/components/LabelPill';
 import type { Label } from '@/components/label-types';
 import { cn } from '@/lib/utils';
 import { sidebarRowActive, sidebarRowBase, sidebarRowCheckboxSlot } from './sidebar-styles';
-
-export type StackRowStatus = 'running' | 'exited' | 'unknown';
+import { statusText, statusColor } from './stack-status-utils';
+import type { StackRowStatus } from './stack-status-utils';
 
 interface StackRowProps {
   file: string;
@@ -20,19 +20,6 @@ interface StackRowProps {
   hasGitPending: boolean;
   onSelect: (file: string) => void;
   kebabSlot: ReactNode;
-}
-
-export function statusText(status: StackRowStatus): string {
-  if (status === 'running') return 'UP';
-  if (status === 'exited') return 'DN';
-  return '--';
-}
-
-export function statusColor(status: StackRowStatus, isBusy: boolean): string {
-  if (isBusy) return 'text-muted-foreground';
-  if (status === 'running') return 'text-success';
-  if (status === 'exited') return 'text-destructive';
-  return 'text-stat-icon';
 }
 
 function RowTooltip({ trigger, label }: { trigger: ReactNode; label: string }) {

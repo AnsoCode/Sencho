@@ -73,7 +73,7 @@ import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
 import { usePinnedStacks } from '@/hooks/usePinnedStacks';
 import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
-import type { StackRowStatus } from '@/components/sidebar/StackRow';
+import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
 import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 
