@@ -74,7 +74,7 @@ import { StackSidebar } from '@/components/sidebar/StackSidebar';
 import { usePinnedStacks } from '@/hooks/usePinnedStacks';
 import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
 import type { StackRowStatus } from '@/components/sidebar/StackRow';
-import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
+import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 
 interface ContainerInfo {
@@ -1927,9 +1927,9 @@ export default function EditorLayout() {
   // Stack name is now the same as selectedFile (no extension to strip)
   const stackName = selectedFile || '';
 
-  // Filter files based on search query
-  const filteredFiles = files.filter(file =>
-    file.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFiles = useMemo(
+    () => files.filter(file => file.toLowerCase().includes(searchQuery.toLowerCase())),
+    [files, searchQuery],
   );
 
   // Get display name for stack (now just returns the name as-is since no extension)
@@ -1942,6 +1942,23 @@ export default function EditorLayout() {
   useEffect(() => {
     if (evictedOldest) toast.info('Pinned. Unpinned oldest (max 10).');
   }, [evictedOldest]);
+
+  const [filterChip, setFilterChip] = useState<FilterChip>('all');
+
+  const filterCounts = useMemo(() => ({
+    all: filteredFiles.length,
+    up: filteredFiles.filter(f => stackStatuses[f] === 'running').length,
+    down: filteredFiles.filter(f => stackStatuses[f] === 'exited').length,
+    updates: filteredFiles.filter(f => !!stackUpdates[f]).length,
+  }), [filteredFiles, stackStatuses, stackUpdates]);
+
+  const chipFilteredFiles = useMemo(() => {
+    if (filterChip === 'all') return filteredFiles;
+    if (filterChip === 'up') return filteredFiles.filter(f => stackStatuses[f] === 'running');
+    if (filterChip === 'down') return filteredFiles.filter(f => stackStatuses[f] === 'exited');
+    if (filterChip === 'updates') return filteredFiles.filter(f => !!stackUpdates[f]);
+    return filteredFiles;
+  }, [filteredFiles, filterChip, stackStatuses, stackUpdates]);
 
   const { isCollapsed, toggle: toggleCollapse } = useSidebarGroupCollapse(activeNode?.id);
 
@@ -2282,8 +2299,11 @@ export default function EditorLayout() {
         canCreate={can('stack:create')}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        filterChip={filterChip}
+        filterCounts={filterCounts}
+        onFilterChipChange={setFilterChip}
         list={{
-          files: filteredFiles ?? [],
+          files: chipFilteredFiles,
           isLoading,
           isPaid,
           selectedFile,
@@ -2292,7 +2312,6 @@ export default function EditorLayout() {
           stackStatuses: stackStatuses as Record<string, StackRowStatus | undefined>,
           stackUpdates,
           gitSourcePendingMap,
-          labels,
           pinnedFiles: pinned,
           isCollapsed,
           toggleCollapse,

@@ -4,8 +4,8 @@ import { useStackKeyboardShortcuts } from '@/hooks/useStackKeyboardShortcuts';
 import { CommandItem, CommandList } from '@/components/ui/command';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Label } from '@/components/label-types';
+import { StackRow, statusText, statusColor } from './StackRow';
 import type { StackRowStatus } from './StackRow';
-import { StackRow } from './StackRow';
 import { StackGroup } from './StackGroup';
 import { StackContextMenu } from './StackContextMenu';
 import { StackKebabMenu } from './StackKebabMenu';
@@ -27,7 +27,6 @@ export interface StackListProps {
   stackStatuses: Record<string, StackRowStatus | undefined>;
   stackUpdates: Record<string, boolean>;
   gitSourcePendingMap: Record<string, boolean>;
-  labels: Label[];
   pinnedFiles: string[];
   isCollapsed: (groupKey: string) => boolean;
   toggleCollapse: (groupKey: string) => void;
@@ -53,7 +52,6 @@ function buildGroups(
   files: string[],
   pinnedFiles: string[],
   stackLabelMap: Record<string, Label[]>,
-  labels: Label[],
 ): BuiltGroup[] {
   const result: BuiltGroup[] = [];
 
@@ -93,20 +91,19 @@ function buildGroups(
     result.push({ kind: 'unlabeled', id: 'unlabeled', label: 'UNLABELED', count: unlabeled.length, files: unlabeled });
   }
 
-  void labels;
   return result;
 }
 
 export function StackList(props: StackListProps) {
   const {
     files, isLoading, isPaid, selectedFile, searchQuery, stackLabelMap, stackStatuses,
-    stackUpdates, gitSourcePendingMap, labels, pinnedFiles, isCollapsed, toggleCollapse,
+    stackUpdates, gitSourcePendingMap, pinnedFiles, isCollapsed, toggleCollapse,
     isBusy, getDisplayName, onSelectFile, buildMenuCtx, remoteResults, remoteLoading, onSelectRemoteFile,
   } = props;
 
   const groups = useMemo(
-    () => buildGroups(files, pinnedFiles, stackLabelMap, labels),
-    [files, pinnedFiles, stackLabelMap, labels],
+    () => buildGroups(files, pinnedFiles, stackLabelMap),
+    [files, pinnedFiles, stackLabelMap],
   );
 
   useStackKeyboardShortcuts(selectedFile, buildMenuCtx);
@@ -181,11 +178,8 @@ export function StackList(props: StackListProps) {
                   onClick={() => onSelectRemoteFile(nodeId, file)}
                   className="w-full text-left justify-start rounded-lg mb-1 cursor-pointer hover:bg-glass-highlight px-2 py-1.5 flex items-center gap-2"
                 >
-                  <span className={`font-mono text-[10px] shrink-0 w-5 ${
-                    status === 'running' ? 'text-success' :
-                    status === 'exited' ? 'text-destructive' : 'text-stat-icon'
-                  }`}>
-                    {status === 'running' ? 'UP' : status === 'exited' ? 'DN' : '--'}
+                  <span className={`font-mono text-[10px] shrink-0 w-5 ${statusColor(status, false)}`}>
+                    {statusText(status)}
                   </span>
                   <span className="flex-1 truncate font-mono text-xs">{file}</span>
                   <ArrowUpRight className="w-3 h-3 text-stat-icon shrink-0" strokeWidth={1.5} />
