@@ -5,10 +5,12 @@ import type { NotificationItem } from '@/components/dashboard/types';
 import { SidebarActions } from './SidebarActions';
 import { SidebarActivityTicker } from './SidebarActivityTicker';
 import { SidebarBrand } from './SidebarBrand';
+import { SidebarBulkBar } from './SidebarBulkBar';
 import { SidebarFilterChips, type FilterCounts } from './SidebarFilterChips';
 import { SidebarSearch } from './SidebarSearch';
 import { StackList, type StackListProps } from './StackList';
 import type { FilterChip } from './sidebar-types';
+import type { BulkAction } from '@/hooks/useBulkStackActions';
 
 export interface StackSidebarProps {
   isDarkMode: boolean;
@@ -26,6 +28,13 @@ export interface StackSidebarProps {
   notifications: NotificationItem[];
   tickerConnected: boolean;
   onOpenActivity: () => void;
+  bulkMode: boolean;
+  selectedFiles: Set<string>;
+  isPaid: boolean;
+  onToggleBulkMode: () => void;
+  onToggleSelect: (file: string) => void;
+  onClearSelection: () => void;
+  onBulkAction: (action: BulkAction) => void;
 }
 
 export function StackSidebar(props: StackSidebarProps) {
@@ -33,6 +42,7 @@ export function StackSidebar(props: StackSidebarProps) {
     isDarkMode, nodeSwitcherSlot, createStackSlot, onScan, isScanning, canCreate,
     searchQuery, onSearchChange, filterChip, filterCounts, onFilterChipChange,
     list, notifications, tickerConnected, onOpenActivity,
+    bulkMode, selectedFiles, isPaid, onToggleBulkMode, onToggleSelect, onClearSelection, onBulkAction,
   } = props;
 
   return (
@@ -40,7 +50,13 @@ export function StackSidebar(props: StackSidebarProps) {
       <SidebarBrand isDarkMode={isDarkMode} />
       <div className="px-4 pt-2 pb-0">{nodeSwitcherSlot}</div>
       {canCreate && createStackSlot !== null && (
-        <SidebarActions createStackSlot={createStackSlot} onScan={onScan} isScanning={isScanning} />
+        <SidebarActions
+          createStackSlot={createStackSlot}
+          onScan={onScan}
+          isScanning={isScanning}
+          bulkMode={bulkMode}
+          onToggleBulkMode={onToggleBulkMode}
+        />
       )}
       <Command shouldFilter={false} className="bg-transparent flex-1 flex flex-col overflow-hidden">
         <SidebarSearch value={searchQuery} onValueChange={onSearchChange} />
@@ -49,9 +65,17 @@ export function StackSidebar(props: StackSidebarProps) {
           counts={filterCounts}
           onChange={onFilterChipChange}
         />
+        {selectedFiles.size > 0 && (
+          <SidebarBulkBar
+            selectedCount={selectedFiles.size}
+            isPaid={isPaid}
+            onAction={onBulkAction}
+            onClear={onClearSelection}
+          />
+        )}
         <ScrollArea className="flex-1 px-2 pb-2">
           <div data-stacks-loaded={list.isLoading ? 'false' : 'true'}>
-            <StackList {...list} />
+            <StackList {...list} bulkMode={bulkMode} selectedFiles={selectedFiles} onToggleSelect={onToggleSelect} />
           </div>
         </ScrollArea>
       </Command>

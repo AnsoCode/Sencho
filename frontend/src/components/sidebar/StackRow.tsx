@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { GitBranch, Loader2 } from 'lucide-react';
 import { Cursor, CursorContainer, CursorFollow, CursorProvider } from '@/components/animate-ui/primitives/animate/cursor';
+import { Checkbox } from '@/components/ui/checkbox';
 import { LabelDot } from '@/components/LabelPill';
 import type { Label } from '@/components/label-types';
 import { cn } from '@/lib/utils';
@@ -20,6 +21,9 @@ interface StackRowProps {
   hasGitPending: boolean;
   onSelect: (file: string) => void;
   kebabSlot: ReactNode;
+  bulkMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (file: string) => void;
 }
 
 export function statusText(status: StackRowStatus): string {
@@ -52,22 +56,51 @@ function RowTooltip({ trigger, label }: { trigger: ReactNode; label: string }) {
 const MAX_VISIBLE_LABELS = 3;
 
 export function StackRow(props: StackRowProps) {
-  const { file, displayName, status, isBusy, isActive, isPaid, labels, hasUpdate, hasGitPending, onSelect, kebabSlot } = props;
+  const {
+    file, displayName, status, isBusy, isActive, isPaid, labels,
+    hasUpdate, hasGitPending, onSelect, kebabSlot,
+    bulkMode = false, isSelected = false, onToggleSelect,
+  } = props;
 
   const visibleLabels = isPaid ? labels.slice(0, MAX_VISIBLE_LABELS) : [];
   const overflowCount = isPaid ? Math.max(0, labels.length - MAX_VISIBLE_LABELS) : 0;
 
+  const handleClick = () => {
+    if (bulkMode) onToggleSelect?.(file);
+    else onSelect(file);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   return (
     <div
       data-testid="stack-row"
+      data-bulk={bulkMode ? 'true' : undefined}
       role="button"
       tabIndex={0}
       className={cn(sidebarRowBase, isActive && sidebarRowActive)}
-      onClick={() => onSelect(file)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(file); } }}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
     >
-      {/* Reserved checkbox slot — revealed in bulk mode (PR2) */}
-      <span className={sidebarRowCheckboxSlot} aria-hidden="true" />
+      <span
+        className={cn(sidebarRowCheckboxSlot, bulkMode && 'opacity-100 pointer-events-auto')}
+        onClick={e => { e.stopPropagation(); onToggleSelect?.(file); }}
+        aria-hidden={!bulkMode}
+      >
+        {bulkMode && (
+          <Checkbox
+            checked={isSelected}
+            className="w-3.5 h-3.5 border-muted-foreground/40 data-[state=checked]:border-brand data-[state=checked]:bg-brand"
+            tabIndex={-1}
+            aria-label={`Select ${displayName}`}
+          />
+        )}
+      </span>
 
       {/* Status pill */}
       <span className={cn('font-mono text-[10px] shrink-0 w-[22px] flex items-center', statusColor(status, isBusy))}>
