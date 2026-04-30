@@ -103,8 +103,8 @@ test.describe.serial('Two-factor authentication', () => {
     // Step 3 (Backup codes) -> acknowledge.
     await page.getByRole('button', { name: /^Done$/ }).click();
 
-    // Card now shows the Enabled badge.
-    await expect(page.getByText(/^Enabled$/)).toBeVisible();
+    // Section kicker flips to 'enabled' and the field shows 'enrolled'.
+    await expect(page.getByText('enrolled')).toBeVisible();
   });
 
   test('low backup codes warning renders when <=2 codes remain', async ({ page }) => {
