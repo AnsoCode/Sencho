@@ -146,8 +146,10 @@ test.describe.serial('Two-factor authentication', () => {
       });
     });
 
-    // Re-open the account section so it refetches status with the new mock.
-    await page.keyboard.press('Escape').catch(() => {});
+    // Navigate away first so AccountSection unmounts and refetches on the
+    // next open (same-URL navigation in the route-based design does not
+    // trigger a remount, so Escape alone is not enough).
+    await page.goto('/');
     await openAccountSettings(page);
     // SettingsCallout title and subtitle for the zero-codes error card.
     await expect(page.getByText(/No backup codes left/i)).toBeVisible();
