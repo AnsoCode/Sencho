@@ -5,8 +5,10 @@ import type { NotificationItem } from '@/components/dashboard/types';
 import { SidebarActions } from './SidebarActions';
 import { SidebarActivityTicker } from './SidebarActivityTicker';
 import { SidebarBrand } from './SidebarBrand';
+import { SidebarFilterChips, type FilterCounts } from './SidebarFilterChips';
 import { SidebarSearch } from './SidebarSearch';
 import { StackList, type StackListProps } from './StackList';
+import type { FilterChip } from './sidebar-types';
 
 export interface StackSidebarProps {
   isDarkMode: boolean;
@@ -17,6 +19,9 @@ export interface StackSidebarProps {
   canCreate: boolean;
   searchQuery: string;
   onSearchChange: (v: string) => void;
+  filterChip: FilterChip;
+  filterCounts: FilterCounts;
+  onFilterChipChange: (chip: FilterChip) => void;
   list: StackListProps;
   notifications: NotificationItem[];
   tickerConnected: boolean;
@@ -26,7 +31,8 @@ export interface StackSidebarProps {
 export function StackSidebar(props: StackSidebarProps) {
   const {
     isDarkMode, nodeSwitcherSlot, createStackSlot, onScan, isScanning, canCreate,
-    searchQuery, onSearchChange, list, notifications, tickerConnected, onOpenActivity,
+    searchQuery, onSearchChange, filterChip, filterCounts, onFilterChipChange,
+    list, notifications, tickerConnected, onOpenActivity,
   } = props;
 
   return (
@@ -38,6 +44,11 @@ export function StackSidebar(props: StackSidebarProps) {
       )}
       <Command shouldFilter={false} className="bg-transparent flex-1 flex flex-col overflow-hidden">
         <SidebarSearch value={searchQuery} onValueChange={onSearchChange} />
+        <SidebarFilterChips
+          active={filterChip}
+          counts={filterCounts}
+          onChange={onFilterChipChange}
+        />
         <ScrollArea className="flex-1 px-2 pb-2">
           <div data-stacks-loaded={list.isLoading ? 'false' : 'true'}>
             <StackList {...list} />

@@ -52,3 +52,5 @@ export interface StackMenuCtx {
 }
 
 export type StackGroupKind = 'pinned' | 'labeled' | 'unlabeled';
+
+export type FilterChip = 'all' | 'up' | 'down' | 'updates';

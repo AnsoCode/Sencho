@@ -19,3 +19,12 @@ export const sidebarGroupHeader = cn(
   'text-[9px] leading-3 tracking-[0.22em] uppercase text-stat-subtitle',
   'cursor-pointer select-none',
 );
+
+export const sidebarRowCheckboxSlot = 'shrink-0 w-4 h-4 opacity-0 pointer-events-none flex-shrink-0';
+
+export const sidebarPinnedGroupRail = cn(
+  'relative before:absolute before:left-0 before:top-0 before:bottom-0',
+  'before:w-[3px] before:rounded-sm before:bg-brand',
+  'before:shadow-[0_0_6px_var(--brand)]',
+  'pl-[13px]',
+);
