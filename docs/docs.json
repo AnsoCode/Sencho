@@ -98,6 +98,7 @@
               "features/global-search",
               "features/sidebar",
               "features/stack-management",
+              "features/stack-activity",
               "features/editor",
               "features/stack-file-explorer",
               "features/deploy-progress",

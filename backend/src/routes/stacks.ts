@@ -13,7 +13,7 @@ import { GitSourceService, GitSourceError, repoHost as gitRepoHost } from '../se
 import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
 import { requirePermission } from '../middleware/permissions';
 import { requirePaid, requireAdmin } from '../middleware/tierGates';
-import { NotificationService } from '../services/NotificationService';
+import { NotificationService, type NotificationCategory } from '../services/NotificationService';
 import { isValidStackName, isValidServiceName, isPathWithinBase, isValidRelativeStackPath } from '../utils/validation';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
@@ -29,6 +29,12 @@ function notifyActionFailure(action: string, stackName: string, error: unknown):
   NotificationService.getInstance()
     .dispatchAlert('error', 'deploy_failure', message, { stackName })
     .catch(err => console.error('[Stacks] Failed to dispatch failure notification for %s:', sanitizeForLog(stackName), err));
+}
+
+function notifyActionSuccess(category: NotificationCategory, message: string, stackName: string, actor: string): void {
+  NotificationService.getInstance()
+    .dispatchAlert('info', category, message, { stackName, actor })
+    .catch(err => console.error('[Stacks] Failed to dispatch activity for %s:', sanitizeForLog(stackName), err));
 }
 
 async function resolveAllEnvFilePaths(nodeId: number, stackName: string): Promise<string[]> {
@@ -589,6 +595,7 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
     console.log(`[Stacks] Deploy completed: ${sanitizeForLog(stackName)}`);
     if (debug) console.debug(`[Stacks:debug] Deploy finished in ${Date.now() - t0}ms`);
     res.json({ message: 'Deployed successfully' });
+    notifyActionSuccess('deploy_success', `${stackName} deployed`, stackName, req.user?.username ?? 'system');
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
       console.error('[Security] Post-deploy scan failed for %s:', sanitizeForLog(stackName), err),
     );
@@ -619,6 +626,12 @@ stacksRouter.post('/:stackName/down', async (req: Request, res: Response) => {
 
 type StackContainerAction = 'restart' | 'stop' | 'start';
 
+const CONTAINER_ACTION_META: Record<StackContainerAction, { category: NotificationCategory; pastTense: string }> = {
+  restart: { category: 'stack_restarted', pastTense: 'restarted' },
+  stop:    { category: 'stack_stopped',   pastTense: 'stopped'   },
+  start:   { category: 'stack_started',   pastTense: 'started'   },
+};
+
 async function bulkContainerOp(
   req: Request,
   res: Response,
@@ -645,6 +658,8 @@ async function bulkContainerOp(
     invalidateNodeCaches(req.nodeId);
     console.log(`[Stacks] ${titleCase} completed: ${sanitizeForLog(stackName)} (${containers.length} containers)`);
     res.json({ success: true, message: `${titleCase} completed via Engine API.` });
+    const { category, pastTense } = CONTAINER_ACTION_META[action];
+    notifyActionSuccess(category, `${stackName} ${pastTense}`, stackName, req.user?.username ?? 'system');
   } catch (error: unknown) {
     console.error('[Stacks] %s failed: %s', sanitizeForLog(titleCase), sanitizeForLog(stackName), error);
     const message = getErrorMessage(error, `Failed to ${action} containers`);
@@ -740,6 +755,7 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
     console.log(`[Stacks] Update completed: ${sanitizeForLog(stackName)}`);
     if (debug) console.debug(`[Stacks:debug] Update finished in ${Date.now() - t0}ms`);
     res.json({ status: 'Update completed' });
+    notifyActionSuccess('image_update_applied', `${stackName} updated`, stackName, req.user?.username ?? 'system');
     triggerPostDeployScan(stackName, req.nodeId).catch(err =>
       console.error('[Security] Post-deploy scan failed for %s:', sanitizeForLog(stackName), err),
     );

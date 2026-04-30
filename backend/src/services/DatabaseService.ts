@@ -203,6 +203,7 @@ export interface NotificationHistory {
     dispatch_error?: string;
     stack_name?: string;
     container_name?: string;
+    actor_username?: string | null;
 }
 
 export interface FleetSnapshot {
@@ -517,6 +518,7 @@ export class DatabaseService {
         this.migrateAgentsAndNotificationsNodeId();
         this.migratePolicyEvaluationColumn();
         this.migrateNotificationCategory();
+        this.migrateNotificationActor();
 
         // Reset the cache once at end of constructor in case any migration
         // populated it via getGlobalSettings() and a subsequent migration
@@ -1238,6 +1240,17 @@ export class DatabaseService {
         }
     }
 
+    private migrateNotificationActor(): void {
+        this.tryAddColumn('notification_history', 'actor_username', 'TEXT');
+        try {
+            this.db.prepare(
+                'CREATE INDEX IF NOT EXISTS idx_notif_history_node_stack_ts ON notification_history(node_id, stack_name, timestamp DESC) WHERE stack_name IS NOT NULL'
+            ).run();
+        } catch {
+            // index already present or partial-index syntax unsupported
+        }
+    }
+
     // --- Agents ---
 
     public getAgents(nodeId: number): Agent[] {
@@ -1511,23 +1524,28 @@ export class DatabaseService {
 
     // --- Notification History ---
 
-    public getNotificationHistory(nodeId: number, limit = 50, category?: string): NotificationHistory[] {
-        const sql = category
-            ? 'SELECT * FROM notification_history WHERE node_id = ? AND category = ? ORDER BY timestamp DESC LIMIT ?'
-            : 'SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?';
-        const args: (number | string)[] = category ? [nodeId, category, limit] : [nodeId, limit];
-        return this.db.prepare(sql).all(...args).map((row: any) => ({
+    private mapNotificationRow(row: any): NotificationHistory {
+        return {
             ...row,
             is_read: row.is_read === 1,
             stack_name: row.stack_name ?? undefined,
             container_name: row.container_name ?? undefined,
             category: row.category ?? undefined,
-        }));
+            actor_username: row.actor_username ?? null,
+        };
+    }
+
+    public getNotificationHistory(nodeId: number, limit = 50, category?: string): NotificationHistory[] {
+        const sql = category
+            ? 'SELECT * FROM notification_history WHERE node_id = ? AND category = ? ORDER BY timestamp DESC LIMIT ?'
+            : 'SELECT * FROM notification_history WHERE node_id = ? ORDER BY timestamp DESC LIMIT ?';
+        const args: (number | string)[] = category ? [nodeId, category, limit] : [nodeId, limit];
+        return (this.db.prepare(sql).all(...args) as unknown[]).map(row => this.mapNotificationRow(row as any));
     }
 
     public addNotificationHistory(nodeId: number, notification: Omit<NotificationHistory, 'id' | 'is_read'>): NotificationHistory {
         const stmt = this.db.prepare(
-            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name, category) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
+            'INSERT INTO notification_history (node_id, level, message, timestamp, is_read, stack_name, container_name, category, actor_username) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)'
         );
         const result = stmt.run(
             nodeId,
@@ -1537,6 +1555,7 @@ export class DatabaseService {
             notification.stack_name ?? null,
             notification.container_name ?? null,
             notification.category ?? null,
+            notification.actor_username ?? null,
         );
 
         this.db.prepare(`
@@ -1555,7 +1574,18 @@ export class DatabaseService {
             is_read: false,
             stack_name: notification.stack_name,
             container_name: notification.container_name,
+            actor_username: notification.actor_username,
         };
+    }
+
+    public getStackActivity(nodeId: number, stackName: string, opts: { limit: number; before?: number }): NotificationHistory[] {
+        const sql = opts.before
+            ? 'SELECT * FROM notification_history WHERE node_id = ? AND stack_name = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?'
+            : 'SELECT * FROM notification_history WHERE node_id = ? AND stack_name = ? ORDER BY timestamp DESC LIMIT ?';
+        const args: (number | string)[] = opts.before
+            ? [nodeId, stackName, opts.before, opts.limit]
+            : [nodeId, stackName, opts.limit];
+        return (this.db.prepare(sql).all(...args) as unknown[]).map(row => this.mapNotificationRow(row as any));
     }
 
     public markAllNotificationsRead(nodeId: number): void {
