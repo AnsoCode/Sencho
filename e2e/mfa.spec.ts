@@ -152,7 +152,10 @@ test.describe.serial('Two-factor authentication', () => {
     await page.goto('/');
     await openAccountSettings(page);
     // SettingsCallout title and subtitle for the zero-codes error card.
-    await expect(page.getByText(/No backup codes left/i)).toBeVisible();
+    // The callout sits below the Disable 2FA section; scroll into view first.
+    const noCodesCallout = page.getByText(/No backup codes left/i);
+    await noCodesCallout.scrollIntoViewIfNeeded();
+    await expect(noCodesCallout).toBeVisible();
     await expect(page.getByText(/recovery needs an administrator/i)).toBeVisible();
 
     await page.unroute('**/api/auth/mfa/status');
