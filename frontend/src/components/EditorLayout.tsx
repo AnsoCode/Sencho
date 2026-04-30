@@ -2339,7 +2339,7 @@ export default function EditorLayout() {
             <UserProfileDropdown
               theme={theme}
               setTheme={setTheme}
-              onOpenSettings={() => handleOpenSettings()}
+              onOpenSettings={() => handleOpenSettings('account')}
             />
           }
         />
