@@ -1,16 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
-
-function isInputFocused(): boolean {
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
-}
-
-function isPaletteOpen(): boolean {
-  return !!document.querySelector('[role="dialog"] [cmdk-root]');
-}
+import { isInputFocused, isPaletteOpen } from '@/lib/keyboard-guards';
 
 export function useStackKeyboardShortcuts(
   selectedFile: string | null,

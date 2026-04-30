@@ -95,11 +95,19 @@ function buildGroups(
   return result;
 }
 
-export function StackList(props: StackListProps) {
+interface StackListBulkProps {
+  bulkMode: boolean;
+  selectedFiles: Set<string>;
+  onToggleSelect: (file: string) => void;
+}
+
+export function StackList(props: StackListProps & StackListBulkProps) {
   const {
     files, isLoading, isPaid, selectedFile, searchQuery, stackLabelMap, stackStatuses,
     stackUpdates, gitSourcePendingMap, pinnedFiles, isCollapsed, toggleCollapse,
-    isBusy, getDisplayName, onSelectFile, buildMenuCtx, remoteResults, remoteLoading, onSelectRemoteFile,
+    isBusy, getDisplayName, onSelectFile, buildMenuCtx,
+    bulkMode, selectedFiles, onToggleSelect,
+    remoteResults, remoteLoading, onSelectRemoteFile,
   } = props;
 
   const groups = useMemo(
@@ -152,6 +160,9 @@ export function StackList(props: StackListProps) {
                     hasGitPending={!!gitSourcePendingMap[file]}
                     onSelect={onSelectFile}
                     kebabSlot={<StackKebabMenu file={file} ctx={ctx} />}
+                    bulkMode={bulkMode}
+                    isSelected={selectedFiles.has(file)}
+                    onToggleSelect={onToggleSelect}
                   />
                 </CommandItem>
               </StackContextMenu>

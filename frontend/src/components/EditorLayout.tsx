@@ -75,6 +75,8 @@ import { usePinnedStacks } from '@/hooks/usePinnedStacks';
 import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
 import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
 import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-types';
+import { useBulkStackActions, type BulkAction } from '@/hooks/useBulkStackActions';
+import { isInputFocused, isPaletteOpen } from '@/lib/keyboard-guards';
 import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 
 interface ContainerInfo {
@@ -1964,6 +1966,62 @@ export default function EditorLayout() {
     return filteredFiles;
   }, [filteredFiles, filterChip, stackStatuses, stackUpdates]);
 
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  const toggleBulkMode = useCallback(() => {
+    setBulkMode(prev => {
+      if (prev) setSelectedFiles(new Set());
+      return !prev;
+    });
+  }, []);
+
+  const toggleSelect = useCallback((file: string) => {
+    setSelectedFiles(prev => {
+      const next = new Set(prev);
+      if (next.has(file)) next.delete(file);
+      else next.add(file);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedFiles(new Set());
+  }, []);
+
+  const { runBulk } = useBulkStackActions();
+
+  const handleBulkAction = useCallback((action: BulkAction) => {
+    const files = Array.from(selectedFiles);
+    runBulk(action, files, {
+      onAfter: () => { refreshStacks(true); clearSelection(); },
+    });
+  }, [selectedFiles, runBulk, clearSelection]);
+
+  const chipFilteredFilesRef = useRef(chipFilteredFiles);
+  useEffect(() => { chipFilteredFilesRef.current = chipFilteredFiles; }, [chipFilteredFiles]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isInputFocused()) return;
+      if (isPaletteOpen()) return;
+
+      if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        toggleBulkMode();
+      } else if (e.key === 'Escape' && bulkMode) {
+        e.preventDefault();
+        setBulkMode(false);
+        setSelectedFiles(new Set());
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'a' && bulkMode) {
+        e.preventDefault();
+        setSelectedFiles(new Set(chipFilteredFilesRef.current));
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [bulkMode, toggleBulkMode]);
+
   const { isCollapsed, toggle: toggleCollapse } = useSidebarGroupCollapse(activeNode?.id);
 
   const remoteResults = useMemo(() => {
@@ -2333,6 +2391,13 @@ export default function EditorLayout() {
         notifications={notifications}
         tickerConnected={tickerConnected}
         onOpenActivity={() => setActiveView('global-observability')}
+        bulkMode={bulkMode}
+        selectedFiles={selectedFiles}
+        isPaid={isPaid}
+        onToggleBulkMode={toggleBulkMode}
+        onToggleSelect={toggleSelect}
+        onClearSelection={clearSelection}
+        onBulkAction={handleBulkAction}
       />
 
       {/* Main Content Area */}
