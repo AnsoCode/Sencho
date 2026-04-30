@@ -20,6 +20,8 @@ import { apiFetch } from '@/lib/api';
 import { formatBytes } from '@/lib/utils';
 import { AdmiralGate } from '@/components/AdmiralGate';
 import { Cloud, CloudOff, RefreshCw, CheckCircle2, AlertCircle, Loader2, Trash2, Download } from 'lucide-react';
+import { SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 type Provider = 'disabled' | 'sencho' | 'custom';
 
@@ -257,6 +259,27 @@ export function CloudBackupSection() {
         }
     };
 
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                {
+                    label: 'PROVIDER',
+                    value: provider,
+                    tone: provider === 'disabled' ? 'subtitle' : 'value',
+                },
+                ...(provider === 'sencho' && usage
+                    ? [{
+                        label: 'USED',
+                        value: `${formatBytes(usage.used_bytes)} / ${formatBytes(usage.quota_bytes)}`,
+                    }]
+                    : []),
+                ...(snapshots.length > 0
+                    ? [{ label: 'SNAPSHOTS', value: `${snapshots.length}` }]
+                    : []),
+            ],
+    );
+
     if (loading) {
         return (
             <div className="space-y-3">
@@ -294,10 +317,10 @@ export function CloudBackupSection() {
                         <p className="text-xs text-muted-foreground">
                             Activates a 500 MB allowance backed by Cloudflare R2, scoped to this Admiral license.
                         </p>
-                        <Button size="sm" onClick={handleProvision} disabled={provisioning}>
+                        <SettingsPrimaryButton size="sm" onClick={handleProvision} disabled={provisioning}>
                             {provisioning ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} /> : <Cloud className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />}
                             Activate
-                        </Button>
+                        </SettingsPrimaryButton>
                     </div>
                 )}
 
@@ -362,10 +385,10 @@ export function CloudBackupSection() {
                                     {testing ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} /> : null}
                                     Test
                                 </Button>
-                                <Button size="sm" onClick={handleSaveCustom} disabled={saving}>
-                                    {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} /> : null}
+                                <SettingsPrimaryButton size="sm" onClick={handleSaveCustom} disabled={saving}>
+                                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.5} /> : null}
                                     Save
-                                </Button>
+                                </SettingsPrimaryButton>
                             </div>
                         </div>
 

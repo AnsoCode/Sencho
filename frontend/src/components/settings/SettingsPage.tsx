@@ -9,7 +9,7 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command';
-import { Lock } from 'lucide-react';
+import { PageMasthead, type MastheadMetadataItem } from '@/components/ui/PageMasthead';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useNodes } from '@/context/NodeContext';
@@ -43,9 +43,19 @@ import {
 import type { SectionId, SettingsItemMeta, VisibilityContext } from './index';
 import { SectionGate } from './SectionGate';
 import { SettingsSidebar } from './SettingsSidebar';
+import { MastheadStatsProvider, useMastheadStatsValue } from './MastheadStatsContext';
+import { TierLockChip } from './TierLockChip';
 import { cn } from '@/lib/utils';
 
 export function SettingsPage() {
+    return (
+        <MastheadStatsProvider>
+            <SettingsPageInner />
+        </MastheadStatsProvider>
+    );
+}
+
+function SettingsPageInner() {
     const { sectionId } = useParams<{ sectionId: string }>();
     // Derive currentSection from the registry item itself (trusted data), not from the raw
     // URL param, so the tainted sectionId string never reaches a property write.
@@ -89,6 +99,7 @@ export function SettingsPage() {
 
     const activeItem = getSettingsItem(currentSection);
     const activeGroup = activeItem ? getSettingsGroup(activeItem.group) : undefined;
+    const nodeName = activeNode?.name ?? 'local';
 
     const visibleItems = useMemo(
         () => SETTINGS_ITEMS.filter(item => isItemVisible(item, visibility)),
@@ -140,56 +151,58 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentSection, isPaid]);
 
+    const kicker = activeItem && activeGroup
+        ? `Settings · ${activeGroup.label} · ${activeItem.label}`
+        : 'Settings';
+
+    const extraStats = useMastheadStatsValue();
+    const metadata = useMemo<MastheadMetadataItem[]>(() => {
+        const baseScope: MastheadMetadataItem = activeItem
+            ? activeItem.scope === 'node'
+                ? { label: 'NODE', value: nodeName }
+                : { label: 'SCOPE', value: scopeLabel(activeItem) }
+            : { label: 'SCOPE', value: 'global' };
+        return [baseScope, ...(extraStats ?? [])];
+    }, [activeItem, nodeName, extraStats]);
+
     return (
         <div
-            className="flex flex-1 overflow-hidden min-h-0"
+            className="flex flex-1 flex-col overflow-hidden min-h-0 gap-3 p-3 bg-background"
             onKeyDown={handleKeyDown}
         >
-            <SettingsSidebar
-                dirtyFlags={dirtyFlags}
-                onOpenPalette={() => setCommandOpen(true)}
+            <PageMasthead
+                kicker={kicker}
+                state={activeItem?.label ?? 'Settings'}
+                tone="idle"
+                metadata={metadata}
+                className="rounded-xl border border-card-border border-b-card-border"
             />
 
-            <div className="flex-1 flex flex-col min-h-0 min-w-0">
-                <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-border/60 shrink-0">
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-                            <span>Settings</span>
-                            <span className="text-stat-subtitle/50">›</span>
-                            <span>{activeGroup?.label ?? ''}</span>
-                            <span className="text-stat-subtitle/50">›</span>
-                            <span className="text-stat-value">{activeItem?.label ?? ''}</span>
-                            {activeItem?.scope === 'node' ? (
-                                <span className="ml-2 flex items-center gap-1 text-brand">
-                                    <span className="text-stat-subtitle/50">·</span>
-                                    <span className="truncate max-w-[160px]">{activeNode?.name ?? 'local'}</span>
-                                    <span className="text-stat-subtitle/70">(node-scoped)</span>
-                                </span>
-                            ) : null}
-                        </div>
-                        <h2 className="mt-1.5 font-display italic text-2xl leading-tight text-stat-value truncate">
-                            {activeItem?.label ?? 'Settings'}
-                        </h2>
-                        {activeItem?.description ? (
-                            <p className="mt-1 text-sm text-stat-subtitle/90 truncate">
-                                {activeItem.description}
-                            </p>
-                        ) : null}
-                    </div>
-                </header>
+            <div className="flex flex-1 min-h-0 gap-3">
+                <SettingsSidebar
+                    dirtyFlags={dirtyFlags}
+                    onOpenPalette={() => setCommandOpen(true)}
+                />
 
-                <ScrollArea
-                    block
-                    viewportRef={contentViewportRef}
-                    className="flex-1 min-w-0"
-                    onScrollCapture={saveScrollPosition}
-                >
-                    <div className="px-6 py-5 flex flex-col gap-6 min-w-0">
-                        <SectionGate sectionId={currentSection}>
-                            {sectionElement}
-                        </SectionGate>
-                    </div>
-                </ScrollArea>
+                <div className="flex-1 min-h-0 min-w-0 rounded-xl border border-card-border bg-card overflow-hidden flex flex-col">
+                    <ScrollArea
+                        block
+                        viewportRef={contentViewportRef}
+                        className="flex-1 min-w-0"
+                        onScrollCapture={saveScrollPosition}
+                    >
+                        <div className="px-7 pt-6 pb-8 flex flex-col gap-6 min-w-0">
+                            {activeItem?.description ? (
+                                <p className="text-sm text-stat-subtitle/90 leading-relaxed max-w-3xl">
+                                    {activeItem.description}
+                                </p>
+                            ) : null}
+                            <SectionGate sectionId={currentSection}>
+                                {sectionElement}
+                            </SectionGate>
+                        </div>
+                    </ScrollArea>
+                </div>
             </div>
 
             <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
@@ -218,6 +231,11 @@ export function SettingsPage() {
     );
 }
 
+function scopeLabel(item: SettingsItemMeta): string {
+    if (item.group === 'identity') return 'operator';
+    return 'global';
+}
+
 function SettingsCommandItem({
     item,
     glyph,
@@ -238,12 +256,7 @@ function SettingsCommandItem({
                 <span className="text-sm font-medium text-stat-value truncate">{item.label}</span>
                 <span className="text-xs text-stat-subtitle truncate">{item.description}</span>
             </div>
-            {item.tier && locked ? (
-                <span className="flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-stat-subtitle/80">
-                    <Lock className="h-2.5 w-2.5" strokeWidth={1.5} />
-                    {item.tier === 'admiral' ? 'ADMIRAL' : 'SKIPPER'}
-                </span>
-            ) : null}
+            {item.tier && locked ? <TierLockChip tier={item.tier} /> : null}
         </CommandItem>
     );
 }

@@ -12,6 +12,9 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import { Zap, Plus, Copy, Trash2, CheckCircle, RefreshCw, Clock } from 'lucide-react';
+import { SettingsPrimaryButton } from './settings/SettingsActions';
+import { SettingsCallout } from './settings/SettingsCallout';
+import { useMastheadStats } from './settings/MastheadStatsContext';
 
 interface ApiTokenListItem {
     id: number;
@@ -119,6 +122,15 @@ export function ApiTokensSection() {
         } catch { toast.error('Network error.'); }
     };
 
+    const activeTokens = tokens.filter(t => !t.revoked_at).length;
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'TOKENS', value: `${activeTokens}` },
+            ],
+    );
+
     const handleCopy = async (text: string, label: string) => {
         try {
             await copyToClipboard(text);
@@ -133,9 +145,9 @@ export function ApiTokensSection() {
           <CapabilityGate capability="api-tokens" featureName="API Tokens">
             <div className="space-y-6">
                 <div className="flex justify-end">
-                    <Button size="sm" onClick={() => setShowForm(!showForm)}>
-                        <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Create Token
-                    </Button>
+                    <SettingsPrimaryButton size="sm" onClick={() => setShowForm(!showForm)}>
+                        <Plus className="w-4 h-4" strokeWidth={1.5} /> Create token
+                    </SettingsPrimaryButton>
                 </div>
 
                 {/* Create form */}
@@ -180,9 +192,9 @@ export function ApiTokensSection() {
                         </div>
                         <div className="flex justify-end gap-2 pt-2">
                             <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
-                            <Button size="sm" onClick={handleCreate} disabled={creating}>
-                                {creating ? <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />Creating...</> : 'Create'}
-                            </Button>
+                            <SettingsPrimaryButton size="sm" onClick={handleCreate} disabled={creating}>
+                                {creating ? <><RefreshCw className="w-4 h-4 animate-spin" />Creating</> : 'Create'}
+                            </SettingsPrimaryButton>
                         </div>
                     </div>
                 )}
@@ -214,11 +226,11 @@ export function ApiTokensSection() {
 
                 {/* Empty state */}
                 {!loading && tokens.length === 0 && !showForm && (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Zap className="w-10 h-10 text-muted-foreground/50 mb-3" />
-                        <p className="text-sm text-muted-foreground">No API tokens yet.</p>
-                        <p className="text-xs text-muted-foreground mt-1">Create one to authenticate CI/CD pipelines and scripts.</p>
-                    </div>
+                    <SettingsCallout
+                        icon={<Zap className="h-4 w-4" />}
+                        title="No API tokens yet"
+                        subtitle="Create one to authenticate CI/CD pipelines and scripts."
+                    />
                 )}
 
                 {/* Token list */}

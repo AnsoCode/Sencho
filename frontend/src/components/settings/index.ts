@@ -31,3 +31,9 @@ export type {
     Scope,
     VisibilityContext,
 } from './registry';
+export { SettingsSection } from './SettingsSection';
+export { SettingsField, type SettingsFieldTone } from './SettingsField';
+export { SettingsCallout, type SettingsCalloutTone } from './SettingsCallout';
+export { SettingsActions, SettingsPrimaryButton, SettingsSecondaryButton } from './SettingsActions';
+export { TierLockChip } from './TierLockChip';
+export { useMastheadStats } from './MastheadStatsContext';

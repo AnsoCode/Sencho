@@ -36,6 +36,9 @@ import type { NotificationCategory } from '@/components/dashboard/types';
 import type { Label as StackLabel } from '@/components/label-types';
 import { CATEGORY_LABELS } from '@/lib/notificationCategories';
 import { Plus, Trash2, Pencil, RefreshCw, Zap, X, Route } from 'lucide-react';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface NotificationRoute {
     id: number;
@@ -280,6 +283,20 @@ export function NotificationRoutingSection() {
         setFormCategories(prev => prev.filter(c => c !== cat));
     };
 
+    const enabledRoutesCount = routes.filter(r => r.enabled).length;
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'ROUTES', value: `${routes.length}` },
+                {
+                    label: 'ENABLED',
+                    value: `${enabledRoutesCount}`,
+                    tone: enabledRoutesCount > 0 ? 'value' : 'subtitle',
+                },
+            ],
+    );
+
     const availableStackOptions = stackOptions.filter(o => !formStacks.includes(o.value));
     const availableLabelOptions = useMemo<ComboboxOption[]>(
         () => labelOptions.filter(l => !formLabelIds.includes(l.id)).map(l => ({ value: String(l.id), label: l.name })),
@@ -295,9 +312,9 @@ export function NotificationRoutingSection() {
           <CapabilityGate capability="notification-routing" featureName="Notification Routing">
             <div className="space-y-6">
                 <div className="flex justify-end">
-                    <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
-                        <Plus className="w-4 h-4 mr-1.5" /> Add Route
-                    </Button>
+                    <SettingsPrimaryButton size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
+                        <Plus className="w-4 h-4" /> Add route
+                    </SettingsPrimaryButton>
                 </div>
 
                 <Dialog open={showForm} onOpenChange={(open) => { if (!open) resetForm(); }}>
@@ -469,9 +486,9 @@ export function NotificationRoutingSection() {
 
                             <div className="flex justify-end gap-2 pt-2">
                                 <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
-                                <Button size="sm" onClick={handleSave} disabled={saving}>
-                                    {saving ? <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />Saving...</> : editingId ? 'Update' : 'Create'}
-                                </Button>
+                                <SettingsPrimaryButton size="sm" onClick={handleSave} disabled={saving}>
+                                    {saving ? <><RefreshCw className="w-4 h-4 animate-spin" />Saving</> : editingId ? 'Update' : 'Create'}
+                                </SettingsPrimaryButton>
                             </div>
                         </div>
                     </DialogContent>
@@ -485,13 +502,11 @@ export function NotificationRoutingSection() {
                 )}
 
                 {!loading && routes.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Route className="w-10 h-10 text-muted-foreground/50 mb-3" strokeWidth={1.5} />
-                        <p className="text-sm text-muted-foreground">No routing rules configured.</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                            Alerts will use your global notification channels. Add a route to direct specific stack alerts to dedicated channels.
-                        </p>
-                    </div>
+                    <SettingsCallout
+                        icon={<Route className="h-4 w-4" strokeWidth={1.5} />}
+                        title="No routing rules configured"
+                        subtitle="Alerts use your global notification channels. Add a route to direct specific stack alerts to dedicated channels."
+                    />
                 )}
 
                 {!loading && routes.map(route => (

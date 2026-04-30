@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,6 +13,11 @@ import {
     RefreshCw, CheckCircle, XCircle, Webhook, Copy, Trash2,
     Plus, ChevronDown, ChevronRight, History,
 } from 'lucide-react';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface WebhookItem {
     id: number;
@@ -48,7 +51,6 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
     const [history, setHistory] = useState<Record<number, WebhookExecution[]>>({});
     const [loadingHistory, setLoadingHistory] = useState<number | null>(null);
 
-    // Form state
     const [formName, setFormName] = useState('');
     const [formStack, setFormStack] = useState('');
     const [formAction, setFormAction] = useState<string>('deploy');
@@ -69,6 +71,20 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
     };
 
     useEffect(() => { fetchWebhooks(); fetchStacks(); }, []);
+
+    const enabledCount = webhooks.filter(w => w.enabled).length;
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'WEBHOOKS', value: `${webhooks.length}` },
+                {
+                    label: 'ENABLED',
+                    value: `${enabledCount}`,
+                    tone: enabledCount > 0 ? 'value' : 'subtitle',
+                },
+            ],
+    );
 
     const handleCreate = async () => {
         if (!formName || !formStack || !formAction) {
@@ -154,33 +170,29 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             <div className="flex justify-end">
-                <Button size="sm" onClick={() => setShowForm(!showForm)}>
-                    <Plus className="w-4 h-4 mr-1.5" /> Create Webhook
-                </Button>
+                <SettingsPrimaryButton size="sm" onClick={() => setShowForm(!showForm)}>
+                    <Plus className="w-4 h-4" /> Create webhook
+                </SettingsPrimaryButton>
             </div>
 
-            {/* Create Form */}
             {showForm && (
-                <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                    <div className="space-y-2">
-                        <Label>Name</Label>
-                        <Input placeholder="Deploy on push" value={formName} onChange={e => setFormName(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Stack</Label>
+                <SettingsSection title="New webhook">
+                    <SettingsField label="Name" helper="Shown in execution history and notifications." htmlFor="webhook-name">
+                        <Input id="webhook-name" placeholder="Deploy on push" value={formName} onChange={e => setFormName(e.target.value)} />
+                    </SettingsField>
+                    <SettingsField label="Stack" helper="The webhook will operate on this stack." htmlFor="webhook-stack">
                         <Select value={formStack} onValueChange={setFormStack}>
-                            <SelectTrigger><SelectValue placeholder="Select a stack..." /></SelectTrigger>
+                            <SelectTrigger id="webhook-stack"><SelectValue placeholder="Select a stack..." /></SelectTrigger>
                             <SelectContent>
                                 {stacks.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
                         </Select>
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Action</Label>
+                    </SettingsField>
+                    <SettingsField label="Action" helper="What happens when the webhook is triggered." htmlFor="webhook-action">
                         <Select value={formAction} onValueChange={setFormAction}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectTrigger id="webhook-action"><SelectValue /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="deploy">Deploy (down + up)</SelectItem>
                                 <SelectItem value="restart">Restart</SelectItem>
@@ -190,34 +202,38 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
                                 <SelectItem value="git-pull">Git source sync</SelectItem>
                             </SelectContent>
                         </Select>
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
+                    </SettingsField>
+                    <SettingsActions>
                         <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
-                        <Button size="sm" onClick={handleCreate} disabled={creating}>
-                            {creating ? <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />Creating...</> : 'Create'}
-                        </Button>
-                    </div>
-                </div>
+                        <SettingsPrimaryButton size="sm" onClick={handleCreate} disabled={creating}>
+                            {creating ? <><RefreshCw className="w-4 h-4 animate-spin" />Creating</> : 'Create'}
+                        </SettingsPrimaryButton>
+                    </SettingsActions>
+                </SettingsSection>
             )}
 
-            {/* Secret reveal (shown once after creation) */}
             {newSecret && (
-                <div className="bg-success-muted border border-success/30 rounded-lg p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-success">
-                        <CheckCircle className="w-4 h-4" /> Webhook created - copy your secret now
-                    </div>
-                    <p className="text-xs text-muted-foreground">This secret will not be shown again. Store it securely.</p>
-                    <div className="flex items-center gap-2">
-                        <code className="flex-1 text-xs font-mono bg-muted px-3 py-2 rounded-lg break-all">{newSecret.secret}</code>
-                        <Button variant="outline" size="sm" onClick={() => handleCopy(newSecret.secret, 'Secret')}>
-                            <Copy className="w-4 h-4" />
-                        </Button>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setNewSecret(null)}>Dismiss</Button>
-                </div>
+                <SettingsCallout
+                    tone="success"
+                    icon={<CheckCircle className="h-4 w-4" />}
+                    title="Webhook created. Copy your secret now."
+                    subtitle={
+                        <div className="flex flex-col gap-2 mt-1">
+                            <span>This secret will not be shown again. Store it securely.</span>
+                            <div className="flex items-center gap-2">
+                                <code className="flex-1 text-xs font-mono bg-muted px-3 py-2 rounded-md break-all">{newSecret.secret}</code>
+                                <Button variant="outline" size="sm" onClick={() => handleCopy(newSecret.secret, 'Secret')}>
+                                    <Copy className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    }
+                    action={
+                        <Button variant="outline" size="sm" onClick={() => setNewSecret(null)}>Dismiss</Button>
+                    }
+                />
             )}
 
-            {/* Loading state */}
             {loading && (
                 <div className="space-y-3">
                     <Skeleton className="h-20 w-full rounded-lg" />
@@ -225,98 +241,102 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
                 </div>
             )}
 
-            {/* Empty state */}
             {!loading && webhooks.length === 0 && !showForm && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <Webhook className="w-10 h-10 text-muted-foreground/50 mb-3" />
-                    <p className="text-sm text-muted-foreground">No webhooks configured yet.</p>
-                    <p className="text-xs text-muted-foreground mt-1">Create one to trigger stack actions from CI/CD.</p>
-                </div>
+                <SettingsCallout
+                    icon={<Webhook className="h-4 w-4" />}
+                    title="No webhooks yet"
+                    subtitle="Create one to trigger stack actions from CI/CD."
+                />
             )}
 
-            {/* Webhook list */}
-            {!loading && webhooks.map(wh => {
-                const triggerUrl = `${window.location.origin}/api/webhooks/${wh.id}/trigger`;
-                const isExpanded = expandedHistory === wh.id;
-                return (
-                    <div key={wh.id} className="border border-glass-border rounded-lg overflow-hidden">
-                        <div className="p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <Webhook className="w-4 h-4 text-muted-foreground shrink-0" />
-                                    <span className="font-medium text-sm truncate">{wh.name}</span>
-                                    <Badge variant="outline" className="text-[10px] shrink-0">{wh.action}</Badge>
-                                    <Badge variant="secondary" className="text-[10px] shrink-0">{wh.stack_name}</Badge>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <TogglePill checked={wh.enabled} onChange={(c) => handleToggle(wh.id!, c)} />
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDelete(wh.id!)}>
-                                        <Trash2 className="w-4 h-4 text-muted-foreground" />
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Trigger URL */}
-                            <div className="space-y-1">
-                                <Label className="text-xs text-muted-foreground">Trigger URL</Label>
-                                <div className="flex items-center gap-2">
-                                    <code className="flex-1 text-[11px] font-mono bg-muted px-2.5 py-1.5 rounded-md truncate">{triggerUrl}</code>
-                                    <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => handleCopy(triggerUrl, 'URL')}>
-                                        <Copy className="w-3 h-3" />
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Secret (masked) */}
-                            <div className="flex items-center gap-2 text-xs">
-                                <span className="text-muted-foreground">Secret:</span>
-                                <code className="font-mono text-muted-foreground">{wh.secret}</code>
-                            </div>
-
-                            {/* History toggle */}
-                            <button
-                                onClick={() => fetchHistory(wh.id!)}
-                                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                                <History className="w-3 h-3" />
-                                Recent executions
-                            </button>
-                        </div>
-
-                        {/* Execution history */}
-                        {isExpanded && (
-                            <div className="border-t bg-muted/20 px-4 py-3">
-                                {loadingHistory === wh.id ? (
-                                    <Skeleton className="h-8 w-full" />
-                                ) : (history[wh.id!] ?? []).length === 0 ? (
-                                    <p className="text-xs text-muted-foreground">No executions yet.</p>
-                                ) : (
-                                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                        {(history[wh.id!] ?? []).map(ex => (
-                                            <div key={ex.id} className="flex items-center gap-2 text-xs">
-                                                {ex.status === 'success'
-                                                    ? <CheckCircle className="w-3 h-3 text-success shrink-0" />
-                                                    : <XCircle className="w-3 h-3 text-red-500 shrink-0" />}
-                                                <span className="font-medium">{ex.action}</span>
-                                                <span className="text-muted-foreground">
-                                                    {new Date(ex.executed_at).toLocaleString()}
+            {!loading && webhooks.length > 0 && (
+                <SettingsSection title="Configured webhooks" kicker={`${webhooks.length} total`}>
+                    <div className="pt-3 flex flex-col gap-3">
+                        {webhooks.map(wh => {
+                            const triggerUrl = `${window.location.origin}/api/webhooks/${wh.id}/trigger`;
+                            const isExpanded = expandedHistory === wh.id;
+                            return (
+                                <div key={wh.id} className="border border-card-border rounded-md overflow-hidden bg-card">
+                                    <div className="p-4 space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Webhook className="w-4 h-4 text-stat-subtitle shrink-0" />
+                                                <span className="font-medium text-sm truncate text-stat-value">{wh.name}</span>
+                                                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle border border-card-border rounded px-1.5 py-0.5 shrink-0">
+                                                    {wh.action}
                                                 </span>
-                                                {ex.duration_ms !== null && (
-                                                    <span className="text-muted-foreground">{(ex.duration_ms / 1000).toFixed(1)}s</span>
-                                                )}
-                                                {ex.error && (
-                                                    <span className="text-red-500 truncate" title={ex.error}>{ex.error}</span>
-                                                )}
+                                                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle border border-card-border rounded px-1.5 py-0.5 shrink-0">
+                                                    {wh.stack_name}
+                                                </span>
                                             </div>
-                                        ))}
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <TogglePill checked={wh.enabled} onChange={(c) => handleToggle(wh.id!, c)} />
+                                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDelete(wh.id!)}>
+                                                    <Trash2 className="w-4 h-4 text-stat-subtitle" />
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">Trigger URL</div>
+                                            <div className="flex items-center gap-2">
+                                                <code className="flex-1 text-[11px] font-mono bg-muted px-2.5 py-1.5 rounded-md truncate">{triggerUrl}</code>
+                                                <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => handleCopy(triggerUrl, 'URL')}>
+                                                    <Copy className="w-3 h-3" />
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">Secret</span>
+                                            <code className="font-mono text-stat-subtitle">{wh.secret}</code>
+                                        </div>
+
+                                        <button
+                                            onClick={() => fetchHistory(wh.id!)}
+                                            className="flex items-center gap-1.5 text-xs text-stat-subtitle hover:text-stat-value transition-colors"
+                                        >
+                                            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                                            <History className="w-3 h-3" />
+                                            Recent executions
+                                        </button>
                                     </div>
-                                )}
-                            </div>
-                        )}
+
+                                    {isExpanded && (
+                                        <div className="border-t border-card-border bg-muted/20 px-4 py-3">
+                                            {loadingHistory === wh.id ? (
+                                                <Skeleton className="h-8 w-full" />
+                                            ) : (history[wh.id!] ?? []).length === 0 ? (
+                                                <p className="text-xs text-stat-subtitle">No executions yet.</p>
+                                            ) : (
+                                                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                                    {(history[wh.id!] ?? []).map(ex => (
+                                                        <div key={ex.id} className="flex items-center gap-2 text-xs">
+                                                            {ex.status === 'success'
+                                                                ? <CheckCircle className="w-3 h-3 text-success shrink-0" />
+                                                                : <XCircle className="w-3 h-3 text-destructive shrink-0" />}
+                                                            <span className="font-medium">{ex.action}</span>
+                                                            <span className="text-stat-subtitle">
+                                                                {new Date(ex.executed_at).toLocaleString()}
+                                                            </span>
+                                                            {ex.duration_ms !== null && (
+                                                                <span className="text-stat-subtitle">{(ex.duration_ms / 1000).toFixed(1)}s</span>
+                                                            )}
+                                                            {ex.error && (
+                                                                <span className="text-destructive truncate" title={ex.error}>{ex.error}</span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
-                );
-            })}
+                </SettingsSection>
+            )}
         </div>
     );
 }

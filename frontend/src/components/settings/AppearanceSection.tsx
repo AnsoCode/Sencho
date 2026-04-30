@@ -1,9 +1,10 @@
-import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useDensity } from '@/hooks/use-density';
 import type { Density } from '@/hooks/use-density';
 import { useDeployFeedbackEnabled } from '@/hooks/use-deploy-feedback-enabled';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
 
 const DENSITY_OPTIONS: { value: Density; label: string }[] = [
     { value: 'comfortable', label: 'Comfortable' },
@@ -20,10 +21,12 @@ export function AppearanceSection() {
     const [isEnabled, setEnabled] = useDeployFeedbackEnabled();
 
     return (
-        <div className="space-y-6">
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <div className="space-y-2">
-                    <Label htmlFor="density-select">Density</Label>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Display" kicker="this browser">
+                <SettingsField
+                    label="Density"
+                    helper={DENSITY_DESCRIPTIONS[density]}
+                >
                     <Combobox
                         options={DENSITY_OPTIONS}
                         value={density}
@@ -32,28 +35,30 @@ export function AppearanceSection() {
                         }}
                         placeholder="Select density"
                     />
-                    <p className="text-xs text-stat-subtitle">
-                        {DENSITY_DESCRIPTIONS[density]}
-                    </p>
-                </div>
-            </div>
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <div className="flex items-start gap-3">
-                    <Checkbox
-                        id="deploy-feedback"
-                        checked={isEnabled}
-                        onCheckedChange={(v) => setEnabled(v === true)}
-                    />
-                    <label htmlFor="deploy-feedback">
-                        <p className="text-sm font-medium cursor-pointer">Show deploy progress modal</p>
-                        <p className="text-xs text-stat-subtitle mt-0.5">
-                            Stream live output for deploy, restart, update, install, and Git operations.
-                        </p>
-                    </label>
-                </div>
-            </div>
-            <p className="text-xs text-stat-subtitle">
-                Preference is saved to this browser only. Each device you use remembers its own choice.
+                </SettingsField>
+
+                <SettingsField
+                    label="Deploy progress modal"
+                    helper="Stream live output for deploy, restart, update, install, and Git operations."
+                >
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="deploy-feedback"
+                            checked={isEnabled}
+                            onCheckedChange={(v) => setEnabled(v === true)}
+                        />
+                        <label
+                            htmlFor="deploy-feedback"
+                            className="text-sm text-stat-value cursor-pointer select-none"
+                        >
+                            {isEnabled ? 'Enabled' : 'Disabled'}
+                        </label>
+                    </div>
+                </SettingsField>
+            </SettingsSection>
+
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle/70">
+                ⓘ saved to this browser only · every device remembers its own choice
             </p>
         </div>
     );

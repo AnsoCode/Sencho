@@ -3,13 +3,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightI
 import { springs } from '@/lib/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { TogglePill } from '@/components/ui/toggle-pill';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { useNodes } from '@/context/NodeContext';
 import { RefreshCw } from 'lucide-react';
 import type { Agent } from './types';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 export function NotificationsSection() {
     const { activeNode } = useNodes();
@@ -39,7 +42,16 @@ export function NotificationsSection() {
         }
     };
 
-    useEffect(() => { fetchAgents(); }, [activeNode?.id]);
+    useEffect(() => { fetchAgents(); }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const enabledCount = Object.values(agents).filter(a => a.enabled).length;
+    useMastheadStats([
+        {
+            label: 'CHANNELS',
+            value: `${enabledCount}/3`,
+            tone: enabledCount > 0 ? 'value' : 'subtitle',
+        },
+    ]);
 
     const handleAgentChange = (type: string, field: keyof Agent, value: Agent[keyof Agent]) => {
         setAgents(prev => ({
@@ -93,37 +105,56 @@ export function NotificationsSection() {
     };
 
     const renderAgentTab = (type: 'discord' | 'slack' | 'webhook', title: string) => (
-        <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-                <Label htmlFor={`${type}-enabled`} className="font-medium">Enable {title}</Label>
+        <SettingsSection title={title} kicker={agents[type].enabled ? 'enabled' : 'off'}>
+            <SettingsField
+                label="Enabled"
+                helper={`Send Sencho events to this ${title.toLowerCase()} channel.`}
+            >
                 <TogglePill
                     id={`${type}-enabled`}
                     checked={agents[type].enabled}
                     onChange={(c) => handleAgentChange(type, 'enabled', c)}
                 />
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor={`${type}-url`}>Webhook URL</Label>
+            </SettingsField>
+            <SettingsField
+                label="Webhook URL"
+                helper="Sencho posts JSON payloads here. Use a private channel."
+                htmlFor={`${type}-url`}
+            >
                 <Input
                     id={`${type}-url`}
                     placeholder="https://..."
                     value={agents[type].url}
                     onChange={(e) => handleAgentChange(type, 'url', e.target.value)}
                 />
-            </div>
-            <div className="flex space-x-2 justify-end pt-4">
+            </SettingsField>
+            <SettingsActions>
                 <Button variant="outline" onClick={() => testAgent(type)} disabled={isTestingAgent[type]}>
-                    {isTestingAgent[type] ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Testing...</> : 'Test'}
+                    {isTestingAgent[type] ? (
+                        <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Testing
+                        </>
+                    ) : (
+                        'Test'
+                    )}
                 </Button>
-                <Button onClick={() => saveAgent(type)} disabled={isSavingAgent[type]}>
-                    {isSavingAgent[type] ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</> : 'Save'}
-                </Button>
-            </div>
-        </div>
+                <SettingsPrimaryButton onClick={() => saveAgent(type)} disabled={isSavingAgent[type]}>
+                    {isSavingAgent[type] ? (
+                        <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Saving
+                        </>
+                    ) : (
+                        'Save'
+                    )}
+                </SettingsPrimaryButton>
+            </SettingsActions>
+        </SettingsSection>
     );
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
             <Tabs value={notifTab} onValueChange={(v) => setNotifTab(v as 'discord' | 'slack' | 'webhook')} className="w-full">
                 <TabsList className="w-full mb-4 grid grid-cols-3">
                     <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>

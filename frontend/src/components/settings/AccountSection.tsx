@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { TogglePill } from '@/components/ui/toggle-pill';
-import { Separator } from '@/components/ui/separator';
 import { AlertTriangle, RefreshCw, Shield, ShieldCheck } from 'lucide-react';
 import { MfaEnrollDialog } from '@/components/mfa/MfaEnrollDialog';
 import { MfaDisableDialog } from '@/components/mfa/MfaDisableDialog';
 import { MfaBackupCodesDialog } from '@/components/mfa/MfaBackupCodesDialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface MfaStatus {
     enabled: boolean;
@@ -110,136 +112,215 @@ export function AccountSection() {
         }
     };
 
+    const passwordStrengthHelper = useMemo(() => {
+        const pwd = authData.newPassword;
+        if (!pwd) return '12+ chars · mixed case · one number';
+        if (pwd.length < 8) return 'Too short. At least 8 characters.';
+        if (pwd.length < 12) return 'Acceptable. 12 or more recommended.';
+        return 'Strong';
+    }, [authData.newPassword]);
+
+    const newPasswordTone = authData.newPassword
+        ? authData.newPassword.length >= 12
+            ? 'success'
+            : authData.newPassword.length < 8
+                ? 'error'
+                : 'warn'
+        : 'default';
+
+    const confirmHelper = useMemo(() => {
+        if (!authData.confirmPassword) return 'Re-enter the new password to confirm.';
+        return authData.confirmPassword === authData.newPassword
+            ? 'Match'
+            : 'Does not match the new password';
+    }, [authData.confirmPassword, authData.newPassword]);
+
+    const confirmTone = authData.confirmPassword
+        ? authData.confirmPassword === authData.newPassword
+            ? 'success'
+            : 'error'
+        : 'default';
+
+    useMastheadStats(
+        mfaLoading
+            ? null
+            : [
+                {
+                    label: '2FA',
+                    value: mfa?.enabled ? 'on' : 'off',
+                    tone: mfa?.enabled ? 'value' : 'warn',
+                },
+                ...(mfa?.enabled && mfa.backupCodesRemaining <= 2
+                    ? [{
+                        label: 'BACKUP',
+                        value: `${mfa.backupCodesRemaining} left`,
+                        tone: mfa.backupCodesRemaining === 0 ? ('error' as const) : ('warn' as const),
+                    }]
+                    : []),
+            ],
+    );
+
     return (
-        <div className="space-y-6">
-            <div className="space-y-4 max-w-sm">
-                <div className="space-y-2">
-                    <Label>Current Password</Label>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Password">
+                <SettingsField
+                    label="Current password"
+                    helper="Required to change any auth setting on this account."
+                    htmlFor="account-current-password"
+                >
                     <Input
+                        id="account-current-password"
                         type="password"
+                        autoComplete="current-password"
                         value={authData.oldPassword}
                         onChange={(e) => setAuthData({ ...authData, oldPassword: e.target.value })}
                     />
-                </div>
-                <div className="space-y-2">
-                    <Label>New Password</Label>
+                </SettingsField>
+                <SettingsField
+                    label="New password"
+                    helper={passwordStrengthHelper}
+                    tone={newPasswordTone}
+                    htmlFor="account-new-password"
+                >
                     <Input
+                        id="account-new-password"
                         type="password"
+                        autoComplete="new-password"
                         value={authData.newPassword}
                         onChange={(e) => setAuthData({ ...authData, newPassword: e.target.value })}
                     />
-                </div>
-                <div className="space-y-2">
-                    <Label>Confirm New Password</Label>
+                </SettingsField>
+                <SettingsField
+                    label="Confirm new password"
+                    helper={confirmHelper}
+                    tone={confirmTone}
+                    htmlFor="account-confirm-password"
+                >
                     <Input
+                        id="account-confirm-password"
                         type="password"
+                        autoComplete="new-password"
                         value={authData.confirmPassword}
                         onChange={(e) => setAuthData({ ...authData, confirmPassword: e.target.value })}
                     />
-                </div>
-                <Button onClick={handlePasswordChange} disabled={isSaving} className="w-full">
-                    {isSaving
-                        ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Updating...</>
-                        : 'Update Password'
-                    }
-                </Button>
-            </div>
-
-            <Separator />
-
-            {/* Two-factor authentication card */}
-            <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-5 max-w-lg">
-                <div className="flex items-start gap-3">
-                    {mfa?.enabled
-                        ? <ShieldCheck className="w-5 h-5 mt-0.5 text-success" strokeWidth={1.5} />
-                        : <Shield className="w-5 h-5 mt-0.5 text-muted-foreground" strokeWidth={1.5} />
-                    }
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-medium">Two-factor authentication</h4>
-                            {mfa?.enabled && <Badge variant="secondary">Enabled</Badge>}
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                            {mfa?.enabled
-                                ? 'Sign-in requires a code from your authenticator app. Back up your codes somewhere safe.'
-                                : 'Add a time-based one-time password to your account for an extra layer of security.'}
-                        </p>
-
-                        {mfaLoading ? (
-                            <div className="mt-4 text-xs text-muted-foreground">Loading…</div>
-                        ) : mfa?.enabled ? (
-                            <div className="mt-4 space-y-3">
-                                {mfa.backupCodesRemaining === 0 ? (
-                                    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
-                                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-destructive" strokeWidth={1.5} />
-                                        <div className="flex-1">
-                                            <div className="text-sm font-medium text-destructive">No backup codes left</div>
-                                            <div className="text-xs text-destructive/80 mt-0.5">
-                                                Regenerate a new set before you lose access to your authenticator app. Without codes, recovery needs an administrator.
-                                            </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="mt-2 h-7 px-2 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                                                onClick={() => setRegenOpen(true)}
-                                            >
-                                                Regenerate now
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ) : mfa.backupCodesRemaining <= 2 ? (
-                                    <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-warning">
-                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-                                        <span>
-                                            {mfa.backupCodesRemaining} backup code{mfa.backupCodesRemaining === 1 ? '' : 's'} remaining, regenerate a fresh set
-                                        </span>
-                                    </div>
-                                ) : (
-                                    <div className="text-xs text-muted-foreground font-mono tabular-nums">
-                                        {mfa.backupCodesRemaining} backup codes remaining
-                                    </div>
-                                )}
-
-                                {hasSso && (
-                                    <div className="flex items-start justify-between gap-3 rounded-md border border-card-border bg-background/40 p-3">
-                                        <div>
-                                            <div className="text-sm">Require 2FA even when signing in via SSO</div>
-                                            <div className="text-xs text-muted-foreground mt-0.5">
-                                                SSO logins skip the second factor by default.
-                                            </div>
-                                        </div>
-                                        <TogglePill
-                                            checked={mfa.sso_enforce_mfa}
-                                            onChange={handleBypassToggle}
-                                            disabled={togglingBypass}
-                                        />
-                                    </div>
-                                )}
-
-                                <div className="flex flex-wrap gap-2">
-                                    <Button variant="ghost" size="sm" onClick={() => setRegenOpen(true)}>
-                                        Regenerate backup codes
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-                                        onClick={() => setDisableOpen(true)}
-                                    >
-                                        Disable 2FA
-                                    </Button>
-                                </div>
-                            </div>
+                </SettingsField>
+                <SettingsActions>
+                    <SettingsPrimaryButton onClick={handlePasswordChange} disabled={isSaving}>
+                        {isSaving ? (
+                            <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                Updating
+                            </>
                         ) : (
-                            <div className="mt-4">
-                                <Button size="sm" onClick={() => setEnrollOpen(true)}>
-                                    Set up 2FA
+                            'Update password'
+                        )}
+                    </SettingsPrimaryButton>
+                </SettingsActions>
+            </SettingsSection>
+
+            <SettingsSection
+                title="Two-factor authentication"
+                kicker={mfa?.enabled ? 'enabled' : 'off'}
+            >
+                {mfaLoading ? (
+                    <div className="py-4 text-xs text-stat-subtitle">Loading…</div>
+                ) : mfa?.enabled ? (
+                    <>
+                        <SettingsField
+                            label="Authenticator app"
+                            helper="Sign-in requires a time-based code from your authenticator. Keep your backup codes safe."
+                        >
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck className="h-4 w-4 text-brand" strokeWidth={1.5} />
+                                <span className="font-mono text-[12px] uppercase tracking-[0.16em] text-stat-value">
+                                    enrolled
+                                </span>
+                            </div>
+                        </SettingsField>
+
+                        <SettingsField
+                            label="Backup codes"
+                            helper={
+                                mfa.backupCodesRemaining === 0
+                                    ? 'No backup codes remain. Regenerate a fresh set before you lose access to your authenticator.'
+                                    : mfa.backupCodesRemaining <= 2
+                                        ? 'Running low. Regenerate a fresh set.'
+                                        : 'Single-use codes for when your authenticator is unavailable.'
+                            }
+                            tone={
+                                mfa.backupCodesRemaining === 0
+                                    ? 'error'
+                                    : mfa.backupCodesRemaining <= 2
+                                        ? 'warn'
+                                        : 'default'
+                            }
+                        >
+                            <div className="flex items-center gap-3">
+                                <span className="font-mono tabular-nums text-sm text-stat-value">
+                                    {mfa.backupCodesRemaining} remaining
+                                </span>
+                                <Button variant="outline" size="sm" onClick={() => setRegenOpen(true)}>
+                                    Regenerate
                                 </Button>
                             </div>
-                        )}
+                        </SettingsField>
+
+                        {hasSso ? (
+                            <SettingsField
+                                label="Require 2FA on SSO sign-in"
+                                helper="By default, SSO logins skip the second factor. Enforce it here to require both."
+                            >
+                                <TogglePill
+                                    checked={mfa.sso_enforce_mfa}
+                                    onChange={handleBypassToggle}
+                                    disabled={togglingBypass}
+                                />
+                            </SettingsField>
+                        ) : null}
+
+                        <SettingsActions>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive/80 hover:bg-destructive hover:text-destructive-foreground"
+                                onClick={() => setDisableOpen(true)}
+                            >
+                                Disable 2FA
+                            </Button>
+                        </SettingsActions>
+                    </>
+                ) : (
+                    <div className="pt-3">
+                        <SettingsCallout
+                            tone="warn"
+                            icon={<Shield className="h-4 w-4" strokeWidth={1.5} />}
+                            title="Two-factor is off"
+                            subtitle="Add a time-based code from your authenticator app, every sign-in."
+                            action={
+                                <SettingsPrimaryButton size="sm" onClick={() => setEnrollOpen(true)}>
+                                    Set up 2FA
+                                </SettingsPrimaryButton>
+                            }
+                        />
                     </div>
-                </div>
-            </div>
+                )}
+
+                {mfa?.enabled && mfa.backupCodesRemaining === 0 ? (
+                    <div className="pt-3">
+                        <SettingsCallout
+                            tone="error"
+                            icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.5} />}
+                            title="No backup codes left"
+                            subtitle="Without codes, recovery needs an administrator if you lose your authenticator."
+                            action={
+                                <Button variant="outline" size="sm" onClick={() => setRegenOpen(true)}>
+                                    Regenerate
+                                </Button>
+                            }
+                        />
+                    </div>
+                ) : null}
+            </SettingsSection>
 
             <MfaEnrollDialog open={enrollOpen} onOpenChange={setEnrollOpen} onEnrolled={refreshMfa} />
             <MfaDisableDialog open={disableOpen} onOpenChange={setDisableOpen} onDisabled={refreshMfa} />

@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Combobox } from './ui/combobox';
 import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Monitor, Globe, Copy, KeyRound, Check, AlertTriangle, Calendar, RefreshCw, Terminal } from 'lucide-react';
 import { formatTimeUntil, formatTimeAgo } from '@/lib/relativeTime';
+import { SettingsPrimaryButton } from './settings/SettingsActions';
+import { useMastheadStats } from './settings/MastheadStatsContext';
 
 interface NodeSchedulingSummary {
   active_tasks: number;
@@ -59,6 +61,14 @@ const defaultFormData: NodeFormData = {
 
 export function NodeManager() {
   const { nodes, refreshNodes } = useNodes();
+  useMastheadStats([
+    { label: 'NODES', value: `${nodes.length}` },
+    {
+      label: 'REMOTE',
+      value: `${nodes.filter(n => n.type === 'remote').length}`,
+      tone: 'subtitle',
+    },
+  ]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -415,10 +425,10 @@ export function NodeManager() {
           }}
         >
           <DialogTrigger asChild>
-            <Button size="sm" className="gap-1 shrink-0">
+            <SettingsPrimaryButton size="sm" className="gap-1 shrink-0">
               <Plus className="w-4 h-4" />
-              Add Node
-            </Button>
+              Add node
+            </SettingsPrimaryButton>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader className="pr-8">
@@ -427,15 +437,15 @@ export function NodeManager() {
             {renderFormFields()}
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button
+              <SettingsPrimaryButton
                 onClick={handleCreate}
                 disabled={
                   !formData.name ||
                   (formData.type === 'remote' && formData.mode === 'proxy' && (!formData.api_url || !formData.api_token))
                 }
               >
-                Add Node
-              </Button>
+                Add node
+              </SettingsPrimaryButton>
             </DialogFooter>
           </DialogContent>
         </Dialog>

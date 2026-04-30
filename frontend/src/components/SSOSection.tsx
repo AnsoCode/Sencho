@@ -11,6 +11,8 @@ import { CapabilityGate } from './CapabilityGate';
 import { PaidGate } from './PaidGate';
 import { AdmiralGate } from './AdmiralGate';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { SettingsPrimaryButton } from './settings/SettingsActions';
+import { useMastheadStats } from './settings/MastheadStatsContext';
 
 const ROLE_OPTIONS = [
     { value: 'viewer', label: 'Viewer' },
@@ -359,9 +361,9 @@ function ProviderCard({ providerId, type, label, initialConfig, onSave }: {
 
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={handleSave} disabled={saving}>
-                                {saving ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving...</> : 'Save'}
-                            </Button>
+                            <SettingsPrimaryButton size="sm" onClick={handleSave} disabled={saving}>
+                                {saving ? <><Loader2 className="w-3 h-3 animate-spin" /> Saving</> : 'Save'}
+                            </SettingsPrimaryButton>
                             <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}>
                                 {testing ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Testing...</> : 'Test Connection'}
                             </Button>
@@ -412,6 +414,16 @@ export function SSOSection() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchConfigs(); }, []);
+
+    const enabledProviders = configs.filter(c => c.enabled).length;
+    useMastheadStats([
+        { label: 'PROVIDERS', value: `${configs.length}` },
+        {
+            label: 'ENABLED',
+            value: `${enabledProviders}`,
+            tone: enabledProviders > 0 ? 'value' : 'subtitle',
+        },
+    ]);
 
     const getConfig = (provider: string) => configs.find(c => c.provider === provider) || null;
 
