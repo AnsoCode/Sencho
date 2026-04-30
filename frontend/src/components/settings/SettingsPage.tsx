@@ -47,7 +47,11 @@ import { cn } from '@/lib/utils';
 
 export function SettingsPage() {
     const { sectionId } = useParams<{ sectionId: string }>();
-    const currentSection = (sectionId ?? 'account') as SectionId;
+    // Validate against the known registry before using as a property key to prevent
+    // prototype pollution (CodeQL js/remote-property-injection).
+    const currentSection: SectionId = SETTINGS_ITEMS.some(i => i.id === sectionId)
+        ? (sectionId as SectionId)
+        : 'appearance';
 
     const contentViewportRef = useRef<HTMLDivElement | null>(null);
     const scrollPositionsRef = useRef<Partial<Record<SectionId, number>>>({});
