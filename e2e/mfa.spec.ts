@@ -132,7 +132,8 @@ test.describe.serial('Two-factor authentication', () => {
     await expect.poll(async () => isDashboard(page), { timeout: 10_000 }).toBe(true);
 
     await openAccountSettings(page);
-    await expect(page.getByText(/1 backup code remaining/i)).toBeVisible();
+    // SettingsField body renders "{n} remaining"; helper renders "Running low. Regenerate a fresh set."
+    await expect(page.getByText('1 remaining')).toBeVisible();
     await expect(page.getByText(/regenerate a fresh set/i)).toBeVisible();
 
     // Now exercise the exhausted branch (0 codes): the dedicated warning card.
@@ -148,8 +149,9 @@ test.describe.serial('Two-factor authentication', () => {
     // Re-open the account section so it refetches status with the new mock.
     await page.keyboard.press('Escape').catch(() => {});
     await openAccountSettings(page);
+    // SettingsCallout title and subtitle for the zero-codes error card.
     await expect(page.getByText(/No backup codes left/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Regenerate now/i })).toBeVisible();
+    await expect(page.getByText(/recovery needs an administrator/i)).toBeVisible();
 
     await page.unroute('**/api/auth/mfa/status');
   });
