@@ -47,14 +47,13 @@ import { cn } from '@/lib/utils';
 
 export function SettingsPage() {
     const { sectionId } = useParams<{ sectionId: string }>();
-    // Validate against the known registry before using as a property key to prevent
-    // prototype pollution (CodeQL js/remote-property-injection).
-    const currentSection: SectionId = SETTINGS_ITEMS.some(i => i.id === sectionId)
-        ? (sectionId as SectionId)
-        : 'appearance';
+    // Derive currentSection from the registry item itself (trusted data), not from the raw
+    // URL param, so the tainted sectionId string never reaches a property write.
+    const currentSection: SectionId = (SETTINGS_ITEMS.find(i => i.id === sectionId)?.id) ?? 'appearance';
 
     const contentViewportRef = useRef<HTMLDivElement | null>(null);
-    const scrollPositionsRef = useRef<Partial<Record<SectionId, number>>>({});
+    // Map avoids prototype pollution: Map.set() does not write to object prototype chain.
+    const scrollPositionsRef = useRef(new Map<SectionId, number>());
 
     const [commandOpen, setCommandOpen] = useState(false);
     const [dirtyFlags, setDirtyFlags] = useState<Partial<Record<SectionId, boolean>>>({});
@@ -68,13 +67,13 @@ export function SettingsPage() {
 
     useLayoutEffect(() => {
         if (contentViewportRef.current) {
-            contentViewportRef.current.scrollTop = scrollPositionsRef.current[currentSection] ?? 0;
+            contentViewportRef.current.scrollTop = scrollPositionsRef.current.get(currentSection) ?? 0;
         }
     }, [currentSection]);
 
     const saveScrollPosition = useCallback(() => {
         if (contentViewportRef.current) {
-            scrollPositionsRef.current[currentSection] = contentViewportRef.current.scrollTop;
+            scrollPositionsRef.current.set(currentSection, contentViewportRef.current.scrollTop);
         }
     }, [currentSection]);
 
