@@ -7,7 +7,6 @@ import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import type { NotificationItem } from './dashboard/types';
-import type { SectionId } from './settings/types';
 import BashExecModal from './BashExecModal';
 import HostConsole from './HostConsole';
 import { AdmiralGate } from './AdmiralGate';
@@ -37,7 +36,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
 import { cn } from '@/lib/utils';
-import { SettingsModal } from './SettingsModal';
+import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom';
+import { SettingsPage } from './settings/SettingsPage';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -61,7 +61,7 @@ import {
     GlobalCommandPaletteTrigger,
 } from './GlobalCommandPalette';
 import { useCrossNodeStackSearch } from '@/hooks/useCrossNodeStackSearch';
-import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
+import { SENCHO_OPEN_LOGS_EVENT, SENCHO_LABELS_CHANGED } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
@@ -359,11 +359,12 @@ export default function EditorLayout() {
   const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
   const isAdmiral = license?.variant === 'admiral';
 
-  // Notifications & Settings state
+  const navigate = useNavigate();
+  const isSettingsRoute = !!useMatch({ path: '/settings/*', end: false });
+
+  // Notifications state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [tickerConnected, setTickerConnected] = useState(false);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<SectionId>('account');
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
   const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
@@ -572,6 +573,12 @@ export default function EditorLayout() {
       // Labels are non-critical; fail silently
     }
   }, [isPaid]);
+
+  useEffect(() => {
+    const handler = () => refreshLabels();
+    window.addEventListener(SENCHO_LABELS_CHANGED, handler);
+    return () => window.removeEventListener(SENCHO_LABELS_CHANGED, handler);
+  }, [refreshLabels]);
 
   /**
    * Populate the per-stack "pending git source update" map. Runs on mount and
@@ -2040,7 +2047,7 @@ export default function EditorLayout() {
           toast.dismiss(loadingId);
         }
       },
-      openLabelManager: () => { setSettingsInitialSection('labels'); setSettingsModalOpen(true); },
+      openLabelManager: () => navigate('/settings/labels'),
       openScheduleTask: () => {
         const stackName = file.replace(/\.(yml|yaml)$/, '');
         setSchedulePrefill({ stackName, nodeId: activeNode?.id ?? null });
@@ -2266,7 +2273,7 @@ export default function EditorLayout() {
         isDarkMode={isDarkMode}
         nodeSwitcherSlot={
           <NodeSwitcher
-            onManageNodes={() => { setSettingsInitialSection('nodes'); setSettingsModalOpen(true); }}
+            onManageNodes={() => navigate('/settings/nodes')}
           />
         }
         createStackSlot={createStackSlot}
@@ -2328,12 +2335,19 @@ export default function EditorLayout() {
             <UserProfileDropdown
               theme={theme}
               setTheme={setTheme}
-              onOpenSettings={() => setSettingsModalOpen(true)}
             />
           }
         />
 
         {/* Main Workspace */}
+        {isSettingsRoute ? (
+          <div className="flex-1 flex overflow-hidden">
+            <Routes>
+              <Route path="/settings/:sectionId" element={<SettingsPage />} />
+              <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
+            </Routes>
+          </div>
+        ) : (
         <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
           {activeView === 'templates' ? (
             <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
@@ -2917,10 +2931,10 @@ export default function EditorLayout() {
               onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
               notifications={notifications}
               onClearNotifications={clearAllNotifications}
-              onOpenSettings={(section) => { setSettingsInitialSection(section); setSettingsModalOpen(true); }}
             />
           )}
         </div>
+        )}
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -3054,14 +3068,6 @@ export default function EditorLayout() {
         />
       )}
 
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => { setSettingsModalOpen(false); setSettingsInitialSection('account'); }}
-        initialSection={settingsInitialSection}
-        onLabelsChanged={refreshLabels}
-      />
 
       {/* Stack Alert Sheet */}
       <StackAlertSheet

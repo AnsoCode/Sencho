@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -5,14 +6,16 @@ import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLicense } from '@/context/LicenseContext';
 import { RefreshCw, Database } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
+import { useNodes } from '@/context/NodeContext';
+import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
+import type { SenchoSettingsChangedDetail } from '@/lib/events';
+import { DEFAULT_SETTINGS } from './types';
 import type { PatchableSettings } from './types';
 
 interface DeveloperSectionProps {
-    settings: PatchableSettings;
-    onSettingChange: <K extends keyof PatchableSettings>(key: K, value: PatchableSettings[K]) => void;
-    onSave: () => Promise<void>;
-    isSaving: boolean;
-    isLoading: boolean;
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 function SettingsSkeleton() {
@@ -29,8 +32,96 @@ function SettingsSkeleton() {
     );
 }
 
-export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, isLoading }: DeveloperSectionProps) {
+type DeveloperFields = Pick<PatchableSettings, 'developer_mode' | 'metrics_retention_hours' | 'log_retention_days' | 'audit_retention_days'>;
+
+const DEFAULT_DEVELOPER: DeveloperFields = {
+    developer_mode: DEFAULT_SETTINGS.developer_mode,
+    metrics_retention_hours: DEFAULT_SETTINGS.metrics_retention_hours,
+    log_retention_days: DEFAULT_SETTINGS.log_retention_days,
+    audit_retention_days: DEFAULT_SETTINGS.audit_retention_days,
+};
+
+export function DeveloperSection({ onDirtyChange }: DeveloperSectionProps) {
     const { isPaid, license } = useLicense();
+    const { activeNode } = useNodes();
+    const [settings, setSettings] = useState<DeveloperFields>({ ...DEFAULT_DEVELOPER });
+    const serverSettingsRef = useRef<DeveloperFields>({ ...DEFAULT_DEVELOPER });
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const hasChanges =
+        settings.developer_mode !== serverSettingsRef.current.developer_mode ||
+        settings.metrics_retention_hours !== serverSettingsRef.current.metrics_retention_hours ||
+        settings.log_retention_days !== serverSettingsRef.current.log_retention_days ||
+        settings.audit_retention_days !== serverSettingsRef.current.audit_retention_days;
+
+    useEffect(() => {
+        onDirtyChange?.(hasChanges);
+    }, [hasChanges, onDirtyChange]);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            setIsLoading(true);
+            try {
+                const isRemote = activeNode?.type === 'remote';
+                const nodeRes = await apiFetch('/settings');
+                const localRes = isRemote ? await apiFetch('/settings', { localOnly: true }) : nodeRes;
+                const nodeData: Record<string, string> = nodeRes.ok ? await nodeRes.json() : {};
+                const localData: Record<string, string> = (isRemote && localRes.ok)
+                    ? await localRes.json()
+                    : nodeData;
+                const safe: DeveloperFields = {
+                    developer_mode: (localData.developer_mode as '0' | '1') ?? DEFAULT_SETTINGS.developer_mode,
+                    metrics_retention_hours: localData.metrics_retention_hours ?? DEFAULT_SETTINGS.metrics_retention_hours,
+                    log_retention_days: localData.log_retention_days ?? DEFAULT_SETTINGS.log_retention_days,
+                    audit_retention_days: localData.audit_retention_days ?? DEFAULT_SETTINGS.audit_retention_days,
+                };
+                setSettings(safe);
+                serverSettingsRef.current = { ...safe };
+            } catch (e) {
+                console.error('Failed to fetch developer settings', e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeNode?.id]);
+
+    const onSettingChange = <K extends keyof DeveloperFields>(key: K, value: DeveloperFields[K]) => {
+        setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    const saveSettings = async () => {
+        const payload = {
+            developer_mode: settings.developer_mode,
+            metrics_retention_hours: settings.metrics_retention_hours,
+            log_retention_days: settings.log_retention_days,
+            audit_retention_days: settings.audit_retention_days,
+        };
+        setIsSaving(true);
+        try {
+            const res = await apiFetch('/settings', {
+                method: 'PATCH',
+                body: JSON.stringify(payload),
+                localOnly: true,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || err?.message || 'Failed to save settings.');
+                return;
+            }
+            serverSettingsRef.current = { ...settings };
+            toast.success('Developer settings saved.');
+            window.dispatchEvent(new CustomEvent<SenchoSettingsChangedDetail>(SENCHO_SETTINGS_CHANGED, {
+                detail: { changedKeys: Object.keys(payload) },
+            }));
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Something went wrong.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -116,7 +207,7 @@ export function DeveloperSection({ settings, onSettingChange, onSave, isSaving, 
                     </div>
 
                     <div className="flex justify-end">
-                        <Button onClick={onSave} disabled={isSaving}>
+                        <Button onClick={saveSettings} disabled={isSaving}>
                             {isSaving
                                 ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
                                 : 'Save Developer Settings'

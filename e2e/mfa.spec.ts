@@ -25,7 +25,7 @@ async function logout(page: Page) {
 
 async function openAccountSettings(page: Page) {
   await page.getByRole('button', { name: /profile/i }).click();
-  await page.getByRole('button', { name: /settings/i }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: /^Account$/i })).toBeVisible();
 }
 

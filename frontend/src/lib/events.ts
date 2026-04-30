@@ -12,3 +12,5 @@ export const SENCHO_SETTINGS_CHANGED = 'sencho-settings-changed';
 export interface SenchoSettingsChangedDetail {
   changedKeys: string[];
 }
+
+export const SENCHO_LABELS_CHANGED = 'sencho-labels-changed';

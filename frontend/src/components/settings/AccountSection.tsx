@@ -12,13 +12,6 @@ import { MfaBackupCodesDialog } from '@/components/mfa/MfaBackupCodesDialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 
-interface AccountSectionProps {
-    authData: { oldPassword: string; newPassword: string; confirmPassword: string };
-    onAuthDataChange: (data: { oldPassword: string; newPassword: string; confirmPassword: string }) => void;
-    onPasswordChange: () => Promise<void>;
-    isSaving: boolean;
-}
-
 interface MfaStatus {
     enabled: boolean;
     backupCodesRemaining: number;
@@ -30,7 +23,10 @@ interface SSOProvider {
     type: 'ldap' | 'oidc';
 }
 
-export function AccountSection({ authData, onAuthDataChange, onPasswordChange, isSaving }: AccountSectionProps) {
+export function AccountSection() {
+    const [authData, setAuthData] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
+    const [isSaving, setIsSaving] = useState(false);
+
     const [mfa, setMfa] = useState<MfaStatus | null>(null);
     const [mfaLoading, setMfaLoading] = useState(true);
     const [hasSso, setHasSso] = useState(false);
@@ -58,6 +54,39 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
             .then((providers: SSOProvider[]) => setHasSso(providers.length > 0))
             .catch(() => setHasSso(false));
     }, [refreshMfa]);
+
+    const handlePasswordChange = async () => {
+        if (!authData.oldPassword || !authData.newPassword || !authData.confirmPassword) {
+            toast.error('All fields are required');
+            return;
+        }
+        if (authData.newPassword !== authData.confirmPassword) {
+            toast.error('New passwords do not match');
+            return;
+        }
+        if (authData.newPassword.length < 8) {
+            toast.error('New password must be at least 8 characters');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const res = await apiFetch('/auth/password', {
+                method: 'PUT',
+                body: JSON.stringify({ oldPassword: authData.oldPassword, newPassword: authData.newPassword }),
+            });
+            if (res.ok) {
+                toast.success('Password updated successfully');
+                setAuthData({ oldPassword: '', newPassword: '', confirmPassword: '' });
+            } else {
+                const data = await res.json().catch(() => ({}));
+                toast.error(data?.error || 'Failed to update password');
+            }
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Network error during password change');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleBypassToggle = async (enforce: boolean) => {
         setTogglingBypass(true);
@@ -89,7 +118,7 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
                     <Input
                         type="password"
                         value={authData.oldPassword}
-                        onChange={(e) => onAuthDataChange({ ...authData, oldPassword: e.target.value })}
+                        onChange={(e) => setAuthData({ ...authData, oldPassword: e.target.value })}
                     />
                 </div>
                 <div className="space-y-2">
@@ -97,7 +126,7 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
                     <Input
                         type="password"
                         value={authData.newPassword}
-                        onChange={(e) => onAuthDataChange({ ...authData, newPassword: e.target.value })}
+                        onChange={(e) => setAuthData({ ...authData, newPassword: e.target.value })}
                     />
                 </div>
                 <div className="space-y-2">
@@ -105,10 +134,10 @@ export function AccountSection({ authData, onAuthDataChange, onPasswordChange, i
                     <Input
                         type="password"
                         value={authData.confirmPassword}
-                        onChange={(e) => onAuthDataChange({ ...authData, confirmPassword: e.target.value })}
+                        onChange={(e) => setAuthData({ ...authData, confirmPassword: e.target.value })}
                     />
                 </div>
-                <Button onClick={onPasswordChange} disabled={isSaving} className="w-full">
+                <Button onClick={handlePasswordChange} disabled={isSaving} className="w-full">
                     {isSaving
                         ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Updating...</>
                         : 'Update Password'

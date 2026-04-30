@@ -194,7 +194,7 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         scope: 'node',
     },
     {
-        id: 'appstore',
+        id: 'app-store',
         group: 'advanced',
         label: 'App Store',
         description: 'Template registry URL and featured-catalog source.',
