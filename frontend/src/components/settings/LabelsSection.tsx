@@ -21,6 +21,7 @@ import {
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
+import { SENCHO_LABELS_CHANGED } from '@/lib/events';
 import { PaidGate } from '../PaidGate';
 import { CapabilityGate } from '../CapabilityGate';
 import { LabelDot } from '../LabelPill';
@@ -103,6 +104,7 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
             setDialogOpen(false);
             fetchLabels();
             onLabelsChanged?.();
+            window.dispatchEvent(new Event(SENCHO_LABELS_CHANGED));
         } catch (err: unknown) {
             toast.error((err as Error)?.message || 'Something went wrong.');
         } finally {
@@ -122,6 +124,7 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
             setDeleteTarget(null);
             fetchLabels();
             onLabelsChanged?.();
+            window.dispatchEvent(new Event(SENCHO_LABELS_CHANGED));
         } catch (err: unknown) {
             toast.error((err as Error)?.message || 'Something went wrong.');
         }

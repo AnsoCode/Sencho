@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -6,15 +6,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { RefreshCw } from 'lucide-react';
-import type { PatchableSettings } from './types';
-
-interface AppStoreSectionProps {
-    settings: PatchableSettings;
-    onSettingChange: <K extends keyof PatchableSettings>(key: K, value: PatchableSettings[K]) => void;
-    isLoading: boolean;
-    /** Called after a successful save so the parent can update serverSettingsRef */
-    onSaved: (key: keyof PatchableSettings, value: string) => void;
-}
 
 function SettingsSkeleton() {
     return (
@@ -30,22 +21,50 @@ function SettingsSkeleton() {
     );
 }
 
-export function AppStoreSection({ settings, onSettingChange, isLoading, onSaved }: AppStoreSectionProps) {
+export function AppStoreSection() {
+    const [templateRegistryUrl, setTemplateRegistryUrl] = useState('');
+    const serverUrl = useRef('');
+    const [isLoading, setIsLoading] = useState(false);
     const [isSavingRegistry, setIsSavingRegistry] = useState(false);
 
+    useEffect(() => {
+        const fetchSettings = async () => {
+            setIsLoading(true);
+            try {
+                const res = await apiFetch('/settings');
+                if (res.ok) {
+                    const data: Record<string, string> = await res.json();
+                    const url = data.template_registry_url ?? '';
+                    setTemplateRegistryUrl(url);
+                    serverUrl.current = url;
+                }
+            } catch (e) {
+                console.error('Failed to fetch app store settings', e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSettings();
+    }, []);
+
     const saveRegistrySettings = async () => {
+        const trimmedUrl = templateRegistryUrl.trim();
+        if (trimmedUrl && !/^https?:\/\/./.test(trimmedUrl)) {
+            toast.error('Registry URL must start with http:// or https://');
+            return;
+        }
         setIsSavingRegistry(true);
         try {
             const res = await apiFetch('/settings', {
                 method: 'PATCH',
-                body: JSON.stringify({ template_registry_url: settings.template_registry_url ?? '' }),
+                body: JSON.stringify({ template_registry_url: trimmedUrl }),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 toast.error(err?.error || err?.message || 'Failed to save registry settings.');
                 return;
             }
-            onSaved('template_registry_url', settings.template_registry_url ?? '');
+            serverUrl.current = templateRegistryUrl;
             await apiFetch('/templates/refresh-cache', { method: 'POST' });
             toast.success('Registry saved. App Store will reload from the new source.');
         } catch (e: unknown) {
@@ -77,8 +96,8 @@ export function AppStoreSection({ settings, onSettingChange, isLoading, onSaved 
                             </div>
                             <Input
                                 placeholder="https://example.com/templates.json"
-                                value={settings.template_registry_url ?? ''}
-                                onChange={(e) => onSettingChange('template_registry_url', e.target.value)}
+                                value={templateRegistryUrl}
+                                onChange={(e) => setTemplateRegistryUrl(e.target.value)}
                             />
                             <p className="text-xs text-muted-foreground">Leave empty to use the default LinuxServer.io registry.</p>
                         </div>
@@ -88,8 +107,8 @@ export function AppStoreSection({ settings, onSettingChange, isLoading, onSaved 
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onSettingChange('template_registry_url', '')}
-                            disabled={isSavingRegistry || !settings.template_registry_url}
+                            onClick={() => setTemplateRegistryUrl('')}
+                            disabled={isSavingRegistry || !templateRegistryUrl}
                         >
                             Reset to Default
                         </Button>

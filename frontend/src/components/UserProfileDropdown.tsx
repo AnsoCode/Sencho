@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Settings,
     LogOut,
@@ -28,7 +29,6 @@ type Theme = 'light' | 'dark' | 'auto';
 interface UserProfileDropdownProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
-    onOpenSettings: () => void;
 }
 
 const THEME_OPTIONS = [
@@ -48,7 +48,8 @@ function getInitials(username: string | undefined): string {
     return trimmed.slice(0, 2).toUpperCase();
 }
 
-export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserProfileDropdownProps) {
+export function UserProfileDropdown({ theme, setTheme }: UserProfileDropdownProps) {
+    const navigate = useNavigate();
     const { logout, user, isAdmin } = useAuth();
     const { license } = useLicense();
     const [billingLoading, setBillingLoading] = useState(false);
@@ -131,7 +132,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
 
                 {/* Navigation strip */}
                 <div className="border-t border-card-border/60">
-                    <MenuRow icon={Settings} label="Settings" onClick={onOpenSettings} />
+                    <MenuRow icon={Settings} label="Settings" onClick={() => navigate('/settings')} />
                     {showBilling ? (
                         <MenuRow
                             icon={CreditCard}

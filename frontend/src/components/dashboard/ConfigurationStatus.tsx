@@ -2,11 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bell, Zap, Shield, HardDrive, ChevronRight } from 'lucide-react';
 import { formatCount } from '@/lib/utils';
 import { useConfigurationStatus } from './useConfigurationStatus';
+import { useNavigate } from 'react-router-dom';
 import type { SectionId } from '@/components/settings/types';
-
-interface ConfigurationStatusProps {
-  onOpenSettings?: (section: SectionId) => void;
-}
 
 function StatusBadge({ value, locked, requiredTier }: {
   value: string;
@@ -94,10 +91,11 @@ function SkeletonRow() {
   );
 }
 
-export function ConfigurationStatus({ onOpenSettings }: ConfigurationStatusProps) {
+export function ConfigurationStatus() {
+  const navigate = useNavigate();
   const { status, loading } = useConfigurationStatus();
 
-  const open = (section: SectionId) => () => onOpenSettings?.(section);
+  const open = (section: SectionId) => () => navigate(`/settings/${section}`);
 
   if (loading) {
     return (

@@ -40,7 +40,7 @@ export type SectionId =
     | 'cloud-backup'
     | 'developer'
     | 'nodes'
-    | 'appstore'
+    | 'app-store'
     | 'notification-routing'
     | 'support'
     | 'about';

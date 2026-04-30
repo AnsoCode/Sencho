@@ -1,3 +1,4 @@
+import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NodeProvider } from './context/NodeContext';
 import { LicenseProvider } from './context/LicenseContext';
@@ -44,13 +45,15 @@ import { ToastContainer } from './components/ui/toast';
 
 function App() {
   return (
-    <AuthProvider>
-      <DeployFeedbackProvider>
-        <AppContent />
-        <DeployFeedbackPortal />
-      </DeployFeedbackProvider>
-      <ToastContainer />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <DeployFeedbackProvider>
+          <AppContent />
+          <DeployFeedbackPortal />
+        </DeployFeedbackProvider>
+        <ToastContainer />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

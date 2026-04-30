@@ -3,14 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
+import { useNodes } from '@/context/NodeContext';
+import { DEFAULT_SETTINGS } from './types';
 import type { PatchableSettings } from './types';
 
 interface SystemSectionProps {
-    settings: PatchableSettings;
-    onSettingChange: <K extends keyof PatchableSettings>(key: K, value: PatchableSettings[K]) => void;
-    onSave: () => Promise<void>;
-    isSaving: boolean;
-    isLoading: boolean;
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface NumberChipProps {
@@ -153,7 +153,84 @@ function SettingsSkeleton() {
     );
 }
 
-export function SystemSection({ settings, onSettingChange, onSave, isSaving, isLoading }: SystemSectionProps) {
+type SystemFields = Pick<PatchableSettings, 'host_cpu_limit' | 'host_ram_limit' | 'host_disk_limit' | 'docker_janitor_gb' | 'global_crash'>;
+
+const DEFAULT_SYSTEM: SystemFields = {
+    host_cpu_limit: DEFAULT_SETTINGS.host_cpu_limit,
+    host_ram_limit: DEFAULT_SETTINGS.host_ram_limit,
+    host_disk_limit: DEFAULT_SETTINGS.host_disk_limit,
+    docker_janitor_gb: DEFAULT_SETTINGS.docker_janitor_gb,
+    global_crash: DEFAULT_SETTINGS.global_crash,
+};
+
+export function SystemSection({ onDirtyChange }: SystemSectionProps) {
+    const { activeNode } = useNodes();
+    const [settings, setSettings] = useState<SystemFields>({ ...DEFAULT_SYSTEM });
+    const serverSettingsRef = useRef<SystemFields>({ ...DEFAULT_SYSTEM });
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const hasChanges =
+        settings.host_cpu_limit !== serverSettingsRef.current.host_cpu_limit ||
+        settings.host_ram_limit !== serverSettingsRef.current.host_ram_limit ||
+        settings.host_disk_limit !== serverSettingsRef.current.host_disk_limit ||
+        settings.docker_janitor_gb !== serverSettingsRef.current.docker_janitor_gb ||
+        settings.global_crash !== serverSettingsRef.current.global_crash;
+
+    useEffect(() => {
+        onDirtyChange?.(hasChanges);
+    }, [hasChanges, onDirtyChange]);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            setIsLoading(true);
+            try {
+                const nodeRes = await apiFetch('/settings');
+                const nodeData: Record<string, string> = nodeRes.ok ? await nodeRes.json() : {};
+                const safe: SystemFields = {
+                    host_cpu_limit: nodeData.host_cpu_limit ?? DEFAULT_SETTINGS.host_cpu_limit,
+                    host_ram_limit: nodeData.host_ram_limit ?? DEFAULT_SETTINGS.host_ram_limit,
+                    host_disk_limit: nodeData.host_disk_limit ?? DEFAULT_SETTINGS.host_disk_limit,
+                    docker_janitor_gb: nodeData.docker_janitor_gb ?? DEFAULT_SETTINGS.docker_janitor_gb,
+                    global_crash: (nodeData.global_crash as '0' | '1') ?? DEFAULT_SETTINGS.global_crash,
+                };
+                setSettings(safe);
+                serverSettingsRef.current = { ...safe };
+            } catch (e) {
+                console.error('Failed to fetch system settings', e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeNode?.id]);
+
+    const onSettingChange = <K extends keyof SystemFields>(key: K, value: SystemFields[K]) => {
+        setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    const saveSettings = async () => {
+        setIsSaving(true);
+        try {
+            const res = await apiFetch('/settings', {
+                method: 'PATCH',
+                body: JSON.stringify(settings),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                toast.error(err?.error || err?.message || 'Failed to save settings.');
+                return;
+            }
+            serverSettingsRef.current = { ...settings };
+            toast.success('System limits saved.');
+        } catch (e: unknown) {
+            toast.error((e as Error)?.message || 'Something went wrong.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     if (isLoading) return <SettingsSkeleton />;
 
     return (
@@ -229,7 +306,7 @@ export function SystemSection({ settings, onSettingChange, onSave, isSaving, isL
             </div>
 
             <div className="flex justify-end">
-                <Button onClick={onSave} disabled={isSaving}>
+                <Button onClick={saveSettings} disabled={isSaving}>
                     {isSaving
                         ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
                         : 'Save limits'
