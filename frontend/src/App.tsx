@@ -1,4 +1,3 @@
-import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NodeProvider } from './context/NodeContext';
 import { LicenseProvider } from './context/LicenseContext';
@@ -8,6 +7,7 @@ import EditorLayout from './components/EditorLayout';
 import { MfaChallenge } from './components/MfaChallenge';
 import { DeployFeedbackProvider } from './context/DeployFeedbackContext';
 import { DeployFeedbackPortal } from './components/DeployFeedbackPortal';
+import { ToastContainer } from './components/ui/toast';
 
 function AppContent() {
   const { appStatus, isAuthenticated, needsSetup, completeSetup } = useAuth();
@@ -41,19 +41,15 @@ function AppContent() {
   );
 }
 
-import { ToastContainer } from './components/ui/toast';
-
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <DeployFeedbackProvider>
-          <AppContent />
-          <DeployFeedbackPortal />
-        </DeployFeedbackProvider>
-        <ToastContainer />
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <DeployFeedbackProvider>
+        <AppContent />
+        <DeployFeedbackPortal />
+      </DeployFeedbackProvider>
+      <ToastContainer />
+    </AuthProvider>
   );
 }
 

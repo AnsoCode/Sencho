@@ -223,7 +223,7 @@ export function LicenseSection() {
                 <SettingsSection title="Try Admiral free">
                     <div className="pt-3 flex flex-col gap-3">
                         <SettingsCallout
-                            tone="success"
+                            tone="brand"
                             icon={<ShipWheel className="h-4 w-4" strokeWidth={1.5} />}
                             title="14 days, full Admiral"
                             subtitle="Host Console, Scheduled Operations, LDAP / Active Directory, audit log, API tokens, and unlimited accounts. Lemon Squeezy needs a card; cancel any time before day 14."
@@ -284,7 +284,7 @@ export function LicenseSection() {
                         ) : null}
                         {showAdmiralUpgradeCard ? (
                             <UpgradeCard
-                                tone="success"
+                                tone="brand"
                                 icon={<ShipWheel className="h-4 w-4" />}
                                 title="Admiral"
                                 blurb="For teams managing shared infrastructure."
@@ -374,7 +374,7 @@ export function LicenseSection() {
 }
 
 interface UpgradeCardProps {
-    tone: 'warn' | 'success';
+    tone: 'warn' | 'brand';
     icon: React.ReactNode;
     title: string;
     blurb: string;

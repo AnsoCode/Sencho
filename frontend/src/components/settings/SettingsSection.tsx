@@ -17,19 +17,19 @@ interface SettingsSectionProps {
 export function SettingsSection({ title, kicker, description, children, className }: SettingsSectionProps) {
     return (
         <section className={cn('flex flex-col', className)}>
-            <header className="flex items-baseline justify-between gap-3 pb-2">
-                <h3 className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+            <header className="flex items-baseline justify-between gap-3 pb-[var(--density-cell-y,0.5rem)]">
+                <h3 className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
                     {title}
                 </h3>
                 {kicker ? (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle/70">
+                    <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle/70">
                         {kicker}
                     </span>
                 ) : null}
             </header>
             <div className="border-t border-border/60" />
             {description ? (
-                <p className="pt-3 text-[12.5px] leading-relaxed text-stat-subtitle">
+                <p className="pt-3 text-sm leading-relaxed text-stat-subtitle">
                     {description}
                 </p>
             ) : null}

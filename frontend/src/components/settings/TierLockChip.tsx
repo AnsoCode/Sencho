@@ -13,7 +13,7 @@ export function TierLockChip({ tier, showIcon = true, className }: TierLockChipP
     return (
         <span
             className={cn(
-                'inline-flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-stat-subtitle/80',
+                'inline-flex items-center gap-1 rounded-sm border border-card-border bg-card px-1.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle/80',
                 className,
             )}
         >

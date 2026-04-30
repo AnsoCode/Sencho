@@ -18,7 +18,7 @@ export function SettingsActions({ children, hint, align = 'end', className }: Se
     return (
         <div
             className={cn(
-                'flex flex-wrap items-center gap-2 pt-4',
+                'flex flex-wrap items-center gap-[var(--density-cell-y,0.5rem)] pt-[var(--density-row-y,0.75rem)]',
                 align === 'between' ? 'justify-between' : 'justify-end',
                 className,
             )}
@@ -34,12 +34,14 @@ export function SettingsActions({ children, hint, align = 'end', className }: Se
 }
 
 export const SettingsPrimaryButton = forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, ...props }, ref) => (
+    ({ className, size, ...props }, ref) => (
         <Button
             ref={ref}
+            size={size ?? 'sm'}
             {...props}
             className={cn(
                 'bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90',
+                'font-mono uppercase tracking-[0.16em] text-xs',
                 className,
             )}
         />
@@ -48,12 +50,16 @@ export const SettingsPrimaryButton = forwardRef<HTMLButtonElement, ButtonProps>(
 SettingsPrimaryButton.displayName = 'SettingsPrimaryButton';
 
 export const SettingsSecondaryButton = forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, variant, ...props }, ref) => (
+    ({ className, variant, size, ...props }, ref) => (
         <Button
             ref={ref}
             variant={variant ?? 'outline'}
+            size={size ?? 'sm'}
             {...props}
-            className={cn(className)}
+            className={cn(
+                'font-mono uppercase tracking-[0.16em] text-xs',
+                className,
+            )}
         />
     ),
 );

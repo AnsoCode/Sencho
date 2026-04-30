@@ -1,5 +1,4 @@
-import { useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useParams, Navigate, useNavigate } from 'react-router-dom';
+import { useLayoutEffect, useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     CommandDialog,
@@ -47,19 +46,43 @@ import { MastheadStatsProvider, useMastheadStatsValue } from './MastheadStatsCon
 import { TierLockChip } from './TierLockChip';
 import { cn } from '@/lib/utils';
 
-export function SettingsPage() {
+interface SettingsPageProps {
+    currentSection: SectionId;
+    onSectionChange: (section: SectionId) => void;
+}
+
+export function SettingsPage(props: SettingsPageProps) {
     return (
         <MastheadStatsProvider>
-            <SettingsPageInner />
+            <SettingsPageInner {...props} />
         </MastheadStatsProvider>
     );
 }
 
-function SettingsPageInner() {
-    const { sectionId } = useParams<{ sectionId: string }>();
-    // Derive currentSection from the registry item itself (trusted data), not from the raw
-    // URL param, so the tainted sectionId string never reaches a property write.
-    const currentSection: SectionId = (SETTINGS_ITEMS.find(i => i.id === sectionId)?.id) ?? 'appearance';
+function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProps) {
+    const { isAdmin } = useAuth();
+    const { isPaid, license } = useLicense();
+    const { activeNode } = useNodes();
+    const isRemote = activeNode?.type === 'remote';
+    const isAdmiral = isPaid && license?.variant === 'admiral';
+    const visibility: VisibilityContext = useMemo(
+        () => ({ isRemote, isAdmin, isPaid, isAdmiral }),
+        [isRemote, isAdmin, isPaid, isAdmiral],
+    );
+
+    // Resolve the rendered section: must be a registry id and must be visible to the
+    // current operator. If the current selection points to a hidden section (e.g.,
+    // node-scoped item on a remote, or admin-only item for a non-admin), fall back to
+    // the first visible item.
+    const safeSection: SectionId = useMemo(() => {
+        const direct = SETTINGS_ITEMS.find(i => i.id === currentSection);
+        if (direct && isItemVisible(direct, visibility)) return direct.id;
+        const fallback = SETTINGS_ITEMS.find(i => isItemVisible(i, visibility));
+        return fallback?.id ?? 'appearance';
+    }, [currentSection, visibility]);
+    useEffect(() => {
+        if (safeSection !== currentSection) onSectionChange(safeSection);
+    }, [safeSection, currentSection, onSectionChange]);
 
     const contentViewportRef = useRef<HTMLDivElement | null>(null);
     // Map avoids prototype pollution: Map.set() does not write to object prototype chain.
@@ -77,27 +100,17 @@ function SettingsPageInner() {
 
     useLayoutEffect(() => {
         if (contentViewportRef.current) {
-            contentViewportRef.current.scrollTop = scrollPositionsRef.current.get(currentSection) ?? 0;
+            contentViewportRef.current.scrollTop = scrollPositionsRef.current.get(safeSection) ?? 0;
         }
-    }, [currentSection]);
+    }, [safeSection]);
 
     const saveScrollPosition = useCallback(() => {
         if (contentViewportRef.current) {
-            scrollPositionsRef.current.set(currentSection, contentViewportRef.current.scrollTop);
+            scrollPositionsRef.current.set(safeSection, contentViewportRef.current.scrollTop);
         }
-    }, [currentSection]);
+    }, [safeSection]);
 
-    const { isAdmin } = useAuth();
-    const { isPaid, license } = useLicense();
-    const { activeNode } = useNodes();
-    const isRemote = activeNode?.type === 'remote';
-    const isAdmiral = isPaid && license?.variant === 'admiral';
-    const visibility: VisibilityContext = useMemo(
-        () => ({ isRemote, isAdmin, isPaid, isAdmiral }),
-        [isRemote, isAdmin, isPaid, isAdmiral],
-    );
-
-    const activeItem = getSettingsItem(currentSection);
+    const activeItem = getSettingsItem(safeSection);
     const activeGroup = activeItem ? getSettingsGroup(activeItem.group) : undefined;
     const nodeName = activeNode?.name ?? 'local';
 
@@ -116,8 +129,6 @@ function SettingsPageInner() {
         [visibleItems],
     );
 
-    const navigate = useNavigate();
-
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
             e.preventDefault();
@@ -126,7 +137,7 @@ function SettingsPageInner() {
     }, []);
 
     const sectionElement = useMemo(() => {
-        switch (currentSection) {
+        switch (safeSection) {
             case 'account': return <AccountSection />;
             case 'appearance': return <AppearanceSection />;
             case 'license': return <LicenseSection />;
@@ -146,10 +157,11 @@ function SettingsPageInner() {
             case 'app-store': return <AppStoreSection />;
             case 'support': return <SupportSection />;
             case 'about': return <AboutSection />;
-            default: return <Navigate to="/settings/appearance" replace />;
+            default: return null;
         }
+    // Section components close over isPaid for tier-gated branches; handleDirtyChange is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentSection, isPaid]);
+    }, [safeSection, isPaid]);
 
     const kicker = activeItem && activeGroup
         ? `Settings · ${activeGroup.label} · ${activeItem.label}`
@@ -167,24 +179,27 @@ function SettingsPageInner() {
 
     return (
         <div
-            className="flex flex-1 flex-col overflow-hidden min-h-0 gap-3 p-3 bg-background"
+            className="h-full overflow-auto p-6 flex flex-col gap-4 min-w-0"
             onKeyDown={handleKeyDown}
         >
             <PageMasthead
                 kicker={kicker}
                 state={activeItem?.label ?? 'Settings'}
-                tone="idle"
+                tone="live"
+                pulsing={false}
                 metadata={metadata}
-                className="rounded-xl border border-card-border border-b-card-border"
+                className="rounded-lg"
             />
 
-            <div className="flex flex-1 min-h-0 gap-3">
+            <div className="flex flex-1 min-h-0 gap-4">
                 <SettingsSidebar
                     dirtyFlags={dirtyFlags}
+                    currentSection={safeSection}
+                    onSectionChange={onSectionChange}
                     onOpenPalette={() => setCommandOpen(true)}
                 />
 
-                <div className="flex-1 min-h-0 min-w-0 rounded-xl border border-card-border bg-card overflow-hidden flex flex-col">
+                <div className="flex-1 min-h-0 min-w-0 rounded-lg border border-card-border border-t-card-border-top bg-card text-card-foreground shadow-card-bevel transition-colors overflow-hidden flex flex-col">
                     <ScrollArea
                         block
                         viewportRef={contentViewportRef}
@@ -197,7 +212,7 @@ function SettingsPageInner() {
                                     {activeItem.description}
                                 </p>
                             ) : null}
-                            <SectionGate sectionId={currentSection}>
+                            <SectionGate sectionId={safeSection}>
                                 {sectionElement}
                             </SectionGate>
                         </div>
@@ -219,7 +234,7 @@ function SettingsPageInner() {
                                     visibility={visibility}
                                     onSelect={() => {
                                         setCommandOpen(false);
-                                        navigate(`/settings/${item.id}`);
+                                        onSectionChange(item.id);
                                     }}
                                 />
                             ))}
@@ -251,7 +266,7 @@ function SettingsCommandItem({
     const searchValue = [item.label, item.description, ...item.keywords].join(' ').toLowerCase();
     return (
         <CommandItem value={searchValue} onSelect={onSelect}>
-            <span className="font-mono text-[11px] w-3 text-center text-stat-subtitle/70">{glyph}</span>
+            <span className="font-mono text-[10px] w-3 text-center text-stat-subtitle/70">{glyph}</span>
             <div className={cn('flex flex-col gap-0.5 min-w-0 flex-1', locked && 'opacity-60')}>
                 <span className="text-sm font-medium text-stat-value truncate">{item.label}</span>
                 <span className="text-xs text-stat-subtitle truncate">{item.description}</span>

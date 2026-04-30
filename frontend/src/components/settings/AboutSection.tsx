@@ -16,7 +16,7 @@ export function AboutSection() {
                     <TierBadge />
                 </SettingsField>
                 <SettingsField label="License status">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-value">
+                    <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-value">
                         {license?.status ?? 'community'}
                     </span>
                 </SettingsField>
@@ -41,7 +41,7 @@ export function AboutSection() {
                         href="https://github.com/studio-saelix/sencho/blob/main/CHANGELOG.md"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono text-[11px] uppercase tracking-[0.18em] text-brand hover:text-brand/80 transition-colors"
+                        className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-brand hover:text-brand/80 transition-colors"
                     >
                         github.com/studio-saelix/sencho →
                     </a>

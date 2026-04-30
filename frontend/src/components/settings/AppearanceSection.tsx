@@ -57,7 +57,7 @@ export function AppearanceSection() {
                 </SettingsField>
             </SettingsSection>
 
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle/70">
+            <p className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle/70">
                 ⓘ saved to this browser only · every device remembers its own choice
             </p>
         </div>

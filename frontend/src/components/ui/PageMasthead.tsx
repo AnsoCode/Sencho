@@ -68,13 +68,13 @@ export function PageMasthead({
     return (
         <div
             className={cn(
-                'relative shrink-0 overflow-hidden border-b border-card-border bg-card',
+                'relative shrink-0 overflow-hidden border border-card-border border-t-card-border-top bg-card shadow-card-bevel transition-colors',
                 className,
             )}
         >
             <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-r', config.tintClass)} />
             <div className="absolute inset-y-0 left-0 w-[3px] bg-brand" />
-            <div className="relative grid grid-cols-[1fr_auto] items-center gap-6 py-4 pl-7 pr-6">
+            <div className="relative grid grid-cols-[1fr_auto] items-center gap-6 py-5 pl-7 pr-6">
                 <div className="flex min-w-0 items-center gap-4">
                     <span
                         aria-hidden="true"
@@ -85,10 +85,10 @@ export function PageMasthead({
                         )}
                     />
                     <div className="flex min-w-0 flex-col gap-1">
-                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                        <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
                             {kicker}
                         </span>
-                        <span className={cn('font-display italic text-2xl leading-none tracking-tight', config.stateTextClass)}>
+                        <span className={cn('font-display italic text-[22px] leading-7 tracking-[-0.01em]', config.stateTextClass)}>
                             {state}
                         </span>
                     </div>
@@ -105,12 +105,12 @@ export function PageMasthead({
                                     idx > 0 && 'border-l border-border/60',
                                 )}
                             >
-                                <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
+                                <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
                                     {item.label}
                                 </span>
                                 <span
                                     className={cn(
-                                        'font-mono tabular-nums text-lg leading-none',
+                                        'font-mono font-medium tabular-nums text-xl leading-none',
                                         metadataToneClass[item.tone ?? 'value'],
                                     )}
                                 >

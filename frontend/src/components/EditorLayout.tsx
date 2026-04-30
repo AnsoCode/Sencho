@@ -36,8 +36,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
 import { cn } from '@/lib/utils';
-import { Routes, Route, Navigate, useMatch, useNavigate } from 'react-router-dom';
 import { SettingsPage } from './settings/SettingsPage';
+import type { SectionId } from './settings/types';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -326,7 +326,8 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'settings'>('dashboard');
+  const [settingsSection, setSettingsSection] = useState<SectionId>('appearance');
   const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
@@ -359,8 +360,11 @@ export default function EditorLayout() {
   const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
   const isAdmiral = license?.variant === 'admiral';
 
-  const navigate = useNavigate();
-  const isSettingsRoute = !!useMatch({ path: '/settings/*', end: false });
+  const handleOpenSettings = useCallback((section?: SectionId) => {
+    if (section) setSettingsSection(section);
+    setActiveView('settings');
+    setFilterNodeId(null);
+  }, []);
 
   // Notifications state
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -2047,7 +2051,7 @@ export default function EditorLayout() {
           toast.dismiss(loadingId);
         }
       },
-      openLabelManager: () => navigate('/settings/labels'),
+      openLabelManager: () => handleOpenSettings('labels'),
       openScheduleTask: () => {
         const stackName = file.replace(/\.(yml|yaml)$/, '');
         setSchedulePrefill({ stackName, nodeId: activeNode?.id ?? null });
@@ -2273,7 +2277,7 @@ export default function EditorLayout() {
         isDarkMode={isDarkMode}
         nodeSwitcherSlot={
           <NodeSwitcher
-            onManageNodes={() => navigate('/settings/nodes')}
+            onManageNodes={() => handleOpenSettings('nodes')}
           />
         }
         createStackSlot={createStackSlot}
@@ -2335,21 +2339,19 @@ export default function EditorLayout() {
             <UserProfileDropdown
               theme={theme}
               setTheme={setTheme}
+              onOpenSettings={() => handleOpenSettings()}
             />
           }
         />
 
         {/* Main Workspace */}
-        {isSettingsRoute ? (
-          <div className="flex-1 flex overflow-hidden">
-            <Routes>
-              <Route path="/settings/:sectionId" element={<SettingsPage />} />
-              <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
-            </Routes>
-          </div>
-        ) : (
         <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
-          {activeView === 'templates' ? (
+          {activeView === 'settings' ? (
+            <SettingsPage
+              currentSection={settingsSection}
+              onSectionChange={setSettingsSection}
+            />
+          ) : activeView === 'templates' ? (
             <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
           ) : activeView === 'resources' ? (
             <ResourcesView />
@@ -2929,12 +2931,12 @@ export default function EditorLayout() {
           ) : (
             <HomeDashboard
               onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
+              onOpenSettingsSection={(section) => handleOpenSettings(section)}
               notifications={notifications}
               onClearNotifications={clearAllNotifications}
             />
           )}
         </div>
-        )}
       </div>
 
       {/* Delete Confirmation Dialog */}

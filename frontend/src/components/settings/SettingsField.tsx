@@ -17,7 +17,7 @@ const helperToneClass: Record<SettingsFieldTone, string> = {
     default: 'text-stat-subtitle',
     warn: 'text-warning',
     error: 'text-destructive',
-    success: 'text-brand',
+    success: 'text-success',
 };
 
 /**
@@ -37,7 +37,7 @@ export function SettingsField({
     return (
         <div
             className={cn(
-                'grid grid-cols-1 gap-3 py-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:gap-6',
+                'grid grid-cols-1 gap-[var(--density-cell-y,0.5rem)] py-[var(--density-row-y,0.75rem)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:gap-[var(--density-gap,1rem)]',
                 align === 'center' ? 'md:items-center' : 'md:items-start',
                 className,
             )}
@@ -52,7 +52,7 @@ export function SettingsField({
                 {helper ? (
                     <p
                         className={cn(
-                            'font-mono text-[11px] leading-relaxed',
+                            'text-sm leading-relaxed',
                             helperToneClass[tone],
                         )}
                     >
