@@ -33,6 +33,8 @@ export function SidebarActions({ createStackSlot, onScan, isScanning, bulkMode, 
             <p>Bulk mode (B)</p>
           </TooltipContent>
         </Tooltip>
+      </TooltipProvider>
+      <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
