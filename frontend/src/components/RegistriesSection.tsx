@@ -11,6 +11,9 @@ import { apiFetch } from '@/lib/api';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import { Database, Plus, Trash2, Pencil, RefreshCw, CheckCircle, XCircle, Clock, Zap } from 'lucide-react';
+import { SettingsPrimaryButton } from './settings/SettingsActions';
+import { SettingsCallout } from './settings/SettingsCallout';
+import { useMastheadStats } from './settings/MastheadStatsContext';
 
 type RegistryType = 'dockerhub' | 'ghcr' | 'ecr' | 'custom';
 
@@ -115,6 +118,14 @@ export function RegistriesSection() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchRegistries(); }, []);
+
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'REGISTRIES', value: `${registries.length}` },
+            ],
+    );
 
     const resetForm = () => {
         setFormName('');
@@ -275,9 +286,9 @@ export function RegistriesSection() {
           <CapabilityGate capability="registries" featureName="Private Registries">
             <div className="space-y-6">
                 <div className="flex justify-end">
-                    <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
-                        <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} /> Add Registry
-                    </Button>
+                    <SettingsPrimaryButton size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
+                        <Plus className="w-4 h-4" strokeWidth={1.5} /> Add registry
+                    </SettingsPrimaryButton>
                 </div>
 
                 {/* Create / Edit form */}
@@ -356,11 +367,11 @@ export function RegistriesSection() {
                             </Button>
                             <div className="flex gap-2">
                                 <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
-                                <Button size="sm" onClick={handleSave} disabled={saving}>
+                                <SettingsPrimaryButton size="sm" onClick={handleSave} disabled={saving}>
                                     {saving ? (
-                                        <><RefreshCw className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Saving...</>
+                                        <><RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.5} />Saving</>
                                     ) : editingId ? 'Update' : 'Add'}
-                                </Button>
+                                </SettingsPrimaryButton>
                             </div>
                         </div>
                     </div>
@@ -376,11 +387,11 @@ export function RegistriesSection() {
 
                 {/* Empty state */}
                 {!loading && registries.length === 0 && !showForm && (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Database className="w-10 h-10 text-muted-foreground/50 mb-3" strokeWidth={1.5} />
-                        <p className="text-sm text-muted-foreground">No private registries configured.</p>
-                        <p className="text-xs text-muted-foreground mt-1">Add one to pull images from Docker Hub orgs, GHCR, ECR, or self-hosted registries.</p>
-                    </div>
+                    <SettingsCallout
+                        icon={<Database className="h-4 w-4" strokeWidth={1.5} />}
+                        title="No private registries configured"
+                        subtitle="Add one to pull images from Docker Hub orgs, GHCR, ECR, or self-hosted registries."
+                    />
                 )}
 
                 {/* Registry list */}

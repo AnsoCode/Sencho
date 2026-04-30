@@ -1,22 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { RefreshCw } from 'lucide-react';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
 
-function SettingsSkeleton() {
+function SectionSkeleton() {
     return (
-        <div className="space-y-6">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-            </div>
+        <div className="space-y-3 rounded-lg border border-glass-border bg-glass p-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
         </div>
     );
 }
@@ -74,53 +71,58 @@ export function AppStoreSection() {
         }
     };
 
+    if (isLoading) return <SectionSkeleton />;
+
     return (
-        <div className="space-y-6">
-            {isLoading ? <SettingsSkeleton /> : (
-                <>
-                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
-                        <div className="space-y-1">
-                            <Label className="text-base">Default Registry</Label>
-                            <p className="text-xs text-muted-foreground">
-                                LinuxServer.io - <span className="font-mono">https://api.linuxserver.io/api/v1/images</span>
-                            </p>
-                            <p className="text-xs text-muted-foreground">Used when no custom registry is set.</p>
-                        </div>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Default registry">
+                <SettingsField
+                    label="LinuxServer.io"
+                    helper="Used when no custom registry is set."
+                >
+                    <code className="font-mono text-xs text-stat-subtitle">
+                        api.linuxserver.io/api/v1/images
+                    </code>
+                </SettingsField>
+            </SettingsSection>
 
-                        <div className="space-y-3 pt-4 border-t border-glass-border">
-                            <div className="space-y-1">
-                                <Label className="text-base">Custom Registry URL</Label>
-                                <p className="text-xs text-muted-foreground">
-                                    Provide a URL pointing to a <span className="font-medium">Portainer v2</span> compatible template JSON file. Overrides the default registry.
-                                </p>
-                            </div>
-                            <Input
-                                placeholder="https://example.com/templates.json"
-                                value={templateRegistryUrl}
-                                onChange={(e) => setTemplateRegistryUrl(e.target.value)}
-                            />
-                            <p className="text-xs text-muted-foreground">Leave empty to use the default LinuxServer.io registry.</p>
-                        </div>
-                    </div>
+            <SettingsSection title="Custom registry">
+                <SettingsField
+                    label="Registry URL"
+                    helper="Provide a Portainer v2 compatible template JSON URL. Overrides the default registry. Leave empty to use LinuxServer.io."
+                    htmlFor="template-registry-url"
+                >
+                    <Input
+                        id="template-registry-url"
+                        placeholder="https://example.com/templates.json"
+                        value={templateRegistryUrl}
+                        onChange={(e) => setTemplateRegistryUrl(e.target.value)}
+                    />
+                </SettingsField>
 
-                    <div className="flex items-center justify-between">
+                <SettingsActions align="between" hint={templateRegistryUrl ? 'using custom registry' : 'using default'}>
+                    <div className="flex items-center gap-2">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setTemplateRegistryUrl('')}
                             disabled={isSavingRegistry || !templateRegistryUrl}
                         >
-                            Reset to Default
+                            Reset to default
                         </Button>
-                        <Button onClick={saveRegistrySettings} disabled={isSavingRegistry}>
-                            {isSavingRegistry
-                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-                                : 'Save & Refresh'
-                            }
-                        </Button>
+                        <SettingsPrimaryButton onClick={saveRegistrySettings} disabled={isSavingRegistry}>
+                            {isSavingRegistry ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 animate-spin" />
+                                    Saving
+                                </>
+                            ) : (
+                                'Save & refresh'
+                            )}
+                        </SettingsPrimaryButton>
                     </div>
-                </>
-            )}
+                </SettingsActions>
+            </SettingsSection>
         </div>
     );
 }

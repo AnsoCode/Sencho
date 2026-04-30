@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { TogglePill } from '@/components/ui/toggle-pill';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLicense } from '@/context/LicenseContext';
-import { RefreshCw, Database } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { useNodes } from '@/context/NodeContext';
@@ -13,21 +11,21 @@ import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 import type { SenchoSettingsChangedDetail } from '@/lib/events';
 import { DEFAULT_SETTINGS } from './types';
 import type { PatchableSettings } from './types';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface DeveloperSectionProps {
     onDirtyChange?: (dirty: boolean) => void;
 }
 
-function SettingsSkeleton() {
+function SectionSkeleton() {
     return (
-        <div className="space-y-6">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-64" />
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-            </div>
+        <div className="space-y-3 rounded-lg border border-glass-border bg-glass p-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
         </div>
     );
 }
@@ -58,6 +56,18 @@ export function DeveloperSection({ onDirtyChange }: DeveloperSectionProps) {
     useEffect(() => {
         onDirtyChange?.(hasChanges);
     }, [hasChanges, onDirtyChange]);
+
+    useMastheadStats(
+        isLoading
+            ? null
+            : [
+                {
+                    label: 'DEV MODE',
+                    value: settings.developer_mode === '1' ? 'on' : 'off',
+                    tone: settings.developer_mode === '1' ? 'warn' : 'subtitle',
+                },
+            ],
+    );
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -123,99 +133,90 @@ export function DeveloperSection({ onDirtyChange }: DeveloperSectionProps) {
         }
     };
 
+    if (isLoading) return <SectionSkeleton />;
+
     return (
-        <div className="space-y-6">
-            {isLoading ? <SettingsSkeleton /> : (
-                <>
-                    <div className="space-y-6 bg-glass border border-glass-border p-4 rounded-lg">
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                                <Label htmlFor="developer_mode" className="text-base">Developer Mode</Label>
-                                <p className="text-xs text-muted-foreground">Enable Real-Time Metrics and Debug Diagnostics</p>
-                            </div>
-                            <TogglePill
-                                id="developer_mode"
-                                checked={settings.developer_mode === '1'}
-                                onChange={(c) => onSettingChange('developer_mode', c ? '1' : '0')}
-                            />
-                        </div>
-                    </div>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Diagnostics">
+                <SettingsField
+                    label="Developer mode"
+                    helper="Enable real-time metrics streams and verbose debug diagnostics in the UI."
+                >
+                    <TogglePill
+                        id="developer_mode"
+                        checked={settings.developer_mode === '1'}
+                        onChange={(c) => onSettingChange('developer_mode', c ? '1' : '0')}
+                    />
+                </SettingsField>
+            </SettingsSection>
 
-                    {/* Data Retention (Observability) */}
-                    <div className="space-y-3">
+            <SettingsSection title="Data retention">
+                <SettingsField
+                    label="Container metrics"
+                    helper="How long to keep per-container CPU, RAM, and network history."
+                >
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="number"
+                            min={1}
+                            max={8760}
+                            value={settings.metrics_retention_hours}
+                            onChange={(e) => onSettingChange('metrics_retention_hours', e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">hrs</span>
+                    </div>
+                </SettingsField>
+
+                <SettingsField
+                    label="Notification log"
+                    helper="How long to keep alert and notification history."
+                >
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={settings.log_retention_days}
+                            onChange={(e) => onSettingChange('log_retention_days', e.target.value)}
+                            className="w-24"
+                        />
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">days</span>
+                    </div>
+                </SettingsField>
+
+                {isPaid && license?.variant === 'admiral' && (
+                    <SettingsField
+                        label="Audit log"
+                        helper="How long to keep audit trail entries."
+                    >
                         <div className="flex items-center gap-2">
-                            <Database className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm font-medium text-foreground">Data Retention</span>
+                            <Input
+                                type="number"
+                                min={1}
+                                max={365}
+                                value={settings.audit_retention_days}
+                                onChange={(e) => onSettingChange('audit_retention_days', e.target.value)}
+                                className="w-24"
+                            />
+                            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">days</span>
                         </div>
-                        <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="space-y-0.5">
-                                    <Label className="text-base">Container Metrics Retention</Label>
-                                    <p className="text-xs text-muted-foreground">How long to keep per-container CPU/RAM/network history.</p>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        max={8760}
-                                        value={settings.metrics_retention_hours}
-                                        onChange={(e) => onSettingChange('metrics_retention_hours', e.target.value)}
-                                        className="w-20"
-                                    />
-                                    <span className="text-sm text-muted-foreground w-8">hrs</span>
-                                </div>
-                            </div>
+                    </SettingsField>
+                )}
+            </SettingsSection>
 
-                            <div className="flex items-center justify-between gap-4 pt-4 border-t border-glass-border">
-                                <div className="space-y-0.5">
-                                    <Label className="text-base">Notification Log Retention</Label>
-                                    <p className="text-xs text-muted-foreground">How long to keep alert and notification history.</p>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        max={365}
-                                        value={settings.log_retention_days}
-                                        onChange={(e) => onSettingChange('log_retention_days', e.target.value)}
-                                        className="w-20"
-                                    />
-                                    <span className="text-sm text-muted-foreground w-8">days</span>
-                                </div>
-                            </div>
-
-                            {isPaid && license?.variant === 'admiral' && (
-                                <div className="flex items-center justify-between gap-4 pt-4 border-t border-glass-border">
-                                    <div className="space-y-0.5">
-                                        <Label className="text-base">Audit Log Retention</Label>
-                                        <p className="text-xs text-muted-foreground">How long to keep audit trail entries.</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            max={365}
-                                            value={settings.audit_retention_days}
-                                            onChange={(e) => onSettingChange('audit_retention_days', e.target.value)}
-                                            className="w-20"
-                                        />
-                                        <span className="text-sm text-muted-foreground w-8">days</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end">
-                        <Button onClick={saveSettings} disabled={isSaving}>
-                            {isSaving
-                                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-                                : 'Save Developer Settings'
-                            }
-                        </Button>
-                    </div>
-                </>
-            )}
+            <SettingsActions hint={hasChanges ? 'unsaved changes' : undefined}>
+                <SettingsPrimaryButton onClick={saveSettings} disabled={isSaving || !hasChanges}>
+                    {isSaving ? (
+                        <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Saving
+                        </>
+                    ) : (
+                        'Save settings'
+                    )}
+                </SettingsPrimaryButton>
+            </SettingsActions>
         </div>
     );
 }

@@ -16,6 +16,9 @@ import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from '@/components/PaidGate';
 import { CapabilityGate } from '@/components/CapabilityGate';
 import { RefreshCw, Trash2, Plus, Pencil, ShieldOff } from 'lucide-react';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface UserItem {
     id: number;
@@ -58,6 +61,14 @@ export function UsersSection() {
     };
 
     useEffect(() => { fetchUsers(); }, []);
+
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'OPERATORS', value: `${users.length}` },
+            ],
+    );
 
     const resetForm = () => {
         setFormUsername('');
@@ -253,9 +264,9 @@ export function UsersSection() {
             <div className="space-y-6">
                 {!showForm && (
                     <div className="flex justify-end">
-                        <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
-                            <Plus className="w-4 h-4 mr-1" strokeWidth={1.5} />Add User
-                        </Button>
+                        <SettingsPrimaryButton size="sm" onClick={() => { resetForm(); setShowForm(true); }}>
+                            <Plus className="w-4 h-4" strokeWidth={1.5} />Add user
+                        </SettingsPrimaryButton>
                     </div>
                 )}
 
@@ -319,9 +330,9 @@ export function UsersSection() {
                         )}
                         <div className="flex gap-2 justify-end">
                             <Button variant="outline" size="sm" onClick={resetForm}>Cancel</Button>
-                            <Button size="sm" onClick={handleSave} disabled={saving}>
-                                {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" strokeWidth={1.5} />Saving...</> : (editingUser ? 'Update User' : 'Create User')}
-                            </Button>
+                            <SettingsPrimaryButton size="sm" onClick={handleSave} disabled={saving}>
+                                {saving ? <><RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.5} />Saving</> : (editingUser ? 'Update user' : 'Create user')}
+                            </SettingsPrimaryButton>
                         </div>
 
                         {/* Scoped Permissions (Admiral, editing only) */}
@@ -406,7 +417,10 @@ export function UsersSection() {
                         <Skeleton className="h-12 w-full" />
                     </div>
                 ) : users.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground text-sm">No users found.</div>
+                    <SettingsCallout
+                        title="No users yet"
+                        subtitle="Add an operator to give someone else access to this control plane."
+                    />
                 ) : (
                     <div className="border border-glass-border rounded-lg overflow-hidden">
                         <table className="w-full text-sm">

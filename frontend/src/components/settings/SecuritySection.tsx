@@ -28,6 +28,9 @@ import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { PaidGate } from '@/components/PaidGate';
 import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info } from 'lucide-react';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 import type { FleetRole, ScanPolicy, VulnSeverity } from '@/types/security';
 import { useLicense } from '@/context/LicenseContext';
 import { useNodes } from '@/context/NodeContext';
@@ -260,6 +263,19 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     }
   };
 
+  useMastheadStats(
+    loading
+      ? null
+      : [
+          { label: 'POLICIES', value: `${policies.length}` },
+          {
+            label: 'TRIVY',
+            value: trivy.source === 'none' ? 'missing' : trivy.source,
+            tone: trivy.source === 'none' ? 'warn' : 'value',
+          },
+        ],
+  );
+
   if (!isPaid) {
     return (
       <div className="space-y-6">
@@ -277,10 +293,10 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     <div className="space-y-6">
       {!isRemote && !isReplica && (
         <div className="flex justify-end">
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            Add Policy
-          </Button>
+          <SettingsPrimaryButton size="sm" onClick={openCreate}>
+            <Plus className="w-4 h-4" />
+            Add policy
+          </SettingsPrimaryButton>
         </div>
       )}
 
@@ -317,14 +333,14 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
           {isAdmiral && (
             <div className="flex items-center gap-2 shrink-0">
               {trivy.source === 'none' && (
-                <Button size="sm" onClick={handleInstallTrivy} disabled={trivyBusy !== null}>
+                <SettingsPrimaryButton size="sm" onClick={handleInstallTrivy} disabled={trivyBusy !== null}>
                   {trivyBusy === 'install' ? (
                     <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
                   ) : (
                     <Download className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
                   )}
                   Install Trivy
-                </Button>
+                </SettingsPrimaryButton>
               )}
               {trivy.source === 'managed' && updateCheck?.updateAvailable && (
                 <Button size="sm" variant="outline" onClick={handleUpdateTrivy} disabled={trivyBusy !== null}>
@@ -399,13 +415,11 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
       )}
 
       {!isRemote && !loading && policies.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <ShieldCheck className="w-10 h-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground">No scan policies configured.</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Add one to enforce severity thresholds across your fleet.
-          </p>
-        </div>
+        <SettingsCallout
+          icon={<ShieldCheck className="h-4 w-4" />}
+          title="No scan policies configured"
+          subtitle="Add one to enforce severity thresholds across your fleet."
+        />
       )}
 
       {!isRemote && !loading &&
@@ -527,9 +541,9 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <SettingsPrimaryButton onClick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
-            </Button>
+            </SettingsPrimaryButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

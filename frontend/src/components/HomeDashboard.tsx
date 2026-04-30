@@ -1,5 +1,6 @@
 import { useNodes } from '@/context/NodeContext';
 import type { NotificationItem } from './dashboard/types';
+import type { SectionId } from './settings/types';
 import {
   HealthStatusBar,
   ResourceGauges,
@@ -12,13 +13,14 @@ import {
 
 interface HomeDashboardProps {
   onNavigateToStack?: (stackFile: string) => void;
+  onOpenSettingsSection?: (section: SectionId) => void;
   notifications: NotificationItem[];
   onClearNotifications: () => void | Promise<void>;
 }
 
 const NOOP = () => {};
 
-export default function HomeDashboard({ onNavigateToStack, notifications, onClearNotifications }: HomeDashboardProps) {
+export default function HomeDashboard({ onNavigateToStack, onOpenSettingsSection, notifications, onClearNotifications }: HomeDashboardProps) {
   const { activeNode, nodes } = useNodes();
   const data = useDashboardData();
   const activeNodeName = activeNode?.name || 'Local';
@@ -50,7 +52,7 @@ export default function HomeDashboard({ onNavigateToStack, notifications, onClea
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ConfigurationStatus />
+        <ConfigurationStatus onOpenSection={onOpenSettingsSection} />
         <RecentActivity />
       </div>
 

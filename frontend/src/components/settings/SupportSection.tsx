@@ -1,86 +1,95 @@
-import { Button } from '@/components/ui/button';
 import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from '@/components/TierBadge';
 import { Book, Bug, Mail, ExternalLink, Crown } from 'lucide-react';
+import { SettingsSection } from './SettingsSection';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsPrimaryButton } from './SettingsActions';
+
+interface ResourceLinkProps {
+    icon: React.ReactNode;
+    title: string;
+    blurb: string;
+    href: string;
+    external?: boolean;
+}
+
+function ResourceLink({ icon, title, blurb, href, external = true }: ResourceLinkProps) {
+    return (
+        <a
+            href={href}
+            target={external ? '_blank' : undefined}
+            rel={external ? 'noopener noreferrer' : undefined}
+            className="flex items-center gap-3 p-3 rounded-md border border-card-border bg-card hover:border-brand/30 transition-colors"
+        >
+            <div className="w-9 h-9 rounded-md bg-glass flex items-center justify-center shrink-0 text-stat-subtitle">
+                {icon}
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-stat-value">{title}</p>
+                <p className="text-xs text-stat-subtitle">{blurb}</p>
+            </div>
+            <ExternalLink className="w-4 h-4 text-stat-subtitle shrink-0" />
+        </a>
+    );
+}
 
 export function SupportSection() {
     const { isPaid, license } = useLicense();
 
     return (
-        <div className="space-y-6">
-            {/* Self-serve channels (all tiers) */}
-            <div className="space-y-3">
-                <h4 className="text-sm font-medium text-muted-foreground">Resources</h4>
-                <div className="grid gap-3">
-                    <a href="https://docs.sencho.io" target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-3 p-3 rounded-lg border border-glass-border hover:bg-muted/50 transition-colors">
-                        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                            <Book className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">Documentation</p>
-                            <p className="text-xs text-muted-foreground">Guides, reference, and tutorials</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </a>
-                    <a href="https://github.com/studio-saelix/sencho/issues" target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-3 p-3 rounded-lg border border-glass-border hover:bg-muted/50 transition-colors">
-                        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                            <Bug className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">GitHub Issues</p>
-                            <p className="text-xs text-muted-foreground">Report bugs and request features</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </a>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Self-serve">
+                <div className="pt-3 grid gap-3">
+                    <ResourceLink
+                        icon={<Book className="w-4 h-4" />}
+                        title="Documentation"
+                        blurb="Guides, reference, and tutorials"
+                        href="https://docs.sencho.io"
+                    />
+                    <ResourceLink
+                        icon={<Bug className="w-4 h-4" />}
+                        title="GitHub Issues"
+                        blurb="Report bugs and request features"
+                        href="https://github.com/studio-saelix/sencho/issues"
+                    />
                 </div>
-            </div>
+            </SettingsSection>
 
-            {/* Paid tier support channels */}
             {isPaid && (
-                <div className="space-y-3">
-                    <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        Priority Support <TierBadge />
-                    </h4>
-                    <div className="grid gap-3">
-                        <a href={license?.variant === 'admiral' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
-                           className="flex items-center gap-3 p-3 rounded-lg border border-glass-border hover:bg-muted/50 transition-colors">
-                            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                                <Mail className="w-4 h-4" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">
-                                    {license?.variant === 'admiral' ? 'Priority Email Support' : 'Email Support'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    {license?.variant === 'admiral'
-                                        ? 'Direct support with responses within 24 hours'
-                                        : 'Reach our support team directly'}
-                                </p>
-                            </div>
-                            <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
-                        </a>
+                <SettingsSection
+                    title="Priority support"
+                    kicker={<TierBadge />}
+                >
+                    <div className="pt-3 grid gap-3">
+                        <ResourceLink
+                            icon={<Mail className="w-4 h-4" />}
+                            title={license?.variant === 'admiral' ? 'Priority email support' : 'Email support'}
+                            blurb={
+                                license?.variant === 'admiral'
+                                    ? 'Direct support with responses within 24 hours'
+                                    : 'Reach our support team directly'
+                            }
+                            href={license?.variant === 'admiral' ? 'mailto:support@sencho.io' : 'mailto:licensing@sencho.io'}
+                            external={false}
+                        />
                     </div>
-                </div>
+                </SettingsSection>
             )}
 
-            {/* Upsell for Community */}
             {!isPaid && (
-                <div className="rounded-lg border border-glass-border p-4 bg-muted/30">
-                    <div className="flex items-start gap-3">
-                        <Crown className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
-                        <div>
-                            <p className="text-sm font-medium">Need faster support?</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Upgrade to Skipper or Admiral for direct email support and priority issue handling.
-                            </p>
-                            <Button size="sm" className="mt-3" onClick={() => window.open('https://sencho.io/#pricing', '_blank')}>
-                                View Plans
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <SettingsCallout
+                    icon={<Crown className="h-4 w-4" />}
+                    title="Need faster support?"
+                    subtitle="Skipper and Admiral tiers include direct email support and priority issue handling."
+                    action={
+                        <SettingsPrimaryButton
+                            size="sm"
+                            onClick={() => window.open('https://sencho.io/#pricing', '_blank')}
+                        >
+                            View plans
+                        </SettingsPrimaryButton>
+                    }
+                />
             )}
         </div>
     );

@@ -11,7 +11,7 @@ test.describe('Node management', () => {
     // Settings is inside the User Profile Dropdown - open it first
     await page.getByRole('button', { name: /profile/i }).click();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('link', { name: /^nodes$/i }).click();
+    await page.getByRole('button', { name: /^nodes$/i }).click();
   });
 
   /**

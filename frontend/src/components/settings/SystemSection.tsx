@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -8,6 +7,10 @@ import { toast } from '@/components/ui/toast-store';
 import { useNodes } from '@/context/NodeContext';
 import { DEFAULT_SETTINGS } from './types';
 import type { PatchableSettings } from './types';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
+import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface SystemSectionProps {
     onDirtyChange?: (dirty: boolean) => void;
@@ -118,30 +121,6 @@ function TogglePill({ checked, onChange }: TogglePillProps) {
     );
 }
 
-interface RowProps {
-    label: string;
-    desc: string;
-    control: React.ReactNode;
-    last?: boolean;
-}
-
-function Row({ label, desc, control, last }: RowProps) {
-    return (
-        <div
-            className={cn(
-                'flex items-center gap-4 px-4 py-3',
-                !last && 'border-b border-glass-border',
-            )}
-        >
-            <div className="min-w-0 flex-1">
-                <div className="text-sm text-stat-value">{label}</div>
-                <div className="mt-0.5 text-xs text-stat-subtitle">{desc}</div>
-            </div>
-            <div className="shrink-0">{control}</div>
-        </div>
-    );
-}
-
 function SettingsSkeleton() {
     return (
         <div className="space-y-3 rounded-lg border border-glass-border bg-glass p-4">
@@ -170,16 +149,34 @@ export function SystemSection({ onDirtyChange }: SystemSectionProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    const hasChanges =
-        settings.host_cpu_limit !== serverSettingsRef.current.host_cpu_limit ||
-        settings.host_ram_limit !== serverSettingsRef.current.host_ram_limit ||
-        settings.host_disk_limit !== serverSettingsRef.current.host_disk_limit ||
-        settings.docker_janitor_gb !== serverSettingsRef.current.docker_janitor_gb ||
-        settings.global_crash !== serverSettingsRef.current.global_crash;
+    const dirtyCount = useMemo(() => {
+        const baseline = serverSettingsRef.current;
+        let n = 0;
+        if (settings.host_cpu_limit !== baseline.host_cpu_limit) n++;
+        if (settings.host_ram_limit !== baseline.host_ram_limit) n++;
+        if (settings.host_disk_limit !== baseline.host_disk_limit) n++;
+        if (settings.docker_janitor_gb !== baseline.docker_janitor_gb) n++;
+        if (settings.global_crash !== baseline.global_crash) n++;
+        return n;
+    }, [settings]);
+
+    const hasChanges = dirtyCount > 0;
 
     useEffect(() => {
         onDirtyChange?.(hasChanges);
     }, [hasChanges, onDirtyChange]);
+
+    useMastheadStats(
+        isLoading
+            ? null
+            : [
+                {
+                    label: 'EDITED',
+                    value: hasChanges ? `${dirtyCount} pending` : 'saved',
+                    tone: hasChanges ? 'warn' : 'value',
+                },
+            ],
+    );
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -234,85 +231,86 @@ export function SystemSection({ onDirtyChange }: SystemSectionProps) {
     if (isLoading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-6">
-            <div className="overflow-hidden rounded-lg border border-glass-border bg-glass">
-                <Row
-                    label="Host CPU limit"
-                    desc="Alerts fire when 5-min avg exceeds"
-                    control={
-                        <NumberChip
-                            value={settings.host_cpu_limit || '90'}
-                            onChange={(v) => onSettingChange('host_cpu_limit', v)}
-                            suffix="%"
-                            min={1}
-                            max={100}
-                            warnOver={95}
-                        />
-                    }
-                />
-                <Row
-                    label="Host RAM limit"
-                    desc="Swap is never acceptable"
-                    control={
-                        <NumberChip
-                            value={settings.host_ram_limit || '90'}
-                            onChange={(v) => onSettingChange('host_ram_limit', v)}
-                            suffix="%"
-                            min={1}
-                            max={100}
-                            warnOver={95}
-                        />
-                    }
-                />
-                <Row
-                    label="Host disk limit"
-                    desc="Low free space slows image pulls and backups"
-                    control={
-                        <NumberChip
-                            value={settings.host_disk_limit || '90'}
-                            onChange={(v) => onSettingChange('host_disk_limit', v)}
-                            suffix="%"
-                            min={1}
-                            max={100}
-                            warnOver={95}
-                        />
-                    }
-                />
-                <Row
-                    label="Janitor threshold"
-                    desc="Alert when reclaimable Docker data exceeds this"
-                    control={
-                        <NumberChip
-                            value={settings.docker_janitor_gb || '5'}
-                            onChange={(v) => onSettingChange('docker_janitor_gb', v)}
-                            suffix="GiB"
-                            min={0}
-                            step={0.5}
-                            warnOver={10}
-                        />
-                    }
-                />
-                <Row
-                    last
-                    label="Global crash capture"
-                    desc="Watch every managed container for unexpected exits"
-                    control={
-                        <TogglePill
-                            checked={settings.global_crash === '1'}
-                            onChange={(next) => onSettingChange('global_crash', next ? '1' : '0')}
-                        />
-                    }
-                />
-            </div>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Host thresholds">
+                <SettingsField
+                    label="CPU limit"
+                    helper="Alerts fire when the 5-minute average exceeds this percentage."
+                >
+                    <NumberChip
+                        value={settings.host_cpu_limit || '90'}
+                        onChange={(v) => onSettingChange('host_cpu_limit', v)}
+                        suffix="%"
+                        min={1}
+                        max={100}
+                        warnOver={95}
+                    />
+                </SettingsField>
+                <SettingsField
+                    label="RAM limit"
+                    helper="Swap is never acceptable. Set this below where the host begins paging."
+                >
+                    <NumberChip
+                        value={settings.host_ram_limit || '90'}
+                        onChange={(v) => onSettingChange('host_ram_limit', v)}
+                        suffix="%"
+                        min={1}
+                        max={100}
+                        warnOver={95}
+                    />
+                </SettingsField>
+                <SettingsField
+                    label="Disk limit"
+                    helper="Low free space slows image pulls and backups."
+                >
+                    <NumberChip
+                        value={settings.host_disk_limit || '90'}
+                        onChange={(v) => onSettingChange('host_disk_limit', v)}
+                        suffix="%"
+                        min={1}
+                        max={100}
+                        warnOver={95}
+                    />
+                </SettingsField>
+            </SettingsSection>
 
-            <div className="flex justify-end">
-                <Button onClick={saveSettings} disabled={isSaving}>
-                    {isSaving
-                        ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-                        : 'Save limits'
-                    }
-                </Button>
-            </div>
+            <SettingsSection title="Docker hygiene">
+                <SettingsField
+                    label="Janitor threshold"
+                    helper="Alert when reclaimable Docker data exceeds this size."
+                >
+                    <NumberChip
+                        value={settings.docker_janitor_gb || '5'}
+                        onChange={(v) => onSettingChange('docker_janitor_gb', v)}
+                        suffix="GiB"
+                        min={0}
+                        step={0.5}
+                        warnOver={10}
+                    />
+                </SettingsField>
+                <SettingsField
+                    label="Global crash capture"
+                    helper="Watch every managed container for unexpected exits."
+                >
+                    <TogglePill
+                        checked={settings.global_crash === '1'}
+                        onChange={(next) => onSettingChange('global_crash', next ? '1' : '0')}
+                    />
+                </SettingsField>
+            </SettingsSection>
+
+            <SettingsActions hint={hasChanges ? `${dirtyCount} unsaved` : undefined}>
+                <SettingsPrimaryButton onClick={saveSettings} disabled={isSaving || !hasChanges}>
+                    {isSaving ? (
+                        <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Saving
+                        </>
+                    ) : (
+                        'Save limits'
+                    )}
+                </SettingsPrimaryButton>
+            </SettingsActions>
         </div>
     );
 }

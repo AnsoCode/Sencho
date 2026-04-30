@@ -1,46 +1,52 @@
-import { Badge } from '@/components/ui/badge';
 import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from '@/components/TierBadge';
+import { SettingsSection } from './SettingsSection';
+import { SettingsField } from './SettingsField';
 
 export function AboutSection() {
     const { license } = useLicense();
 
     return (
-        <div className="space-y-6">
-            <div className="space-y-4 bg-glass border border-glass-border p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Version</span>
-                    <Badge variant="secondary" className="font-mono">v{__APP_VERSION__}</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Tier</span>
-                    <div><TierBadge /></div>
-                </div>
-                <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">License Status</span>
-                    <Badge variant="outline" className="capitalize">{license?.status ?? 'community'}</Badge>
-                </div>
-                {license?.instanceId && (
-                    <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Instance ID</span>
-                        <code className="text-xs font-mono bg-muted px-2 py-1 rounded">{license.instanceId.slice(0, 8)}</code>
-                    </div>
-                )}
-            </div>
+        <div className="flex flex-col gap-10">
+            <SettingsSection title="Build">
+                <SettingsField label="Version">
+                    <span className="font-mono text-sm text-stat-value">v{__APP_VERSION__}</span>
+                </SettingsField>
+                <SettingsField label="Tier">
+                    <TierBadge />
+                </SettingsField>
+                <SettingsField label="License status">
+                    <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-value">
+                        {license?.status ?? 'community'}
+                    </span>
+                </SettingsField>
+                {license?.instanceId ? (
+                    <SettingsField
+                        label="Instance ID"
+                        helper="Used to identify this control plane to the license server."
+                    >
+                        <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
+                            {license.instanceId.slice(0, 8)}
+                        </code>
+                    </SettingsField>
+                ) : null}
+            </SettingsSection>
 
-            <div className="space-y-2">
-                <h4 className="text-sm font-medium">Links</h4>
-                <div className="flex flex-col gap-1.5">
+            <SettingsSection title="Links">
+                <SettingsField
+                    label="Changelog"
+                    helper="See what shipped, when, and why."
+                >
                     <a
                         href="https://github.com/studio-saelix/sencho/blob/main/CHANGELOG.md"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-brand hover:text-brand/80 transition-colors"
                     >
-                        Changelog &rarr;
+                        github.com/studio-saelix/sencho →
                     </a>
-                </div>
-            </div>
+                </SettingsField>
+            </SettingsSection>
         </div>
     );
 }

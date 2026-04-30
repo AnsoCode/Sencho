@@ -26,6 +26,9 @@ import { PaidGate } from '../PaidGate';
 import { CapabilityGate } from '../CapabilityGate';
 import { LabelDot } from '../LabelPill';
 import { LABEL_COLORS, MAX_LABELS_PER_NODE, type Label, type LabelColor } from '../label-types';
+import { SettingsCallout } from './SettingsCallout';
+import { SettingsPrimaryButton } from './SettingsActions';
+import { useMastheadStats } from './MastheadStatsContext';
 
 interface LabelsSectionProps {
     onLabelsChanged?: () => void;
@@ -71,6 +74,14 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
     }, []);
 
     useEffect(() => { fetchLabels(); }, [fetchLabels]);
+
+    useMastheadStats(
+        loading
+            ? null
+            : [
+                { label: 'LABELS', value: `${labels.length}/${MAX_LABELS_PER_NODE}` },
+            ],
+    );
 
     const openCreate = () => {
         setEditingLabel(null);
@@ -135,19 +146,21 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
           <CapabilityGate capability="labels" featureName="Stack Labels">
             <div className="space-y-4">
                 <div className="flex justify-end">
-                    <Button size="sm" onClick={openCreate} disabled={labels.length >= MAX_LABELS_PER_NODE}>
-                        <Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-                        {labels.length >= MAX_LABELS_PER_NODE ? 'Limit reached' : 'New Label'}
-                    </Button>
+                    <SettingsPrimaryButton size="sm" onClick={openCreate} disabled={labels.length >= MAX_LABELS_PER_NODE}>
+                        <Plus className="w-4 h-4" strokeWidth={1.5} />
+                        {labels.length >= MAX_LABELS_PER_NODE ? 'Limit reached' : 'New label'}
+                    </SettingsPrimaryButton>
                 </div>
 
                 <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
                     {loading ? (
-                        <div className="p-6 text-center text-sm text-muted-foreground">Loading...</div>
+                        <div className="p-6 text-center text-sm text-stat-subtitle">Loading…</div>
                     ) : labels.length === 0 ? (
-                        <div className="p-6 text-center text-sm text-muted-foreground">
-                            No labels yet. Create one to start organizing your stacks.
-                        </div>
+                        <SettingsCallout
+                            className="m-2"
+                            title="No labels yet"
+                            subtitle="Create one to start organizing your stacks."
+                        />
                     ) : (
                         <div className="divide-y divide-border">
                             {labels.map(label => (

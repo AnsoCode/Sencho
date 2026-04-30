@@ -1,10 +1,9 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useNodes } from '@/context/NodeContext';
-import { SETTINGS_ITEMS, getSettingsItem, isItemVisible, isItemLocked } from './registry';
+import { getSettingsItem, isItemVisible, isItemLocked } from './registry';
 import type { VisibilityContext } from './registry';
 import type { SectionId } from './types';
 
@@ -52,10 +51,11 @@ export function SectionGate({ sectionId, children }: SectionGateProps) {
 
     const item = getSettingsItem(sectionId);
 
-    if (!item || !isItemVisible(item, visibility)) {
-        const fallback = SETTINGS_ITEMS.find(i => isItemVisible(i, visibility));
-        return <Navigate to={`/settings/${fallback?.id ?? 'appearance'}`} replace />;
-    }
+    // SettingsPage routes invisible sections back to a visible default before this
+    // component renders, so reaching this branch means the registry shape changed
+    // mid-session. Render nothing rather than throw — SettingsPage's effect will
+    // resolve to a valid section on the next tick.
+    if (!item || !isItemVisible(item, visibility)) return null;
 
     if (isItemLocked(item, visibility) && (item.tier === 'skipper' || item.tier === 'admiral')) {
         return <TierLockedCard tier={item.tier} />;
