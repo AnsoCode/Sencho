@@ -234,6 +234,7 @@ describe('NotificationService - routing logic', () => {
       timestamp: expect.any(Number),
       stack_name: undefined,
       container_name: undefined,
+      actor_username: null,
     });
   });
 
@@ -250,6 +251,7 @@ describe('NotificationService - routing logic', () => {
       timestamp: expect.any(Number),
       stack_name: 'my-app',
       container_name: 'my-app-web-1',
+      actor_username: null,
     });
   });
 
