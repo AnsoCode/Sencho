@@ -105,9 +105,9 @@ export class NotificationService {
         level: 'info' | 'warning' | 'error',
         category: NotificationCategory,
         message: string,
-        options?: { stackName?: string; containerName?: string },
+        options?: { stackName?: string; containerName?: string; actor?: string },
     ) {
-        const { stackName, containerName } = options ?? {};
+        const { stackName, containerName, actor } = options ?? {};
         // Internal writes use the middleware default so they share a row key
         // with user-initiated requests; otherwise the UI and monitors split
         // between different node_id buckets.
@@ -119,6 +119,7 @@ export class NotificationService {
             timestamp: Date.now(),
             stack_name: stackName,
             container_name: containerName,
+            actor_username: actor ?? null,
         });
 
         // 2. Push to connected browser clients via WebSocket

@@ -2889,6 +2889,7 @@ export default function EditorLayout() {
                   onOpenGitSource={() => setGitSourceOpen(true)}
                   onApplyUpdate={() => { void updateStack(); }}
                   canEdit={can('stack:edit', 'stack', stackName)}
+                  notifications={notifications}
                 />
                 )}
               </div>

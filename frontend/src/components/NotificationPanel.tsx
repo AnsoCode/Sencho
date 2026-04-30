@@ -89,13 +89,25 @@ function formatRelative(ms: number): string {
     return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+const USER_OP_CATEGORIES = new Set([
+    'deploy_success', 'stack_started', 'stack_stopped', 'stack_restarted', 'image_update_applied',
+]);
+
+function isUserInitiatedSuccess(n: NotificationItem): boolean {
+    return n.level === 'info'
+        && n.category !== undefined
+        && USER_OP_CATEGORIES.has(n.category)
+        && n.actor_username != null
+        && n.actor_username !== 'system';
+}
+
 function applyFilter(
     items: NotificationItem[],
     filter: NotifFilter,
     nodeFilter: NodeFilter,
     categoryFilter: CategoryFilter,
 ): NotificationItem[] {
-    let result = items;
+    let result = items.filter(n => !isUserInitiatedSuccess(n));
     if (filter === 'unread') result = result.filter((n) => !n.is_read);
     else if (filter === 'alerts') result = result.filter((n) => n.level === 'warning' || n.level === 'error');
     if (nodeFilter !== NODE_FILTER_ALL) result = result.filter((n) => n.nodeId === nodeFilter);

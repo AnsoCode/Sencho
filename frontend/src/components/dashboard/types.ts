@@ -67,6 +67,7 @@ export interface NotificationItem {
   nodeName?: string;
   stack_name?: string;
   container_name?: string;
+  actor_username?: string | null;
 }
 
 export interface StackStatusEntry {

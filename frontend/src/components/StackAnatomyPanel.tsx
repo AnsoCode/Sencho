@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { parse as parseYaml } from 'yaml';
 import { GitBranch, Pencil, ExternalLink, Rocket, FolderOpen } from 'lucide-react';
 import { Button } from './ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { StackActivityTimeline } from './stack/StackActivityTimeline';
+import type { NotificationItem } from '@/components/dashboard/types';
 
 interface StackAnatomyPanelProps {
   stackName: string;
@@ -16,6 +19,7 @@ interface StackAnatomyPanelProps {
   onApplyUpdate: () => void;
   onOpenFiles?: () => void;
   canEdit: boolean;
+  notifications?: NotificationItem[];
 }
 
 type SemverBump = 'none' | 'patch' | 'minor' | 'major' | 'unknown';
@@ -232,6 +236,7 @@ export default function StackAnatomyPanel({
   onApplyUpdate,
   onOpenFiles,
   canEdit,
+  notifications,
 }: StackAnatomyPanelProps) {
   const anatomy = useMemo(() => parseAnatomy(content), [content]);
   const envKeys = useMemo(() => parseEnvKeys(envContent), [envContent]);
@@ -327,8 +332,12 @@ export default function StackAnatomyPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-xl border border-muted bg-card/40">
-      <div className="flex items-center justify-between border-b border-muted px-3 py-2 gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">anatomy</span>
+      <Tabs defaultValue="anatomy" className="flex flex-col h-full min-h-0">
+      <div className="flex items-center justify-between border-b border-muted px-3 py-1.5 gap-2">
+        <TabsList className="h-7 gap-0.5 bg-transparent border-none p-0">
+          <TabsTrigger value="anatomy" className="h-6 px-2.5 font-mono text-[10px] uppercase tracking-[0.18em]">Anatomy</TabsTrigger>
+          <TabsTrigger value="activity" className="h-6 px-2.5 font-mono text-[10px] uppercase tracking-[0.18em]">Activity</TabsTrigger>
+        </TabsList>
         <div className="flex items-center gap-3">
           {onOpenFiles && (
             <button
@@ -348,11 +357,15 @@ export default function StackAnatomyPanel({
               className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-stat-subtitle hover:text-brand transition-colors"
             >
               <Pencil className="h-3 w-3" strokeWidth={1.5} />
-              edit compose.yaml
+              edit
             </button>
           )}
         </div>
       </div>
+      <TabsContent value="activity" className="flex-1 min-h-0 overflow-y-auto px-3 mt-0">
+        <StackActivityTimeline stackName={stackName} liveEvents={notifications?.filter(n => n.stack_name === stackName)} />
+      </TabsContent>
+      <TabsContent value="anatomy" className="flex flex-col flex-1 min-h-0 mt-0">
       <div className="flex-1 min-h-0 overflow-y-auto px-3">
         {!anatomy ? (
           <div className="py-3 font-mono text-[11px] text-stat-subtitle">Unable to parse compose.yaml.</div>
@@ -511,6 +524,8 @@ export default function StackAnatomyPanel({
           )}
         </div>
       )}
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }
