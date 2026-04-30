@@ -1,0 +1,48 @@
+---
+title: Stack Activity
+description: Per-stack event log showing deploys, restarts, config changes, and alerts, each attributed to the user or system that triggered them.
+---
+
+The **Activity** tab inside each stack's panel gives you a timestamped record of everything that happened to that stack: deploys, restarts, starts, stops, and image updates. Each entry shows who triggered the event so you always have operational context.
+
+<Frame>
+  <img src="/images/stack-activity/activity-tab-populated.png" alt="Stack Activity tab showing a restart event attributed to a user" />
+</Frame>
+
+## What you'll see
+
+Each entry in the activity list contains:
+
+| Field | Description |
+|-------|-------------|
+| **Icon** | Category of the event (deploy, restart, stop, start, update) |
+| **Message** | What happened (e.g. "bazarr restarted") |
+| **Attributed to** | `by <username>` for user-initiated actions, omitted for automated system events |
+| **Time** | Relative time since the event (e.g. "just now", "5m ago", "2h ago") |
+
+Events are grouped by day: **Today**, **Yesterday**, and **Earlier**.
+
+## Who triggered an event
+
+Sencho attributes every recorded event to the user who was authenticated when the action was taken. If the action was triggered by an automated process (auto-heal, image update polling, or any other system process) the event is recorded as a system action and the attribution label is omitted from the display.
+
+## Accessing the Activity tab
+
+1. Click any stack in the left sidebar to open its panel.
+2. Switch to the **Activity** tab in the panel header.
+
+The tab loads the most recent 50 events immediately and streams new events live as they happen without a page refresh.
+
+## Pagination
+
+If a stack has more than 50 recorded events, a **Load more** button appears at the bottom of the list. Each click fetches the next 50 older events.
+
+## Troubleshooting
+
+**The Activity tab shows "No activity recorded yet"**
+
+The activity log is populated by operations performed through Sencho — deploys, restarts, starts, stops, and image updates — since the Sencho instance started tracking them. If you have not performed any of these operations on this stack via Sencho since the feature was enabled, the tab will be empty. Trigger a restart or deploy and the entry appears within a few seconds.
+
+**Events appear in the bell notification dropdown**
+
+The notification dropdown shows system alerts and error-level events only. User-initiated operational events (start, stop, restart, deploy, update) appear exclusively in the per-stack Activity tab rather than the global notification tray, keeping the tray focused on conditions that need your attention.
