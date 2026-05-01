@@ -41,6 +41,23 @@ The `.env` editor has the same save/discard controls as the compose editor. Chan
   Sencho reads the `env_file:` paths from your `compose.yaml` to discover available env files. If no `env_file:` is declared, a default `.env` in the stack directory is used.
 </Note>
 
+## Diff preview before save
+
+When the **Diff preview before save** toggle is enabled in **Settings → Appearance**, clicking **Save & Deploy** or **Save Only** opens a side-by-side diff modal before anything is written to disk. The left pane shows the current on-disk content; the right pane shows your unsaved edits, with additions highlighted in green.
+
+<Frame>
+  <img src="/images/compose-diff-preview/diff-modal.png" alt="Diff preview modal showing side-by-side YAML diff with a new comment line highlighted in green on the right" />
+</Frame>
+
+Review the diff, then:
+
+- Click **Save & deploy** (or **Save**) to confirm and write the changes to disk.
+- Click **Cancel** to return to the editor without saving.
+
+If there are no unsaved changes the modal is skipped and the save proceeds directly.
+
+The toggle is off by default and saved per browser. Each device remembers its own setting independently. Enable it in **Settings → Appearance → Diff preview before save**.
+
 ## Container panel
 
 The left column lists all containers that belong to the selected stack under the **CONTAINERS** heading. Each container shows:

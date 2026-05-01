@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 
-export const DEPLOY_FEEDBACK_KEY = 'sencho.deploy-feedback.enabled';
+export const COMPOSE_DIFF_PREVIEW_KEY = 'sencho.compose-editor.diff-preview.enabled';
 
 function readStored(): boolean {
     if (typeof window === 'undefined') return false;
     try {
-        return window.localStorage.getItem(DEPLOY_FEEDBACK_KEY) === 'true';
+        return window.localStorage.getItem(COMPOSE_DIFF_PREVIEW_KEY) === 'true';
     } catch {
         return false;
     }
 }
 
-export function useDeployFeedbackEnabled(): [boolean, (next: boolean) => void] {
+export function useComposeDiffPreviewEnabled(): [boolean, (next: boolean) => void] {
     const [enabled, setEnabledState] = useState<boolean>(readStored);
 
     useEffect(() => {
@@ -25,7 +25,7 @@ export function useDeployFeedbackEnabled(): [boolean, (next: boolean) => void] {
 
     useEffect(() => {
         function onStorage(event: StorageEvent) {
-            if (event.key !== DEPLOY_FEEDBACK_KEY) return;
+            if (event.key !== COMPOSE_DIFF_PREVIEW_KEY) return;
             setEnabledState(event.newValue === 'true');
         }
         window.addEventListener('storage', onStorage);
@@ -34,7 +34,7 @@ export function useDeployFeedbackEnabled(): [boolean, (next: boolean) => void] {
 
     const setEnabled = useCallback((next: boolean) => {
         try {
-            window.localStorage.setItem(DEPLOY_FEEDBACK_KEY, next ? 'true' : 'false');
+            window.localStorage.setItem(COMPOSE_DIFF_PREVIEW_KEY, next ? 'true' : 'false');
         } catch {
             // ignore; localStorage may be unavailable (private mode, quota)
         }
