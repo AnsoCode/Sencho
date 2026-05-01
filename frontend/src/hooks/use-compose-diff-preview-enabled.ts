@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 
 export const COMPOSE_DIFF_PREVIEW_KEY = 'sencho.compose-editor.diff-preview.enabled';
 
@@ -18,8 +19,8 @@ export function useComposeDiffPreviewEnabled(): [boolean, (next: boolean) => voi
         function onSettingsChanged() {
             setEnabledState(readStored());
         }
-        window.addEventListener('SENCHO_SETTINGS_CHANGED', onSettingsChanged);
-        return () => window.removeEventListener('SENCHO_SETTINGS_CHANGED', onSettingsChanged);
+        window.addEventListener(SENCHO_SETTINGS_CHANGED, onSettingsChanged);
+        return () => window.removeEventListener(SENCHO_SETTINGS_CHANGED, onSettingsChanged);
     }, []);
 
     useEffect(() => {
@@ -38,7 +39,7 @@ export function useComposeDiffPreviewEnabled(): [boolean, (next: boolean) => voi
             // ignore; localStorage may be unavailable (private mode, quota)
         }
         setEnabledState(next);
-        window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
+        window.dispatchEvent(new CustomEvent(SENCHO_SETTINGS_CHANGED));
     }, []);
 
     return [enabled, setEnabled];

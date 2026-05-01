@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { SENCHO_SETTINGS_CHANGED } from '@/lib/events';
 
 export const DEPLOY_FEEDBACK_KEY = 'sencho.deploy-feedback.enabled';
 
@@ -18,8 +19,8 @@ export function useDeployFeedbackEnabled(): [boolean, (next: boolean) => void] {
         function onSettingsChanged() {
             setEnabledState(readStored());
         }
-        window.addEventListener('SENCHO_SETTINGS_CHANGED', onSettingsChanged);
-        return () => window.removeEventListener('SENCHO_SETTINGS_CHANGED', onSettingsChanged);
+        window.addEventListener(SENCHO_SETTINGS_CHANGED, onSettingsChanged);
+        return () => window.removeEventListener(SENCHO_SETTINGS_CHANGED, onSettingsChanged);
     }, []);
 
     useEffect(() => {
@@ -38,7 +39,7 @@ export function useDeployFeedbackEnabled(): [boolean, (next: boolean) => void] {
             // ignore; localStorage may be unavailable (private mode, quota)
         }
         setEnabledState(next);
-        window.dispatchEvent(new CustomEvent('SENCHO_SETTINGS_CHANGED'));
+        window.dispatchEvent(new CustomEvent(SENCHO_SETTINGS_CHANGED));
     }, []);
 
     return [enabled, setEnabled];

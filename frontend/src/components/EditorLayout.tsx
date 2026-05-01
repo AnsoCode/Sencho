@@ -338,7 +338,13 @@ export default function EditorLayout() {
   const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
   const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
   const [isEditing, setIsEditing] = useState(false);
-  const [diffPreview, setDiffPreview] = useState<{ mode: 'save' | 'save-and-deploy'; deployEvent?: React.MouseEvent } | null>(null);
+  const [diffPreview, setDiffPreview] = useState<{
+    mode: 'save' | 'save-and-deploy';
+    language: 'yaml' | 'ini';
+    original: string;
+    modified: string;
+    fileName: string;
+  } | null>(null);
   const [diffPreviewConfirming, setDiffPreviewConfirming] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1266,22 +1272,34 @@ export default function EditorLayout() {
   };
 
   const requestSave = () => {
-    const isDirty = activeTab === 'compose'
-      ? content !== originalContent
-      : envContent !== originalEnvContent;
-    if (diffPreviewEnabled && activeTab !== 'files' && isDirty) {
-      setDiffPreview({ mode: 'save' });
+    const isCompose = activeTab === 'compose';
+    const orig = isCompose ? originalContent : originalEnvContent;
+    const curr = isCompose ? content : envContent;
+    if (diffPreviewEnabled && activeTab !== 'files' && curr !== orig) {
+      setDiffPreview({
+        mode: 'save',
+        language: isCompose ? 'yaml' : 'ini',
+        original: orig,
+        modified: curr,
+        fileName: isCompose ? 'compose.yaml' : (selectedEnvFile || '.env'),
+      });
     } else {
       void saveFile();
     }
   };
 
   const requestSaveAndDeploy = (e: React.MouseEvent) => {
-    const isDirty = activeTab === 'compose'
-      ? content !== originalContent
-      : envContent !== originalEnvContent;
-    if (diffPreviewEnabled && activeTab !== 'files' && isDirty) {
-      setDiffPreview({ mode: 'save-and-deploy', deployEvent: e });
+    const isCompose = activeTab === 'compose';
+    const orig = isCompose ? originalContent : originalEnvContent;
+    const curr = isCompose ? content : envContent;
+    if (diffPreviewEnabled && activeTab !== 'files' && curr !== orig) {
+      setDiffPreview({
+        mode: 'save-and-deploy',
+        language: isCompose ? 'yaml' : 'ini',
+        original: orig,
+        modified: curr,
+        fileName: isCompose ? 'compose.yaml' : (selectedEnvFile || '.env'),
+      });
     } else {
       void handleSaveAndDeploy(e);
     }
@@ -3231,10 +3249,10 @@ export default function EditorLayout() {
         open={diffPreview !== null}
         onOpenChange={(open) => { if (!open && !diffPreviewConfirming) setDiffPreview(null); }}
         stackName={selectedFile ? selectedFile.replace(/\.(yml|yaml)$/, '') : ''}
-        fileName={activeTab === 'compose' ? 'compose.yaml' : selectedEnvFile}
-        language={activeTab === 'compose' ? 'yaml' : 'ini'}
-        original={activeTab === 'compose' ? originalContent : originalEnvContent}
-        modified={activeTab === 'compose' ? content : envContent}
+        fileName={diffPreview?.fileName ?? ''}
+        language={diffPreview?.language ?? 'yaml'}
+        original={diffPreview?.original ?? ''}
+        modified={diffPreview?.modified ?? ''}
         actionLabel={diffPreview?.mode === 'save-and-deploy' ? 'Save & deploy' : 'Save'}
         confirming={diffPreviewConfirming}
         isDarkMode={isDarkMode}
@@ -3242,8 +3260,10 @@ export default function EditorLayout() {
           const snapshot = diffPreview;
           setDiffPreviewConfirming(true);
           try {
-            if (snapshot?.mode === 'save-and-deploy' && snapshot.deployEvent) {
-              await handleSaveAndDeploy(snapshot.deployEvent);
+            if (snapshot?.mode === 'save-and-deploy') {
+              await saveFile();
+              // e.preventDefault/stopPropagation are no-ops here; no browser event is in flight
+              await deployStack({ preventDefault() {}, stopPropagation() {} } as unknown as React.MouseEvent);
             } else {
               await saveFile();
             }

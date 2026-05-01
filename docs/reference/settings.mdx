@@ -71,6 +71,28 @@ Control how much information Sencho packs on screen. Each browser you sign in fr
 
 Density affects the dashboard stack table, the resource gauge strip, the Settings Hub sidebar, the Schedules and Audit Log tables, and every other data table in Sencho. Typography, color, and layout structure stay the same; only vertical padding compresses.
 
+### Deploy progress modal
+
+When enabled, Sencho streams live output in a modal whenever you deploy, restart, update, install, or run a Git operation. The modal closes automatically on success or stays open on failure so you can read the error output.
+
+| Value | Behavior |
+|-------|----------|
+| **Enabled** | A progress modal opens for every long-running operation |
+| **Disabled** (default) | Operations run silently; results surface via toast notifications only |
+
+### Diff preview before save
+
+When enabled, clicking **Save & Deploy** or **Save Only** in the compose or env editor opens a side-by-side diff modal before writing anything to disk. The left pane shows the current on-disk content; the right pane shows your unsaved edits, with additions highlighted green and removals highlighted red.
+
+| Value | Behavior |
+|-------|----------|
+| **Enabled** | Diff modal opens on every save that has unsaved changes |
+| **Disabled** (default) | File is saved directly without a review step |
+
+If there are no unsaved changes the modal is skipped and the save proceeds immediately.
+
+See [Diff preview before save](/features/editor#diff-preview-before-save) in the Editor guide for screenshots and the full workflow.
+
 ---
 
 ## License
