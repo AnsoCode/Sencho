@@ -86,7 +86,7 @@ function formatClock(ts: number | null): string {
 function RiskBadge({ bump, blocked }: { bump: SemverBump; blocked: boolean }) {
   if (blocked || bump === 'major') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-destructive">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-destructive">
         <ShieldAlert className="h-3 w-3" strokeWidth={1.5} />
         Blocked · major
       </span>
@@ -94,7 +94,7 @@ function RiskBadge({ bump, blocked }: { bump: SemverBump; blocked: boolean }) {
   }
   if (bump === 'minor') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-warning">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-warning">
         <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />
         Review · minor
       </span>
@@ -102,7 +102,7 @@ function RiskBadge({ bump, blocked }: { bump: SemverBump; blocked: boolean }) {
   }
   if (bump === 'patch') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-success">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-success">
         <Shield className="h-3 w-3" strokeWidth={1.5} />
         Safe · patch
       </span>
@@ -110,13 +110,13 @@ function RiskBadge({ bump, blocked }: { bump: SemverBump; blocked: boolean }) {
   }
   if (bump === 'unknown') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
         Digest rebuild
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
       None
     </span>
   );
@@ -164,7 +164,7 @@ function StackReadinessCard({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {!autoUpdateEnabled && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-card-border bg-muted/30 px-2.5 py-0.5 font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
               <CircleSlash className="h-3 w-3" strokeWidth={1.5} />
               Auto: Off
             </span>
@@ -188,7 +188,7 @@ function StackReadinessCard({
               {p.summary.update_kind === 'digest' ? (
                 <div className="flex items-baseline gap-2 font-mono text-sm">
                   <span className="text-stat-subtitle">{p.summary.current_tag}</span>
-                  <span className="text-brand text-[11px] uppercase tracking-[0.16em]">
+                  <span className="text-brand text-[10px] leading-3 uppercase tracking-[0.18em]">
                     Rebuild available
                   </span>
                 </div>

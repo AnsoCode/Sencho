@@ -16,7 +16,7 @@ interface RecentAlertsProps {
 const PAGE_SIZE = 8;
 
 const levelConfig: Record<string, { icon: typeof Info; className: string }> = {
-  info: { icon: Info, className: 'text-info' },
+  info: { icon: Info, className: 'text-brand' },
   warning: { icon: AlertTriangle, className: 'text-warning' },
   error: { icon: AlertOctagon, className: 'text-destructive' },
 };

@@ -210,7 +210,7 @@ export function StackHealthTable({
             className={`grid ${GRID_TEMPLATE} cursor-pointer items-center gap-4 px-[var(--density-row-x)] py-[var(--density-row-y)] transition-colors hover:bg-accent/5 ${rowTint[row.state]}`}
           >
             <span className={`h-1.5 w-1.5 rounded-full justify-self-center ${stateDot[row.state]}`} aria-hidden="true" />
-            <span className="truncate font-mono text-[13px] text-stat-value">{row.name}</span>
+            <span className="truncate font-mono text-sm text-stat-value">{row.name}</span>
             <span className="truncate font-mono text-xs text-stat-subtitle">{activeNodeName}</span>
             <span className="text-right font-mono text-xs tabular-nums text-stat-subtitle">
               {row.runningSince !== null

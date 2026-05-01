@@ -67,7 +67,7 @@ export function LogViewer({ containerId, containerName, isOpen, onClose }: LogVi
 
                 <div
                     ref={scrollRef}
-                    className="flex-1 w-full bg-[#0c0c0c] text-green-400 p-4 rounded-md overflow-y-auto font-mono text-xs mt-2"
+                    className="flex-1 w-full bg-[var(--terminal-bg)] text-success p-4 rounded-md overflow-y-auto font-mono text-xs mt-2"
                 >
                     {logs.length === 0 && !isConnected ? (
                         <div className="text-muted-foreground">Connecting to container stream...</div>

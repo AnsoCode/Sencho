@@ -65,7 +65,7 @@ export function NodeSwitcher({ onManageNodes }: NodeSwitcherProps) {
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
                     Node · {kickerType}
                 </div>
-                <div className="mt-0.5 truncate font-display text-base italic leading-none text-stat-value">
+                <div className="mt-0.5 truncate font-sans text-sm leading-none text-stat-value">
                     {activeNode?.name ?? (isLoading ? '—' : 'No node')}
                 </div>
             </div>
@@ -104,7 +104,7 @@ export function NodeSwitcher({ onManageNodes }: NodeSwitcherProps) {
                             <span className="font-display text-xl italic leading-none text-stat-value">
                                 Connected
                             </span>
-                            <span className="font-mono text-[11px] uppercase tracking-[0.14em] tabular-nums text-brand">
+                            <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] tabular-nums text-brand">
                                 {nodes.length} nodes
                             </span>
                         </div>

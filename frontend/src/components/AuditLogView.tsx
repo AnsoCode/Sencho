@@ -597,7 +597,7 @@ function StreamRow({ entry, now }: StreamRowProps) {
                     ))}
                 </div>
             </div>
-            <div className="text-[10px] font-mono uppercase tracking-wider text-stat-subtitle pt-1 whitespace-nowrap">
+            <div className="text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle pt-1 whitespace-nowrap">
                 {entry.method} {entry.path.split('?')[0]}
             </div>
         </div>

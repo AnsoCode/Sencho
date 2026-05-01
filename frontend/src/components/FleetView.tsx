@@ -46,7 +46,7 @@ function labelPaletteKey(name: string, color: LabelColor): string {
     return `${name.trim().toLowerCase()}|${color}`;
 }
 
-const FILTER_SECTION_LABEL_CLASS = 'text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
+const FILTER_SECTION_LABEL_CLASS = 'text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle';
 import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 import { formatVersion } from '@/lib/version';
 import { CursorProvider, Cursor, CursorFollow, CursorContainer } from '@/components/animate-ui/primitives/animate/cursor';
@@ -300,7 +300,7 @@ function UpdateStatusBadge({ status, error, onRetry, onDismiss }: {
     onDismiss?: () => void;
 }) {
     if (status === 'updating') return (
-        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-info/15 text-info border-info/30 shrink-0">
+        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-brand/15 text-brand border-brand/30 shrink-0">
             <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" /> Updating
         </Badge>
     );
@@ -536,18 +536,18 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
 
                 {/* Container Stats */}
                 {isOnline && node.stats && (
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                        <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none tabular-nums">{node.stats.active}</div>
-                            <div className="text-[10px] text-muted-foreground mt-1">Running</div>
+                    <div className="grid grid-cols-3 mb-3 rounded-md border border-card-border overflow-hidden">
+                        <div className="border-r border-card-border bg-card px-2.5 py-2 text-center">
+                            <div className="text-lg font-medium leading-none tabular-nums text-stat-value">{node.stats.active}</div>
+                            <div className="text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle mt-1">Running</div>
                         </div>
-                        <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none tabular-nums">{node.stats.exited}</div>
-                            <div className="text-[10px] text-muted-foreground mt-1">Stopped</div>
+                        <div className="border-r border-card-border bg-card px-2.5 py-2 text-center">
+                            <div className="text-lg font-medium leading-none tabular-nums text-stat-value">{node.stats.exited}</div>
+                            <div className="text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle mt-1">Stopped</div>
                         </div>
-                        <div className="bg-muted/50 rounded-lg px-2.5 py-2 text-center">
-                            <div className="text-lg font-medium leading-none tabular-nums">{node.stacks?.length ?? '-'}</div>
-                            <div className="text-[10px] text-muted-foreground mt-1">Stacks</div>
+                        <div className="bg-card px-2.5 py-2 text-center">
+                            <div className="text-lg font-medium leading-none tabular-nums text-stat-value">{node.stacks?.length ?? '-'}</div>
+                            <div className="text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle mt-1">Stacks</div>
                         </div>
                     </div>
                 )}
@@ -571,7 +571,7 @@ function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updating
                                 </span>
                                 <span className="font-medium">{formatBytes(node.systemStats.memory.used)} / {formatBytes(node.systemStats.memory.total)}</span>
                             </div>
-                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-destructive/80' : memPercent > 60 ? 'bg-warning' : 'bg-info'} />
+                            <UsageBar percent={memPercent} color={memPercent > 80 ? 'bg-destructive/80' : memPercent > 60 ? 'bg-warning' : 'bg-brand/60'} />
                         </div>
                         {node.systemStats.disk && (
                             <div>
@@ -1461,7 +1461,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
                                         <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{updating}</div>
                                         <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
-                                            <Loader2 className="w-3 h-3 text-info" strokeWidth={1.5} /> Updating
+                                            <Loader2 className="w-3 h-3 text-brand" strokeWidth={1.5} /> Updating
                                         </div>
                                     </div>
                                     <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
@@ -1491,7 +1491,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </div>
 
                                 {/* Table header */}
-                                <div className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 px-3 text-[10px] text-muted-foreground uppercase tracking-wider">
+                                <div className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 px-3 text-[10px] leading-3 font-mono text-stat-subtitle uppercase tracking-[0.18em]">
                                     <span>Node</span>
                                     <span>Type</span>
                                     <span>Current</span>
@@ -1504,7 +1504,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                   <div className="space-y-1">
                                     {filtered.map(s => (
                                         <div key={s.nodeId} className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 items-center rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2">
-                                            {/* Node name */}
                                             <div className="flex items-center gap-2.5 min-w-0">
                                                 <div className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${s.updateAvailable && !s.updateStatus ? 'bg-warning/10' : 'bg-muted'}`}>
                                                     {s.type === 'local'

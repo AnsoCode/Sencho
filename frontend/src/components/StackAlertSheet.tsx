@@ -202,7 +202,7 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
     const renderAgentStatusBanner = () => {
         if (agentStatus.loading) {
             return (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border text-sm text-stat-subtitle">
                     <Loader2 className="h-4 w-4 animate-spin shrink-0" />
                     <span>Checking notification channels...</span>
                 </div>
@@ -211,10 +211,10 @@ export function StackAlertSheet({ isOpen, onClose, stackName }: StackAlertSheetP
 
         if (isRemote) {
             return (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-info-muted border border-info/20 text-sm">
-                    <Info className="h-4 w-4 text-info shrink-0 mt-0.5" strokeWidth={1.5} />
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-brand/8 border border-brand/20 text-sm">
+                    <Info className="h-4 w-4 text-brand shrink-0 mt-0.5" strokeWidth={1.5} />
                     <div className="space-y-0.5">
-                        <p className="font-medium text-info">
+                        <p className="font-medium text-brand">
                             Remote node: <span className="font-medium">{activeNode?.name}</span>
                         </p>
                         <p className="text-muted-foreground">

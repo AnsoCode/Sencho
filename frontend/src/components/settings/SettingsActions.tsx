@@ -41,7 +41,7 @@ export const SettingsPrimaryButton = forwardRef<HTMLButtonElement, ButtonProps>(
             {...props}
             className={cn(
                 'bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90',
-                'font-mono uppercase tracking-[0.16em] text-xs',
+                'font-mono uppercase tracking-[0.18em] text-[10px] leading-3',
                 className,
             )}
         />
@@ -57,7 +57,7 @@ export const SettingsSecondaryButton = forwardRef<HTMLButtonElement, ButtonProps
             size={size ?? 'sm'}
             {...props}
             className={cn(
-                'font-mono uppercase tracking-[0.16em] text-xs',
+                'font-mono uppercase tracking-[0.18em] text-[10px] leading-3',
                 className,
             )}
         />

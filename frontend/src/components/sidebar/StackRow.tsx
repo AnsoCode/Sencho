@@ -95,14 +95,14 @@ export function StackRow(props: StackRowProps) {
       </span>
 
       {/* Stack name */}
-      <span className="flex-1 truncate font-mono text-[13px] min-w-0">{displayName}</span>
+      <span className="flex-1 truncate font-mono text-sm min-w-0">{displayName}</span>
 
       {/* Trailing: label dots (max 3 + overflow count) */}
       {visibleLabels.length > 0 && (
         <span className="flex items-center gap-0.5 shrink-0">
           {visibleLabels.map(l => <LabelDot key={l.id} color={l.color} />)}
           {overflowCount > 0 && (
-            <span className="font-mono text-[8px] text-stat-icon leading-none">+{overflowCount}</span>
+            <span className="font-mono text-[10px] leading-3 text-stat-icon">+{overflowCount}</span>
           )}
         </span>
       )}

@@ -72,7 +72,7 @@ export function MeshRouteDetailSheet({ open, onOpenChange, alias }: Props) {
 
                 <div className="mt-4 space-y-4">
                     <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-sm border text-[10px] font-mono uppercase tracking-wide ${pill.toneClass}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-sm border text-[10px] leading-3 font-mono uppercase tracking-[0.18em] ${pill.toneClass}`}>
                             {pill.label}
                         </span>
                         {diag?.lastProbeMs != null && (
@@ -95,7 +95,7 @@ export function MeshRouteDetailSheet({ open, onOpenChange, alias }: Props) {
 
                     {diag?.lastError && (
                         <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-xs">
-                            <div className="text-destructive font-mono uppercase tracking-wide text-[10px] mb-1">last error</div>
+                            <div className="text-destructive font-mono uppercase tracking-[0.18em] leading-3 text-[10px] mb-1">last error</div>
                             <div className="text-stat-value">{diag.lastError.message}</div>
                             <div className="text-[10px] text-stat-subtitle mt-1">{new Date(diag.lastError.ts).toLocaleString()}</div>
                         </div>
@@ -114,7 +114,7 @@ export function MeshRouteDetailSheet({ open, onOpenChange, alias }: Props) {
                     </div>
 
                     <div>
-                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono mb-2">Recent activity</div>
+                        <div className="text-[10px] leading-3 tracking-[0.18em] uppercase text-stat-subtitle font-mono mb-2">Recent activity</div>
                         <div className="space-y-1 max-h-72 overflow-auto">
                             {loading && <Loader2 className="w-4 h-4 animate-spin text-stat-subtitle" />}
                             {!loading && events.length === 0 && (

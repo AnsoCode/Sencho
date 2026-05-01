@@ -97,7 +97,7 @@ export function MeshDiagnosticsSheet({ open, onOpenChange, nodeId, nodeName }: P
                     </div>
 
                     <div>
-                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono mb-2">Active streams</div>
+                        <div className="text-[10px] tracking-[0.18em] uppercase text-stat-subtitle font-mono mb-2">Active streams</div>
                         {(!diag || diag.activeStreams.length === 0) && (
                             <div className="text-xs text-stat-subtitle">No active streams.</div>
                         )}
@@ -112,7 +112,7 @@ export function MeshDiagnosticsSheet({ open, onOpenChange, nodeId, nodeName }: P
                     </div>
 
                     <div>
-                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono mb-2">Resolver cache</div>
+                        <div className="text-[10px] tracking-[0.18em] uppercase text-stat-subtitle font-mono mb-2">Resolver cache</div>
                         {(!diag || diag.aliasCache.length === 0) && (
                             <div className="text-xs text-stat-subtitle">No aliases registered.</div>
                         )}

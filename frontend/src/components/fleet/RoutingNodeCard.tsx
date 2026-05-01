@@ -56,12 +56,12 @@ export function RoutingNodeCard({
                     <div className="flex items-center gap-2">
                         <span className="font-mono text-sm">{status.nodeName}</span>
                         {isLocal && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm border border-brand/40 bg-brand/10 text-[9px] font-mono uppercase tracking-wide text-brand">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm border border-brand/40 bg-brand/10 text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-brand">
                                 ★ Local
                             </span>
                         )}
                         {!status.pilotConnected && status.nodeId !== -1 && !isLocal && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm border border-destructive/40 bg-destructive/10 text-[9px] font-mono uppercase tracking-wide text-destructive">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm border border-destructive/40 bg-destructive/10 text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-destructive">
                                 pilot offline
                             </span>
                         )}
@@ -112,7 +112,7 @@ export function RoutingNodeCard({
                                         >
                                             {a.host}:{a.port}
                                         </button>
-                                        <span className={`shrink-0 px-1.5 py-0.5 rounded-sm border text-[9px] font-mono uppercase tracking-wide ${pill.toneClass}`}>
+                                        <span className={`shrink-0 px-1.5 py-0.5 rounded-sm border text-[10px] leading-3 font-mono uppercase tracking-[0.18em] ${pill.toneClass}`}>
                                             {pill.label}
                                         </span>
                                         <Button

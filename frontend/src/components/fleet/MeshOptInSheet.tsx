@@ -104,7 +104,7 @@ export function MeshOptInSheet({ open, onOpenChange, nodeId, nodeName, onChanged
                             </div>
                             {pendingStack === stack.name && <Loader2 className="w-3 h-3 animate-spin text-stat-subtitle" />}
                             {stack.optedIn && pendingStack !== stack.name && (
-                                <span className="text-[10px] tracking-wide uppercase text-success/80 font-mono">in mesh</span>
+                                <span className="text-[10px] leading-3 tracking-[0.18em] uppercase text-success/80 font-mono">in mesh</span>
                             )}
                         </div>
                     ))}

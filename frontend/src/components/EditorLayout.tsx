@@ -2680,7 +2680,7 @@ export default function EditorLayout() {
                               const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
 
                               return (
-                                <div key={container?.Id || Math.random()} className="rounded-lg border border-muted bg-muted/30 px-3 py-2.5">
+                                <div key={container?.Id || Math.random()} className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2.5">
                                   <div className="flex items-start justify-between gap-4">
                                     <div className="flex items-start gap-3 min-w-0 flex-1">
                                       <div className={cn('mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', badgeClass)}>
@@ -2771,7 +2771,7 @@ export default function EditorLayout() {
                                     <div className="mt-2 grid grid-cols-3 gap-2">
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">
-                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">cpu</span>
+                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">cpu</span>
                                           <span className="font-mono text-xs tabular-nums text-foreground">{stats?.cpu ?? '-'}</span>
                                         </div>
                                         <div className="ml-auto h-5 w-16">
@@ -2780,7 +2780,7 @@ export default function EditorLayout() {
                                       </div>
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">
-                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">mem</span>
+                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">mem</span>
                                           <span className="font-mono text-xs tabular-nums text-foreground">{stats?.ram ?? '-'}</span>
                                         </div>
                                         <div className="ml-auto h-5 w-16">
@@ -2789,7 +2789,7 @@ export default function EditorLayout() {
                                       </div>
                                       <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
                                         <div className="flex flex-col">
-                                          <span className="font-mono text-[9px] uppercase tracking-wide text-stat-subtitle">net i/o</span>
+                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">net i/o</span>
                                           <span className="font-mono text-xs tabular-nums text-foreground">{stats?.net ?? '-'}</span>
                                         </div>
                                         <div className="ml-auto h-5 w-16">
@@ -2964,7 +2964,7 @@ export default function EditorLayout() {
                     ) : (
                       <>
                         {activeTab === 'env' && (
-                          <div className="bg-info-muted border-b border-info/20 px-4 py-2 flex items-center gap-2 text-xs text-info">
+                          <div className="bg-brand/8 border-b border-brand/20 px-4 py-2 flex items-center gap-2 text-xs text-brand">
                             <span>
                               Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
                             </span>

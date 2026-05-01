@@ -7,8 +7,8 @@ interface StructuredLogRowProps {
 }
 
 const BADGE_CLASSES: Record<LogStage, string> = {
-  PULL:   'bg-blue-500/10 text-blue-400',
-  BUILD:  'bg-violet-500/10 text-violet-400',
+  PULL:   'bg-brand/10 text-brand',
+  BUILD:  'bg-warning/10 text-warning',
   CREATE: 'bg-brand/10 text-brand',
   START:  'bg-success/10 text-success',
   STOP:   'bg-warning/10 text-warning',
@@ -35,7 +35,7 @@ function StructuredLogRowBase({ row }: StructuredLogRowProps) {
       </span>
       <span
         className={cn(
-          'text-[10px] uppercase tracking-widest shrink-0 w-[52px] text-center rounded px-1 pt-[1px]',
+          'text-[10px] leading-3 uppercase tracking-[0.18em] shrink-0 w-[52px] text-center rounded px-1 pt-[1px]',
           BADGE_CLASSES[row.stage],
         )}
       >

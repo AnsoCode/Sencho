@@ -80,7 +80,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                 <Button
                     variant="outline"
                     size="icon"
-                    className="h-9 w-9 rounded-full p-0 font-mono text-[11px] font-semibold uppercase tracking-wider"
+                    className="h-9 w-9 rounded-full p-0 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]"
                     title="Profile"
                     aria-label="Profile"
                 >
@@ -99,7 +99,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                     <div className="relative flex items-center gap-3 px-[var(--density-row-x)] py-[var(--density-tile-y)]">
                         <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/10">
                             {initials ? (
-                                <span className="font-display text-lg leading-none text-brand">
+                                <span className="font-mono text-sm leading-none text-brand">
                                     {initials}
                                 </span>
                             ) : (
@@ -114,7 +114,7 @@ export function UserProfileDropdown({ theme, setTheme, onOpenSettings }: UserPro
                                 {roleLabel ? (
                                     <span
                                         className={cn(
-                                            'rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em]',
+                                            'rounded-sm px-1.5 py-0.5 font-mono text-[10px] leading-3 font-semibold uppercase tracking-[0.18em]',
                                             isAdmin
                                                 ? 'bg-brand/10 text-brand'
                                                 : 'bg-muted text-stat-subtitle',
