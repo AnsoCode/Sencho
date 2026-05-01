@@ -107,6 +107,10 @@ export class FileSystemService {
     throw new Error(`No compose file found for stack: ${stackName}`);
   }
 
+  async getComposeFilename(stackName: string): Promise<string> {
+    return path.basename(await this.getComposeFilePath(stackName));
+  }
+
   async getStacks(): Promise<string[]> {
     try {
       const items = await fsPromises.readdir(this.baseDir, { withFileTypes: true });

@@ -6,6 +6,7 @@ import WebSocket from 'ws';
 import DockerController from './DockerController';
 import { DatabaseService } from './DatabaseService';
 import { FileSystemService } from './FileSystemService';
+import { MeshService } from './MeshService';
 import { LogFormatter } from './LogFormatter';
 import { NodeRegistry } from './NodeRegistry';
 import { RegistryService } from './RegistryService';
@@ -34,19 +35,23 @@ export class ComposeService {
   }
 
   /**
-   * Build the `docker compose` argument prefix for a stack, automatically
-   * splicing in the Sencho Mesh override file if the stack is opted into the
-   * mesh. Returns args ready to append `up`, `down`, etc. The user's source
-   * compose file is never mutated.
+   * Build the `docker compose` argument prefix for a stack, splicing in the
+   * Sencho Mesh override file if the stack is opted into the mesh. When no
+   * override applies, returns args without `-f` so docker compose's built-in
+   * file discovery resolves the stack's actual compose filename. The user's
+   * source compose file is never mutated.
    */
   private async composeArgs(stackName: string, action: string[]): Promise<string[]> {
-    const args = ['compose', '-f', 'docker-compose.yml'];
+    const args: string[] = ['compose'];
+    let overridePath: string | null = null;
     try {
-      const { MeshService } = await import('./MeshService');
-      const overridePath = await MeshService.getInstance().ensureStackOverride(this.nodeId, stackName);
-      if (overridePath) args.push('-f', overridePath);
+      overridePath = await MeshService.getInstance().ensureStackOverride(this.nodeId, stackName);
     } catch (err) {
       console.warn('[ComposeService] mesh override skipped:', sanitizeForLog((err as Error).message));
+    }
+    if (overridePath) {
+      const baseFilename = await FileSystemService.getInstance(this.nodeId).getComposeFilename(stackName);
+      args.push('-f', baseFilename, '-f', overridePath);
     }
     args.push(...action);
     return args;
