@@ -75,7 +75,7 @@ export function ComposeDiffPreviewDialog({
         </div>
 
         <DialogFooter className="px-6 py-4 border-t border-glass-border flex flex-row items-center justify-between sm:justify-between gap-4">
-          <span className="font-mono text-xs text-stat-subtitle">ON DISK &rarr; UNSAVED</span>
+          <span className="font-mono text-xs text-stat-subtitle">ON DISK → UNSAVED</span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
