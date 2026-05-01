@@ -4,6 +4,7 @@ import {
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
     Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
     CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network, SlidersHorizontal,
+    Send, KeyRound,
 } from 'lucide-react';
 import { FleetMasthead } from './fleet/FleetMasthead';
 import { FleetTopology } from './fleet/FleetTopology';
@@ -28,6 +29,7 @@ import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from './PaidGate';
 import FleetSnapshots from './FleetSnapshots';
 import { FleetConfiguration } from './fleet/FleetConfiguration';
+import { FleetSoonPlaceholder, SoonBadge } from './fleet/FleetSoonPlaceholder';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
@@ -1047,6 +1049,25 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     <SlidersHorizontal className="w-4 h-4 mr-1.5" />Status
                                 </TabsTrigger>
                             </TabsHighlightItem>
+                            <span aria-hidden className="self-center mx-1 h-4 w-px bg-border" />
+                            <TabsHighlightItem value="deployments">
+                                <TabsTrigger value="deployments">
+                                    <Send className="w-4 h-4 mr-1.5" />Deployments
+                                    <SoonBadge />
+                                </TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="federation">
+                                <TabsTrigger value="federation">
+                                    <Network className="w-4 h-4 mr-1.5" />Federation
+                                    <SoonBadge />
+                                </TabsTrigger>
+                            </TabsHighlightItem>
+                            <TabsHighlightItem value="secrets">
+                                <TabsTrigger value="secrets">
+                                    <KeyRound className="w-4 h-4 mr-1.5" />Secrets
+                                    <SoonBadge />
+                                </TabsTrigger>
+                            </TabsHighlightItem>
                         </TabsHighlight>
                     </TabsList>
                     <div className="flex items-center gap-2">
@@ -1345,6 +1366,33 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 )}
                 <TabsContent value="configuration">
                     <FleetConfiguration />
+                </TabsContent>
+                <TabsContent value="deployments">
+                    <FleetSoonPlaceholder
+                        icon={<Send className="h-4 w-4" />}
+                        kicker="Deployments · Coming soon"
+                        title="Push stacks across the fleet"
+                        description="Push a stack from local to a remote in one move. Side-by-side compose diff, env reconciliation, volume migration plan."
+                        plannedActions={['Push stack', 'Promote env', 'Diff config', 'Plan migration']}
+                    />
+                </TabsContent>
+                <TabsContent value="federation">
+                    <FleetSoonPlaceholder
+                        icon={<Network className="h-4 w-4" />}
+                        kicker="Federation · Coming soon"
+                        title="The fleet as one logical surface"
+                        description="Pin policies, drain a node for maintenance, weight-aware scheduling. This stack runs on whichever node has capacity."
+                        plannedActions={['Pin policy', 'Drain node', 'Cordon', 'Capacity plan']}
+                    />
+                </TabsContent>
+                <TabsContent value="secrets">
+                    <FleetSoonPlaceholder
+                        icon={<KeyRound className="h-4 w-4" />}
+                        kicker="Secrets · Coming soon"
+                        title="One source of truth for env, creds and certs"
+                        description="Push to selected nodes, rotate centrally, audit who-saw-what. Solves silent drift across copies."
+                        plannedActions={['Sync env', 'Rotate', 'Audit', 'Pin to nodes']}
+                    />
                 </TabsContent>
             </Tabs>
 
