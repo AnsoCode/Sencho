@@ -70,9 +70,9 @@ export function MeshActivitySheet({ open, onOpenChange }: Props) {
                             <div key={i} className="grid grid-cols-[80px_70px_120px_1fr] gap-2 text-[11px] font-mono py-1 border-b border-card-border/50">
                                 <span className="text-stat-subtitle tabular-nums">{new Date(e.ts).toLocaleTimeString()}</span>
                                 <span className={
-                                    e.level === 'error' ? 'text-destructive uppercase tracking-wide' :
-                                    e.level === 'warn' ? 'text-warning uppercase tracking-wide' :
-                                    'text-stat-subtitle uppercase tracking-wide'
+                                    e.level === 'error' ? 'text-destructive uppercase tracking-[0.18em]' :
+                                    e.level === 'warn' ? 'text-warning uppercase tracking-[0.18em]' :
+                                    'text-stat-subtitle uppercase tracking-[0.18em]'
                                 }>{e.source}</span>
                                 <span className="text-stat-value">{e.type}</span>
                                 <span className="text-stat-value truncate" title={e.message}>{e.alias ? `[${e.alias}] ` : ''}{e.message}</span>

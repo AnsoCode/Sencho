@@ -127,7 +127,7 @@ export function HealthStatusBar({
             <span className={`font-display italic text-3xl leading-none tracking-tight ${config.textClass}`}>
               {config.label}
             </span>
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle">
+            <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
               {metaLine}
             </span>
             {reasonsLine ? (
@@ -192,7 +192,7 @@ export function HealthStatusBar({
           >
             {unreadAlerts}
           </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-stat-subtitle">
+          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">
             {unreadAlerts === 1 ? 'alert' : 'alerts'}
           </span>
         </div>

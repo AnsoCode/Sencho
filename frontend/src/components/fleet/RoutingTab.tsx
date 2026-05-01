@@ -160,11 +160,11 @@ function RoutingMasthead({ meshedNodes, onlineNodes, totalAliases, onShowActivit
                 <div className="font-display italic text-2xl">{stateWord}</div>
                 <div className="grid grid-cols-3 gap-4 text-xs">
                     <div>
-                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono">meshed</div>
+                        <div className="text-[10px] leading-3 tracking-[0.18em] uppercase text-stat-subtitle font-mono">meshed</div>
                         <div className="font-mono text-stat-value">{meshedNodes}/{onlineNodes}</div>
                     </div>
                     <div>
-                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono">aliases</div>
+                        <div className="text-[10px] leading-3 tracking-[0.18em] uppercase text-stat-subtitle font-mono">aliases</div>
                         <div className="font-mono text-stat-value">{totalAliases}</div>
                     </div>
                 </div>

@@ -91,7 +91,7 @@ function renderItem(item: MenuItem, ctx: StackMenuCtx) {
       <item.icon className="h-4 w-4 mr-2" strokeWidth={1.5} />
       <span className="flex-1">{item.label}</span>
       {item.shortcut && (
-        <span className="ml-3 font-mono text-[10px] tracking-wider text-stat-subtitle">{item.shortcut}</span>
+        <span className="ml-3 font-mono text-[10px] leading-3 tracking-[0.18em] text-stat-subtitle">{item.shortcut}</span>
       )}
     </DropdownMenuItem>
   );

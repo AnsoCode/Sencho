@@ -166,7 +166,7 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
                             {labels.map(label => (
                                 <div key={label.id} className="flex items-center gap-3 px-4 py-3 group transition-colors hover:bg-accent/5">
                                     <LabelDot color={label.color} />
-                                    <span className="font-mono text-[13px] flex-1">{label.name}</span>
+                                    <span className="font-mono text-sm flex-1">{label.name}</span>
                                     <span className="text-xs text-muted-foreground tabular-nums">
                                         {assignmentCounts[label.id] || 0} stack{(assignmentCounts[label.id] || 0) !== 1 ? 's' : ''}
                                     </span>

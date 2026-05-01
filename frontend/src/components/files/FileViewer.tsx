@@ -253,7 +253,7 @@ export function FileViewer({
         <span className="font-mono text-xs text-stat-subtitle truncate">{filename}</span>
         <div className="flex items-center gap-2 shrink-0">
           {readOnly && (
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground border border-border rounded px-1.5 py-0.5">
+            <span className="text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle border border-border rounded px-1.5 py-0.5">
               Read-only
             </span>
           )}

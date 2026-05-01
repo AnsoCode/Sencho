@@ -232,7 +232,7 @@ export function AccountSection() {
                         >
                             <div className="flex items-center gap-2">
                                 <ShieldCheck className="h-4 w-4 text-brand" strokeWidth={1.5} />
-                                <span className="font-mono text-[12px] uppercase tracking-[0.16em] text-stat-value">
+                                <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-value">
                                     enrolled
                                 </span>
                             </div>

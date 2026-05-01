@@ -19,7 +19,7 @@ interface FleetNodeConfiguration {
 function TierChip({ tier }: { tier: string }) {
   const label = tier === 'admiral' ? 'Admiral' : 'Skipper';
   return (
-    <span className="inline-flex items-center rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] font-mono tracking-wide uppercase text-warning/80">
+    <span className="inline-flex items-center rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] leading-3 font-mono tracking-[0.18em] uppercase text-warning/80">
       {label}
     </span>
   );

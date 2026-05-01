@@ -388,7 +388,7 @@ function UpgradeCard({ tone, icon, title, blurb, features, action }: UpgradeCard
         <div className="border border-card-border rounded-md bg-card p-4 flex flex-col gap-3">
             <div className="flex items-center gap-2">
                 <span className={iconClass}>{icon}</span>
-                <span className="font-display italic text-base text-stat-value">{title}</span>
+                <span className="font-sans text-base text-stat-value">{title}</span>
             </div>
             <p className="text-xs text-stat-subtitle">{blurb}</p>
             <ul className="space-y-1.5 flex-1">

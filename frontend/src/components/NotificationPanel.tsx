@@ -37,7 +37,7 @@ type LevelConfig = {
 };
 
 const LEVEL_CONFIG: Record<NotificationItem['level'], LevelConfig> = {
-    info: { icon: Info, iconClass: 'text-info', railClass: 'bg-info' },
+    info: { icon: Info, iconClass: 'text-brand', railClass: 'bg-brand' },
     warning: { icon: AlertTriangle, iconClass: 'text-warning', railClass: 'bg-warning' },
     error: { icon: AlertOctagon, iconClass: 'text-destructive', railClass: 'bg-destructive' },
 };
@@ -220,7 +220,7 @@ export function NotificationPanel({
                                 Notifications
                             </span>
                             {unreadCount > 0 ? (
-                                <span className="font-mono text-[11px] uppercase tracking-[0.14em] tabular-nums text-brand">
+                                <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] tabular-nums text-brand">
                                     {unreadCount} unread
                                 </span>
                             ) : null}

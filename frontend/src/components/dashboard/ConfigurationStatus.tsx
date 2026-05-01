@@ -80,7 +80,7 @@ function SectionHeader({ icon: Icon, label }: { icon: typeof Bell; label: string
   return (
     <div className="flex items-center gap-1.5 pt-2 pb-0.5 first:pt-0">
       <Icon className="h-3 w-3 text-stat-icon shrink-0" strokeWidth={1.5} />
-      <span className="text-[10px] font-mono tracking-widest uppercase text-stat-icon">{label}</span>
+      <span className="text-[10px] leading-3 font-mono tracking-[0.18em] uppercase text-stat-icon">{label}</span>
     </div>
   );
 }
