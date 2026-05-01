@@ -3,6 +3,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useDensity } from '@/hooks/use-density';
 import type { Density } from '@/hooks/use-density';
 import { useDeployFeedbackEnabled } from '@/hooks/use-deploy-feedback-enabled';
+import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
 import { SettingsSection } from './SettingsSection';
 import { SettingsField } from './SettingsField';
 
@@ -19,6 +20,7 @@ const DENSITY_DESCRIPTIONS: Record<Density, string> = {
 export function AppearanceSection() {
     const [density, setDensity] = useDensity();
     const [isEnabled, setEnabled] = useDeployFeedbackEnabled();
+    const [diffPreviewEnabled, setDiffPreviewEnabled] = useComposeDiffPreviewEnabled();
 
     return (
         <div className="flex flex-col gap-10">
@@ -52,6 +54,25 @@ export function AppearanceSection() {
                             className="text-sm text-stat-value cursor-pointer select-none"
                         >
                             {isEnabled ? 'Enabled' : 'Disabled'}
+                        </label>
+                    </div>
+                </SettingsField>
+
+                <SettingsField
+                    label="Diff preview before save"
+                    helper="Show a side-by-side diff of compose and env edits before they reach disk."
+                >
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="compose-diff-preview"
+                            checked={diffPreviewEnabled}
+                            onCheckedChange={(v) => setDiffPreviewEnabled(v === true)}
+                        />
+                        <label
+                            htmlFor="compose-diff-preview"
+                            className="text-sm text-stat-value cursor-pointer select-none"
+                        >
+                            {diffPreviewEnabled ? 'Enabled' : 'Disabled'}
                         </label>
                     </div>
                 </SettingsField>
