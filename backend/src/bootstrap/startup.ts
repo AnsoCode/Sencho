@@ -10,6 +10,7 @@ import TrivyService from '../services/TrivyService';
 import { ImageUpdateService } from '../services/ImageUpdateService';
 import { SchedulerService } from '../services/SchedulerService';
 import { MfaService } from '../services/MfaService';
+import { MeshService } from '../services/MeshService';
 import { sweepStaleTempDirs as sweepStaleGitTempDirs } from '../services/GitSourceService';
 import { PORT } from '../helpers/constants';
 
@@ -38,6 +39,9 @@ export async function startServer(server: Server): Promise<void> {
   ImageUpdateService.getInstance().start();
   SchedulerService.getInstance().start();
   MfaService.getInstance().start();
+  MeshService.getInstance().start().catch((err) => {
+    console.warn('[Startup] MeshService start failed:', (err as Error).message);
+  });
 
   // Async initializers are independent of each other; run in parallel
   // so total boot time is the slowest one rather than the sum.

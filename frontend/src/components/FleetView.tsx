@@ -4,7 +4,7 @@ import {
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
     Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
     CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network, SlidersHorizontal,
-    Send, KeyRound,
+    Send, KeyRound, ArrowLeftRight,
 } from 'lucide-react';
 import { FleetMasthead } from './fleet/FleetMasthead';
 import { FleetTopology } from './fleet/FleetTopology';
@@ -27,9 +27,11 @@ import { springs } from '@/lib/motion';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from './PaidGate';
+import { AdmiralGate } from './AdmiralGate';
 import FleetSnapshots from './FleetSnapshots';
 import { FleetConfiguration } from './fleet/FleetConfiguration';
 import { FleetSoonPlaceholder, SoonBadge } from './fleet/FleetSoonPlaceholder';
+import { RoutingTab } from './fleet/RoutingTab';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
@@ -673,7 +675,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [fleetPalette, setFleetPalette] = useState<FleetPaletteEntry[]>([]);
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<number, Record<string, StackLabel[]>>>({});
     const [labelFilters, setLabelFilters] = useState<Set<string>>(new Set());
-    const { isPaid } = useLicense();
+    const { isPaid, license } = useLicense();
+    const isAdmiral = isPaid && license?.variant === 'admiral';
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
@@ -1044,6 +1047,13 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </TabsTrigger>
                                 </TabsHighlightItem>
                             )}
+                            {isAdmiral && (
+                                <TabsHighlightItem value="routing">
+                                    <TabsTrigger value="routing">
+                                        <ArrowLeftRight className="w-4 h-4 mr-1.5" />Traffic · Routing
+                                    </TabsTrigger>
+                                </TabsHighlightItem>
+                            )}
                             <TabsHighlightItem value="configuration">
                                 <TabsTrigger value="configuration">
                                     <SlidersHorizontal className="w-4 h-4 mr-1.5" />Status
@@ -1362,6 +1372,13 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 {isPaid && (
                     <TabsContent value="snapshots">
                         <FleetSnapshots />
+                    </TabsContent>
+                )}
+                {isAdmiral && (
+                    <TabsContent value="routing">
+                        <AdmiralGate featureName="Sencho Mesh">
+                            <RoutingTab />
+                        </AdmiralGate>
                     </TabsContent>
                 )}
                 <TabsContent value="configuration">

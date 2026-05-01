@@ -416,15 +416,42 @@ class PilotAgent {
     }
 
     /**
-     * Always returns ok:false in PR 1. Tests inject a real resolver via
-     * setMeshResolver; PR 2 will install the Dockerode-backed implementation.
+     * Resolves a mesh target by consulting the local mesh_stacks opt-in table
+     * and Compose container labels. Refuses if the target stack is not opted
+     * in on this node (defense-in-depth: the primary is trusted, but we also
+     * gate at the agent so a leaked tunnel token cannot reach unauthorized
+     * services).
      */
     private async resolveMeshTarget(
-        _stack: string,
-        _service: string,
-        _port: number,
+        stack: string,
+        service: string,
+        port: number,
     ): Promise<MeshResolveResult> {
-        return { ok: false, err: 'mesh_not_enabled' };
+        try {
+            const { DatabaseService } = await import('../services/DatabaseService');
+            const { NodeRegistry } = await import('../services/NodeRegistry');
+            const dockerodeMod = await import('dockerode');
+            const Docker = (dockerodeMod as { default: new (opts?: unknown) => { listContainers: (opts?: unknown) => Promise<unknown[]> } }).default;
+            const db = DatabaseService.getInstance();
+            const localNodeId = NodeRegistry.getInstance().getDefaultNodeId();
+            if (!db.isMeshStackEnabled(localNodeId, stack)) {
+                return { ok: false, err: 'denied' };
+            }
+            const docker = new Docker();
+            const containers = (await docker.listContainers({
+                filters: { label: [`com.docker.compose.project=${stack}`, `com.docker.compose.service=${service}`] },
+            })) as Array<{ NetworkSettings?: { Networks?: Record<string, { IPAddress?: string }> } }>;
+            for (const c of containers) {
+                const networks = c.NetworkSettings?.Networks ?? {};
+                for (const net of Object.values(networks)) {
+                    if (net.IPAddress) return { ok: true, host: net.IPAddress, port };
+                }
+            }
+            return { ok: false, err: 'no_target' };
+        } catch (err) {
+            console.warn('[Pilot] resolveMeshTarget failed:', sanitizeForLog((err as Error).message));
+            return { ok: false, err: 'agent_error' };
+        }
     }
 }
 

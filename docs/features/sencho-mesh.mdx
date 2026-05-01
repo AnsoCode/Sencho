@@ -1,0 +1,94 @@
+---
+title: Sencho Mesh
+description: Connect containers across nodes by hostname over the Pilot tunnel — no VPN, no firewall changes, no extra ports.
+---
+
+<Note>
+  Sencho Mesh requires a Sencho **Admiral** license. Skipper and Community Edition do not include this feature.
+</Note>
+
+Sencho Mesh makes a multi-node fleet feel like one machine. Opt a stack into the mesh and its services become reachable from any other meshed stack on the fleet by a stable hostname. Traffic rides the existing Pilot tunnel, so there are no new ports to open and no separate VPN to manage.
+
+## How it works
+
+Each node runs a small `sencho-mesh` sidecar container that listens on the host's network. When you opt a stack into the mesh, Sencho:
+
+1. Generates a Compose override file that injects `extra_hosts` for every cross-node alias the fleet currently exposes.
+2. Redeploys the stack with the override applied so its containers pick up the new entries.
+3. Routes incoming traffic on the alias's port through the local sidecar, then over the Pilot tunnel to the destination node, where the sidecar dials the target container.
+
+Aliases follow a predictable scheme:
+
+```
+<service>.<stack>.<node>.sencho
+```
+
+For example, a Postgres `db` service in a stack named `api` on a node named `opsix` is reachable as `db.api.opsix.sencho` from any other meshed stack.
+
+## Enable the mesh
+
+1. Open **Fleet → Traffic · Routing**.
+2. Toggle **mesh** on for each node you want to participate.
+3. Click **Add stack to mesh** on any node and tick the stacks whose services should be reachable cross-node.
+
+Each opt-in triggers an automatic redeploy of every other meshed stack on that node so the new alias is added to their hosts files. The opt-in sheet warns you before it does.
+
+## What's exposed and what isn't
+
+Four guarantees:
+
+1. **Only opted-in services are reachable.** A stack reaches another stack's services through the mesh only if both stacks have explicitly opted in. The Pilot agent on the target node refuses any request for a non-opted service.
+2. **Aliases are not internet-reachable.** Sidecars listen only on the host network of each node. Nothing about the mesh exposes new ports beyond the host's existing firewall posture.
+3. **Traffic is encrypted in transit.** Cross-node bytes ride the existing Pilot WSS tunnel.
+4. **Tier-gated and audit-logged.** Only Admiral users can configure the mesh. Enable, disable, opt-in, and opt-out events write durable rows to the audit log with the actor's identity.
+
+What the mesh does **not** do:
+
+- No application-layer authentication. Your Postgres still needs a password.
+- No per-port firewall. Any opted-in stack can reach any other opted-in service.
+- No rate limiting or quotas.
+- No persistent traffic metrics. Live diagnostics only.
+
+## Test upstream
+
+Every alias row has a one-click **Test** button that runs a real probe across the same code path traffic uses. Result is shown inline:
+
+- **Green tick** with round-trip time when the path is healthy.
+- **Red badge** with the failing stage (`sidecar`, `pilot_tunnel`, `agent_resolve`, `agent_dial`, or `target_port`) when something is wrong.
+
+Use the Test button before assuming an issue is your application's fault. It tells you whether the mesh path itself is the problem.
+
+## Diagnostics
+
+Every node card has a **Diagnostics** button that opens a live view of:
+
+- Sidecar liveness and pilot tunnel state on this node.
+- Active TCP streams with byte counters and open age.
+- The resolver cache showing which aliases are registered.
+- A **Restart sidecar** action.
+
+This is the first place to look when a connection isn't behaving as expected.
+
+## Mesh activity
+
+The masthead has a **Mesh activity** button that opens the fleet-wide event log. Every route resolution, tunnel state change, opt-in, opt-out, and probe is recorded there. Filter by alias, source, type, or message. Useful for understanding what just happened when something flips state.
+
+## V1 limitations
+
+A few things are deliberately out of scope for the first release:
+
+- **One alias per TCP port across the fleet.** If two stacks expose the same port (e.g. two Postgres instances on 5432), only the first can be added to the mesh. The opt-in sheet shows a clear inline error if the second tries.
+- **Pilot-to-pilot routing is not supported.** Mesh works for traffic between the central node and its pilots in either direction. Two pilot nodes cannot reach each other through the mesh.
+- **No TLS termination, no blue/green cutover.** Layer 7 features land in a follow-up.
+
+## Troubleshooting
+
+**A route shows `tunnel down`.** The Pilot tunnel to the target node is gone. Check **Fleet → Overview** for the node's status. Mesh recovers automatically when the tunnel reconnects.
+
+**A route shows `unreachable`.** The tunnel is up but the destination port did not answer. Check that the target stack is running and that its service is listening on the declared port. Click **Test** to see the exact failing stage.
+
+**A route shows `not authorized`.** The destination stack is not opted into the mesh on its home node. Open Routing on that node and add the stack.
+
+**Adding a stack hangs.** Mesh redeploys peers on opt-in to refresh hostnames. A stuck redeploy usually means the stack itself failed to come back up. Check the stack's deploy logs.
+
+**The sidecar shows `off` for a node.** Click **Diagnostics → Restart sidecar** on the node card. If the sidecar still does not come up, check the node's `docker ps -a` output for `sencho-mesh-<id>` and inspect its logs.

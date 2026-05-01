@@ -519,6 +519,7 @@ export class DatabaseService {
         this.migratePolicyEvaluationColumn();
         this.migrateNotificationCategory();
         this.migrateNotificationActor();
+        this.migrateMeshTables();
 
         // Reset the cache once at end of constructor in case any migration
         // populated it via getGlobalSettings() and a subsequent migration
@@ -1249,6 +1250,62 @@ export class DatabaseService {
         } catch {
             // index already present or partial-index syntax unsupported
         }
+    }
+
+    private migrateMeshTables(): void {
+        try {
+            this.db.prepare(`
+                CREATE TABLE IF NOT EXISTS mesh_stacks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    node_id INTEGER NOT NULL,
+                    stack_name TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    created_by TEXT,
+                    UNIQUE(node_id, stack_name),
+                    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+                )
+            `).run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_mesh_stacks_node ON mesh_stacks(node_id)').run();
+        } catch (e) {
+            console.warn('[DatabaseService] Could not create mesh_stacks:', (e as Error).message);
+        }
+        this.tryAddColumn('nodes', 'mesh_enabled', 'INTEGER NOT NULL DEFAULT 0');
+    }
+
+    // --- Sencho Mesh ---
+
+    public listMeshStacks(nodeId?: number): Array<{ id: number; node_id: number; stack_name: string; created_at: number; created_by: string | null }> {
+        const sql = nodeId !== undefined
+            ? 'SELECT id, node_id, stack_name, created_at, created_by FROM mesh_stacks WHERE node_id = ?'
+            : 'SELECT id, node_id, stack_name, created_at, created_by FROM mesh_stacks';
+        const rows = nodeId !== undefined
+            ? this.db.prepare(sql).all(nodeId)
+            : this.db.prepare(sql).all();
+        return rows as Array<{ id: number; node_id: number; stack_name: string; created_at: number; created_by: string | null }>;
+    }
+
+    public isMeshStackEnabled(nodeId: number, stackName: string): boolean {
+        const row = this.db.prepare('SELECT 1 FROM mesh_stacks WHERE node_id = ? AND stack_name = ?').get(nodeId, stackName);
+        return !!row;
+    }
+
+    public insertMeshStack(nodeId: number, stackName: string, createdBy: string | null): void {
+        this.db.prepare(
+            'INSERT INTO mesh_stacks (node_id, stack_name, created_at, created_by) VALUES (?, ?, ?, ?)'
+        ).run(nodeId, stackName, Date.now(), createdBy);
+    }
+
+    public deleteMeshStack(nodeId: number, stackName: string): void {
+        this.db.prepare('DELETE FROM mesh_stacks WHERE node_id = ? AND stack_name = ?').run(nodeId, stackName);
+    }
+
+    public setNodeMeshEnabled(nodeId: number, enabled: boolean): void {
+        this.db.prepare('UPDATE nodes SET mesh_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, nodeId);
+    }
+
+    public getNodeMeshEnabled(nodeId: number): boolean {
+        const row = this.db.prepare('SELECT mesh_enabled FROM nodes WHERE id = ?').get(nodeId) as { mesh_enabled?: number } | undefined;
+        return !!row?.mesh_enabled;
     }
 
     // --- Agents ---
