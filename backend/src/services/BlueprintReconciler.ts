@@ -12,7 +12,7 @@ import { NotificationService } from './NotificationService';
 const RECONCILER_INTERVAL_MS = 60_000;
 const RECONCILER_INITIAL_DELAY_MS = 5_000;
 
-interface ReconcileDecision {
+export interface ReconcileDecision {
     deploy: Node[];
     withdraw: Node[];
     check: Node[];

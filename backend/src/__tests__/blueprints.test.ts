@@ -14,6 +14,10 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { setupTestDb, cleanupTestDb } from './helpers/setupTestDb';
+import type { Blueprint, Node } from '../services/DatabaseService';
+import type { ReconcileDecision } from '../services/BlueprintReconciler';
+
+type ReconcilerWithCompute = { computeDecision: (blueprint: Blueprint, allNodes: Node[]) => ReconcileDecision };
 
 let tmpDir: string;
 let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
@@ -76,7 +80,7 @@ describe('BlueprintReconciler.computeDecision', () => {
     it('queues deploy for a stateless blueprint targeting a fresh node', () => {
         const nodeId = seedNode();
         const bp = seedBlueprint({ classification: 'stateless', nodeIds: [nodeId] });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.deploy.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -86,7 +90,7 @@ describe('BlueprintReconciler.computeDecision', () => {
     it('queues state-review (not deploy) for a stateful blueprint targeting a fresh node', () => {
         const nodeId = seedNode();
         const bp = seedBlueprint({ classification: 'stateful', nodeIds: [nodeId] });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.stateReview.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -102,7 +106,7 @@ describe('BlueprintReconciler.computeDecision', () => {
             status: 'active',
             applied_revision: bp.revision,
         });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.check.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -118,7 +122,7 @@ describe('BlueprintReconciler.computeDecision', () => {
             status: 'active',
             applied_revision: bp.revision - 1,
         });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.deploy.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -133,7 +137,7 @@ describe('BlueprintReconciler.computeDecision', () => {
             status: 'active',
             applied_revision: bp.revision,
         });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.withdraw.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -149,7 +153,7 @@ describe('BlueprintReconciler.computeDecision', () => {
             status: 'active',
             applied_revision: bp.revision,
         });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.evictBlocked.map((n: { id: number }) => n.id)).toContain(nodeId);
@@ -164,7 +168,7 @@ describe('BlueprintReconciler.computeDecision', () => {
         DatabaseService.getInstance().upsertDeployment({ blueprint_id: bp.id, node_id: nodeA, status: 'pending_state_review' });
         DatabaseService.getInstance().upsertDeployment({ blueprint_id: bp.id, node_id: nodeB, status: 'evict_blocked' });
         DatabaseService.getInstance().upsertDeployment({ blueprint_id: bp.id, node_id: nodeC, status: 'name_conflict' });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.deploy).toEqual([]);
@@ -188,7 +192,7 @@ describe('BlueprintReconciler.computeDecision', () => {
             enabled: true,
             created_by: null,
         });
-        const reconciler = BlueprintReconciler.getInstance() as unknown as { computeDecision: Function };
+        const reconciler = BlueprintReconciler.getInstance() as unknown as ReconcilerWithCompute;
         const allNodes = DatabaseService.getInstance().getNodes();
         const decision = reconciler.computeDecision(bp, allNodes);
         expect(decision.deploy.map((n: { id: number }) => n.id)).toContain(nodeA);
