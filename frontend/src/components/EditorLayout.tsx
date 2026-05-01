@@ -78,6 +78,8 @@ import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-type
 import { useBulkStackActions, type BulkAction } from '@/hooks/useBulkStackActions';
 import { isInputFocused, isPaletteOpen } from '@/lib/keyboard-guards';
 import { StackFileExplorer } from '@/components/files/StackFileExplorer';
+import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
+import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
 
 interface ContainerInfo {
   Id: string;
@@ -328,6 +330,7 @@ export default function EditorLayout() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
+  const [diffPreviewEnabled] = useComposeDiffPreviewEnabled();
   const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'settings'>('dashboard');
   const [settingsSection, setSettingsSection] = useState<SectionId>('appearance');
   const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
@@ -335,6 +338,8 @@ export default function EditorLayout() {
   const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
   const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
   const [isEditing, setIsEditing] = useState(false);
+  const [diffPreview, setDiffPreview] = useState<{ mode: 'save' | 'save-and-deploy'; deployEvent?: React.MouseEvent } | null>(null);
+  const [diffPreviewConfirming, setDiffPreviewConfirming] = useState(false);
   const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
@@ -1257,6 +1262,28 @@ export default function EditorLayout() {
     } catch (error) {
       console.error('Failed to save file:', error);
       toast.error(`Failed to save file: ${(error as Error).message}`);
+    }
+  };
+
+  const requestSave = () => {
+    const isDirty = activeTab === 'compose'
+      ? content !== originalContent
+      : envContent !== originalEnvContent;
+    if (diffPreviewEnabled && activeTab !== 'files' && isDirty) {
+      setDiffPreview({ mode: 'save' });
+    } else {
+      void saveFile();
+    }
+  };
+
+  const requestSaveAndDeploy = (e: React.MouseEvent) => {
+    const isDirty = activeTab === 'compose'
+      ? content !== originalContent
+      : envContent !== originalEnvContent;
+    if (diffPreviewEnabled && activeTab !== 'files' && isDirty) {
+      setDiffPreview({ mode: 'save-and-deploy', deployEvent: e });
+    } else {
+      void handleSaveAndDeploy(e);
     }
   };
 
@@ -2866,7 +2893,7 @@ export default function EditorLayout() {
                           </Button>
                         ) : (
                           <div className="flex items-center">
-                            <Button size="sm" variant="default" className="rounded-l-lg rounded-r-none" onClick={handleSaveAndDeploy} disabled={loadingAction === 'deploy'}>
+                            <Button size="sm" variant="default" className="rounded-l-lg rounded-r-none" onClick={requestSaveAndDeploy} disabled={loadingAction === 'deploy'}>
                               <Rocket className="w-4 h-4 mr-2" strokeWidth={1.5} />
                               Save & Deploy
                             </Button>
@@ -2877,7 +2904,7 @@ export default function EditorLayout() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={saveFile}>
+                                <DropdownMenuItem onClick={requestSave}>
                                   <Save className="w-4 h-4 mr-2" strokeWidth={1.5} />
                                   Save Only
                                 </DropdownMenuItem>
@@ -3197,6 +3224,34 @@ export default function EditorLayout() {
       <VulnerabilityScanSheet
         scanId={stackMisconfigScanId}
         onClose={() => setStackMisconfigScanId(null)}
+      />
+
+      {/* Compose diff preview */}
+      <ComposeDiffPreviewDialog
+        open={diffPreview !== null}
+        onOpenChange={(open) => { if (!open && !diffPreviewConfirming) setDiffPreview(null); }}
+        stackName={selectedFile ? selectedFile.replace(/\.(yml|yaml)$/, '') : ''}
+        fileName={activeTab === 'compose' ? 'compose.yaml' : selectedEnvFile}
+        language={activeTab === 'compose' ? 'yaml' : 'ini'}
+        original={activeTab === 'compose' ? originalContent : originalEnvContent}
+        modified={activeTab === 'compose' ? content : envContent}
+        actionLabel={diffPreview?.mode === 'save-and-deploy' ? 'Save & deploy' : 'Save'}
+        confirming={diffPreviewConfirming}
+        isDarkMode={isDarkMode}
+        onConfirm={async () => {
+          const snapshot = diffPreview;
+          setDiffPreviewConfirming(true);
+          try {
+            if (snapshot?.mode === 'save-and-deploy' && snapshot.deployEvent) {
+              await handleSaveAndDeploy(snapshot.deployEvent);
+            } else {
+              await saveFile();
+            }
+          } finally {
+            setDiffPreviewConfirming(false);
+            setDiffPreview(null);
+          }
+        }}
       />
 
       {/* Scan history overlay */}
