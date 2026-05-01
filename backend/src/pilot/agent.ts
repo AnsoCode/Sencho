@@ -1,10 +1,12 @@
 import fs from 'fs';
+import net from 'net';
 import path from 'path';
 import http from 'http';
 import WebSocket from 'ws';
 import { getSenchoVersion } from '../services/CapabilityRegistry';
 import {
     BinaryFrameType,
+    MeshErrCode,
     PROTOCOL_VERSION,
     decodeBinaryFrame,
     decodeJsonFrame,
@@ -66,6 +68,7 @@ class PilotAgent {
     private reconnectTimer?: NodeJS.Timeout;
     private readonly httpStreams = new Map<number, { req: http.ClientRequest }>();
     private readonly wsStreams = new Map<number, WebSocket>();
+    private readonly tcpStreams = new Map<number, MeshTcpStream>();
     private shuttingDown = false;
     private readonly agentVersion: string;
 
@@ -143,6 +146,10 @@ class PilotAgent {
             try { ws.close(1006, 'tunnel closed'); } catch { /* ignore */ }
         }
         this.wsStreams.clear();
+        for (const [, stream] of this.tcpStreams) {
+            try { stream.socket.destroy(); } catch { /* ignore */ }
+        }
+        this.tcpStreams.clear();
     }
 
     private scheduleReconnect(): void {
@@ -199,6 +206,8 @@ class PilotAgent {
             case 'ws_open': this.onWsOpen(frame); break;
             case 'ws_msg_text': this.onWsMsgText(frame.s, frame.data); break;
             case 'ws_close': this.onWsClose(frame.s, frame.code, frame.reason); break;
+            case 'tcp_open': this.onTcpOpen(frame); break;
+            case 'tcp_close': this.onTcpClose(frame.s); break;
             default:
                 // Other frame types are primary-bound only; agent ignores.
                 break;
@@ -217,6 +226,12 @@ class PilotAgent {
                 const ws = this.wsStreams.get(frame.streamId);
                 if (!ws) return;
                 try { ws.send(frame.payload, { binary: true }); } catch { /* ignore */ }
+                break;
+            }
+            case BinaryFrameType.TcpData: {
+                const stream = this.tcpStreams.get(frame.streamId);
+                if (!stream) return;
+                try { stream.socket.write(frame.payload); } catch { /* ignore */ }
                 break;
             }
             default:
@@ -329,7 +344,100 @@ class PilotAgent {
         try { ws.close(code, reason); } catch { /* ignore */ }
         this.wsStreams.delete(streamId);
     }
+
+    // --- Sencho Mesh TCP dispatch (tunnel -> Compose service container) ---
+    //
+    // PR 1 rejects every tcp_open with mesh_not_enabled; the dial path is
+    // exercised by tests via setMeshResolver but never lit in production until
+    // PR 2 wires Dockerode resolution gated by the local mesh_stacks table.
+
+    private async onTcpOpen(frame: Extract<ReturnType<typeof decodeJsonFrame>, { t: 'tcp_open' }>): Promise<void> {
+        const ws = this.ws;
+        if (!ws) return;
+
+        const target = await this.resolveMeshTarget(frame.stack, frame.service, frame.port);
+        if (!target.ok) {
+            try {
+                ws.send(encodeJsonFrame({ t: 'tcp_open_ack', s: frame.s, ok: false, err: target.err }));
+            } catch { /* ignore */ }
+            return;
+        }
+
+        const socket = net.createConnection({ host: target.host, port: target.port });
+        socket.setTimeout(MESH_CONNECT_TIMEOUT_MS);
+        const entry: MeshTcpStream = { socket, accepted: false };
+        this.tcpStreams.set(frame.s, entry);
+
+        const sendAck = (ok: boolean, err?: MeshErrCode) => {
+            try { ws.send(encodeJsonFrame({ t: 'tcp_open_ack', s: frame.s, ok, err })); } catch { /* ignore */ }
+        };
+
+        socket.once('connect', () => {
+            entry.accepted = true;
+            socket.setTimeout(0);
+            sendAck(true);
+        });
+        socket.on('data', (chunk: Buffer) => {
+            try {
+                ws.send(encodeBinaryFrame(BinaryFrameType.TcpData, frame.s, chunk), { binary: true });
+            } catch { /* ignore */ }
+        });
+        socket.on('timeout', () => {
+            if (entry.accepted) return;
+            entry.accepted = true;
+            sendAck(false, 'unreachable');
+            this.tcpStreams.delete(frame.s);
+            try { socket.destroy(); } catch { /* ignore */ }
+        });
+        socket.on('error', (err) => {
+            if (!entry.accepted) {
+                entry.accepted = true;
+                sendAck(false, 'unreachable');
+                this.tcpStreams.delete(frame.s);
+                return;
+            }
+            console.warn('[Pilot] tcp stream error:', sanitizeForLog(err.message));
+            if (this.tcpStreams.delete(frame.s)) {
+                try { ws.send(encodeJsonFrame({ t: 'tcp_close', s: frame.s })); } catch { /* ignore */ }
+            }
+        });
+        socket.on('close', () => {
+            if (this.tcpStreams.delete(frame.s)) {
+                try { ws.send(encodeJsonFrame({ t: 'tcp_close', s: frame.s })); } catch { /* ignore */ }
+            }
+        });
+    }
+
+    private onTcpClose(streamId: number): void {
+        const entry = this.tcpStreams.get(streamId);
+        if (!entry) return;
+        this.tcpStreams.delete(streamId);
+        try { entry.socket.destroy(); } catch { /* ignore */ }
+    }
+
+    /**
+     * Always returns ok:false in PR 1. Tests inject a real resolver via
+     * setMeshResolver; PR 2 will install the Dockerode-backed implementation.
+     */
+    private async resolveMeshTarget(
+        _stack: string,
+        _service: string,
+        _port: number,
+    ): Promise<MeshResolveResult> {
+        return { ok: false, err: 'mesh_not_enabled' };
+    }
 }
+
+const MESH_CONNECT_TIMEOUT_MS = 10_000;
+
+interface MeshTcpStream {
+    socket: net.Socket;
+    accepted: boolean;
+}
+
+type MeshResolveResult =
+    | { ok: true; host: string; port: number }
+    | { ok: false; err: MeshErrCode };
 
 function readPersistedToken(): string | null {
     try {
