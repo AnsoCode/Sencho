@@ -111,6 +111,7 @@
               "features/sencho-mesh",
               "features/fleet-view",
               "features/fleet-sync",
+              "features/blueprint-model",
               "features/remote-updates",
               "features/stack-labels",
               "features/alerts-notifications",

@@ -19,6 +19,9 @@ import { Plus, Trash2, Wifi, WifiOff, Star, Pencil, Monitor, Globe, Copy, KeyRou
 import { formatTimeUntil, formatTimeAgo } from '@/lib/relativeTime';
 import { SettingsPrimaryButton } from './settings/SettingsActions';
 import { useMastheadStats } from './settings/MastheadStatsContext';
+import { NodeLabelPicker } from './blueprints/NodeLabelPicker';
+import { useLicense } from '@/context/LicenseContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface NodeSchedulingSummary {
   active_tasks: number;
@@ -60,6 +63,9 @@ const defaultFormData: NodeFormData = {
 };
 
 export function NodeManager() {
+  const { isPaid } = useLicense();
+  const { isAdmin } = useAuth();
+  const canEditLabels = isPaid && isAdmin;
   const { nodes, refreshNodes } = useNodes();
   useMastheadStats([
     { label: 'NODES', value: `${nodes.length}` },
@@ -497,6 +503,7 @@ export function NodeManager() {
               <TableHead>Mode</TableHead>
               <TableHead>Endpoint</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Labels</TableHead>
               <TableHead>Schedules</TableHead>
               <TableHead>Updates</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -551,6 +558,13 @@ export function NodeManager() {
                       : (node.api_url || '-')}
                 </TableCell>
                 <TableCell>{getStatusBadge(node.status)}</TableCell>
+                <TableCell>
+                  {isPaid ? (
+                    <NodeLabelPicker nodeId={node.id} canEdit={canEditLabels} />
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Upgrade</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   {(() => {
                     const summary = nodeSummary[node.id];
