@@ -11,6 +11,7 @@ import { ImageUpdateService } from '../services/ImageUpdateService';
 import { SchedulerService } from '../services/SchedulerService';
 import { MfaService } from '../services/MfaService';
 import { MeshService } from '../services/MeshService';
+import { BlueprintReconciler } from '../services/BlueprintReconciler';
 import { sweepStaleTempDirs as sweepStaleGitTempDirs } from '../services/GitSourceService';
 import { PORT } from '../helpers/constants';
 
@@ -42,6 +43,7 @@ export async function startServer(server: Server): Promise<void> {
   MeshService.getInstance().start().catch((err) => {
     console.warn('[Startup] MeshService start failed:', (err as Error).message);
   });
+  BlueprintReconciler.getInstance().start();
 
   // Async initializers are independent of each other; run in parallel
   // so total boot time is the slowest one rather than the sum.
