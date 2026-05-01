@@ -32,6 +32,7 @@ import FleetSnapshots from './FleetSnapshots';
 import { FleetConfiguration } from './fleet/FleetConfiguration';
 import { FleetSoonPlaceholder, SoonBadge } from './fleet/FleetSoonPlaceholder';
 import { RoutingTab } from './fleet/RoutingTab';
+import { DeploymentsTab } from './blueprints/DeploymentsTab';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
@@ -1063,7 +1064,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                             <TabsHighlightItem value="deployments">
                                 <TabsTrigger value="deployments">
                                     <Send className="w-4 h-4 mr-1.5" />Deployments
-                                    <SoonBadge />
+                                    {!isPaid && <SoonBadge />}
                                 </TabsTrigger>
                             </TabsHighlightItem>
                             <TabsHighlightItem value="federation">
@@ -1385,13 +1386,19 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     <FleetConfiguration />
                 </TabsContent>
                 <TabsContent value="deployments">
-                    <FleetSoonPlaceholder
-                        icon={<Send className="h-4 w-4" />}
-                        kicker="Deployments · Coming soon"
-                        title="Push stacks across the fleet"
-                        description="Push a stack from local to a remote in one move. Side-by-side compose diff, env reconciliation, volume migration plan."
-                        plannedActions={['Push stack', 'Promote env', 'Diff config', 'Plan migration']}
-                    />
+                    {isPaid ? (
+                        <DeploymentsTab />
+                    ) : (
+                        <PaidGate featureName="Blueprints (fleet-wide compose templates)">
+                            <FleetSoonPlaceholder
+                                icon={<Send className="h-4 w-4" />}
+                                kicker="Deployments · Blueprints"
+                                title="Declare once. Distribute everywhere."
+                                description="Pick nodes by label, drop in a docker-compose, and Sencho keeps the matching nodes in sync. Drift detection always on; auto-fix optional."
+                                plannedActions={['Author', 'Target', 'Reconcile', 'Snapshot+evict']}
+                            />
+                        </PaidGate>
+                    )}
                 </TabsContent>
                 <TabsContent value="federation">
                     <FleetSoonPlaceholder
