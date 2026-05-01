@@ -8,43 +8,46 @@
    LIGHT THEME
 ───────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(0.97 0.005 80);
-  --foreground: oklch(0.15 0.005 80);
-  --card: oklch(1 0.003 80);
-  --card-foreground: oklch(0.15 0.005 80);
-  --popover: oklch(1 0.003 80 / 0.92);
-  --popover-foreground: oklch(0.15 0.005 80);
-  --primary: oklch(0.15 0.005 80);
-  --primary-foreground: oklch(1 0.003 80);
+  --background: oklch(0.97 0 0);
+  --foreground: oklch(0.15 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(1 0 0 / 0.92);
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.15 0 0);
+  --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0 0 0 / 0.05);
-  --secondary-foreground: oklch(0.15 0.005 80);
+  --secondary-foreground: oklch(0.15 0 0);
   --muted: oklch(0 0 0 / 0.04);
   --muted-foreground: oklch(0.50 0 0);
   --accent: oklch(0 0 0 / 0.06);
-  --accent-foreground: oklch(0.15 0.005 80);
+  --accent-foreground: oklch(0.15 0 0);
   --destructive: oklch(0.63 0.18 20);
-  --destructive-foreground: oklch(1 0.003 80);
+  --destructive-foreground: oklch(1 0 0);
   --border: oklch(0 0 0 / 0.10);
-  --input: oklch(0.97 0.005 80);
-  --ring: oklch(0.50 0.11 195);
+  --input: oklch(0.97 0 0);
+  --ring: oklch(0.50 0.14 200);
 
   /* Brand: technical cyan, the signature accent */
-  --brand: oklch(0.50 0.11 195);
-  --brand-foreground: oklch(1 0.003 80);
-  --brand-muted: oklch(0.50 0.11 195 / 0.12);
+  --brand: oklch(0.50 0.14 200);
+  --brand-foreground: oklch(1 0 0);
+  --brand-muted: oklch(0.50 0.14 200 / 0.12);
 
   /* Glass: frosted surface system */
-  --glass: oklch(1 0.003 80);
+  --glass: oklch(1 0 0);
   --glass-border: oklch(0 0 0 / 0.10);
   --glass-highlight: oklch(0 0 0 / 0.06);
 
   /* Semantic status colors */
   --success: oklch(0.65 0.16 155);
-  --success-foreground: oklch(1 0.003 80);
+  --success-foreground: oklch(1 0 0);
   --success-muted: oklch(0.65 0.16 155 / 0.12);
   --warning: oklch(0.75 0.14 75);
   --warning-foreground: oklch(0.20 0 0);
   --warning-muted: oklch(0.75 0.14 75 / 0.12);
+  /* --info: TOAST USE ONLY. Not part of the §17 five-slot working palette.
+     New components must consume --brand, --success, --warning, --destructive,
+     or surface/ink tokens instead. */
   --info: oklch(0.62 0.14 250);
   --info-foreground: oklch(1 0 0);
   --info-muted: oklch(0.62 0.14 250 / 0.12);
@@ -65,14 +68,14 @@
   --data-peak: var(--warning);
 
   /* Sidebar */
-  --sidebar: oklch(0.98 0.005 80 / 0.80);
-  --sidebar-foreground: oklch(0.15 0.005 80);
-  --sidebar-primary: oklch(0.15 0.005 80);
-  --sidebar-primary-foreground: oklch(1 0.003 80);
+  --sidebar: oklch(0.98 0 0 / 0.80);
+  --sidebar-foreground: oklch(0.15 0 0);
+  --sidebar-primary: oklch(0.15 0 0);
+  --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0 0 0 / 0.06);
-  --sidebar-accent-foreground: oklch(0.15 0.005 80);
+  --sidebar-accent-foreground: oklch(0.15 0 0);
   --sidebar-border: oklch(0 0 0 / 0.10);
-  --sidebar-ring: oklch(0.50 0.11 195);
+  --sidebar-ring: oklch(0.50 0.14 200);
 
   /* Stat hierarchy: text brightness tiers */
   --stat-value: oklch(0.15 0 0);
@@ -184,24 +187,24 @@
    DARK THEME
 ───────────────────────────────────────────────────────────── */
 .dark {
-  --background: oklch(0.08 0.003 80);
-  --foreground: oklch(0.94 0.01 80);
-  --card: oklch(0.14 0.005 80);
-  --card-foreground: oklch(0.94 0.01 80);
-  --popover: oklch(0.16 0.005 80 / 0.82);
-  --popover-foreground: oklch(0.94 0.01 80);
-  --primary: oklch(0.98 0.01 80);
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(0.94 0 0);
+  --card: oklch(0.12 0 0);
+  --card-foreground: oklch(0.94 0 0);
+  --popover: oklch(0.14 0 0 / 0.82);
+  --popover-foreground: oklch(0.94 0 0);
+  --primary: oklch(0.98 0 0);
   --primary-foreground: oklch(0.10 0 0);
-  --secondary: oklch(0.14 0.005 80);
-  --secondary-foreground: oklch(0.94 0.01 80);
-  --muted: oklch(0.14 0.005 80);
+  --secondary: oklch(0.12 0 0);
+  --secondary-foreground: oklch(0.94 0 0);
+  --muted: oklch(0.12 0 0);
   --muted-foreground: oklch(0.45 0 0);
   --accent: oklch(1 0 0 / 0.06);
-  --accent-foreground: oklch(0.94 0.01 80);
+  --accent-foreground: oklch(0.94 0 0);
   --destructive: oklch(0.72 0.18 20);
-  --destructive-foreground: oklch(0.94 0.01 80);
+  --destructive-foreground: oklch(0.94 0 0);
   --border: oklch(1 0 0 / 0.06);
-  --input: oklch(0.14 0.005 80);
+  --input: oklch(0.12 0 0);
   --ring: oklch(0.78 0.11 195);
 
   /* Brand: desaturated teal accent */
@@ -210,7 +213,7 @@
   --brand-muted: oklch(0.78 0.11 195 / 0.12);
 
   /* Glass: solid surface system (no blur on static surfaces) */
-  --glass: oklch(0.14 0.005 80);
+  --glass: oklch(0.12 0 0);
   --glass-border: oklch(1 0 0 / 0.06);
   --glass-highlight: oklch(1 0 0 / 0.06);
 
@@ -221,6 +224,7 @@
   --warning: oklch(0.82 0.14 75);
   --warning-foreground: oklch(0.10 0 0);
   --warning-muted: oklch(0.82 0.14 75 / 0.15);
+  /* --info: TOAST USE ONLY. Not part of the §17 five-slot working palette. */
   --info: oklch(0.70 0.14 250);
   --info-foreground: oklch(0.10 0 0);
   --info-muted: oklch(0.70 0.14 250 / 0.15);
@@ -241,12 +245,12 @@
   --data-peak: var(--warning);
 
   /* Sidebar */
-  --sidebar: oklch(0.08 0.003 80 / 0.80);
-  --sidebar-foreground: oklch(0.94 0.01 80);
-  --sidebar-primary: oklch(0.98 0.01 80);
+  --sidebar: oklch(0.08 0 0 / 0.80);
+  --sidebar-foreground: oklch(0.94 0 0);
+  --sidebar-primary: oklch(0.98 0 0);
   --sidebar-primary-foreground: oklch(0.10 0 0);
   --sidebar-accent: oklch(1 0 0 / 0.07);
-  --sidebar-accent-foreground: oklch(0.94 0.01 80);
+  --sidebar-accent-foreground: oklch(0.94 0 0);
   --sidebar-border: oklch(1 0 0 / 0.06);
   --sidebar-ring: oklch(0.78 0.11 195);
 
@@ -533,10 +537,10 @@ body {
 }
 
 .glass-float {
-  background: oklch(0.14 0.005 80 / 0.82);
+  background: var(--popover);
   backdrop-filter: blur(10px) saturate(1.15);
   -webkit-backdrop-filter: blur(10px) saturate(1.15);
-  border: 1px solid oklch(1 0 0 / 0.07);
+  border: 1px solid var(--glass-border);
 }
 
 /* ─────────────────────────────────────────────────────────────
