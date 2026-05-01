@@ -108,6 +108,7 @@
               "features/host-console",
               "features/multi-node",
               "features/pilot-agent",
+              "features/sencho-mesh",
               "features/fleet-view",
               "features/fleet-sync",
               "features/remote-updates",

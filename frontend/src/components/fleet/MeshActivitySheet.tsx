@@ -1,0 +1,86 @@
+import { useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
+import { Loader2 } from 'lucide-react';
+import type { MeshActivityEvent } from '@/types/mesh';
+
+interface Props {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}
+
+export function MeshActivitySheet({ open, onOpenChange }: Props) {
+    const [events, setEvents] = useState<MeshActivityEvent[]>([]);
+    const [filter, setFilter] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!open) return;
+        let cancelled = false;
+        setLoading(true);
+        (async () => {
+            try {
+                const res = await apiFetch('/mesh/activity?limit=200', { localOnly: true });
+                if (!res.ok) return;
+                const body = await res.json() as { events: MeshActivityEvent[] };
+                if (!cancelled) setEvents(body.events);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [open]);
+
+    const visible = events.filter((e) => {
+        if (!filter) return true;
+        const f = filter.toLowerCase();
+        return (
+            e.message.toLowerCase().includes(f) ||
+            (e.alias?.toLowerCase().includes(f) ?? false) ||
+            e.type.toLowerCase().includes(f)
+        );
+    });
+
+    return (
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="right" className="w-[600px] sm:max-w-[600px]">
+                <SheetHeader>
+                    <SheetTitle>Mesh activity</SheetTitle>
+                </SheetHeader>
+
+                <div className="mt-4 space-y-3">
+                    <Input
+                        placeholder="Filter by alias, type, or message"
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        className="text-xs font-mono"
+                    />
+
+                    <div className="max-h-[70vh] overflow-auto space-y-1">
+                        {loading && (
+                            <div className="flex items-center gap-2 text-stat-subtitle text-sm">
+                                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                            </div>
+                        )}
+                        {!loading && visible.length === 0 && (
+                            <div className="text-xs text-stat-subtitle">No events.</div>
+                        )}
+                        {visible.slice().reverse().map((e, i) => (
+                            <div key={i} className="grid grid-cols-[80px_70px_120px_1fr] gap-2 text-[11px] font-mono py-1 border-b border-card-border/50">
+                                <span className="text-stat-subtitle tabular-nums">{new Date(e.ts).toLocaleTimeString()}</span>
+                                <span className={
+                                    e.level === 'error' ? 'text-destructive uppercase tracking-wide' :
+                                    e.level === 'warn' ? 'text-warning uppercase tracking-wide' :
+                                    'text-stat-subtitle uppercase tracking-wide'
+                                }>{e.source}</span>
+                                <span className="text-stat-value">{e.type}</span>
+                                <span className="text-stat-value truncate" title={e.message}>{e.alias ? `[${e.alias}] ` : ''}{e.message}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </SheetContent>
+        </Sheet>
+    );
+}

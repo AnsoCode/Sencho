@@ -33,6 +33,25 @@ export class ComposeService {
     return new ComposeService(nodeId);
   }
 
+  /**
+   * Build the `docker compose` argument prefix for a stack, automatically
+   * splicing in the Sencho Mesh override file if the stack is opted into the
+   * mesh. Returns args ready to append `up`, `down`, etc. The user's source
+   * compose file is never mutated.
+   */
+  private async composeArgs(stackName: string, action: string[]): Promise<string[]> {
+    const args = ['compose', '-f', 'docker-compose.yml'];
+    try {
+      const { MeshService } = await import('./MeshService');
+      const overridePath = await MeshService.getInstance().ensureStackOverride(this.nodeId, stackName);
+      if (overridePath) args.push('-f', overridePath);
+    } catch (err) {
+      console.warn('[ComposeService] mesh override skipped:', sanitizeForLog((err as Error).message));
+    }
+    args.push(...action);
+    return args;
+  }
+
   private execute(
     command: string,
     args: string[],
@@ -159,7 +178,7 @@ export class ComposeService {
       }
 
       await this.withRegistryAuth(async (env) => {
-        await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+        await this.execute('docker', await this.composeArgs(stackName, ['up', '-d', '--remove-orphans']), stackDir, ws, true, env);
       }, sendOutput);
 
       // Post-Deploy Health Probe
@@ -193,7 +212,7 @@ export class ComposeService {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
           await this.withRegistryAuth(async (env) => {
-            await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+            await this.execute('docker', await this.composeArgs(stackName, ['up', '-d', '--remove-orphans']), stackDir, ws, true, env);
           }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {
@@ -353,7 +372,7 @@ export class ComposeService {
         await this.execute('docker', ['compose', 'pull'], stackDir, ws, true, env);
 
         sendOutput('=== Recreating containers ===\n');
-        await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+        await this.execute('docker', await this.composeArgs(stackName, ['up', '-d', '--remove-orphans']), stackDir, ws, true, env);
       }, sendOutput);
 
       // Post-Update Health Probe
@@ -389,7 +408,7 @@ export class ComposeService {
           const fsSvc = FileSystemService.getInstance(this.nodeId);
           await fsSvc.restoreStackFiles(stackName);
           await this.withRegistryAuth(async (env) => {
-            await this.execute('docker', ['compose', 'up', '-d', '--remove-orphans'], stackDir, ws, true, env);
+            await this.execute('docker', await this.composeArgs(stackName, ['up', '-d', '--remove-orphans']), stackDir, ws, true, env);
           }, sendOutput);
           sendOutput('=== Rolled back successfully ===\n');
         } catch (rollbackError) {

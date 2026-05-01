@@ -1,0 +1,218 @@
+import { useCallback, useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
+import { Button } from '@/components/ui/button';
+import { ArrowLeftRight, Loader2, ScrollText } from 'lucide-react';
+import { RoutingNodeCard } from './RoutingNodeCard';
+import { MeshOptInSheet } from './MeshOptInSheet';
+import { MeshRouteDetailSheet } from './MeshRouteDetailSheet';
+import { MeshDiagnosticsSheet } from './MeshDiagnosticsSheet';
+import { MeshActivitySheet } from './MeshActivitySheet';
+import type { MeshAlias, MeshNodeStatus, MeshProbeResult } from '@/types/mesh';
+
+export function RoutingTab() {
+    const [status, setStatus] = useState<MeshNodeStatus[]>([]);
+    const [aliases, setAliases] = useState<MeshAlias[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [optInNode, setOptInNode] = useState<{ id: number; name: string } | null>(null);
+    const [diagnosticsNode, setDiagnosticsNode] = useState<{ id: number; name: string } | null>(null);
+    const [routeDetailAlias, setRouteDetailAlias] = useState<string | null>(null);
+    const [activityOpen, setActivityOpen] = useState(false);
+
+    const refresh = useCallback(async () => {
+        try {
+            const [statusRes, aliasesRes] = await Promise.all([
+                apiFetch('/mesh/status', { localOnly: true }),
+                apiFetch('/mesh/aliases', { localOnly: true }),
+            ]);
+            if (statusRes.ok) {
+                const body = await statusRes.json() as { nodes: MeshNodeStatus[] };
+                setStatus(body.nodes);
+            }
+            if (aliasesRes.ok) {
+                const body = await aliasesRes.json() as { aliases: MeshAlias[] };
+                setAliases(body.aliases);
+            }
+        } catch (err) {
+            toast.error(`Failed to load mesh state: ${(err as Error).message}`);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { void refresh(); }, [refresh]);
+
+    const testUpstream = useCallback(async (alias: string): Promise<void> => {
+        try {
+            const res = await apiFetch(`/mesh/aliases/${encodeURIComponent(alias)}/test`, {
+                method: 'POST', localOnly: true,
+            });
+            const body = await res.json() as MeshProbeResult;
+            if (body.ok) {
+                toast.success(`${alias} ok (${body.latencyMs}ms)`);
+            } else {
+                toast.error(`${alias} ${body.where ?? 'fail'}: ${body.code ?? 'error'}`);
+            }
+        } catch (err) {
+            toast.error(`Probe failed: ${(err as Error).message}`);
+        }
+    }, []);
+
+    const totalAliases = aliases.length;
+    const meshedNodes = status.filter((s) => s.enabled).length;
+    const onlineNodes = status.filter((s) => s.pilotConnected).length;
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-12 text-stat-subtitle">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading mesh state…
+            </div>
+        );
+    }
+
+    if (status.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16">
+                <ArrowLeftRight className="w-12 h-12 text-stat-subtitle mb-4" />
+                <div className="text-lg font-display italic mb-2">No nodes available</div>
+                <div className="text-sm text-stat-subtitle text-center max-w-md">
+                    Add a node to the fleet to start routing traffic between containers across nodes.
+                </div>
+            </div>
+        );
+    }
+
+    if (meshedNodes === 0) {
+        return (
+            <div className="space-y-4">
+                <RoutingMasthead meshedNodes={meshedNodes} onlineNodes={onlineNodes} totalAliases={totalAliases} onShowActivity={() => setActivityOpen(true)} />
+                <div className="flex flex-col items-center justify-center py-12 rounded border border-dashed border-card-border bg-card/50">
+                    <ArrowLeftRight className="w-12 h-12 text-stat-subtitle mb-4" />
+                    <div className="text-lg font-display italic mb-2">Mesh containers across nodes</div>
+                    <div className="text-sm text-stat-subtitle text-center max-w-md mb-6">
+                        Add a stack to the mesh and its services become reachable from any other meshed
+                        stack by hostname. No VPN, no firewall changes.
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
+                        {status.map((s) => (
+                            <RoutingNodeCard
+                                key={s.nodeId}
+                                status={s}
+                                aliases={aliases}
+                                isLocal={s.nodeId === status[0]?.nodeId && s.pilotConnected}
+                                onAddStack={() => setOptInNode({ id: s.nodeId, name: s.nodeName })}
+                                onShowDiagnostics={() => setDiagnosticsNode({ id: s.nodeId, name: s.nodeName })}
+                                onShowAlias={(alias) => setRouteDetailAlias(alias)}
+                                onTestUpstream={testUpstream}
+                                onChanged={() => { void refresh(); }}
+                            />
+                        ))}
+                    </div>
+                </div>
+                <SheetsRoot
+                    optInNode={optInNode} setOptInNode={setOptInNode}
+                    diagnosticsNode={diagnosticsNode} setDiagnosticsNode={setDiagnosticsNode}
+                    routeDetailAlias={routeDetailAlias} setRouteDetailAlias={setRouteDetailAlias}
+                    activityOpen={activityOpen} setActivityOpen={setActivityOpen}
+                    onChanged={() => { void refresh(); }}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            <RoutingMasthead meshedNodes={meshedNodes} onlineNodes={onlineNodes} totalAliases={totalAliases} onShowActivity={() => setActivityOpen(true)} />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {status.map((s) => (
+                    <RoutingNodeCard
+                        key={s.nodeId}
+                        status={s}
+                        aliases={aliases}
+                        isLocal={s.nodeId === status[0]?.nodeId && s.pilotConnected}
+                        onAddStack={() => setOptInNode({ id: s.nodeId, name: s.nodeName })}
+                        onShowDiagnostics={() => setDiagnosticsNode({ id: s.nodeId, name: s.nodeName })}
+                        onShowAlias={(alias) => setRouteDetailAlias(alias)}
+                        onTestUpstream={testUpstream}
+                        onChanged={() => { void refresh(); }}
+                    />
+                ))}
+            </div>
+            <SheetsRoot
+                optInNode={optInNode} setOptInNode={setOptInNode}
+                diagnosticsNode={diagnosticsNode} setDiagnosticsNode={setDiagnosticsNode}
+                routeDetailAlias={routeDetailAlias} setRouteDetailAlias={setRouteDetailAlias}
+                activityOpen={activityOpen} setActivityOpen={setActivityOpen}
+                onChanged={() => { void refresh(); }}
+            />
+        </div>
+    );
+}
+
+function RoutingMasthead({ meshedNodes, onlineNodes, totalAliases, onShowActivity }: {
+    meshedNodes: number; onlineNodes: number; totalAliases: number; onShowActivity: () => void;
+}) {
+    const stateWord = meshedNodes === 0 ? 'unmeshed' : meshedNodes < onlineNodes ? 'partial' : 'meshed';
+    return (
+        <div className="flex items-center justify-between rounded-lg border border-card-border bg-card p-4 shadow-card-bevel">
+            <div className="flex items-center gap-4">
+                <div className="font-display italic text-2xl">{stateWord}</div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                    <div>
+                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono">meshed</div>
+                        <div className="font-mono text-stat-value">{meshedNodes}/{onlineNodes}</div>
+                    </div>
+                    <div>
+                        <div className="text-[10px] tracking-wide uppercase text-stat-subtitle font-mono">aliases</div>
+                        <div className="font-mono text-stat-value">{totalAliases}</div>
+                    </div>
+                </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={onShowActivity}>
+                <ScrollText className="w-3 h-3 mr-1" /> Mesh activity
+            </Button>
+        </div>
+    );
+}
+
+function SheetsRoot(props: {
+    optInNode: { id: number; name: string } | null;
+    setOptInNode: (v: { id: number; name: string } | null) => void;
+    diagnosticsNode: { id: number; name: string } | null;
+    setDiagnosticsNode: (v: { id: number; name: string } | null) => void;
+    routeDetailAlias: string | null;
+    setRouteDetailAlias: (v: string | null) => void;
+    activityOpen: boolean;
+    setActivityOpen: (v: boolean) => void;
+    onChanged: () => void;
+}) {
+    return (
+        <>
+            {props.optInNode && (
+                <MeshOptInSheet
+                    open={!!props.optInNode}
+                    onOpenChange={(open) => { if (!open) props.setOptInNode(null); }}
+                    nodeId={props.optInNode.id}
+                    nodeName={props.optInNode.name}
+                    onChanged={props.onChanged}
+                />
+            )}
+            <MeshDiagnosticsSheet
+                open={!!props.diagnosticsNode}
+                onOpenChange={(open) => { if (!open) props.setDiagnosticsNode(null); }}
+                nodeId={props.diagnosticsNode?.id ?? null}
+                nodeName={props.diagnosticsNode?.name ?? null}
+            />
+            <MeshRouteDetailSheet
+                open={!!props.routeDetailAlias}
+                onOpenChange={(open) => { if (!open) props.setRouteDetailAlias(null); }}
+                alias={props.routeDetailAlias}
+            />
+            <MeshActivitySheet
+                open={props.activityOpen}
+                onOpenChange={props.setActivityOpen}
+            />
+        </>
+    );
+}

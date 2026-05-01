@@ -1,0 +1,118 @@
+import { useEffect, useState } from 'react';
+import { apiFetch } from '@/lib/api';
+import { toast } from '@/components/ui/toast-store';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import type { MeshStackEntry } from '@/types/mesh';
+import { Loader2 } from 'lucide-react';
+
+interface Props {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    nodeId: number;
+    nodeName: string;
+    onChanged: () => void;
+}
+
+export function MeshOptInSheet({ open, onOpenChange, nodeId, nodeName, onChanged }: Props) {
+    const [stacks, setStacks] = useState<MeshStackEntry[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [pendingStack, setPendingStack] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await apiFetch(`/mesh/nodes/${nodeId}/stacks`, { localOnly: true });
+                if (!res.ok) throw new Error(`status ${res.status}`);
+                const data = await res.json() as { stacks: MeshStackEntry[] };
+                if (!cancelled) setStacks(data.stacks);
+            } catch (err) {
+                if (!cancelled) setError((err as Error).message);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [open, nodeId]);
+
+    const toggle = async (stack: MeshStackEntry) => {
+        setPendingStack(stack.name);
+        setError(null);
+        try {
+            const action = stack.optedIn ? 'opt-out' : 'opt-in';
+            const res = await apiFetch(
+                `/mesh/nodes/${nodeId}/stacks/${encodeURIComponent(stack.name)}/${action}`,
+                { method: 'POST', localOnly: true },
+            );
+            if (res.status === 409) {
+                const body = await res.json().catch(() => ({})) as { error?: string };
+                setError(body.error || 'Port already claimed by another mesh stack');
+                return;
+            }
+            if (!res.ok) throw new Error(`status ${res.status}`);
+            setStacks((prev) => prev.map((s) => s.name === stack.name ? { ...s, optedIn: !stack.optedIn } : s));
+            onChanged();
+            toast.success(stack.optedIn ? 'Stack removed from mesh' : 'Stack added to mesh');
+        } catch (err) {
+            setError((err as Error).message);
+            toast.error('Mesh update failed');
+        } finally {
+            setPendingStack(null);
+        }
+    };
+
+    return (
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="right" className="w-[420px] sm:max-w-[420px]">
+                <SheetHeader>
+                    <SheetTitle>Mesh stacks on {nodeName}</SheetTitle>
+                    <SheetDescription>
+                        Adding a stack lets its services be reached from other meshed stacks by hostname.
+                        Toggling a stack redeploys it to refresh hostnames.
+                    </SheetDescription>
+                </SheetHeader>
+                <div className="mt-4 space-y-2">
+                    {loading && (
+                        <div className="flex items-center gap-2 text-stat-subtitle text-sm">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Loading stacks…
+                        </div>
+                    )}
+                    {error && (
+                        <div className="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                            {error}
+                        </div>
+                    )}
+                    {!loading && stacks.length === 0 && (
+                        <div className="text-sm text-stat-subtitle">No stacks deployed on this node yet.</div>
+                    )}
+                    {stacks.map((stack) => (
+                        <div key={stack.name} className="flex items-center justify-between rounded border border-card-border bg-card px-3 py-2">
+                            <div className="flex items-center gap-3">
+                                <Checkbox
+                                    id={`mesh-stack-${stack.name}`}
+                                    checked={stack.optedIn}
+                                    disabled={pendingStack === stack.name}
+                                    onCheckedChange={() => { void toggle(stack); }}
+                                />
+                                <label htmlFor={`mesh-stack-${stack.name}`} className="text-sm font-mono">{stack.name}</label>
+                            </div>
+                            {pendingStack === stack.name && <Loader2 className="w-3 h-3 animate-spin text-stat-subtitle" />}
+                            {stack.optedIn && pendingStack !== stack.name && (
+                                <span className="text-[10px] tracking-wide uppercase text-success/80 font-mono">in mesh</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+                <div className="mt-6 flex justify-end">
+                    <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Close</Button>
+                </div>
+            </SheetContent>
+        </Sheet>
+    );
+}
