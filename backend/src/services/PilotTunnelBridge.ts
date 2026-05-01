@@ -31,7 +31,62 @@ interface WsStreamState {
     clientWs?: WebSocket;
 }
 
-type StreamState = HttpStreamState | WsStreamState;
+interface TcpStreamState {
+    kind: 'tcp';
+    handle: TcpStream;
+    bytesIn: number;
+    bytesOut: number;
+    openedAt: number;
+    accepted: boolean;
+}
+
+type StreamState = HttpStreamState | WsStreamState | TcpStreamState;
+
+export interface TcpStreamSummary {
+    streamId: number;
+    bytesIn: number;
+    bytesOut: number;
+    openedAt: number;
+}
+
+/**
+ * Sencho Mesh TCP stream handle. EventEmitter-based duplex-like surface that
+ * MeshService consumes to bridge a local socket to a Compose service on the
+ * remote node behind this pilot tunnel.
+ *
+ * Events:
+ *   'open'         tcp_open_ack ok received; safe to write/read
+ *   'data' (Buffer) bytes from the remote socket
+ *   'drain'        send buffer below high-water mark
+ *   'error' (err)  open rejected or mid-stream tunnel error
+ *   'close'        stream closed (graceful or otherwise)
+ */
+export class TcpStream extends EventEmitter {
+    public readonly streamId: number;
+    private readonly bridge: PilotTunnelBridge;
+
+    constructor(streamId: number, bridge: PilotTunnelBridge) {
+        super();
+        this.streamId = streamId;
+        this.bridge = bridge;
+    }
+
+    /**
+     * Returns false when the underlying tunnel buffer is above the high-water
+     * mark; caller should pause its source until 'drain' fires.
+     */
+    public write(chunk: Buffer): boolean {
+        return this.bridge._writeTcpData(this.streamId, chunk);
+    }
+
+    public end(): void {
+        this.bridge._closeTcpStream(this.streamId);
+    }
+
+    public destroy(): void {
+        this.end();
+    }
+}
 
 /**
  * Per-tunnel bridge: hosts a loopback HTTP server that demuxes requests into
@@ -86,14 +141,85 @@ export class PilotTunnelBridge extends EventEmitter {
             });
         });
         this.pingTimer = setInterval(() => {
-            if (this.tunnelWs.readyState === WebSocket.OPEN) {
-                try { this.tunnelWs.ping(); } catch { /* surfaced via 'error' */ }
+            if (this.tunnelWs.readyState !== WebSocket.OPEN) return;
+            try { this.tunnelWs.ping(); } catch { /* surfaced via 'error' */ }
+            // Coarse drain fan-out for TCP streams: ws does not expose a
+            // socket-level 'drain' we can hook, so we let backpressure clear
+            // by the next ping cycle.
+            if (this.tunnelWs.bufferedAmount <= BUFFER_HIGH_WATER_MARK) {
+                for (const s of this.streams.values()) {
+                    if (s.kind === 'tcp' && s.accepted) s.handle.emit('drain');
+                }
             }
         }, PING_INTERVAL_MS);
     }
 
     public getLoopbackUrl(): string { return this.loopbackUrl; }
     public getConnectedAt(): number { return this.connectedAt; }
+    public getBufferedAmount(): number { return this.tunnelWs.bufferedAmount; }
+    public isOpen(): boolean { return !this.closed && this.tunnelWs.readyState === WebSocket.OPEN; }
+
+    /**
+     * Open a TCP stream to a Compose service on the remote node. Caller listens
+     * on the returned TcpStream for 'open' (when the remote agent has accepted),
+     * 'data', 'error', and 'close'. Returns null if the tunnel is not open.
+     */
+    public openTcpStream(target: { stack: string; service: string; port: number }): TcpStream | null {
+        if (!this.isOpen()) return null;
+        const streamId = this.streamIds.allocate();
+        const handle = new TcpStream(streamId, this);
+        this.streams.set(streamId, {
+            kind: 'tcp',
+            handle,
+            bytesIn: 0,
+            bytesOut: 0,
+            openedAt: Date.now(),
+            accepted: false,
+        });
+        this.sendJson({
+            t: 'tcp_open',
+            s: streamId,
+            stack: target.stack,
+            service: target.service,
+            port: target.port,
+        });
+        return handle;
+    }
+
+    /**
+     * @internal Called only by TcpStream.write; applies the same 4 MB
+     * backpressure rule used by HTTP request bodies. Public for cross-class
+     * access only; not part of the bridge's outward API.
+     */
+    public _writeTcpData(streamId: number, payload: Buffer): boolean {
+        const s = this.streams.get(streamId);
+        if (!s || s.kind !== 'tcp') return false;
+        if (!this.isOpen()) return false;
+        this.sendBinary(BinaryFrameType.TcpData, streamId, payload);
+        s.bytesOut += payload.length;
+        return this.tunnelWs.bufferedAmount <= BUFFER_HIGH_WATER_MARK;
+    }
+
+    /** @internal Called only by TcpStream.end / .destroy. */
+    public _closeTcpStream(streamId: number): void {
+        if (!this.streams.has(streamId)) return;
+        this.streams.delete(streamId);
+        this.sendJson({ t: 'tcp_close', s: streamId });
+    }
+
+    /**
+     * Snapshot of active TCP streams for the diagnostics sheet. Cheap; called
+     * on demand by MeshService.
+     */
+    public listTcpStreams(): TcpStreamSummary[] {
+        const out: TcpStreamSummary[] = [];
+        for (const [streamId, s] of this.streams) {
+            if (s.kind === 'tcp') {
+                out.push({ streamId, bytesIn: s.bytesIn, bytesOut: s.bytesOut, openedAt: s.openedAt });
+            }
+        }
+        return out;
+    }
 
     public close(code = 1000, reason = 'closed by primary'): void {
         if (this.closed) return;
@@ -314,6 +440,26 @@ export class PilotTunnelBridge extends EventEmitter {
                 // called, and ping/pong are handled by the WS layer.
                 break;
             }
+            case 'tcp_open_ack': {
+                const s = this.streams.get(frame.s);
+                if (!s || s.kind !== 'tcp') return;
+                if (frame.ok) {
+                    s.accepted = true;
+                    s.handle.emit('open');
+                } else {
+                    this.streams.delete(frame.s);
+                    s.handle.emit('error', new Error(frame.err ?? 'tcp_open rejected'));
+                    s.handle.emit('close');
+                }
+                break;
+            }
+            case 'tcp_close': {
+                const s = this.streams.get(frame.s);
+                if (!s || s.kind !== 'tcp') return;
+                this.streams.delete(frame.s);
+                s.handle.emit('close');
+                break;
+            }
             default:
                 // Ignore unknown JSON frame types for forward compatibility.
                 break;
@@ -342,6 +488,12 @@ export class PilotTunnelBridge extends EventEmitter {
             case BinaryFrameType.HttpReqBody:
                 // Agent never originates request bodies; ignore for defense-in-depth.
                 break;
+            case BinaryFrameType.TcpData: {
+                if (s.kind !== 'tcp') return;
+                s.bytesIn += frame.payload.length;
+                s.handle.emit('data', frame.payload);
+                break;
+            }
             default:
                 break;
         }
@@ -374,12 +526,17 @@ export class PilotTunnelBridge extends EventEmitter {
                     state.res.end();
                 }
             } catch { /* ignore */ }
-        } else {
+        } else if (state.kind === 'ws') {
             if (state.clientWs) {
                 try { state.clientWs.close(1011, 'tunnel closed'); } catch { /* ignore */ }
             } else if (state.rawSocket) {
                 try { state.rawSocket.destroy(); } catch { /* ignore */ }
             }
+        } else {
+            try {
+                if (!state.accepted) state.handle.emit('error', new Error('tunnel closed before accept'));
+                state.handle.emit('close');
+            } catch { /* ignore */ }
         }
     }
 }

@@ -23,6 +23,7 @@ export enum BinaryFrameType {
     HttpReqBody = 0x01,
     HttpResBody = 0x02,
     WsMessageBinary = 0x03,
+    TcpData = 0x04,
 }
 
 // --- JSON envelope types ---
@@ -39,7 +40,10 @@ export type JsonFrame =
     | WsRejectFrame
     | WsMessageTextFrame
     | WsCloseFrame
-    | ControlFrame;
+    | ControlFrame
+    | TcpOpenFrame
+    | TcpOpenAckFrame
+    | TcpCloseFrame;
 
 export interface HelloFrame {
     t: 'hello';
@@ -119,6 +123,33 @@ export interface ControlFrame {
     payload?: Record<string, unknown>;
 }
 
+/**
+ * Sencho Mesh TCP frames. The primary asks the agent to open a TCP connection
+ * to a Compose service on the agent's local Docker host. Bytes flow as
+ * BinaryFrameType.TcpData. Mid-stream failures send tcp_close.
+ */
+export interface TcpOpenFrame {
+    t: 'tcp_open';
+    s: number;
+    stack: string;
+    service: string;
+    port: number;
+}
+
+export type MeshErrCode = 'mesh_not_enabled' | 'denied' | 'no_target' | 'unreachable' | 'agent_error';
+
+export interface TcpOpenAckFrame {
+    t: 'tcp_open_ack';
+    s: number;
+    ok: boolean;
+    err?: MeshErrCode;
+}
+
+export interface TcpCloseFrame {
+    t: 'tcp_close';
+    s: number;
+}
+
 // --- Serialize / parse ---
 
 export function encodeJsonFrame(frame: JsonFrame): string {
@@ -161,7 +192,8 @@ export function decodeBinaryFrame(buf: Buffer): DecodedBinaryFrame {
     const type = buf.readUInt8(0) as BinaryFrameType;
     if (type !== BinaryFrameType.HttpReqBody &&
         type !== BinaryFrameType.HttpResBody &&
-        type !== BinaryFrameType.WsMessageBinary) {
+        type !== BinaryFrameType.WsMessageBinary &&
+        type !== BinaryFrameType.TcpData) {
         throw new Error(`unknown binary frame type: ${type}`);
     }
     const streamId = buf.readUInt32BE(1);
