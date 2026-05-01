@@ -16,12 +16,19 @@ export type NotificationCategory =
     | 'autoheal_triggered'
     | 'monitor_alert'
     | 'scan_finding'
+    | 'blueprint_deployed'
+    | 'blueprint_deployment_failed'
+    | 'blueprint_drift_detected'
+    | 'blueprint_drift_correction_failed'
     | 'system';
 
 export const ALL_NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [
     'deploy_success', 'deploy_failure', 'stack_started', 'stack_stopped',
     'stack_restarted', 'image_update_available', 'image_update_applied',
-    'autoheal_triggered', 'monitor_alert', 'scan_finding', 'system',
+    'autoheal_triggered', 'monitor_alert', 'scan_finding',
+    'blueprint_deployed', 'blueprint_deployment_failed',
+    'blueprint_drift_detected', 'blueprint_drift_correction_failed',
+    'system',
 ];
 
 /** Webhook timeout: 10 seconds per external dispatch call. */

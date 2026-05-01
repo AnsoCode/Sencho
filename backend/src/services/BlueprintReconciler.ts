@@ -1,0 +1,305 @@
+import {
+    DatabaseService,
+    type Blueprint,
+    type BlueprintDeployment,
+    type Node,
+} from './DatabaseService';
+import { BlueprintService } from './BlueprintService';
+import { BlueprintAnalyzer } from './BlueprintAnalyzer';
+import { NodeLabelService } from './NodeLabelService';
+import { NotificationService } from './NotificationService';
+
+const RECONCILER_INTERVAL_MS = 60_000;
+const RECONCILER_INITIAL_DELAY_MS = 5_000;
+
+interface ReconcileDecision {
+    deploy: Node[];
+    withdraw: Node[];
+    check: Node[];
+    stateReview: Node[];
+    evictBlocked: Node[];
+}
+
+/**
+ * BlueprintReconciler is the desired-state loop. Every tick it reads each
+ * enabled blueprint, resolves its selector, and reconciles the per-node
+ * state against the desired set. It honors the state-aware guards
+ * (stateful blueprints get pending_state_review on first deploy and
+ * evict_blocked on un-target) and the three-mode drift policy.
+ */
+export class BlueprintReconciler {
+    private static instance: BlueprintReconciler | null = null;
+    private intervalHandle: ReturnType<typeof setInterval> | null = null;
+    private initialTimer: ReturnType<typeof setTimeout> | null = null;
+    private running = false;
+    private stopped = false;
+
+    static getInstance(): BlueprintReconciler {
+        if (!BlueprintReconciler.instance) {
+            BlueprintReconciler.instance = new BlueprintReconciler();
+        }
+        return BlueprintReconciler.instance;
+    }
+
+    private constructor() { /* singleton */ }
+
+    start(): void {
+        if (this.intervalHandle || this.initialTimer) return;
+        this.stopped = false;
+        this.initialTimer = setTimeout(() => {
+            this.initialTimer = null;
+            // Guard against a stop() that fired during the initial delay.
+            if (this.stopped) return;
+            void this.evaluate();
+            this.intervalHandle = setInterval(() => void this.evaluate(), RECONCILER_INTERVAL_MS);
+        }, RECONCILER_INITIAL_DELAY_MS);
+    }
+
+    stop(): void {
+        this.stopped = true;
+        if (this.initialTimer) { clearTimeout(this.initialTimer); this.initialTimer = null; }
+        if (this.intervalHandle) { clearInterval(this.intervalHandle); this.intervalHandle = null; }
+    }
+
+    /**
+     * Force one tick. Useful for the /apply endpoint and tests.
+     */
+    async tick(): Promise<void> {
+        await this.evaluate();
+    }
+
+    /**
+     * Force reconciliation for a single blueprint. Invoked by the /apply
+     * endpoint so users get immediate action without waiting for the
+     * interval.
+     */
+    async reconcileOne(blueprintId: number): Promise<void> {
+        const blueprint = DatabaseService.getInstance().getBlueprint(blueprintId);
+        if (!blueprint || !blueprint.enabled) return;
+        const nodes = DatabaseService.getInstance().getNodes();
+        await this.reconcileBlueprint(blueprint, nodes);
+    }
+
+    private async evaluate(): Promise<void> {
+        if (this.running) return; // prevent overlap on slow ticks
+        this.running = true;
+        try {
+            const db = DatabaseService.getInstance();
+            const blueprints = db.listEnabledBlueprints();
+            if (blueprints.length === 0) return;
+            const nodes = db.getNodes();
+            for (const blueprint of blueprints) {
+                try {
+                    await this.reconcileBlueprint(blueprint, nodes);
+                } catch (err) {
+                    console.error(`[BlueprintReconciler] failed for blueprint "${blueprint.name}":`, err);
+                }
+            }
+        } finally {
+            this.running = false;
+        }
+    }
+
+    private async reconcileBlueprint(blueprint: Blueprint, allNodes: Node[]): Promise<void> {
+        const decision = this.computeDecision(blueprint, allNodes);
+
+        // 1. State-review guard for stateful blueprints reaching new nodes.
+        for (const node of decision.stateReview) {
+            DatabaseService.getInstance().upsertDeployment({
+                blueprint_id: blueprint.id,
+                node_id: node.id,
+                status: 'pending_state_review',
+                last_checked_at: Date.now(),
+                drift_summary: 'Stateful blueprint awaiting operator confirmation before first deploy',
+            });
+        }
+
+        // 2. Eviction guard for stateful blueprints leaving the selector.
+        for (const node of decision.evictBlocked) {
+            DatabaseService.getInstance().upsertDeployment({
+                blueprint_id: blueprint.id,
+                node_id: node.id,
+                status: 'evict_blocked',
+                last_checked_at: Date.now(),
+                drift_summary: 'Stateful blueprint eviction requires operator confirmation',
+            });
+        }
+
+        // 3. Deploy missing/stale entries (stateless or pre-accepted stateful).
+        const svc = BlueprintService.getInstance();
+        for (const node of decision.deploy) {
+            await svc.deployToNode(blueprint, node);
+        }
+
+        // 4. Withdraw stateless deployments leaving the selector.
+        for (const node of decision.withdraw) {
+            await svc.withdrawFromNode(blueprint, node);
+        }
+
+        // 5. Drift check for active deployments.
+        for (const node of decision.check) {
+            const driftResult = await svc.checkForDrift(blueprint, node);
+            if (!driftResult.drifted) continue;
+            const reason = driftResult.reason ?? 'unknown drift';
+            DatabaseService.getInstance().upsertDeployment({
+                blueprint_id: blueprint.id,
+                node_id: node.id,
+                status: 'drifted',
+                last_checked_at: Date.now(),
+                last_drift_at: Date.now(),
+                drift_summary: reason,
+            });
+            await this.handleDrift(blueprint, node, reason);
+        }
+    }
+
+    private computeDecision(blueprint: Blueprint, allNodes: Node[]): ReconcileDecision {
+        const labelSvc = NodeLabelService.getInstance();
+        const desiredNodes = labelSvc.matchSelector(blueprint.selector, allNodes);
+        const desiredIds = new Set(desiredNodes.map(n => n.id));
+
+        const existingDeployments = DatabaseService.getInstance().listDeployments(blueprint.id);
+        const deploymentByNode = new Map<number, BlueprintDeployment>();
+        for (const dep of existingDeployments) deploymentByNode.set(dep.node_id, dep);
+
+        const decision: ReconcileDecision = {
+            deploy: [],
+            withdraw: [],
+            check: [],
+            stateReview: [],
+            evictBlocked: [],
+        };
+
+        // Desired but not active or stale
+        for (const node of desiredNodes) {
+            const dep = deploymentByNode.get(node.id);
+            if (!dep) {
+                if (blueprint.classification === 'stateful' || blueprint.classification === 'unknown') {
+                    decision.stateReview.push(node);
+                } else {
+                    decision.deploy.push(node);
+                }
+                continue;
+            }
+            // Operator-blocking states must not be auto-acted on
+            if (dep.status === 'pending_state_review' || dep.status === 'evict_blocked' || dep.status === 'name_conflict') {
+                continue;
+            }
+            if (dep.status === 'active' && dep.applied_revision === blueprint.revision) {
+                decision.check.push(node);
+                continue;
+            }
+            if (dep.applied_revision !== blueprint.revision) {
+                // revision drift: re-deploy (stateful never auto-redeploys volume-destroying changes; handled in handleDrift)
+                decision.deploy.push(node);
+                continue;
+            }
+            if (dep.status === 'failed' || dep.status === 'pending') {
+                decision.deploy.push(node);
+                continue;
+            }
+        }
+
+        // Active on a node that is no longer desired
+        for (const dep of existingDeployments) {
+            if (desiredIds.has(dep.node_id)) continue;
+            if (dep.status === 'withdrawn') continue;
+            const node = allNodes.find(n => n.id === dep.node_id);
+            if (!node) continue;
+            if (blueprint.classification === 'stateful' || blueprint.classification === 'unknown') {
+                if (dep.status !== 'evict_blocked') decision.evictBlocked.push(node);
+            } else {
+                decision.withdraw.push(node);
+            }
+        }
+
+        return decision;
+    }
+
+    private async handleDrift(blueprint: Blueprint, node: Node, reason: string): Promise<void> {
+        const notifications = NotificationService.getInstance();
+        switch (blueprint.drift_mode) {
+            case 'observe':
+                return; // detection only; UI surfaces the drift
+
+            case 'suggest':
+                notifications.dispatchAlert(
+                    'warning',
+                    'blueprint_drift_detected',
+                    `Blueprint "${blueprint.name}" drifted on node "${node.name}": ${reason}`,
+                    { stackName: blueprint.name },
+                );
+                return;
+
+            case 'enforce': {
+                // Stateful safeguard: if the upcoming redeploy would destroy named volumes,
+                // downgrade to suggest semantics for this drift event.
+                if (blueprint.classification === 'stateful') {
+                    const marker = await BlueprintService.getInstance().readMarker(blueprint.name, node);
+                    if (!marker) {
+                        notifications.dispatchAlert(
+                            'warning',
+                            'blueprint_drift_detected',
+                            `Blueprint "${blueprint.name}" lost its marker on node "${node.name}"; auto-fix declined to avoid stomping unowned data. Reason: ${reason}`,
+                            { stackName: blueprint.name },
+                        );
+                        return;
+                    }
+                }
+                DatabaseService.getInstance().upsertDeployment({
+                    blueprint_id: blueprint.id,
+                    node_id: node.id,
+                    status: 'correcting',
+                    last_checked_at: Date.now(),
+                });
+                const result = await BlueprintService.getInstance().deployToNode(blueprint, node);
+                if (result.status !== 'active') {
+                    notifications.dispatchAlert(
+                        'error',
+                        'blueprint_drift_correction_failed',
+                        `Auto-fix for "${blueprint.name}" on node "${node.name}" failed: ${result.error ?? 'unknown error'}`,
+                        { stackName: blueprint.name },
+                    );
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * Used by an operator-confirmed redeploy of a deployment in a guard
+     * state. Re-reads the deployment row and refuses unless it is in a
+     * transition-eligible state, so a TOCTOU window between the route
+     * handler's check and the actual deploy can't smuggle a name_conflict
+     * row through.
+     */
+    async forceDeploy(blueprintId: number, nodeId: number): Promise<void> {
+        const blueprint = DatabaseService.getInstance().getBlueprint(blueprintId);
+        if (!blueprint) return;
+        const node = DatabaseService.getInstance().getNode(nodeId);
+        if (!node) return;
+        const dep = DatabaseService.getInstance().getDeployment(blueprintId, nodeId);
+        // Allow forceDeploy when:
+        //   - dep is missing (operator-driven first deploy outside selector)
+        //   - dep.status is pending_state_review (operator accepted)
+        //   - dep.status is failed (manual retry)
+        // Refuse when dep is name_conflict (must be cleared explicitly) or evict_blocked
+        // (operator must use the withdraw flow first).
+        if (dep && (dep.status === 'name_conflict' || dep.status === 'evict_blocked')) {
+            console.warn(`[BlueprintReconciler] forceDeploy refused for blueprint ${blueprintId} on node ${nodeId}: status=${dep.status}`);
+            return;
+        }
+        await BlueprintService.getInstance().deployToNode(blueprint, node);
+    }
+
+    /**
+     * Used to react to a compose change that introduces volume-destroying
+     * differences. Returns true when the change would destroy data on the
+     * given deployment. Reconciler uses this to refuse Enforce on a
+     * stateful drift that would wipe volumes.
+     */
+    static wouldDestroyVolumes(blueprint: Blueprint, priorCompose: string): boolean {
+        if (blueprint.classification !== 'stateful') return false;
+        return BlueprintAnalyzer.wouldDestroyVolumes(priorCompose, blueprint.compose_content);
+    }
+}

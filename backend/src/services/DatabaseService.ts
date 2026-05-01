@@ -226,6 +226,61 @@ export interface FleetSnapshotFile {
     content: string;
 }
 
+export type DriftMode = 'observe' | 'suggest' | 'enforce';
+export type BlueprintClassification = 'stateless' | 'stateful' | 'unknown';
+export type BlueprintDeploymentStatus =
+    | 'pending'
+    | 'pending_state_review'
+    | 'deploying'
+    | 'active'
+    | 'drifted'
+    | 'correcting'
+    | 'failed'
+    | 'withdrawing'
+    | 'withdrawn'
+    | 'evict_blocked'
+    | 'name_conflict';
+
+export type BlueprintSelector =
+    | { type: 'labels'; any: string[]; all: string[] }
+    | { type: 'nodes'; ids: number[] };
+
+export interface NodeLabelRow {
+    id: number;
+    node_id: number;
+    label: string;
+    created_at: number;
+}
+
+export interface Blueprint {
+    id: number;
+    name: string;
+    description: string | null;
+    compose_content: string;
+    selector: BlueprintSelector;
+    drift_mode: DriftMode;
+    classification: BlueprintClassification;
+    classification_reasons: string[];
+    enabled: boolean;
+    revision: number;
+    created_at: number;
+    updated_at: number;
+    created_by: string | null;
+}
+
+export interface BlueprintDeployment {
+    id: number;
+    blueprint_id: number;
+    node_id: number;
+    status: BlueprintDeploymentStatus;
+    applied_revision: number | null;
+    last_deployed_at: number | null;
+    last_checked_at: number | null;
+    last_drift_at: number | null;
+    drift_summary: string | null;
+    last_error: string | null;
+}
+
 export interface AuditLogEntry {
     id: number;
     timestamp: number;
@@ -520,6 +575,8 @@ export class DatabaseService {
         this.migrateNotificationCategory();
         this.migrateNotificationActor();
         this.migrateMeshTables();
+        this.migrateNodeLabels();
+        this.migrateBlueprints();
 
         // Reset the cache once at end of constructor in case any migration
         // populated it via getGlobalSettings() and a subsequent migration
@@ -1270,6 +1327,74 @@ export class DatabaseService {
             console.warn('[DatabaseService] Could not create mesh_stacks:', (e as Error).message);
         }
         this.tryAddColumn('nodes', 'mesh_enabled', 'INTEGER NOT NULL DEFAULT 0');
+    }
+
+    private migrateNodeLabels(): void {
+        try {
+            this.db.prepare(`
+                CREATE TABLE IF NOT EXISTS node_labels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    node_id INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(node_id, label),
+                    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+                )
+            `).run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_node_labels_node ON node_labels(node_id)').run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_node_labels_label ON node_labels(label)').run();
+        } catch (e) {
+            console.warn('[DatabaseService] Could not create node_labels:', (e as Error).message);
+        }
+    }
+
+    private migrateBlueprints(): void {
+        try {
+            this.db.prepare(`
+                CREATE TABLE IF NOT EXISTS blueprints (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT,
+                    compose_content TEXT NOT NULL,
+                    selector_json TEXT NOT NULL,
+                    drift_mode TEXT NOT NULL DEFAULT 'suggest',
+                    classification TEXT NOT NULL DEFAULT 'unknown',
+                    classification_reasons TEXT,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    created_by TEXT
+                )
+            `).run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_blueprints_enabled ON blueprints(enabled)').run();
+        } catch (e) {
+            console.warn('[DatabaseService] Could not create blueprints:', (e as Error).message);
+        }
+        try {
+            this.db.prepare(`
+                CREATE TABLE IF NOT EXISTS blueprint_deployments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    blueprint_id INTEGER NOT NULL,
+                    node_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    applied_revision INTEGER,
+                    last_deployed_at INTEGER,
+                    last_checked_at INTEGER,
+                    last_drift_at INTEGER,
+                    drift_summary TEXT,
+                    last_error TEXT,
+                    UNIQUE(blueprint_id, node_id),
+                    FOREIGN KEY (blueprint_id) REFERENCES blueprints(id) ON DELETE CASCADE,
+                    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+                )
+            `).run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_blueprint_deployments_blueprint ON blueprint_deployments(blueprint_id)').run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_blueprint_deployments_node ON blueprint_deployments(node_id)').run();
+            this.db.prepare('CREATE INDEX IF NOT EXISTS idx_blueprint_deployments_status ON blueprint_deployments(status)').run();
+        } catch (e) {
+            console.warn('[DatabaseService] Could not create blueprint_deployments:', (e as Error).message);
+        }
     }
 
     // --- Sencho Mesh ---
@@ -3620,5 +3745,245 @@ export class DatabaseService {
             `DELETE FROM stack_label_assignments WHERE node_id = ? AND stack_name NOT IN (${placeholders})`
         ).run(nodeId, ...validStackNames);
         return result.changes;
+    }
+
+    // --- Node Labels (fleet-level orchestration) ---
+
+    public listNodeLabels(nodeId?: number): NodeLabelRow[] {
+        const sql = nodeId !== undefined
+            ? 'SELECT id, node_id, label, created_at FROM node_labels WHERE node_id = ? ORDER BY label'
+            : 'SELECT id, node_id, label, created_at FROM node_labels ORDER BY node_id, label';
+        const rows = nodeId !== undefined
+            ? this.db.prepare(sql).all(nodeId)
+            : this.db.prepare(sql).all();
+        return rows as NodeLabelRow[];
+    }
+
+    public listDistinctNodeLabels(): string[] {
+        const rows = this.db.prepare('SELECT DISTINCT label FROM node_labels ORDER BY label').all() as { label: string }[];
+        return rows.map(r => r.label);
+    }
+
+    public addNodeLabel(nodeId: number, label: string): NodeLabelRow {
+        const trimmed = label.trim();
+        if (!trimmed) throw new Error('Label must not be empty');
+        const now = Date.now();
+        const result = this.db.prepare(
+            'INSERT OR IGNORE INTO node_labels (node_id, label, created_at) VALUES (?, ?, ?)'
+        ).run(nodeId, trimmed, now);
+        const row = result.changes > 0
+            ? this.db.prepare('SELECT id, node_id, label, created_at FROM node_labels WHERE id = ?').get(result.lastInsertRowid)
+            : this.db.prepare('SELECT id, node_id, label, created_at FROM node_labels WHERE node_id = ? AND label = ?').get(nodeId, trimmed);
+        return row as NodeLabelRow;
+    }
+
+    public removeNodeLabel(nodeId: number, label: string): boolean {
+        const result = this.db.prepare('DELETE FROM node_labels WHERE node_id = ? AND label = ?').run(nodeId, label);
+        return result.changes > 0;
+    }
+
+    public getNodeLabelsMap(): Record<number, string[]> {
+        const rows = this.db.prepare('SELECT node_id, label FROM node_labels ORDER BY node_id, label').all() as { node_id: number; label: string }[];
+        const map: Record<number, string[]> = {};
+        for (const row of rows) {
+            if (!map[row.node_id]) map[row.node_id] = [];
+            map[row.node_id].push(row.label);
+        }
+        return map;
+    }
+
+    // --- Blueprints ---
+
+    private parseBlueprint(row: Record<string, unknown>): Blueprint {
+        return {
+            id: row.id as number,
+            name: row.name as string,
+            description: (row.description as string | null) ?? null,
+            compose_content: row.compose_content as string,
+            selector: JSON.parse(row.selector_json as string) as BlueprintSelector,
+            drift_mode: row.drift_mode as DriftMode,
+            classification: row.classification as BlueprintClassification,
+            classification_reasons: row.classification_reasons
+                ? (JSON.parse(row.classification_reasons as string) as string[])
+                : [],
+            enabled: row.enabled === 1,
+            revision: row.revision as number,
+            created_at: row.created_at as number,
+            updated_at: row.updated_at as number,
+            created_by: (row.created_by as string | null) ?? null,
+        };
+    }
+
+    public listBlueprints(): Blueprint[] {
+        return this.db.prepare('SELECT * FROM blueprints ORDER BY name')
+            .all()
+            .map(row => this.parseBlueprint(row as Record<string, unknown>));
+    }
+
+    public listEnabledBlueprints(): Blueprint[] {
+        return this.db.prepare('SELECT * FROM blueprints WHERE enabled = 1 ORDER BY name')
+            .all()
+            .map(row => this.parseBlueprint(row as Record<string, unknown>));
+    }
+
+    public getBlueprint(id: number): Blueprint | undefined {
+        const row = this.db.prepare('SELECT * FROM blueprints WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+        return row ? this.parseBlueprint(row) : undefined;
+    }
+
+    public getBlueprintByName(name: string): Blueprint | undefined {
+        const row = this.db.prepare('SELECT * FROM blueprints WHERE name = ?').get(name) as Record<string, unknown> | undefined;
+        return row ? this.parseBlueprint(row) : undefined;
+    }
+
+    public createBlueprint(input: {
+        name: string;
+        description: string | null;
+        compose_content: string;
+        selector: BlueprintSelector;
+        drift_mode: DriftMode;
+        classification: BlueprintClassification;
+        classification_reasons: string[];
+        enabled: boolean;
+        created_by: string | null;
+    }): Blueprint {
+        const now = Date.now();
+        const result = this.db.prepare(
+            `INSERT INTO blueprints (name, description, compose_content, selector_json, drift_mode, classification, classification_reasons, enabled, revision, created_at, updated_at, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+        ).run(
+            input.name,
+            input.description,
+            input.compose_content,
+            JSON.stringify(input.selector),
+            input.drift_mode,
+            input.classification,
+            JSON.stringify(input.classification_reasons),
+            input.enabled ? 1 : 0,
+            now,
+            now,
+            input.created_by,
+        );
+        const created = this.getBlueprint(result.lastInsertRowid as number);
+        if (!created) throw new Error('Failed to fetch created blueprint');
+        return created;
+    }
+
+    public updateBlueprint(id: number, updates: {
+        name?: string;
+        description?: string | null;
+        compose_content?: string;
+        selector?: BlueprintSelector;
+        drift_mode?: DriftMode;
+        classification?: BlueprintClassification;
+        classification_reasons?: string[];
+        enabled?: boolean;
+        bumpRevision?: boolean;
+    }): Blueprint | undefined {
+        const existing = this.getBlueprint(id);
+        if (!existing) return undefined;
+        const fields: string[] = [];
+        const values: unknown[] = [];
+        if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+        if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+        if (updates.compose_content !== undefined) { fields.push('compose_content = ?'); values.push(updates.compose_content); }
+        if (updates.selector !== undefined) { fields.push('selector_json = ?'); values.push(JSON.stringify(updates.selector)); }
+        if (updates.drift_mode !== undefined) { fields.push('drift_mode = ?'); values.push(updates.drift_mode); }
+        if (updates.classification !== undefined) { fields.push('classification = ?'); values.push(updates.classification); }
+        if (updates.classification_reasons !== undefined) { fields.push('classification_reasons = ?'); values.push(JSON.stringify(updates.classification_reasons)); }
+        if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+        if (updates.bumpRevision) { fields.push('revision = revision + 1'); }
+        fields.push('updated_at = ?');
+        values.push(Date.now());
+        values.push(id);
+        this.db.prepare(`UPDATE blueprints SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+        return this.getBlueprint(id);
+    }
+
+    public deleteBlueprint(id: number): boolean {
+        const result = this.db.prepare('DELETE FROM blueprints WHERE id = ?').run(id);
+        return result.changes > 0;
+    }
+
+    // --- Blueprint Deployments ---
+
+    private parseBlueprintDeployment(row: Record<string, unknown>): BlueprintDeployment {
+        return {
+            id: row.id as number,
+            blueprint_id: row.blueprint_id as number,
+            node_id: row.node_id as number,
+            status: row.status as BlueprintDeploymentStatus,
+            applied_revision: (row.applied_revision as number | null) ?? null,
+            last_deployed_at: (row.last_deployed_at as number | null) ?? null,
+            last_checked_at: (row.last_checked_at as number | null) ?? null,
+            last_drift_at: (row.last_drift_at as number | null) ?? null,
+            drift_summary: (row.drift_summary as string | null) ?? null,
+            last_error: (row.last_error as string | null) ?? null,
+        };
+    }
+
+    public listDeployments(blueprintId: number): BlueprintDeployment[] {
+        return this.db.prepare('SELECT * FROM blueprint_deployments WHERE blueprint_id = ? ORDER BY node_id')
+            .all(blueprintId)
+            .map(row => this.parseBlueprintDeployment(row as Record<string, unknown>));
+    }
+
+    public listAllDeployments(): BlueprintDeployment[] {
+        return this.db.prepare('SELECT * FROM blueprint_deployments')
+            .all()
+            .map(row => this.parseBlueprintDeployment(row as Record<string, unknown>));
+    }
+
+    public getDeployment(blueprintId: number, nodeId: number): BlueprintDeployment | undefined {
+        const row = this.db.prepare('SELECT * FROM blueprint_deployments WHERE blueprint_id = ? AND node_id = ?').get(blueprintId, nodeId) as Record<string, unknown> | undefined;
+        return row ? this.parseBlueprintDeployment(row) : undefined;
+    }
+
+    public upsertDeployment(input: {
+        blueprint_id: number;
+        node_id: number;
+        status: BlueprintDeploymentStatus;
+        applied_revision?: number | null;
+        last_deployed_at?: number | null;
+        last_checked_at?: number | null;
+        last_drift_at?: number | null;
+        drift_summary?: string | null;
+        last_error?: string | null;
+    }): BlueprintDeployment {
+        const existing = this.getDeployment(input.blueprint_id, input.node_id);
+        if (existing) {
+            const fields: string[] = ['status = ?'];
+            const values: unknown[] = [input.status];
+            if (input.applied_revision !== undefined) { fields.push('applied_revision = ?'); values.push(input.applied_revision); }
+            if (input.last_deployed_at !== undefined) { fields.push('last_deployed_at = ?'); values.push(input.last_deployed_at); }
+            if (input.last_checked_at !== undefined) { fields.push('last_checked_at = ?'); values.push(input.last_checked_at); }
+            if (input.last_drift_at !== undefined) { fields.push('last_drift_at = ?'); values.push(input.last_drift_at); }
+            if (input.drift_summary !== undefined) { fields.push('drift_summary = ?'); values.push(input.drift_summary); }
+            if (input.last_error !== undefined) { fields.push('last_error = ?'); values.push(input.last_error); }
+            values.push(input.blueprint_id, input.node_id);
+            this.db.prepare(`UPDATE blueprint_deployments SET ${fields.join(', ')} WHERE blueprint_id = ? AND node_id = ?`).run(...values);
+        } else {
+            this.db.prepare(
+                `INSERT INTO blueprint_deployments (blueprint_id, node_id, status, applied_revision, last_deployed_at, last_checked_at, last_drift_at, drift_summary, last_error)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+                input.blueprint_id,
+                input.node_id,
+                input.status,
+                input.applied_revision ?? null,
+                input.last_deployed_at ?? null,
+                input.last_checked_at ?? null,
+                input.last_drift_at ?? null,
+                input.drift_summary ?? null,
+                input.last_error ?? null,
+            );
+        }
+        const updated = this.getDeployment(input.blueprint_id, input.node_id);
+        if (!updated) throw new Error('Failed to upsert deployment');
+        return updated;
+    }
+
+    public deleteDeployment(blueprintId: number, nodeId: number): void {
+        this.db.prepare('DELETE FROM blueprint_deployments WHERE blueprint_id = ? AND node_id = ?').run(blueprintId, nodeId);
     }
 }
