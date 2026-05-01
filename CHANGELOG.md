@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.66.0](https://github.com/Studio-Saelix/sencho/compare/v0.65.1...v0.66.0) (2026-05-01)
+
+
+### Added
+
+* **blueprints:** add Fleet &gt; Deployments tab UI, node labels, and docs ([#861](https://github.com/Studio-Saelix/sencho/issues/861)) ([e5391e6](https://github.com/Studio-Saelix/sencho/commit/e5391e66cbd90027b39ab38111e6ba6b2793afdc))
+* **blueprints:** backend foundation for fleet-wide compose templates ([#860](https://github.com/Studio-Saelix/sencho/issues/860)) ([685d5d7](https://github.com/Studio-Saelix/sencho/commit/685d5d729e71e6320aa015c88609b3cbda5a1f9b))
+* **editor:** opt-in diff preview before save ([#855](https://github.com/Studio-Saelix/sencho/issues/855)) ([a25acbe](https://github.com/Studio-Saelix/sencho/commit/a25acbec7c1d9f933f8ebe78326f10efe79bf742))
+* **fleet:** §16 orchestrator tab foundation (Deployments, Federation, Secrets) ([#856](https://github.com/Studio-Saelix/sencho/issues/856)) ([b8437e8](https://github.com/Studio-Saelix/sencho/commit/b8437e8780d6e7eeb8f9f2a9a0570e71abb700c6))
+* **fleet:** sencho mesh in traffic and routing tab ([#858](https://github.com/Studio-Saelix/sencho/issues/858)) ([7663f4c](https://github.com/Studio-Saelix/sencho/commit/7663f4cd8bb3f0cba89dd994098ce0431a89b0e4))
+* **pilot:** add tcp tunnel frames + mesh sidecar package ([#857](https://github.com/Studio-Saelix/sencho/issues/857)) ([6893ece](https://github.com/Studio-Saelix/sencho/commit/6893ece898f00fbacff1dd98357cb1dab7394269))
+* **settings:** dress the page to match the audit ([#849](https://github.com/Studio-Saelix/sencho/issues/849)) ([eead195](https://github.com/Studio-Saelix/sencho/commit/eead1955298249e22b9444f5f1eeaeac9e0db28d))
+* **sidebar:** §14 sidebar orchestration, filter chips, pinned rail, trailing column ([#850](https://github.com/Studio-Saelix/sencho/issues/850)) ([4c0efcb](https://github.com/Studio-Saelix/sencho/commit/4c0efcb9a8ffa634b376030b883af89abfd440b4))
+* **sidebar:** bulk stack operations ([#854](https://github.com/Studio-Saelix/sencho/issues/854)) ([a0bf5b5](https://github.com/Studio-Saelix/sencho/commit/a0bf5b5bf5a58025db33ac54171107cad5e4d2d6))
+* **stack:** per-stack activity timeline with actor attribution ([#852](https://github.com/Studio-Saelix/sencho/issues/852)) ([3e01daf](https://github.com/Studio-Saelix/sencho/commit/3e01daf76fbcfc0775555e30e99d8151959119de))
+
 ## [0.65.1](https://github.com/AnsoCode/Sencho/compare/v0.65.0...v0.65.1) (2026-04-29)
 
 
