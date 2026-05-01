@@ -20,9 +20,9 @@ type IconType = typeof Activity;
 const CATEGORY_ICONS: Record<string, { icon: IconType; className: string }> = {
   deploy_failure: { icon: ServerCrash, className: 'text-destructive' },
   deploy_success: { icon: CheckCircle2, className: 'text-success' },
-  image_update_applied: { icon: RefreshCw, className: 'text-info' },
+  image_update_applied: { icon: RefreshCw, className: 'text-brand' },
   image_update_available: { icon: RefreshCw, className: 'text-warning' },
-  auto_heal_restarted: { icon: RotateCcw, className: 'text-info' },
+  auto_heal_restarted: { icon: RotateCcw, className: 'text-brand' },
   auto_heal_failed: { icon: AlertOctagon, className: 'text-destructive' },
   auto_heal_policy_disabled: { icon: AlertTriangle, className: 'text-warning' },
   scan_finding: { icon: Search, className: 'text-warning' },
@@ -31,7 +31,7 @@ const CATEGORY_ICONS: Record<string, { icon: IconType; className: string }> = {
 };
 
 const LEVEL_ICONS: Record<string, { icon: IconType; className: string }> = {
-  info: { icon: Info, className: 'text-info' },
+  info: { icon: Info, className: 'text-stat-subtitle' },
   warning: { icon: AlertTriangle, className: 'text-warning' },
   error: { icon: AlertOctagon, className: 'text-destructive' },
 };

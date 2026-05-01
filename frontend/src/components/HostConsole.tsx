@@ -3,6 +3,7 @@ import { ArrowLeft, Copy, Trash2, Download, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { PageMasthead, type MastheadTone } from './ui/PageMasthead';
 import { loadXtermModules, type Terminal, type FitAddon, type SerializeAddon } from '@/lib/xtermLoader';
+import { buildXtermMinimalTheme } from '@/lib/terminalTheme';
 import { useNodes } from '@/context/NodeContext';
 import { copyToClipboard } from '@/lib/clipboard';
 
@@ -14,17 +15,6 @@ interface HostConsoleProps {
 // Window considered "live" for the masthead pulsing dot.
 const LIVE_WINDOW_MS = 5_000;
 
-/** Build the xterm theme from CSS custom properties (resolved once per call). */
-function getTerminalTheme() {
-    const s = getComputedStyle(document.documentElement);
-    return {
-        background: s.getPropertyValue('--terminal-bg').trim(),
-        foreground: s.getPropertyValue('--terminal-fg').trim(),
-        cursor: s.getPropertyValue('--terminal-cursor').trim(),
-        cursorAccent: s.getPropertyValue('--terminal-cursor-accent').trim(),
-        selectionBackground: s.getPropertyValue('--terminal-selection').trim(),
-    };
-}
 
 function formatUptime(ms: number): string {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -75,7 +65,7 @@ export default function HostConsole({ stackName, onClose }: HostConsoleProps) {
             if (!mounted) return;
 
             const term = new mods.Terminal({
-                theme: getTerminalTheme(),
+                theme: buildXtermMinimalTheme(),
                 fontFamily: "'Geist Mono', monospace",
                 fontSize: 14,
                 cursorBlink: true,

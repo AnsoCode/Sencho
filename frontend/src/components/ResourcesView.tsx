@@ -165,7 +165,7 @@ function FilterToggle({ value, onChange, counts }: FilterToggleProps) {
                         {label}
                         <span className={cn(
                             'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-sm text-[10px] font-mono transition-colors duration-200',
-                            value === key ? 'bg-muted text-foreground' : 'text-muted-foreground/70',
+                            value === key ? 'bg-muted text-foreground' : 'text-stat-subtitle',
                         )}>
                             {count}
                         </span>
@@ -214,7 +214,7 @@ function ManagedBadge({ status, managedBy }: {
 const SEVERITY_BADGE_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
     CRITICAL: 'border-destructive/25 bg-destructive/8 text-destructive',
     HIGH: 'border-warning/25 bg-warning/8 text-warning',
-    MEDIUM: 'border-info/25 bg-info/8 text-info',
+    MEDIUM: 'border-warning/25 bg-warning/8 text-warning',
     LOW: 'border-border bg-muted/30 text-muted-foreground',
     UNKNOWN: 'border-border bg-muted/20 text-muted-foreground',
     CLEAN: 'border-success/25 bg-success/8 text-success',
@@ -223,7 +223,7 @@ const SEVERITY_BADGE_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
 const SEVERITY_DOT_CLASSES: Record<VulnSeverity | 'CLEAN', string> = {
     CRITICAL: 'bg-destructive',
     HIGH: 'bg-warning',
-    MEDIUM: 'bg-info',
+    MEDIUM: 'bg-warning',
     LOW: 'bg-muted-foreground/60',
     UNKNOWN: 'bg-muted-foreground/40',
     CLEAN: 'bg-success',
@@ -275,7 +275,7 @@ function SeverityBadge({ summary, onClick }: { summary: ScanSummary; onClick: ()
                             <div className="flex gap-3 mt-1">
                                 {summary.critical > 0 && <span className="text-destructive">{summary.critical}C</span>}
                                 {summary.high > 0 && <span className="text-warning">{summary.high}H</span>}
-                                {summary.medium > 0 && <span className="text-info">{summary.medium}M</span>}
+                                {summary.medium > 0 && <span className="text-warning">{summary.medium}M</span>}
                                 {summary.low > 0 && <span className="text-muted-foreground">{summary.low}L</span>}
                             </div>
                         )}
@@ -752,7 +752,7 @@ export default function ResourcesView() {
                                 target="images"
                                 icon={<PackageMinus className="w-6 h-6" />}
                                 label="Prune Unused Images"
-                                accentClass="text-info"
+                                accentClass="text-brand"
                                 onManaged={() => setConfirmPrune({ target: 'images', scope: 'managed' })}
                                 onAll={() => setConfirmPrune({ target: 'images', scope: 'all' })}
                             />

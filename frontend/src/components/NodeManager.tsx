@@ -285,7 +285,7 @@ export function NodeManager() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'online':
-        return <Badge variant="default" className="bg-green-600 text-white gap-1"><Wifi className="w-3 h-3" /> Online</Badge>;
+        return <Badge variant="default" className="bg-success text-success-foreground gap-1"><Wifi className="w-3 h-3" /> Online</Badge>;
       case 'offline':
         return <Badge variant="destructive" className="gap-1"><WifiOff className="w-3 h-3" /> Offline</Badge>;
       default:
@@ -458,7 +458,7 @@ export function NodeManager() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-blue-500" />
+              <KeyRound className="w-4 h-4 text-brand" />
               Generate Node Token
             </p>
             <p className="text-xs text-muted-foreground mt-1">
@@ -586,7 +586,7 @@ export function NodeManager() {
                     return (
                       <div className="flex items-center gap-1.5">
                         {summary?.auto_update_enabled ? (
-                          <Badge variant="outline" className="text-info border-info/30 gap-1 text-xs">
+                          <Badge variant="outline" className="text-stat-subtitle border-card-border gap-1 text-xs">
                             <RefreshCw className="w-3 h-3" strokeWidth={1.5} />
                             Auto
                           </Badge>

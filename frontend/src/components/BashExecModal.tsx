@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Terminal as TerminalIcon } from 'lucide-react';
 import { loadXtermModules, type Terminal, type FitAddon, type XtermModules } from '@/lib/xtermLoader';
+import { buildXtermMinimalTheme } from '@/lib/terminalTheme';
 
 type TerminalContainer = HTMLDivElement & { __resizeObserver?: ResizeObserver };
 
@@ -91,17 +92,8 @@ export default function BashExecModal({ isOpen, onClose, containerId, containerN
     });
 
     function initTerminal(containerEl: HTMLDivElement, mods: XtermModules) {
-      // xterm.js requires literal color strings in its theme config; CSS variables
-      // and oklch() are not supported by the canvas renderer. These values are
-      // intentionally hardcoded to match the terminal well aesthetic.
       const term = new mods.Terminal({
-        theme: {
-          background: '#0a0a0a',
-          foreground: '#d4d4d4',
-          cursor: '#ffffff',
-          cursorAccent: '#000000',
-          selectionBackground: 'rgba(255, 255, 255, 0.3)',
-        },
+        theme: buildXtermMinimalTheme(),
         fontFamily: "'Geist Mono', monospace",
         fontSize: 14,
         cursorBlink: true,
