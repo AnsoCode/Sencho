@@ -8,6 +8,7 @@ import DockerController from './DockerController';
 import { PilotTunnelManager } from './PilotTunnelManager';
 import { generateOverrideYaml, MeshAlias } from './MeshComposeOverride';
 import { sanitizeForLog } from '../utils/safeLog';
+import { isPathWithinBase, isValidStackName } from '../utils/validation';
 
 const ACTIVITY_BUFFER_SIZE = 1000;
 const ALIAS_REFRESH_INTERVAL_MS = 60_000;
@@ -219,6 +220,9 @@ export class MeshService extends EventEmitter {
     // --- Opt-in / opt-out ---
 
     public async optInStack(nodeId: number, stackName: string, actor: string): Promise<void> {
+        if (!isValidStackName(stackName)) {
+            throw new MeshError('denied', `invalid stack name: ${stackName}`);
+        }
         const db = DatabaseService.getInstance();
         if (db.isMeshStackEnabled(nodeId, stackName)) return;
 
@@ -256,6 +260,9 @@ export class MeshService extends EventEmitter {
     }
 
     public async optOutStack(nodeId: number, stackName: string, actor: string): Promise<void> {
+        if (!isValidStackName(stackName)) {
+            throw new MeshError('denied', `invalid stack name: ${stackName}`);
+        }
         const db = DatabaseService.getInstance();
         if (!db.isMeshStackEnabled(nodeId, stackName)) return;
         db.deleteMeshStack(nodeId, stackName);
@@ -300,6 +307,7 @@ export class MeshService extends EventEmitter {
     // --- Override file management ---
 
     public async ensureStackOverride(nodeId: number, stackName: string): Promise<string | null> {
+        if (!isValidStackName(stackName)) return null;
         const db = DatabaseService.getInstance();
         if (!db.isMeshStackEnabled(nodeId, stackName)) return null;
 
@@ -312,13 +320,17 @@ export class MeshService extends EventEmitter {
 
         const dir = this.overrideDirFor(nodeId);
         await fs.mkdir(dir, { recursive: true });
-        const file = path.join(dir, `${stackName}.override.yml`);
+        const file = path.resolve(dir, `${stackName}.override.yml`);
+        if (!isPathWithinBase(file, dir)) return null;
         await fs.writeFile(file, yaml, 'utf8');
         return file;
     }
 
     private async removeStackOverride(nodeId: number, stackName: string): Promise<void> {
-        const file = path.join(this.overrideDirFor(nodeId), `${stackName}.override.yml`);
+        if (!isValidStackName(stackName)) return;
+        const dir = this.overrideDirFor(nodeId);
+        const file = path.resolve(dir, `${stackName}.override.yml`);
+        if (!isPathWithinBase(file, dir)) return;
         try { await fs.unlink(file); } catch { /* ignore not-exist */ }
     }
 

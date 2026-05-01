@@ -1,26 +1,43 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupTestDb, cleanupTestDb } from './helpers/setupTestDb';
 
 let tmpDir: string;
+let MeshService: typeof import('../services/MeshService').MeshService;
+let DatabaseService: typeof import('../services/DatabaseService').DatabaseService;
 
-beforeEach(async () => {
+beforeAll(async () => {
     tmpDir = await setupTestDb();
+    ({ MeshService } = await import('../services/MeshService'));
+    ({ DatabaseService } = await import('../services/DatabaseService'));
 });
 
-afterEach(() => {
+afterAll(() => {
     cleanupTestDb(tmpDir);
+});
+
+beforeEach(() => {
+    const db = DatabaseService.getInstance().getDb();
+    db.prepare('DELETE FROM mesh_stacks').run();
+    db.prepare('DELETE FROM nodes WHERE is_default = 0').run();
+    const svc = MeshService.getInstance() as unknown as {
+        aliasCache: Map<string, unknown>;
+        aliasByPort: Map<number, unknown>;
+        activity: unknown[];
+        activeStreams: Map<number, unknown>;
+        routeErrorMap: Map<string, unknown>;
+        routeLatencyMap: Map<string, unknown>;
+    };
+    svc.aliasCache = new Map();
+    svc.aliasByPort = new Map();
+    svc.activity = [];
+    svc.activeStreams = new Map();
+    svc.routeErrorMap = new Map();
+    svc.routeLatencyMap = new Map();
     vi.restoreAllMocks();
 });
 
-async function loadMeshService() {
-    const { MeshService } = await import('../services/MeshService');
-    const { DatabaseService } = await import('../services/DatabaseService');
-    return { MeshService, DatabaseService };
-}
-
 describe('MeshService.optInStack', () => {
     it('writes a mesh_stacks row and rejects duplicate ports', async () => {
-        const { MeshService, DatabaseService } = await loadMeshService();
         const svc = MeshService.getInstance();
 
         vi.spyOn(svc as unknown as { inspectStackServices: (n: number, s: string) => Promise<unknown> }, 'inspectStackServices')
@@ -34,13 +51,11 @@ describe('MeshService.optInStack', () => {
         await svc.optInStack(localNodeId, 'api', 'tester');
         expect(db.isMeshStackEnabled(localNodeId, 'api')).toBe(true);
 
-        // Second stack claiming the same port collides.
         await expect(svc.optInStack(localNodeId, 'shadow', 'tester'))
             .rejects.toThrow(/port 5432 is already claimed/);
     });
 
     it('opt-out removes the row and the override', async () => {
-        const { MeshService, DatabaseService } = await loadMeshService();
         const svc = MeshService.getInstance();
         vi.spyOn(svc as unknown as { inspectStackServices: (n: number, s: string) => Promise<unknown> }, 'inspectStackServices')
             .mockResolvedValue([{ service: 'db', ports: [5432] }]);
@@ -55,11 +70,19 @@ describe('MeshService.optInStack', () => {
         await svc.optOutStack(localNodeId, 'api', 'tester');
         expect(db.isMeshStackEnabled(localNodeId, 'api')).toBe(false);
     });
+
+    it('rejects an invalid stack name (path traversal attempt)', async () => {
+        const svc = MeshService.getInstance();
+        const db = DatabaseService.getInstance();
+        const localNodeId = db.getNodes()[0].id;
+        await expect(svc.optInStack(localNodeId, '../../etc/passwd', 'tester'))
+            .rejects.toThrow(/invalid stack name/);
+        expect(db.isMeshStackEnabled(localNodeId, '../../etc/passwd')).toBe(false);
+    });
 });
 
 describe('MeshService activity log', () => {
-    it('keeps the most recent events under the 1000-cap', async () => {
-        const { MeshService } = await loadMeshService();
+    it('keeps the most recent events under the 1000-cap', () => {
         const svc = MeshService.getInstance();
         for (let i = 0; i < 1100; i++) {
             svc.logActivity({ source: 'mesh', level: 'info', type: 'opt_in', message: `evt-${i}` });
@@ -70,8 +93,7 @@ describe('MeshService activity log', () => {
         expect(all[all.length - 1].message).toBe('evt-1099');
     });
 
-    it('filters by alias / source / level', async () => {
-        const { MeshService } = await loadMeshService();
+    it('filters by alias / source / level', () => {
         const svc = MeshService.getInstance();
         svc.logActivity({ source: 'mesh', level: 'info', type: 'opt_in', alias: 'a.b.c.sencho', message: 'a' });
         svc.logActivity({ source: 'pilot', level: 'error', type: 'tunnel.fail', alias: 'a.b.c.sencho', message: 'b' });
@@ -82,8 +104,7 @@ describe('MeshService activity log', () => {
         expect(svc.getActivity({ level: 'error' }).length).toBe(1);
     });
 
-    it('subscribeActivity fires for new events and unsubscribes cleanly', async () => {
-        const { MeshService } = await loadMeshService();
+    it('subscribeActivity fires for new events and unsubscribes cleanly', () => {
         const svc = MeshService.getInstance();
         const seen: string[] = [];
         const unsubscribe = svc.subscribeActivity((e) => seen.push(e.message));
@@ -96,9 +117,7 @@ describe('MeshService activity log', () => {
 
 describe('MeshService.testUpstream tunnel-down path', () => {
     it('returns ok:false where=pilot_tunnel when no tunnel is registered', async () => {
-        const { MeshService, DatabaseService } = await loadMeshService();
         const svc = MeshService.getInstance();
-
         const db = DatabaseService.getInstance();
         const localNodeId = db.getNodes()[0].id;
         const remoteNodeId = db.addNode({
@@ -126,9 +145,7 @@ describe('MeshService.testUpstream tunnel-down path', () => {
     });
 
     it('returns ok:false where=agent_resolve when target stack is not opted in', async () => {
-        const { MeshService, DatabaseService } = await loadMeshService();
         const svc = MeshService.getInstance();
-
         const db = DatabaseService.getInstance();
         const localNodeId = db.getNodes()[0].id;
 
@@ -150,10 +167,8 @@ describe('MeshService.testUpstream tunnel-down path', () => {
     });
 
     it('returns ok:false where=sidecar when alias is unknown', async () => {
-        const { MeshService, DatabaseService } = await loadMeshService();
         const svc = MeshService.getInstance();
         const localNodeId = DatabaseService.getInstance().getNodes()[0].id;
-        (svc as unknown as { aliasCache: Map<string, unknown> }).aliasCache = new Map();
 
         const result = await svc.testUpstream('nonexistent.sencho', localNodeId);
         expect(result.ok).toBe(false);
