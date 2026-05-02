@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { Component, createRef } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,12 +37,29 @@ class LazyBoundary extends Component<Props, State> {
         error: null,
     };
 
+    /**
+     * Ref on the CTA button so we can focus it when the boundary trips.
+     * When a render error fires, focus is typically inside the now-
+     * unmounted subtree and falls back to <body>; keyboard users would
+     * otherwise have to tab from the top to reach the recovery action.
+     */
+    private ctaRef = createRef<HTMLButtonElement>();
+
     public static getDerivedStateFromError(error: Error): State {
         return { hasError: true, error };
     }
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error('LazyBoundary caught an error:', error, errorInfo);
+    }
+
+    public componentDidUpdate(_prevProps: Props, prevState: State) {
+        // Focus the CTA the moment the error UI mounts, not on every
+        // re-render of the error state, so we don't steal focus from a
+        // user who has already tabbed elsewhere within the card.
+        if (!prevState.hasError && this.state.hasError) {
+            this.ctaRef.current?.focus();
+        }
     }
 
     public render() {
@@ -68,7 +85,7 @@ class LazyBoundary extends Component<Props, State> {
                         <p className="text-sm font-semibold text-stat-value">{title}</p>
                         <p className="text-sm text-stat-subtitle">{body}</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={onCta}>
+                    <Button ref={this.ctaRef} variant="outline" size="sm" onClick={onCta}>
                         {ctaLabel}
                     </Button>
                 </div>

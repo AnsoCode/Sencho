@@ -89,4 +89,72 @@ describe('useDismissalState', () => {
         expect(a.current.dismissed).toBe(true);
         expect(b.current.dismissed).toBe(false);
     });
+
+    it('syncs to dismissed=true when another tab fires a storage event with a recent timestamp', () => {
+        // Browsers fire `storage` events only in OTHER tabs than the one
+        // that wrote the change, so this test simulates "tab B receives
+        // a dismiss from tab A" by dispatching a synthetic StorageEvent.
+        const { result } = renderHook(() => useDismissalState(KEY));
+        expect(result.current.dismissed).toBe(false);
+
+        act(() => {
+            window.dispatchEvent(
+                new StorageEvent('storage', {
+                    key: KEY,
+                    newValue: String(Date.now()),
+                }),
+            );
+        });
+
+        expect(result.current.dismissed).toBe(true);
+    });
+
+    it('syncs to dismissed=false when another tab fires a storage event with a null newValue', () => {
+        // null newValue is what the spec emits when localStorage.removeItem
+        // is called in another tab.
+        localStorage.setItem(KEY, String(Date.now()));
+        const { result } = renderHook(() => useDismissalState(KEY));
+        expect(result.current.dismissed).toBe(true);
+
+        act(() => {
+            window.dispatchEvent(
+                new StorageEvent('storage', {
+                    key: KEY,
+                    newValue: null,
+                }),
+            );
+        });
+
+        expect(result.current.dismissed).toBe(false);
+    });
+
+    it('ignores storage events for unrelated keys', () => {
+        const { result } = renderHook(() => useDismissalState(KEY));
+
+        act(() => {
+            window.dispatchEvent(
+                new StorageEvent('storage', {
+                    key: 'unrelated-key',
+                    newValue: String(Date.now()),
+                }),
+            );
+        });
+
+        expect(result.current.dismissed).toBe(false);
+    });
+
+    it('treats a storage event carrying a stale timestamp as not-dismissed', () => {
+        const { result } = renderHook(() => useDismissalState(KEY));
+
+        act(() => {
+            window.dispatchEvent(
+                new StorageEvent('storage', {
+                    key: KEY,
+                    newValue: String(Date.now() - DISMISS_DURATION_MS - 1),
+                }),
+            );
+        });
+
+        expect(result.current.dismissed).toBe(false);
+    });
 });
