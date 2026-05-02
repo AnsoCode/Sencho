@@ -90,6 +90,45 @@ RUN if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
         npm ci --omit=dev; \
     fi
 
+# Add the private @studio-saelix/sencho-pro package on top of the
+# production dependencies installed above. The package contains the
+# Lemon Squeezy validation client; the public Sencho core's
+# loadEntitlementProvider() dynamic-imports it at runtime when present
+# and falls back to the in-tree LicenseService when it is not.
+#
+# Authentication uses a BuildKit secret rather than a build arg so the
+# token never lands in an image layer. The github_token secret is
+# expected to carry packages:read scope against the Studio-Saelix org;
+# CI passes the auto-provisioned GITHUB_TOKEN, which has that scope
+# automatically because the public Sencho repo and the private package
+# are in the same GitHub org. Moving the package to a different org
+# would silently break this contract; the auto-token would lose scope
+# and every build would fall through to the empty-secret branch.
+# Local builds without the secret skip the install entirely and the
+# resulting image runs through the loader's in-tree fallback.
+#
+# The install is pure-JS (axios is the only runtime dep, no native
+# modules) so cross-compilation env vars are not needed here. We use
+# `npm install --no-save` so package.json and package-lock.json stay
+# unchanged in the source tree; the package is added to node_modules
+# only inside this build layer.
+#
+# PRO_PACKAGE_VERSION is pinned by CI at build time (a literal SemVer
+# like `0.1.0`) so the scan build and the publish build resolve to the
+# same package version. Defaulting to `latest` keeps local builds
+# convenient; CI overrides this so production never tracks a moving
+# tag.
+ARG PRO_PACKAGE_VERSION=latest
+RUN --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then \
+      printf '@studio-saelix:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/github_token)" > /root/.npmrc && \
+      npm install --no-save --omit=dev "@studio-saelix/sencho-pro@${PRO_PACKAGE_VERSION}" && \
+      rm -f /root/.npmrc && \
+      rm -rf /root/.npm; \
+    else \
+      echo "[Sencho] No github_token secret provided; @studio-saelix/sencho-pro will not be installed. Loader will use the in-tree LicenseService fallback at runtime."; \
+    fi
+
 # Stage 4a: Build Docker CLI from source against Go 1.26.2
 #
 # CLI v29.4.1 ships otel/sdk v1.43.0, resolving CVE-2026-39883 (BSD kenv) and
