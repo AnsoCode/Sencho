@@ -62,7 +62,11 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          # repository_owner resolves to a fixed value (studio-saelix) on every
+          # event type. github.actor varies (a maintainer on workflow_dispatch,
+          # github-actions[bot] on the release tag push) and is just a label;
+          # GITHUB_TOKEN is what actually authenticates.
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cosign
@@ -288,7 +292,11 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          # repository_owner resolves to a fixed value (studio-saelix) on every
+          # event type. github.actor varies (a maintainer on workflow_dispatch,
+          # github-actions[bot] on the release tag push) and is just a label;
+          # GITHUB_TOKEN is what actually authenticates.
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cosign
