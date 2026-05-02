@@ -3,7 +3,7 @@ title: Verifying Published Images
 description: How to verify signatures, provenance, SBOMs, and CVE triage for Sencho Docker images.
 ---
 
-Every Sencho release image published to Docker Hub is signed and carries verifiable supply-chain artifacts. This page explains how to check each one.
+Every Sencho release image is published to two registries with identical content: Docker Hub (`saelix/sencho`) and GitHub Container Registry (`ghcr.io/studio-saelix/sencho`). Every image is signed and carries verifiable supply-chain artifacts on both registries. The `cosign verify` examples below use the Docker Hub path; substitute `ghcr.io/studio-saelix/sencho:<tag>` to verify the GHCR copy.
 
 ## Prerequisites
 

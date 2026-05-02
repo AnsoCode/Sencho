@@ -1,0 +1,48 @@
+name: Stale Issues and Pull Requests
+
+# Marks issues and PRs as stale after 60 days of inactivity and closes
+# them 14 days after that unless re-engaged. Keeps the issue tracker
+# focused on actionable work without losing real bugs: anything labeled
+# pinned, security, bug, or tracking is exempt and never auto-closed.
+
+on:
+  schedule:
+    # Daily at 01:30 UTC. Off-peak for the GitHub Actions stale runner.
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: stale
+  cancel-in-progress: false
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@b5d41d4e1d5dceea10e7104786b73624c18a190f # v10.2.0
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: 'pinned,security,bug,tracking'
+          exempt-pr-labels: 'pinned,security'
+          stale-issue-message: >
+            This issue has had no activity for 60 days and will be closed in
+            14 days unless someone replies. Add a comment or remove the stale
+            label to keep it open.
+          close-issue-message: >
+            Closing for inactivity. Reopen if this is still relevant.
+          stale-pr-message: >
+            This pull request has had no activity for 60 days and will be
+            closed in 14 days unless updated. Push a new commit or remove the
+            stale label to keep it open.
+          close-pr-message: >
+            Closing for inactivity. Reopen and rebase if you want to continue.
+          # Process up to 30 items per run to stay within the action's rate
+          # budget; running daily covers the steady state easily.
+          operations-per-run: 30

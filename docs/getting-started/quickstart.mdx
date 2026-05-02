@@ -27,6 +27,10 @@ Open `http://localhost:1852` in your browser. On first boot you'll be prompted t
   Replace `/opt/compose` with the path to your Compose projects directory. Every subdirectory inside it becomes a stack in Sencho. A `JWT_SECRET` is generated automatically on first boot; you do not need to provide one.
 </Note>
 
+<Tip>
+  Sencho is also published on GitHub Container Registry at `ghcr.io/studio-saelix/sencho:latest` with the same tags and content as Docker Hub. Pull from whichever registry your environment prefers.
+</Tip>
+
 ## Important: the 1:1 path rule
 
 The compose directory must be mounted at the **same path** inside and outside the container. The example above mounts `/opt/compose` to `/opt/compose`, which is correct. If your stacks live at a different path, adjust both sides of the mount to match. See the [Configuration guide](/getting-started/configuration#compose-directory-the-11-path-rule) for details.
