@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.68.0](https://github.com/Studio-Saelix/sencho/compare/v0.67.1...v0.68.0) (2026-05-02)
+
+
+### Added
+
+* **meta:** gate deferred Fleet tabs behind SENCHO_EXPERIMENTAL flag ([#886](https://github.com/Studio-Saelix/sencho/issues/886)) ([d69fb9f](https://github.com/Studio-Saelix/sencho/commit/d69fb9f1da24ef257d58ce9682fad308be2f86ff))
+
 ## [0.67.1](https://github.com/Studio-Saelix/sencho/compare/v0.67.0...v0.67.1) (2026-05-02)
 
 
