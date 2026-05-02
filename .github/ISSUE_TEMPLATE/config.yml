@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://docs.sencho.io
+    about: Setup, configuration, and feature documentation. Most "how do I" questions are answered here.
+  - name: Discussions
+    url: https://github.com/Studio-Saelix/sencho/discussions
+    about: Ask a question, share a setup, or propose an idea before opening an issue.
+  - name: Security policy
+    url: https://github.com/Studio-Saelix/sencho/security/policy
+    about: Privately report security vulnerabilities. Do not open a public issue for security reports.
