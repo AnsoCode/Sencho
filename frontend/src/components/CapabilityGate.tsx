@@ -3,6 +3,7 @@ import { Unplug } from 'lucide-react';
 import { useNodes } from '@/context/NodeContext';
 import type { Capability } from '@/lib/capabilities';
 import { isValidVersion } from '@/lib/version';
+import { LockCard } from './ui/LockCard';
 
 interface CapabilityGateProps {
   capability: Capability;
@@ -10,6 +11,18 @@ interface CapabilityGateProps {
   children: ReactNode;
 }
 
+/**
+ * Renders children only when the active node advertises the required
+ * capability. When it does not, returns a clean lock card explaining the
+ * version mismatch instead of rendering the gated UI.
+ *
+ * Short-circuiting is load-bearing: callers wrap CapabilityGate around
+ * lazy-loaded views, and rendering the gated children to "blur and
+ * overlay" them would still trigger the chunk fetch (and ship the JSX
+ * to anyone who opens DevTools). The lock card has no children
+ * dependency and adds no chunk weight, so a node that lacks the
+ * capability never downloads the gated module.
+ */
 export function CapabilityGate({ capability, featureName = 'This feature', children }: CapabilityGateProps) {
   const { hasCapability, activeNode, activeNodeMeta } = useNodes();
 
@@ -17,20 +30,14 @@ export function CapabilityGate({ capability, featureName = 'This feature', child
 
   const nodeName = activeNode?.name ?? 'this node';
   const versionHint = isValidVersion(activeNodeMeta?.version)
-    ? `${nodeName} is running v${activeNodeMeta.version}`
-    : `${nodeName} does not support this capability`;
+    ? `${nodeName} is running v${activeNodeMeta.version}.`
+    : `${nodeName} does not advertise this capability.`;
 
   return (
-    <div className="relative">
-      <div className="opacity-40 pointer-events-none select-none blur-[2px]">
-        {children}
-      </div>
-      <div className="absolute inset-0 flex items-start justify-center pt-8">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs">
-          <Unplug className="w-3 h-3" strokeWidth={1.5} />
-          {featureName} is not available: {versionHint}
-        </div>
-      </div>
-    </div>
+    <LockCard
+      icon={Unplug}
+      title={`${featureName} is not available on this node`}
+      body={`${versionHint} Upgrade the node to use this feature.`}
+    />
   );
 }
