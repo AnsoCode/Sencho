@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.67.0](https://github.com/Studio-Saelix/sencho/compare/v0.66.2...v0.67.0) (2026-05-02)
+
+
+### Added
+
+* **entitlements:** wire dynamic import of @studio-saelix/sencho-pro ([#880](https://github.com/Studio-Saelix/sencho/issues/880)) ([cffb481](https://github.com/Studio-Saelix/sencho/commit/cffb481106702b03415445ad35b17ec159ed772a))
+* **frontend:** add LazyBoundary for chunk-load failure recovery ([#875](https://github.com/Studio-Saelix/sencho/issues/875)) ([b843b89](https://github.com/Studio-Saelix/sencho/commit/b843b89ca46cef2aa93bdd3e4ec2a5f9e5e16f3f))
+* **frontend:** code-split non-settings paid views and security overlay ([#872](https://github.com/Studio-Saelix/sencho/issues/872)) ([a8d1a9d](https://github.com/Studio-Saelix/sencho/commit/a8d1a9d4619a00ed1c731f90f8dcefbc7212c8f4))
+* **frontend:** code-split paid-tier settings sections ([#870](https://github.com/Studio-Saelix/sencho/issues/870)) ([fd05b5e](https://github.com/Studio-Saelix/sencho/commit/fd05b5ef4b3da454540946c2920de4d769920ad3))
+
+
+### Fixed
+
+* **frontend:** replace post-dismissal blur in PaidGate / AdmiralGate with click-to-restore pill ([#874](https://github.com/Studio-Saelix/sencho/issues/874)) ([6fa0272](https://github.com/Studio-Saelix/sencho/commit/6fa0272e7999759775ba7b68a8049fd2fc62c85e))
+* **frontend:** short-circuit CapabilityGate and extract shared LockCard ([#873](https://github.com/Studio-Saelix/sencho/issues/873)) ([6b74767](https://github.com/Studio-Saelix/sencho/commit/6b74767388f5d4f2737ee866f4651933f6381d87))
+
 ## [0.66.2](https://github.com/Studio-Saelix/sencho/compare/v0.66.1...v0.66.2) (2026-05-02)
 
 
