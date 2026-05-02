@@ -195,6 +195,24 @@ export class LicenseService {
     }
 
     /**
+     * Two distinct identifiers live in `system_state` and the names are
+     * confusingly close, so for future maintainers (and audit agents):
+     *
+     *   `instance_id`           local UUID generated once on first boot. We
+     *                           send it to LS as the activation's
+     *                           `instance_name` (LS treats this as a
+     *                           free-form label, e.g. a hostname).
+     *
+     *   `license_instance_id`   the activation ID LS returns on /activate.
+     *                           We send it back to LS as the `instance_id`
+     *                           parameter on /validate and /deactivate.
+     *
+     * They are NOT redundant and NEITHER overwrites the other. Renaming
+     * `instance_id` to e.g. `local_install_id` would be clearer but would
+     * churn frontend consumers and migrations for no functional change.
+     */
+
+    /**
      * Initialize the license service on startup.
      * Ensures an instance ID exists and starts periodic validation for active licenses.
      * Fresh installs land on Community; trials are issued by Lemon Squeezy via the
@@ -451,9 +469,24 @@ export class LicenseService {
                 return { success: false, error: 'This license key is not valid for Sencho.' };
             }
 
+            // Reject if LS did not return a usable instance id. Storing an
+            // empty license_instance_id would silently break later validate()
+            // and deactivate() calls, both of which short-circuit on a falsy
+            // instance id with a generic "no active license" error. Better to
+            // surface the broken activation immediately than ship a state where
+            // the user thinks they are activated but every subsequent call
+            // fails. LS has historically always returned data.instance.id on
+            // a successful activation; this is a defense against an API change
+            // or transient malformed response, not a routinely-hit branch.
+            const lsInstanceId = data.instance?.id;
+            if (!lsInstanceId) {
+                console.warn('[License] Activation rejected: LS response missing instance.id.');
+                return { success: false, error: 'License server returned an incomplete activation. Please try again.' };
+            }
+
             // Store license data
             db.setSystemState('license_key', licenseKey);
-            db.setSystemState('license_instance_id', data.instance?.id || '');
+            db.setSystemState('license_instance_id', lsInstanceId);
             this.setLicenseStatus('active');
             db.setSystemState('license_last_validated', Date.now().toString());
 
