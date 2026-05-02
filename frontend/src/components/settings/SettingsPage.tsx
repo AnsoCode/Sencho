@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, useCallback, useMemo, useEffect } from 'react';
+import { useLayoutEffect, useRef, useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     CommandDialog,
@@ -9,29 +9,22 @@ import {
     CommandList,
 } from '@/components/ui/command';
 import { PageMasthead, type MastheadMetadataItem } from '@/components/ui/PageMasthead';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useNodes } from '@/context/NodeContext';
 import { NodeManager } from '../NodeManager';
 import { SSOSection } from '../SSOSection';
-import { ApiTokensSection } from '../ApiTokensSection';
-import { RegistriesSection } from '../RegistriesSection';
 import {
     AccountSection,
     AppearanceSection,
     LicenseSection,
-    UsersSection,
     SystemSection,
     NotificationsSection,
-    NotificationRoutingSection,
-    WebhooksSection,
-    SecuritySection,
-    CloudBackupSection,
     DeveloperSection,
     AppStoreSection,
     SupportSection,
     AboutSection,
-    LabelsSection,
     SETTINGS_ITEMS,
     SETTINGS_GROUPS,
     getSettingsItem,
@@ -45,6 +38,53 @@ import { SettingsSidebar } from './SettingsSidebar';
 import { MastheadStatsProvider, useMastheadStatsValue } from './MastheadStatsContext';
 import { TierLockChip } from './TierLockChip';
 import { cn } from '@/lib/utils';
+
+// Paid-tier sections are loaded on demand. SectionGate short-circuits to a
+// TierLockedCard for Community / wrong-variant operators before reaching the
+// JSX that would mount these components, so the chunks are never fetched on
+// those installs and the JSX, copy, and prop shapes never enter the bundle a
+// Community user downloads. Bypassing the ./index barrel keeps each component
+// in its own chunk; importing through the barrel would pull every named
+// export into the same chunk and defeat the split.
+const UsersSection = lazy(() =>
+    import('./UsersSection').then(m => ({ default: m.UsersSection })),
+);
+const WebhooksSection = lazy(() =>
+    import('./WebhooksSection').then(m => ({ default: m.WebhooksSection })),
+);
+const SecuritySection = lazy(() =>
+    import('./SecuritySection').then(m => ({ default: m.SecuritySection })),
+);
+const LabelsSection = lazy(() =>
+    import('./LabelsSection').then(m => ({ default: m.LabelsSection })),
+);
+const NotificationRoutingSection = lazy(() =>
+    import('./NotificationRoutingSection').then(m => ({ default: m.NotificationRoutingSection })),
+);
+const CloudBackupSection = lazy(() =>
+    import('./CloudBackupSection').then(m => ({ default: m.CloudBackupSection })),
+);
+const ApiTokensSection = lazy(() =>
+    import('../ApiTokensSection').then(m => ({ default: m.ApiTokensSection })),
+);
+const RegistriesSection = lazy(() =>
+    import('../RegistriesSection').then(m => ({ default: m.RegistriesSection })),
+);
+
+// Approximation of a settings section's first-paint shape: a header strip and
+// a couple of field rows. Visible only on the brief window between an unlocked
+// section's chunk request and its first render. SectionGate's TierLockedCard
+// path never mounts the lazy children, so this never flashes for locked tiers.
+function SectionSkeleton() {
+    return (
+        <div className="flex flex-col gap-4" aria-busy="true">
+            <Skeleton className="h-8 w-1/3 rounded-md" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+        </div>
+    );
+}
 
 interface SettingsPageProps {
     currentSection: SectionId;
@@ -212,9 +252,14 @@ function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProp
                                     {activeItem.description}
                                 </p>
                             ) : null}
-                            <SectionGate sectionId={safeSection}>
-                                {sectionElement}
-                            </SectionGate>
+                            {/* Suspense outside SectionGate so the locked-tier
+                                path (which never mounts the lazy children)
+                                does not see a fallback flash. */}
+                            <Suspense fallback={<SectionSkeleton />}>
+                                <SectionGate sectionId={safeSection}>
+                                    {sectionElement}
+                                </SectionGate>
+                            </Suspense>
                         </div>
                     </ScrollArea>
                 </div>
