@@ -1,5 +1,5 @@
 import type { UserRole, ApiTokenScope } from '../services/DatabaseService';
-import type { LicenseTier, LicenseVariant } from '../services/LicenseService';
+import type { LicenseTier, LicenseVariant } from '../entitlements/types';
 
 // Extend Express Request type for user and node context.
 // This file is imported for its side effects only (ambient declaration).
