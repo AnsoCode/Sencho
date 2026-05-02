@@ -29,6 +29,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { PaidGate } from './PaidGate';
 import { CapabilityGate } from './CapabilityGate';
+import LazyBoundary from './LazyBoundary';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
@@ -1022,20 +1023,22 @@ export default function ResourcesView() {
                             <div className="p-4">
                                 <PaidGate featureName="Network Topology">
                                     <CapabilityGate capability="network-topology" featureName="Network Topology">
-                                        <Suspense fallback={
-                                            <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
-                                                <span className="text-sm">Loading topology...</span>
-                                            </div>
-                                        }>
-                                            <NetworkTopologyView
-                                                key={activeNode?.id}
-                                                onContainerClick={(id, name) => {
-                                                    window.dispatchEvent(new CustomEvent<SenchoOpenLogsDetail>(SENCHO_OPEN_LOGS_EVENT, {
-                                                        detail: { containerId: id, containerName: name },
-                                                    }));
-                                                }}
-                                            />
-                                        </Suspense>
+                                        <LazyBoundary>
+                                            <Suspense fallback={
+                                                <div className="flex items-center justify-center h-[400px] text-muted-foreground gap-2">
+                                                    <span className="text-sm">Loading topology...</span>
+                                                </div>
+                                            }>
+                                                <NetworkTopologyView
+                                                    key={activeNode?.id}
+                                                    onContainerClick={(id, name) => {
+                                                        window.dispatchEvent(new CustomEvent<SenchoOpenLogsDetail>(SENCHO_OPEN_LOGS_EVENT, {
+                                                            detail: { containerId: id, containerName: name },
+                                                        }));
+                                                    }}
+                                                />
+                                            </Suspense>
+                                        </LazyBoundary>
                                     </CapabilityGate>
                                 </PaidGate>
                             </div>

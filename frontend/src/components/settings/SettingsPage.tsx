@@ -33,6 +33,7 @@ import {
     isItemLocked,
 } from './index';
 import type { SectionId, SettingsItemMeta, VisibilityContext } from './index';
+import LazyBoundary from '../LazyBoundary';
 import { SectionGate } from './SectionGate';
 import { SettingsSidebar } from './SettingsSidebar';
 import { MastheadStatsProvider, useMastheadStatsValue } from './MastheadStatsContext';
@@ -254,12 +255,17 @@ function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProp
                             ) : null}
                             {/* Suspense outside SectionGate so the locked-tier
                                 path (which never mounts the lazy children)
-                                does not see a fallback flash. */}
-                            <Suspense fallback={<SectionSkeleton />}>
-                                <SectionGate sectionId={safeSection}>
-                                    {sectionElement}
-                                </SectionGate>
-                            </Suspense>
+                                does not see a fallback flash. LazyBoundary
+                                outside Suspense catches chunk-fetch failures
+                                so a stale tab spans-deploy mismatch shows a
+                                Reload card instead of crashing the workspace. */}
+                            <LazyBoundary>
+                                <Suspense fallback={<SectionSkeleton />}>
+                                    <SectionGate sectionId={safeSection}>
+                                        {sectionElement}
+                                    </SectionGate>
+                                </Suspense>
+                            </LazyBoundary>
                         </div>
                     </ScrollArea>
                 </div>

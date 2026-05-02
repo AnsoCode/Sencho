@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
+import LazyBoundary from './LazyBoundary';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
@@ -2523,9 +2524,11 @@ export default function EditorLayout() {
           ) : activeView === 'host-console' ? (
             <AdmiralGate featureName="Host Console">
               <CapabilityGate capability="host-console" featureName="Host Console">
-                <Suspense fallback={<ViewSkeleton />}>
-                  <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
-                </Suspense>
+                <LazyBoundary>
+                  <Suspense fallback={<ViewSkeleton />}>
+                    <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+                  </Suspense>
+                </LazyBoundary>
               </CapabilityGate>
             </AdmiralGate>
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
@@ -3064,47 +3067,57 @@ export default function EditorLayout() {
               </div>
             </ErrorBoundary>
           ) : activeView === 'global-observability' ? (
-            <Suspense fallback={<ViewSkeleton />}>
-              <GlobalObservabilityView />
-            </Suspense>
+            <LazyBoundary>
+              <Suspense fallback={<ViewSkeleton />}>
+                <GlobalObservabilityView />
+              </Suspense>
+            </LazyBoundary>
           ) : activeView === 'fleet' ? (
             <CapabilityGate capability="fleet" featureName="Fleet Management">
-              <Suspense fallback={<ViewSkeleton />}>
-                <FleetView onNavigateToNode={(nodeId, stackName) => {
-                  const node = nodes.find(n => n.id === nodeId);
-                  if (node) {
-                    if (activeNode?.id === nodeId) {
-                      loadFile(stackName);
-                    } else {
-                      pendingStackLoadRef.current = stackName;
-                      setActiveNode(node);
+              <LazyBoundary>
+                <Suspense fallback={<ViewSkeleton />}>
+                  <FleetView onNavigateToNode={(nodeId, stackName) => {
+                    const node = nodes.find(n => n.id === nodeId);
+                    if (node) {
+                      if (activeNode?.id === nodeId) {
+                        loadFile(stackName);
+                      } else {
+                        pendingStackLoadRef.current = stackName;
+                        setActiveNode(node);
+                      }
                     }
-                  }
-                }} />
-              </Suspense>
+                  }} />
+                </Suspense>
+              </LazyBoundary>
             </CapabilityGate>
           ) : activeView === 'audit-log' ? (
             <CapabilityGate capability="audit-log" featureName="Audit Log">
-              <Suspense fallback={<ViewSkeleton />}>
-                <AuditLogView />
-              </Suspense>
+              <LazyBoundary>
+                <Suspense fallback={<ViewSkeleton />}>
+                  <AuditLogView />
+                </Suspense>
+              </LazyBoundary>
             </CapabilityGate>
           ) : activeView === 'auto-updates' ? (
             <CapabilityGate capability="auto-updates" featureName="Auto-Update Readiness">
-              <Suspense fallback={<ViewSkeleton />}>
-                <AutoUpdateReadinessView />
-              </Suspense>
+              <LazyBoundary>
+                <Suspense fallback={<ViewSkeleton />}>
+                  <AutoUpdateReadinessView />
+                </Suspense>
+              </LazyBoundary>
             </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
-              <Suspense fallback={<ViewSkeleton />}>
-                <ScheduledOperationsView
-                  filterNodeId={filterNodeId}
-                  onClearFilter={() => setFilterNodeId(null)}
-                  prefill={schedulePrefill}
-                  onPrefillConsumed={handlePrefillConsumed}
-                />
-              </Suspense>
+              <LazyBoundary>
+                <Suspense fallback={<ViewSkeleton />}>
+                  <ScheduledOperationsView
+                    filterNodeId={filterNodeId}
+                    onClearFilter={() => setFilterNodeId(null)}
+                    prefill={schedulePrefill}
+                    onPrefillConsumed={handlePrefillConsumed}
+                  />
+                </Suspense>
+              </LazyBoundary>
             </CapabilityGate>
           ) : (
             <HomeDashboard
@@ -3328,12 +3341,14 @@ export default function EditorLayout() {
           defeat the split. The overlay has no internal state that needs
           to persist across opens. */}
       {securityHistoryOpen ? (
-        <Suspense fallback={null}>
-          <SecurityHistoryView
-            open
-            onClose={() => setSecurityHistoryOpen(false)}
-          />
-        </Suspense>
+        <LazyBoundary>
+          <Suspense fallback={null}>
+            <SecurityHistoryView
+              open
+              onClose={() => setSecurityHistoryOpen(false)}
+            />
+          </Suspense>
+        </LazyBoundary>
       ) : null}
     </div>
     </GlobalCommandPaletteProvider>
