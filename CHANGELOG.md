@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.66.2](https://github.com/Studio-Saelix/sencho/compare/v0.66.1...v0.66.2) (2026-05-02)
+
+
+### Fixed
+
+* **license:** reject activation when LS response is missing instance.id ([#867](https://github.com/Studio-Saelix/sencho/issues/867)) ([d17562a](https://github.com/Studio-Saelix/sencho/commit/d17562ac6029c90a39a46eab72e9f5f1c1aa4c43))
+
 ## [0.66.1](https://github.com/Studio-Saelix/sencho/compare/v0.66.0...v0.66.1) (2026-05-02)
 
 
