@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.67.1](https://github.com/Studio-Saelix/sencho/compare/v0.67.0...v0.67.1) (2026-05-02)
+
+
+### Fixed
+
+* **ci:** tolerate empty inline blogPosts array in scaffold script ([#883](https://github.com/Studio-Saelix/sencho/issues/883)) ([87abfc2](https://github.com/Studio-Saelix/sencho/commit/87abfc2ec0a2165aa86d00bcde286660533e99e9))
+
 ## [0.67.0](https://github.com/Studio-Saelix/sencho/compare/v0.66.2...v0.67.0) (2026-05-02)
 
 
