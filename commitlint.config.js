@@ -34,6 +34,10 @@ module.exports = {
         // subjects this repo prefers; loosen to 120 to match the longest
         // existing commit subjects on main without enabling unbounded sprawl.
         'header-max-length': [2, 'always', 120],
-        'subject-case': [0],
+        // Allow lowercase and kebab-case subjects (the repo norm), block
+        // accidental ALL-CAPS or PascalCase. Looser than the default which
+        // also banned sentence-case and start-case; existing commits on main
+        // use sentence-case sparingly and we do not want to retro-block them.
+        'subject-case': [2, 'never', ['upper-case', 'pascal-case']],
     },
 };
