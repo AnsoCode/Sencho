@@ -198,7 +198,7 @@ test.describe('File explorer - community (read-only)', () => {
 
   test('upgrade pill is visible in the left pane', async ({ page }) => {
     await expect(
-      page.getByRole('button', { name: /upgrade to unlock/i })
+      page.getByRole('button', { name: /upgrade to unlock upload/i })
     ).toBeVisible({ timeout: 5_000 });
   });
 
