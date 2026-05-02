@@ -10,14 +10,6 @@ import type {
     SeatLimits,
 } from '../entitlements/types';
 
-// Back-compat re-exports. The canonical type definitions live in
-// `entitlements/types.ts`; this re-export keeps existing imports
-// (`import type { LicenseTier } from '@/services/LicenseService'`)
-// working until consumers migrate. A follow-up PR titled
-// `refactor(entitlements): migrate type-only consumers to entitlements/types`
-// will sweep the remaining ~20 consumers; Phase 2 deletes this file.
-export type { LicenseInfo, LicenseStatus, LicenseTier, LicenseVariant, SeatLimits };
-
 // Header constants and tier/variant normalizers previously exported
 // from this file moved to `../entitlements/headers` and
 // `../entitlements/normalize` respectively, where they live in the
@@ -25,9 +17,9 @@ export type { LicenseInfo, LicenseStatus, LicenseTier, LicenseVariant, SeatLimit
 // LicenseService imports them back for internal use.
 import { isLicenseVariant, normalizeVariant } from '../entitlements/normalize';
 
-// LicenseInfo and SeatLimits live in `entitlements/types.ts` and are
-// re-exported above. The literal seat-limit table for paid variants
-// stays here because it is specific to the LemonSqueezy implementation.
+// The seat-limit table for paid variants is specific to the
+// LemonSqueezy implementation and stays in this file. Phase 2 moves it
+// to `@studio-saelix/sencho-pro` along with the rest of the file.
 const SEAT_LIMITS: Record<string, SeatLimits> = {
     skipper: { maxAdmins: 1, maxViewers: 3 },
     admiral: { maxAdmins: null, maxViewers: null },

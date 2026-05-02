@@ -3,7 +3,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { authMiddleware } from '../middleware/auth';
 import { effectiveTier, effectiveVariant } from '../middleware/tierGates';
-import type { LicenseTier, LicenseVariant } from '../services/LicenseService';
+import type { LicenseTier, LicenseVariant } from '../entitlements/types';
 
 export const dashboardRouter = Router();
 
