@@ -123,6 +123,56 @@ interface LemonSqueezyValidationResponse {
 const LEMON_SQUEEZY_API = 'https://api.lemonsqueezy.com/v1/licenses';
 const VALIDATION_INTERVAL_MS = 72 * 60 * 60 * 1000; // 72 hours
 const OFFLINE_GRACE_DAYS = 30;
+
+/**
+ * Lemon Squeezy catalog identifiers Sencho is willing to honor. Without these
+ * checks, a license issued for any other LS store or product could activate
+ * Sencho, because LS's /licenses/validate endpoint returns valid: true for
+ * any well-formed license key regardless of which product it belongs to.
+ *
+ * The validate response contains store_id / product_id / variant_id under
+ * meta; resolveSenchoVariantFromMeta() rejects any combination not listed
+ * here. variant_id also serves as the canonical source for tier resolution,
+ * replacing the older substring match against variant_name / product_name.
+ *
+ * If a new tier or billing cadence is added in the LS dashboard, this map
+ * must be updated in the same release.
+ */
+export const SENCHO_LS_STORE_ID = 321715;
+export const SENCHO_LS_PRODUCT_ID_SKIPPER = 924135;
+export const SENCHO_LS_PRODUCT_ID_ADMIRAL = 924153;
+const SENCHO_LS_PRODUCT_IDS: ReadonlySet<number> = new Set([
+    SENCHO_LS_PRODUCT_ID_SKIPPER,
+    SENCHO_LS_PRODUCT_ID_ADMIRAL,
+]);
+const SENCHO_LS_VARIANT_TO_TYPE: ReadonlyMap<number, Exclude<LicenseVariant, null>> = new Map([
+    [1453178, 'skipper'], // Skipper Monthly
+    [1453197, 'skipper'], // Skipper Annual
+    [1453198, 'skipper'], // Skipper Lifetime
+    [1453209, 'admiral'], // Admiral Monthly
+    [1453212, 'admiral'], // Admiral Annual
+    [1453217, 'admiral'], // Admiral Lifetime
+]);
+
+/**
+ * Resolve a Lemon Squeezy validate / activate response's meta block to a
+ * Sencho variant. Returns null when the meta is missing, the store does not
+ * match, the product is not a Sencho product, or the variant is unknown.
+ *
+ * Callers must reject the activation/validation when this returns null.
+ * Persisting any state from a non-matching response would let foreign LS
+ * licenses unlock paid features.
+ */
+export function resolveSenchoVariantFromMeta(
+    meta: { store_id?: number; product_id?: number; variant_id?: number } | undefined,
+): Exclude<LicenseVariant, null> | null {
+    if (!meta) return null;
+    if (meta.store_id !== SENCHO_LS_STORE_ID) return null;
+    if (meta.product_id === undefined || !SENCHO_LS_PRODUCT_IDS.has(meta.product_id)) return null;
+    if (meta.variant_id === undefined) return null;
+    return SENCHO_LS_VARIANT_TO_TYPE.get(meta.variant_id) ?? null;
+}
+
 // Short TTL for the proxy-headers cache. The remote-node proxy reads tier
 // and variant on every forwarded request; without caching, each call hits
 // system_state 5+ times. Every license_status write goes through
@@ -207,10 +257,15 @@ export class LicenseService {
     }
 
     /**
-     * Resolve Lemon Squeezy metadata to the internal variant type.
-     * Checks both variant_name and product_name since LS variant names may only
-     * describe the billing period (e.g. "Lifetime", "Monthly") while the product
-     * name contains the tier (e.g. "Sencho Admiral").
+     * Resolve Lemon Squeezy metadata to the internal variant type from string
+     * metadata. Used as a fallback when license_variant_id is unavailable.
+     *
+     * With the catalog guard in resolveSenchoVariantFromMeta(), every new
+     * activation stores license_variant_id, so production callers always hit
+     * the variant_id path in getVariant(). This substring fallback is retained
+     * for test fixtures that drive getVariant() without a variant_id present.
+     * Once the per-Directive-20 cleanup branch lands, this method and its two
+     * call sites can be deleted.
      */
     private resolveVariantType(variantName: string, productName?: string): 'skipper' | 'admiral' {
         const combined = `${variantName} ${productName || ''}`.toLowerCase();
@@ -219,11 +274,24 @@ export class LicenseService {
         return 'skipper';
     }
 
-    /** Persist variant metadata from Lemon Squeezy response to DB. */
-    private storeVariantMeta(db: DatabaseService, meta: { variant_name?: string; variant_id?: number; product_name?: string }): void {
+    /**
+     * Persist variant metadata from a Lemon Squeezy response to the DB.
+     *
+     * When `resolvedType` is supplied (always, in production paths via
+     * resolveSenchoVariantFromMeta), it wins over the legacy substring match
+     * against variant_name / product_name. The substring fallback is kept for
+     * tests that exercise the legacy path and as a defensive default; new
+     * activations always carry a resolved type.
+     */
+    private storeVariantMeta(
+        db: DatabaseService,
+        meta: { variant_name?: string; variant_id?: number; product_name?: string },
+        resolvedType?: Exclude<LicenseVariant, null>,
+    ): void {
         if (meta.variant_name) {
             db.setSystemState('license_variant_name', meta.variant_name);
-            db.setSystemState('license_variant_type', this.resolveVariantType(meta.variant_name, meta.product_name));
+            const type = resolvedType ?? this.resolveVariantType(meta.variant_name, meta.product_name);
+            db.setSystemState('license_variant_type', type);
         }
         if (meta.variant_id) {
             db.setSystemState('license_variant_id', String(meta.variant_id));
@@ -242,11 +310,30 @@ export class LicenseService {
      */
     public getVariant(): LicenseVariant {
         const db = DatabaseService.getInstance();
-        const variantName = db.getSystemState('license_variant_name');
-        const productName = db.getSystemState('license_product_name') || undefined;
+        const variantIdStr = db.getSystemState('license_variant_id');
         const storedType = db.getSystemState('license_variant_type');
 
-        // Self-heal: if we have source metadata, always cross-check the stored type
+        // Prefer variant_id-based resolution. variant_id is a stable LS catalog
+        // identifier, while variant_name / product_name are display strings that
+        // can be edited in the LS dashboard. Activation already rejected any
+        // unrecognized variant_id, so a hit here is always trustworthy.
+        if (variantIdStr) {
+            const variantId = parseInt(variantIdStr, 10);
+            if (Number.isFinite(variantId)) {
+                const fromId = SENCHO_LS_VARIANT_TO_TYPE.get(variantId);
+                if (fromId) {
+                    if (fromId !== storedType) {
+                        db.setSystemState('license_variant_type', fromId);
+                    }
+                    return fromId;
+                }
+            }
+        }
+
+        // Fall back to name-based resolution for any state without a
+        // variant_id (test fixtures, partial DB writes from older code paths).
+        const variantName = db.getSystemState('license_variant_name');
+        const productName = db.getSystemState('license_product_name') || undefined;
         if (variantName) {
             const resolved = this.resolveVariantType(variantName, productName);
             if (resolved !== storedType) {
@@ -255,7 +342,7 @@ export class LicenseService {
             return resolved;
         }
 
-        // No variant name available; trust stored type if valid
+        // No source metadata available; trust the stored type if it parses.
         if (isLicenseVariant(storedType)) return normalizeVariant(storedType);
 
         return null;
@@ -355,6 +442,15 @@ export class LicenseService {
                 return { success: false, error: data.error || 'Activation failed' };
             }
 
+            // Reject licenses that don't belong to the Sencho LS catalog.
+            // LS's /activate succeeds for any product in any store, so without
+            // this check a license bought elsewhere could unlock Sencho.
+            const variantType = resolveSenchoVariantFromMeta(data.meta);
+            if (variantType === null) {
+                console.warn('[License] Activation rejected: license does not match the Sencho catalog.');
+                return { success: false, error: 'This license key is not valid for Sencho.' };
+            }
+
             // Store license data
             db.setSystemState('license_key', licenseKey);
             db.setSystemState('license_instance_id', data.instance?.id || '');
@@ -375,7 +471,7 @@ export class LicenseService {
                 db.setSystemState('license_product_name', data.meta.product_name);
             }
             if (data.meta) {
-                this.storeVariantMeta(db, data.meta);
+                this.storeVariantMeta(db, data.meta, variantType);
             }
             if (data.meta?.customer_id) {
                 db.setSystemState('customer_id', String(data.meta.customer_id));
@@ -475,7 +571,6 @@ export class LicenseService {
             );
 
             const data = response.data;
-            db.setSystemState('license_last_validated', Date.now().toString());
 
             if (!data.valid) {
                 // License revoked or invalid
@@ -483,6 +578,24 @@ export class LicenseService {
                 console.warn('[License] Validation failed: license is no longer valid.');
                 return { success: false, error: data.error || 'License is no longer valid' };
             }
+
+            // Reject if the license is no longer recognized as a Sencho catalog
+            // entry (e.g. variant_id removed, product moved). Same defense as
+            // activate(): without this, any LS license can pass periodic
+            // validation and keep paid features unlocked.
+            const variantType = resolveSenchoVariantFromMeta(data.meta);
+            if (variantType === null) {
+                this.setLicenseStatus('disabled');
+                console.warn('[License] Validation rejected: license does not match the Sencho catalog.');
+                return { success: false, error: 'License is not valid for Sencho.' };
+            }
+
+            // license_last_validated means "we got an authoritative answer from
+            // LS for a recognized Sencho license," not just "we reached the LS
+            // API." Writing it before the catalog guard would let a foreign LS
+            // license refresh the offline grace window during the brief window
+            // the rejected status is being persisted.
+            db.setSystemState('license_last_validated', Date.now().toString());
 
             // Update status based on key status
             const keyStatus = data.license_key?.status;
@@ -510,7 +623,7 @@ export class LicenseService {
                 db.setSystemState('license_product_name', data.meta.product_name);
             }
             if (data.meta) {
-                this.storeVariantMeta(db, data.meta);
+                this.storeVariantMeta(db, data.meta, variantType);
             }
             if (data.meta?.customer_id && !db.getSystemState('customer_id')) {
                 db.setSystemState('customer_id', String(data.meta.customer_id));
