@@ -284,16 +284,18 @@ function updateIndex(websiteRoot, exportName, fileBase) {
   lines.splice(lastImportIdx + 1, 0, importLine)
 
   const joined = lines.join('\n')
-  const arrayRegex = /(export const blogPosts: BlogPost\[\] = \[)([\s\S]*?)(\n\])/
+  // The closing capture tolerates both multi-line (`,\n]`) and empty inline
+  // (`[]`) array shapes. Empty inline is the bootstrap state of a fresh
+  // sencho-website repo before any release post has been written.
+  const arrayRegex = /(export const blogPosts: BlogPost\[\] = \[)([\s\S]*?)(\s*\])/
   const m = joined.match(arrayRegex)
   if (!m) throw new Error('Could not locate blogPosts array in index.ts')
   const before = joined.slice(0, m.index)
   const arrOpen = m[1]
   const arrBody = m[2]
-  const arrClose = m[3]
   const after = joined.slice(m.index + m[0].length)
-  const newBody = `${arrBody.replace(/\s*$/u, '')}\n  ${exportName},`
-  return `${before}${arrOpen}${newBody}${arrClose}${after}`
+  const trimmedBody = arrBody.replace(/\s*$/u, '')
+  return `${before}${arrOpen}${trimmedBody}\n  ${exportName},\n]${after}`
 }
 
 function updateMeta(websiteRoot, slug, title, description, date) {
