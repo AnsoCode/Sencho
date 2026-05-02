@@ -6,7 +6,8 @@
   "scripts": {
     "test": "cd backend && npm test",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -21,7 +22,10 @@
   },
   "homepage": "https://github.com/studio-saelix/sencho#readme",
   "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "@playwright/test": "^1.59.1",
+    "husky": "^9.1.7",
     "otplib": "^13.4.0"
   }
 }
