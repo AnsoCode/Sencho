@@ -152,6 +152,51 @@ describe('LicenseService.activate() - catalog ID guard', () => {
         expect(mockSetSystemState).not.toHaveBeenCalledWith('license_status', 'active');
     });
 
+    it('rejects activation when the LS response is missing the instance object', async () => {
+        // Storing an empty license_instance_id would silently break later
+        // validate() and deactivate() calls. Reject up front so the user
+        // sees a clear error instead of a deceptive "Activated successfully".
+        mockAxiosPost.mockResolvedValueOnce({
+            data: {
+                activated: true,
+                license_key: { id: 1, status: 'active', key: 'k', activation_limit: 1, activation_usage: 1, created_at: '2026-01-01', expires_at: null },
+                meta: {
+                    store_id: SENCHO_LS_STORE_ID,
+                    product_id: SENCHO_LS_PRODUCT_ID_SKIPPER,
+                    variant_id: VARIANT_SKIPPER_MONTHLY,
+                    variant_name: 'Skipper Monthly',
+                    product_name: 'Sencho Skipper',
+                },
+                // instance: omitted on purpose
+            },
+        });
+        const result = await svc.activate('NO-INSTANCE-OBJECT-KEY');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('License server returned an incomplete activation. Please try again.');
+        expect(mockSetSystemState).not.toHaveBeenCalled();
+    });
+
+    it('rejects activation when LS returns instance with empty id', async () => {
+        mockAxiosPost.mockResolvedValueOnce({
+            data: {
+                activated: true,
+                license_key: { id: 1, status: 'active', key: 'k', activation_limit: 1, activation_usage: 1, created_at: '2026-01-01', expires_at: null },
+                instance: { id: '', name: 'test', created_at: '2026-01-01' },
+                meta: {
+                    store_id: SENCHO_LS_STORE_ID,
+                    product_id: SENCHO_LS_PRODUCT_ID_ADMIRAL,
+                    variant_id: VARIANT_ADMIRAL_LIFETIME,
+                    variant_name: 'Admiral Lifetime',
+                    product_name: 'Sencho Admiral',
+                },
+            },
+        });
+        const result = await svc.activate('EMPTY-INSTANCE-ID-KEY');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('License server returned an incomplete activation. Please try again.');
+        expect(mockSetSystemState).not.toHaveBeenCalled();
+    });
+
     it('writes nothing to system_state when the catalog guard rejects', async () => {
         // Stronger than checking individual keys: any future code that adds a
         // setSystemState() call above the guard would silently break the
