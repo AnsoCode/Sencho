@@ -25,7 +25,11 @@ export function AdmiralGate({ children, featureName = 'This feature', compact = 
 
     if (isPaid && license?.variant === 'admiral') return <>{children}</>;
 
-    if (compact || dismissed) {
+    // Inline lock for list items (single SSO provider card, etc.). Renders the
+    // children blurred behind a small pill so the surrounding list keeps its
+    // shape; the IP exposure is minor because the children are tiny inline UI,
+    // and the visual continuity is intentional. Dismissal does not apply here.
+    if (compact) {
         return (
             <div className="relative">
                 <div className="opacity-40 pointer-events-none select-none blur-[2px]">
@@ -37,6 +41,30 @@ export function AdmiralGate({ children, featureName = 'This feature', compact = 
                         Upgrade to Admiral to unlock
                     </div>
                 </div>
+            </div>
+        );
+    }
+
+    // Post-dismissal placeholder for full-page consumers. Renders only the
+    // pill so the lazy-loaded children behind an Admiral view never mount
+    // during the dismissal window. Clicking the pill clears the dismissal
+    // flag and restores the full upsell card so users who dismissed
+    // accidentally or want to revisit pricing have a way back without
+    // clearing localStorage.
+    if (dismissed) {
+        return (
+            <div className="flex items-start justify-center pt-8 min-h-[200px]">
+                <button
+                    type="button"
+                    onClick={() => {
+                        localStorage.removeItem(DISMISS_KEY);
+                        setDismissed(false);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-colors"
+                >
+                    <ShipWheel className="w-3 h-3" />
+                    Upgrade to Admiral to unlock
+                </button>
             </div>
         );
     }
