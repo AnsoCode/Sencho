@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
 import { Editor } from '@/lib/monacoLoader';
@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import HomeDashboard from './HomeDashboard';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
-import HostConsole from './HostConsole';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AdmiralGate } from './AdmiralGate';
 import { CapabilityGate } from './CapabilityGate';
 import ResourcesView from './ResourcesView';
@@ -46,12 +46,48 @@ import { LogViewer } from './LogViewer';
 import StructuredLogViewer from './StructuredLogViewer';
 import StackAnatomyPanel from './StackAnatomyPanel';
 import { Sparkline } from './ui/sparkline';
-import { GlobalObservabilityView } from './GlobalObservabilityView';
-import { FleetView } from './FleetView';
-import { AuditLogView } from './AuditLogView';
-import ScheduledOperationsView, { type ScheduleTaskPrefill } from './ScheduledOperationsView';
-import AutoUpdateReadinessView from './AutoUpdateReadinessView';
-import { SecurityHistoryView } from './SecurityHistoryView';
+import type { ScheduleTaskPrefill } from './ScheduledOperationsView';
+
+// Paid-tier views and the security-history overlay are loaded on demand.
+// Their internal PaidGate / AdmiralGate / CapabilityGate wrappers render
+// the upsell or capability-missing card with blurred children rather than
+// short-circuiting, so a tier-locked or capability-missing operator
+// opening one of these tabs still triggers the chunk fetch to render the
+// blurred preview. The gate-short-circuit fix lives in a follow-up
+// branch. What this lazy split closes is the much larger initial-bundle
+// leak: every Community user used to download the full FleetView,
+// AuditLogView, etc. on first page load even if they never clicked those
+// tabs. After this change, the chunks fetch only on tab open.
+//
+// GlobalObservabilityView is a free-tier feature with no internal gate;
+// it is split here purely for the bundle-size win, not for IP protection.
+const HostConsole = lazy(() => import('./HostConsole'));
+const GlobalObservabilityView = lazy(() =>
+    import('./GlobalObservabilityView').then(m => ({ default: m.GlobalObservabilityView })),
+);
+const FleetView = lazy(() =>
+    import('./FleetView').then(m => ({ default: m.FleetView })),
+);
+const AuditLogView = lazy(() =>
+    import('./AuditLogView').then(m => ({ default: m.AuditLogView })),
+);
+const SecurityHistoryView = lazy(() =>
+    import('./SecurityHistoryView').then(m => ({ default: m.SecurityHistoryView })),
+);
+const ScheduledOperationsView = lazy(() => import('./ScheduledOperationsView'));
+const AutoUpdateReadinessView = lazy(() => import('./AutoUpdateReadinessView'));
+
+// Sized for the main workspace area (flex-1 with p-6 padding). Visible
+// only during the brief window between an unlocked view's chunk request
+// and its first render.
+function ViewSkeleton() {
+    return (
+        <div className="flex flex-col gap-6" aria-busy="true">
+            <Skeleton className="h-10 w-1/3 rounded-md" />
+            <Skeleton className="h-96 w-full rounded-lg" />
+        </div>
+    );
+}
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
 import { NodeSwitcher } from './NodeSwitcher';
@@ -2487,7 +2523,9 @@ export default function EditorLayout() {
           ) : activeView === 'host-console' ? (
             <AdmiralGate featureName="Host Console">
               <CapabilityGate capability="host-console" featureName="Host Console">
-                <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+                <Suspense fallback={<ViewSkeleton />}>
+                  <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
+                </Suspense>
               </CapabilityGate>
             </AdmiralGate>
           ) : !isLoading && selectedFile && activeView === 'editor' ? (
@@ -3026,37 +3064,47 @@ export default function EditorLayout() {
               </div>
             </ErrorBoundary>
           ) : activeView === 'global-observability' ? (
-            <GlobalObservabilityView />
+            <Suspense fallback={<ViewSkeleton />}>
+              <GlobalObservabilityView />
+            </Suspense>
           ) : activeView === 'fleet' ? (
             <CapabilityGate capability="fleet" featureName="Fleet Management">
-              <FleetView onNavigateToNode={(nodeId, stackName) => {
-                const node = nodes.find(n => n.id === nodeId);
-                if (node) {
-                  if (activeNode?.id === nodeId) {
-                    loadFile(stackName);
-                  } else {
-                    pendingStackLoadRef.current = stackName;
-                    setActiveNode(node);
+              <Suspense fallback={<ViewSkeleton />}>
+                <FleetView onNavigateToNode={(nodeId, stackName) => {
+                  const node = nodes.find(n => n.id === nodeId);
+                  if (node) {
+                    if (activeNode?.id === nodeId) {
+                      loadFile(stackName);
+                    } else {
+                      pendingStackLoadRef.current = stackName;
+                      setActiveNode(node);
+                    }
                   }
-                }
-              }} />
+                }} />
+              </Suspense>
             </CapabilityGate>
           ) : activeView === 'audit-log' ? (
             <CapabilityGate capability="audit-log" featureName="Audit Log">
-              <AuditLogView />
+              <Suspense fallback={<ViewSkeleton />}>
+                <AuditLogView />
+              </Suspense>
             </CapabilityGate>
           ) : activeView === 'auto-updates' ? (
             <CapabilityGate capability="auto-updates" featureName="Auto-Update Readiness">
-              <AutoUpdateReadinessView />
+              <Suspense fallback={<ViewSkeleton />}>
+                <AutoUpdateReadinessView />
+              </Suspense>
             </CapabilityGate>
           ) : activeView === 'scheduled-ops' ? (
             <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
-              <ScheduledOperationsView
-                filterNodeId={filterNodeId}
-                onClearFilter={() => setFilterNodeId(null)}
-                prefill={schedulePrefill}
-                onPrefillConsumed={handlePrefillConsumed}
-              />
+              <Suspense fallback={<ViewSkeleton />}>
+                <ScheduledOperationsView
+                  filterNodeId={filterNodeId}
+                  onClearFilter={() => setFilterNodeId(null)}
+                  prefill={schedulePrefill}
+                  onPrefillConsumed={handlePrefillConsumed}
+                />
+              </Suspense>
             </CapabilityGate>
           ) : (
             <HomeDashboard
@@ -3274,11 +3322,19 @@ export default function EditorLayout() {
         }}
       />
 
-      {/* Scan history overlay */}
-      <SecurityHistoryView
-        open={securityHistoryOpen}
-        onClose={() => setSecurityHistoryOpen(false)}
-      />
+      {/* Scan history overlay. Conditionally mounted so the lazy chunk
+          only fetches when the user opens the overlay; an always-mounted
+          lazy component would fetch on EditorLayout's first render and
+          defeat the split. The overlay has no internal state that needs
+          to persist across opens. */}
+      {securityHistoryOpen ? (
+        <Suspense fallback={null}>
+          <SecurityHistoryView
+            open
+            onClose={() => setSecurityHistoryOpen(false)}
+          />
+        </Suspense>
+      ) : null}
     </div>
     </GlobalCommandPaletteProvider>
   );
