@@ -5,15 +5,14 @@ import path from 'path';
 import { FileSystemService } from '../services/FileSystemService';
 import { NodeRegistry } from '../services/NodeRegistry';
 import { HostTerminalService } from '../services/HostTerminalService';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
 import {
-  LicenseService,
   isLicenseTier,
   isLicenseVariant,
   normalizeTier,
   normalizeVariant,
-  PROXY_TIER_HEADER,
-  PROXY_VARIANT_HEADER,
-} from '../services/LicenseService';
+} from '../entitlements/normalize';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { ROLE_PERMISSIONS, type PermissionAction } from '../middleware/permissions';
 import type { UserRole } from '../services/DatabaseService';
 import { getErrorMessage } from '../utils/errors';
@@ -65,7 +64,7 @@ export function handleHostConsoleWs(
 
   const consoleTierHeader = req.headers[PROXY_TIER_HEADER] as string | undefined;
   const consoleVariantHeader = req.headers[PROXY_VARIANT_HEADER] as string | undefined;
-  const ls = LicenseService.getInstance();
+  const ls = getEntitlementProvider();
   const consoleTier = (isConsoleSession && isLicenseTier(consoleTierHeader))
     ? normalizeTier(consoleTierHeader)
     : ls.getTier();

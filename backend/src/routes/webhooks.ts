@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
 import { WebhookService } from '../services/WebhookService';
 import { GitSourceService } from '../services/GitSourceService';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { authMiddleware } from '../middleware/auth';
 import { requirePaid, requireAdmin } from '../middleware/tierGates';
 import { webhookTriggerLimiter } from '../middleware/rateLimiters';
@@ -122,7 +122,7 @@ webhooksRouter.post('/:id/trigger', webhookTriggerLimiter, async (req: Request, 
     }
 
     // Trigger only works with an active Skipper or Admiral license.
-    if (LicenseService.getInstance().getTier() !== 'paid') {
+    if (getEntitlementProvider().getTier() !== 'paid') {
       res.status(403).json({ error: 'This feature requires a Skipper or Admiral license.', code: 'PAID_REQUIRED' });
       return;
     }
@@ -147,7 +147,7 @@ webhooksRouter.post('/:id/trigger', webhookTriggerLimiter, async (req: Request, 
     // Execute asynchronously; return 202 immediately.
     res.status(202).json({ message: 'Webhook accepted', action });
 
-    const atomic = LicenseService.getInstance().getTier() === 'paid';
+    const atomic = getEntitlementProvider().getTier() === 'paid';
     svc.execute(id, action, triggerSource, atomic).catch(err => {
       console.error(`[Webhooks] Execution error for webhook ${id}:`, err);
     });

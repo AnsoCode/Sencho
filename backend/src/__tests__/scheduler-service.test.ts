@@ -98,6 +98,16 @@ vi.mock('../services/LicenseService', () => ({
   },
 }));
 
+// SchedulerService now talks to the entitlement registry rather than
+// LicenseService.getInstance() directly. Mock the registry to return the
+// same shape the test was already mocking on LicenseService.
+vi.mock('../entitlements/registry', () => ({
+  getEntitlementProvider: () => ({
+    getTier: mockGetTier,
+    getVariant: mockGetVariant,
+  }),
+}));
+
 vi.mock('../services/DockerController', () => ({
   default: {
     getInstance: () => ({

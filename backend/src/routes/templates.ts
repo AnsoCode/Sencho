@@ -7,7 +7,7 @@ import { templateService } from '../services/TemplateService';
 import { FileSystemService } from '../services/FileSystemService';
 import { ComposeService } from '../services/ComposeService';
 import { DatabaseService } from '../services/DatabaseService';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { ErrorParser } from '../utils/ErrorParser';
 import { isValidStackName, isPathWithinBase } from '../utils/validation';
 import { isDebugEnabled } from '../utils/debug';
@@ -124,7 +124,7 @@ templatesRouter.post('/deploy', authMiddleware, async (req: Request, res: Respon
         }
         return;
       }
-      const atomic = LicenseService.getInstance().getTier() === 'paid';
+      const atomic = getEntitlementProvider().getTier() === 'paid';
       await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), atomic);
       invalidateNodeCaches(req.nodeId);
       console.log(`[Templates] Deploy completed: ${stackName}`);

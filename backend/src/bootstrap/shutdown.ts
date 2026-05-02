@@ -1,6 +1,6 @@
 import type { Server } from 'http';
 import { DatabaseService } from '../services/DatabaseService';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { MonitorService } from '../services/MonitorService';
 import { AutoHealService } from '../services/AutoHealService';
 import { DockerEventManager } from '../services/DockerEventManager';
@@ -22,8 +22,8 @@ export function installShutdownHandlers(server: Server): void {
 
     server.close(() => {
       console.log('[Shutdown] HTTP server closed');
-      try { LicenseService.getInstance().destroy(); } catch (e) {
-        console.warn('[Shutdown] LicenseService cleanup failed:', (e as Error).message);
+      try { getEntitlementProvider().destroy(); } catch (e) {
+        console.warn('[Shutdown] EntitlementProvider cleanup failed:', (e as Error).message);
       }
       try { MonitorService.getInstance().stop(); } catch (e) {
         console.warn('[Shutdown] MonitorService cleanup failed:', (e as Error).message);

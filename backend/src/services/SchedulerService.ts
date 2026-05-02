@@ -1,7 +1,7 @@
 import { CronExpressionParser } from 'cron-parser';
 import { DatabaseService } from './DatabaseService';
 import type { ScheduledTask } from './DatabaseService';
-import { LicenseService } from './LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import DockerController from './DockerController';
 import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
@@ -192,7 +192,7 @@ export class SchedulerService {
             }
             await this.maybeRedetectTrivy();
 
-            const ls = LicenseService.getInstance();
+            const ls = getEntitlementProvider();
             const isPaid = ls.getTier() === 'paid';
             const isAdmiral = isPaid && ls.getVariant() === 'admiral';
             if (!isPaid) return;

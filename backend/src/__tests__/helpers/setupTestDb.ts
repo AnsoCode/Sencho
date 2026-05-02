@@ -54,6 +54,23 @@ export async function setupTestDb(): Promise<string> {
   // path-traversal or 404 on missing files. Realign here.
   db.getDb().prepare('UPDATE nodes SET compose_dir = ? WHERE is_default = 1').run(composeDir);
 
+  // Register the in-tree LicenseService as the active EntitlementProvider
+  // so tier-gated middleware can resolve a provider during the test. In
+  // production this is wired by `bootstrap/startup.ts`; tests bypass that
+  // path by importing modules directly, so the registry would otherwise
+  // throw on first tier check. The mocking pattern many tests use
+  // (`vi.spyOn(LicenseService.getInstance(), 'getTier')`) continues to
+  // work because LicenseService.getInstance() and getEntitlementProvider()
+  // return the same singleton in Phase 1.
+  //
+  // The registry binding is module-scope and survives across test files
+  // within the same Vitest worker. Avoid `vi.resetModules()` in this
+  // codebase; it would drop the binding and cause subsequent tier
+  // checks to throw with "EntitlementProvider not initialized."
+  const { LicenseService } = await import('../../services/LicenseService');
+  const { setEntitlementProvider } = await import('../../entitlements/registry');
+  setEntitlementProvider(LicenseService.getInstance());
+
   return tmpDir;
 }
 

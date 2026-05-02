@@ -6,7 +6,7 @@ import TrivyService, { SbomFormat } from '../services/TrivyService';
 import TrivyInstaller from '../services/TrivyInstaller';
 import { DatabaseService, parsePolicyEvaluation, type VulnerabilityScan } from '../services/DatabaseService';
 import { FleetSyncService } from '../services/FleetSyncService';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { validateImageRef } from '../utils/image-ref';
 import { applySuppressions } from '../utils/suppression-filter';
 import { generateSarif } from '../services/SarifExporter';
@@ -647,7 +647,7 @@ securityRouter.get('/compare', authMiddleware, (req: Request, res: Response): vo
       scanId1,
       scanId2,
       reqNodeId: req.nodeId,
-      tier: req.proxyTier ?? LicenseService.getInstance().getTier(),
+      tier: req.proxyTier ?? getEntitlementProvider().getTier(),
       aVulns: aVulns.length,
       bVulns: bVulns.length,
       added: added.length,

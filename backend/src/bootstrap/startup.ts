@@ -1,7 +1,8 @@
 import type { Server } from 'http';
 import { FileSystemService } from '../services/FileSystemService';
 import { NodeRegistry } from '../services/NodeRegistry';
-import { LicenseService } from '../services/LicenseService';
+import { loadEntitlementProvider } from '../entitlements/loadProvider';
+import { setEntitlementProvider } from '../entitlements/registry';
 import SelfUpdateService from '../services/SelfUpdateService';
 import { MonitorService } from '../services/MonitorService';
 import { AutoHealService } from '../services/AutoHealService';
@@ -31,10 +32,18 @@ export async function startServer(server: Server): Promise<void> {
     console.error('Migration failed:', error);
   }
 
+  // Resolve the EntitlementProvider before any tier-gated code can run.
+  // Phase 1 returns the in-tree LicenseService singleton; Phase 2 will
+  // dynamic-import the private package and fall back to Community.
+  // Awaited because the loader is async-by-signature (so the Phase-2
+  // swap doesn't change this call site).
+  const entitlementProvider = await loadEntitlementProvider();
+  setEntitlementProvider(entitlementProvider);
+  entitlementProvider.initialize();
+
   // Synchronous starts: schedule background timers and continue. None of
   // these fire their first tick for at least a few seconds, so they
   // safely run alongside the async initializers below.
-  LicenseService.getInstance().initialize();
   MonitorService.getInstance().start();
   AutoHealService.getInstance().start();
   ImageUpdateService.getInstance().start();

@@ -11,7 +11,8 @@ import {
 import { ComposeService } from './ComposeService';
 import { FileSystemService } from './FileSystemService';
 import { NodeRegistry } from './NodeRegistry';
-import { LicenseService, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from './LicenseService';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
+import { getEntitlementProvider } from '../entitlements/registry';
 
 const MARKER_FILENAME = '.blueprint.json';
 const COMPOSE_FILENAME = 'docker-compose.yml';
@@ -359,7 +360,7 @@ export class BlueprintService {
     // ---- remote primitives ----
 
     private remoteHeaders(apiToken: string): Record<string, string> {
-        const proxy = LicenseService.getInstance().getProxyHeaders();
+        const proxy = getEntitlementProvider().getProxyHeaders();
         return {
             Authorization: `Bearer ${apiToken}`,
             [PROXY_TIER_HEADER]: proxy.tier,
