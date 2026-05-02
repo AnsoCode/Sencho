@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  # Manual recovery lever for cases where the action fails on a transient
+  # GitHub API issue (e.g. duplicate-release-tag during a retry) and exits
+  # before scanning main for new conventional commits. Re-running from the
+  # Actions tab requeues the same logic against the current main HEAD; no
+  # code push needed. Triggering manually does NOT skip the action's own
+  # state checks, so it cannot accidentally double-publish a release.
+  workflow_dispatch:
 
 permissions:
   contents: write
