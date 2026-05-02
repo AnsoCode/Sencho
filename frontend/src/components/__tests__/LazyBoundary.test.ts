@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isChunkLoadError } from '../LazyBoundary';
+import { isChunkLoadError } from '../isChunkLoadError';
 
 /**
  * isChunkLoadError is a substring union over the messages browsers emit
