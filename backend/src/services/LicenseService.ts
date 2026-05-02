@@ -2,17 +2,12 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
 import type {
-    ActivationResult,
-    BillingPortalError,
-    BillingPortalResult,
-    DeactivationResult,
     EntitlementProvider,
     LicenseInfo,
     LicenseStatus,
     LicenseTier,
     LicenseVariant,
     SeatLimits,
-    ValidationResult,
 } from '../entitlements/types';
 
 // Back-compat re-exports. The canonical type definitions live in
