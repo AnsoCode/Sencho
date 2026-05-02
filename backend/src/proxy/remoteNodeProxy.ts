@@ -1,11 +1,8 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { NodeRegistry } from '../services/NodeRegistry';
-import {
-  LicenseService,
-  PROXY_TIER_HEADER,
-  PROXY_VARIANT_HEADER,
-} from '../services/LicenseService';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { isProxyExemptPath } from '../helpers/proxyExemptPaths';
 import { getErrorMessage } from '../utils/errors';
 
@@ -51,7 +48,7 @@ export function createRemoteProxyMiddleware(): RequestHandler {
         // carries a valid node_proxy JWT. The cached snapshot here invalidates
         // on activate / deactivate / validate so the headers track license
         // state changes within one proxy call.
-        const headers = LicenseService.getInstance().getProxyHeaders();
+        const headers = getEntitlementProvider().getProxyHeaders();
         proxyReq.setHeader(PROXY_TIER_HEADER, headers.tier);
         proxyReq.setHeader(PROXY_VARIANT_HEADER, headers.variant || '');
         // Strip the ?nodeId= query param so the remote's nodeContextMiddleware

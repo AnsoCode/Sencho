@@ -17,7 +17,7 @@ import * as tar from 'tar-stream';
 import axios from 'axios';
 import { DatabaseService, type FleetSnapshotFile } from './DatabaseService';
 import { CryptoService } from './CryptoService';
-import { LicenseService } from './LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { getErrorMessage } from '../utils/errors';
 import { isDebugEnabled } from '../utils/debug';
 
@@ -185,7 +185,7 @@ export class CloudBackupService {
         const licenseKey = db.getSystemState('license_key');
         if (!licenseKey) return { success: false, error: 'No license key found. Activate an Admiral license first.' };
 
-        const variant = LicenseService.getInstance().getVariant();
+        const variant = getEntitlementProvider().getVariant();
         if (variant !== 'admiral') return { success: false, error: 'Sencho Cloud Backup requires the Admiral tier.' };
 
         const apiBase = process.env.SENCHO_CLOUD_BACKUP_API || SENCHO_CLOUD_BACKUP_API_DEFAULT;

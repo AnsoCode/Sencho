@@ -12,7 +12,7 @@ import {
 } from 'openid-client';
 import { DatabaseService, User, AuthProvider } from './DatabaseService';
 import { CryptoService } from './CryptoService';
-import { LicenseService } from './LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { CacheService } from './CacheService';
 import { isDebugEnabled } from '../utils/debug';
 
@@ -590,7 +590,7 @@ export class SSOService {
             // Sync role from identity provider on every login
             if (params.role !== existing.role) {
                 if (params.role === 'admin') {
-                    const seatLimits = LicenseService.getInstance().getSeatLimits();
+                    const seatLimits = getEntitlementProvider().getSeatLimits();
                     if (seatLimits.maxAdmins === null || db.getAdminCount() < seatLimits.maxAdmins) {
                         updates.role = params.role;
                     } else if (debug) {
@@ -613,7 +613,7 @@ export class SSOService {
 
         // Check seat limits
         let { role } = params;
-        const seatLimits = LicenseService.getInstance().getSeatLimits();
+        const seatLimits = getEntitlementProvider().getSeatLimits();
         if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
             console.warn(`[SSO] Admin seat limit reached; provisioning ${params.preferredUsername} as viewer instead of admin`);
             role = 'viewer';

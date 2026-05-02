@@ -1,24 +1,25 @@
 import type { Request, Response } from 'express';
-import { LicenseService, type LicenseTier, type LicenseVariant } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
+import type { LicenseTier, LicenseVariant } from '../entitlements/types';
 
 // Tier-based route guards. Each returns true when the request may proceed and
 // false after sending the appropriate 403 response. Callers MUST check the
 // return value and `return;` on false.
 //
 // Guards trust req.proxyTier/proxyVariant (set by authMiddleware for
-// node_proxy tokens) ahead of the local LicenseService so a primary Sencho
-// instance can assert license state for its remote fleet nodes.
+// node_proxy tokens) ahead of the local entitlement provider so a primary
+// Sencho instance can assert license state for its remote fleet nodes.
 
 const PAID_MESSAGE = 'This feature requires a Skipper or Admiral license.';
 const ADMIRAL_MESSAGE = 'This feature requires a Sencho Admiral license.';
 
 /** Effective license tier for this request (proxy header if trusted, else local). */
 export const effectiveTier = (req: Request): LicenseTier =>
-  req.proxyTier ?? LicenseService.getInstance().getTier();
+  req.proxyTier ?? getEntitlementProvider().getTier();
 
 /** Effective license variant for this request (proxy header if trusted, else local). */
 export const effectiveVariant = (req: Request): LicenseVariant =>
-  req.proxyVariant ?? LicenseService.getInstance().getVariant();
+  req.proxyVariant ?? getEntitlementProvider().getVariant();
 
 const deny = (res: Response, code: string, error: string): false => {
   res.status(403).json({ error, code });

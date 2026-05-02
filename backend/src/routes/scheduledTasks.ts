@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { CronExpressionParser } from 'cron-parser';
 import { DatabaseService, type ScheduledTask } from '../services/DatabaseService';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { SchedulerService } from '../services/SchedulerService';
 import { requirePaid, requireAdmin, requireScheduledTaskTier } from '../middleware/tierGates';
 import { escapeCsvField } from '../utils/csv';
@@ -78,7 +78,7 @@ scheduledTasksRouter.get('/', (req: Request, res: Response): void => {
   try {
     let tasks = DatabaseService.getInstance().getScheduledTasks();
     // Skipper users only see 'update' tasks; Admiral sees all.
-    const ls = LicenseService.getInstance();
+    const ls = getEntitlementProvider();
     if (ls.getVariant() !== 'admiral') {
       tasks = tasks.filter(t => t.action === 'update');
     }

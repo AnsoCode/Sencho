@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { LicenseService } from '../services/LicenseService';
+import { getEntitlementProvider } from '../entitlements/registry';
 import SelfUpdateService from '../services/SelfUpdateService';
 import { requireAdmin } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
@@ -10,7 +10,7 @@ export const licenseRouter = Router();
 
 licenseRouter.get('/', (_req: Request, res: Response): void => {
   try {
-    const info = LicenseService.getInstance().getLicenseInfo();
+    const info = getEntitlementProvider().getLicenseInfo();
     res.json(info);
   } catch (error) {
     console.error('[License] Error getting license info:', error);
@@ -27,9 +27,9 @@ licenseRouter.post('/activate', async (req: Request, res: Response): Promise<voi
       res.status(400).json({ error: 'A valid license key is required' });
       return;
     }
-    const result = await LicenseService.getInstance().activate(license_key.trim());
+    const result = await getEntitlementProvider().activate(license_key.trim());
     if (result.success) {
-      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+      res.json({ success: true, license: getEntitlementProvider().getLicenseInfo() });
     } else {
       res.status(400).json({ error: result.error });
     }
@@ -43,9 +43,9 @@ licenseRouter.post('/deactivate', async (req: Request, res: Response): Promise<v
   if (rejectApiTokenScope(req, res, LICENSE_SCOPE_MESSAGE)) return;
   if (!requireAdmin(req, res)) return;
   try {
-    const result = await LicenseService.getInstance().deactivate();
+    const result = await getEntitlementProvider().deactivate();
     if (result.success) {
-      res.json({ success: true, license: LicenseService.getInstance().getLicenseInfo() });
+      res.json({ success: true, license: getEntitlementProvider().getLicenseInfo() });
     } else {
       res.status(500).json({ error: result.error });
     }
@@ -57,8 +57,8 @@ licenseRouter.post('/deactivate', async (req: Request, res: Response): Promise<v
 
 licenseRouter.post('/validate', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await LicenseService.getInstance().validate();
-    res.json({ ...result, license: LicenseService.getInstance().getLicenseInfo() });
+    const result = await getEntitlementProvider().validate();
+    res.json({ ...result, license: getEntitlementProvider().getLicenseInfo() });
   } catch (error) {
     console.error('[License] Validation error:', error);
     res.status(500).json({ error: 'License validation failed' });
@@ -67,7 +67,7 @@ licenseRouter.post('/validate', async (_req: Request, res: Response): Promise<vo
 
 licenseRouter.get('/billing-portal', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await LicenseService.getInstance().getBillingPortalUrl();
+    const result = await getEntitlementProvider().getBillingPortalUrl();
     if ('error' in result) {
       res.status(404).json({ error: result.error });
       return;

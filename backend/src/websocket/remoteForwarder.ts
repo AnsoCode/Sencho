@@ -1,11 +1,8 @@
 import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import type { Node } from '../services/DatabaseService';
-import {
-  LicenseService,
-  PROXY_TIER_HEADER,
-  PROXY_VARIANT_HEADER,
-} from '../services/LicenseService';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
+import { getEntitlementProvider } from '../entitlements/registry';
 import { wsProxyServer } from '../proxy/websocketProxy';
 import { getErrorMessage } from '../utils/errors';
 import { rejectUpgrade as reject } from './reject';
@@ -40,7 +37,7 @@ export async function handleRemoteForwarder(
   let bearerTokenForProxy = node.api_token;
   if (isInteractiveConsolePath) {
     try {
-      const consoleHeaders = LicenseService.getInstance().getProxyHeaders();
+      const consoleHeaders = getEntitlementProvider().getProxyHeaders();
       const tokenRes = await fetch(`${node.api_url.replace(/\/$/, '')}/api/system/console-token`, {
         method: 'POST',
         headers: {
@@ -67,7 +64,7 @@ export async function handleRemoteForwarder(
   // and would fail verification on the remote. Auth is handled exclusively
   // via the Bearer token.
   delete req.headers['cookie'];
-  const fwdHeaders = LicenseService.getInstance().getProxyHeaders();
+  const fwdHeaders = getEntitlementProvider().getProxyHeaders();
   req.headers[PROXY_TIER_HEADER] = fwdHeaders.tier;
   req.headers[PROXY_VARIANT_HEADER] = fwdHeaders.variant || '';
   // Strip nodeId from the forwarded URL so the remote treats the request as

@@ -26,7 +26,8 @@ import { sanitizeForLog } from '../utils/safeLog';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { NotificationService } from '../services/NotificationService';
 import { buildLocalConfigurationStatus, type ConfigurationStatus } from './dashboard';
-import { LicenseService, PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../services/LicenseService';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
+import { getEntitlementProvider } from '../entitlements/registry';
 
 const updateTracker = FleetUpdateTrackerService.getInstance();
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -330,7 +331,7 @@ fleetRouter.get('/configuration', authMiddleware, async (req: Request, res: Resp
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
     const userId = req.user?.userId ?? 0;
-    const ls = LicenseService.getInstance();
+    const ls = getEntitlementProvider();
     const localTier = ls.getTier();
     const localVariant = ls.getVariant();
 

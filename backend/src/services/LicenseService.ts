@@ -1,63 +1,33 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
+import type {
+    EntitlementProvider,
+    LicenseInfo,
+    LicenseStatus,
+    LicenseTier,
+    LicenseVariant,
+    SeatLimits,
+} from '../entitlements/types';
 
-export type LicenseTier = 'community' | 'paid';
-export type LicenseStatus = 'community' | 'trial' | 'active' | 'expired' | 'disabled';
+// Back-compat re-exports. The canonical type definitions live in
+// `entitlements/types.ts`; this re-export keeps existing imports
+// (`import type { LicenseTier } from '@/services/LicenseService'`)
+// working until consumers migrate. A follow-up PR titled
+// `refactor(entitlements): migrate type-only consumers to entitlements/types`
+// will sweep the remaining ~20 consumers; Phase 2 deletes this file.
+export type { LicenseInfo, LicenseStatus, LicenseTier, LicenseVariant, SeatLimits };
 
-export type LicenseVariant = 'skipper' | 'admiral' | null;
+// Header constants and tier/variant normalizers previously exported
+// from this file moved to `../entitlements/headers` and
+// `../entitlements/normalize` respectively, where they live in the
+// public core regardless of which entitlement provider is bound.
+// LicenseService imports them back for internal use.
+import { isLicenseVariant, normalizeVariant } from '../entitlements/normalize';
 
-const VALID_TIERS: readonly string[] = ['community', 'paid'] satisfies readonly LicenseTier[];
-const VALID_VARIANTS: readonly string[] = ['skipper', 'admiral'] satisfies readonly LicenseVariant[];
-
-// Legacy names from pre-0.38.1 versions. Accepted on input and normalized to current names.
-const LEGACY_TIER_MAP: Record<string, LicenseTier> = { pro: 'paid' };
-const LEGACY_VARIANT_MAP: Record<string, Exclude<LicenseVariant, null>> = { personal: 'skipper', team: 'admiral' };
-
-/** Check if value is a recognized tier (current or legacy name). */
-export function isLicenseTier(value: unknown): value is string {
-    return typeof value === 'string' && ((VALID_TIERS as readonly string[]).includes(value) || value in LEGACY_TIER_MAP);
-}
-
-/** Check if value is a recognized variant (current or legacy name). */
-export function isLicenseVariant(value: unknown): value is string {
-    return typeof value === 'string' && ((VALID_VARIANTS as readonly string[]).includes(value) || value in LEGACY_VARIANT_MAP);
-}
-
-/** Normalize a tier value, mapping legacy names to current equivalents. Must be called after isLicenseTier validation. */
-export function normalizeTier(value: string): LicenseTier {
-    return LEGACY_TIER_MAP[value] ?? (value as LicenseTier);
-}
-
-/** Normalize a variant value, mapping legacy names to current equivalents. Must be called after isLicenseVariant validation. */
-export function normalizeVariant(value: string): Exclude<LicenseVariant, null> {
-    return LEGACY_VARIANT_MAP[value] ?? (value as Exclude<LicenseVariant, null>);
-}
-
-/** Header names used for Distributed License Enforcement between nodes. */
-export const PROXY_TIER_HEADER = 'x-sencho-tier';
-export const PROXY_VARIANT_HEADER = 'x-sencho-variant';
-
-export interface LicenseInfo {
-    tier: LicenseTier;
-    status: LicenseStatus;
-    variant: LicenseVariant;
-    customerName: string | null;
-    productName: string | null;
-    maskedKey: string | null;
-    validUntil: string | null;
-    trialDaysRemaining: number | null;
-    instanceId: string;
-    portalUrl: string | null;
-    isLifetime: boolean;
-}
-
-/** Seat limits per variant. null = unlimited. */
-export interface SeatLimits {
-    maxAdmins: number | null;
-    maxViewers: number | null;
-}
-
+// LicenseInfo and SeatLimits live in `entitlements/types.ts` and are
+// re-exported above. The literal seat-limit table for paid variants
+// stays here because it is specific to the LemonSqueezy implementation.
 const SEAT_LIMITS: Record<string, SeatLimits> = {
     skipper: { maxAdmins: 1, maxViewers: 3 },
     admiral: { maxAdmins: null, maxViewers: null },
@@ -180,7 +150,13 @@ export function resolveSenchoVariantFromMeta(
 // net against any future bypass rather than a load-bearing freshness bound.
 const PROXY_HEADERS_CACHE_TTL_MS = 30_000;
 
-export class LicenseService {
+/**
+ * Implements `EntitlementProvider` so the public core can talk to it
+ * via `getEntitlementProvider()` without naming this class directly.
+ * Phase 2 will move this entire file to `@studio-saelix/sencho-pro`,
+ * at which point the public core only sees the interface.
+ */
+export class LicenseService implements EntitlementProvider {
     private static instance: LicenseService;
     private validationTimer: ReturnType<typeof setInterval> | null = null;
     private cachedProxyHeaders: { value: { tier: LicenseTier; variant: LicenseVariant }; expiresAt: number } | null = null;
