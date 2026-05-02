@@ -2,10 +2,11 @@
  * Docs screenshot capture.
  *
  * Takes canonical screenshots of key UI views and writes them to docs/images/.
- * Run via: npx playwright test e2e/screenshots.spec.ts
- *
- * The CI `update-screenshots` job runs this on every push to develop and
- * commits any changed images back to the repo so sync-docs picks them up.
+ * Run manually after a UI change that affects a documented view:
+ *   npx playwright test --project=screenshots
+ * Then review the diff under docs/images/ and commit on a chore branch.
+ * The default `playwright test` invocation skips this spec via the
+ * project-level testIgnore in playwright.config.ts.
  */
 import * as fs from 'fs';
 import * as path from 'path';

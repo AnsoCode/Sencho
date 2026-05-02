@@ -5,20 +5,13 @@ on:
     branches: [main]
   push:
     branches: [main]
-    # Screenshot auto-merge commits only touch docs/images/.
-    # Ignoring this path breaks the cascade:
-    #   merge PR → screenshots PR auto-merges → would re-trigger CI → now skipped.
-    # The next real merge will sync everything (rsync --delete does a full mirror).
-    paths-ignore:
-      - 'docs/images/**'
 
 # Cancel previous runs on the same branch/PR
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Least-privilege default for every job. Individual jobs may override (e.g.
-# update-screenshots needs contents: write + pull-requests: write to open a PR).
+# Least-privilege default for every job.
 permissions:
   contents: read
 
@@ -30,13 +23,11 @@ jobs:
     name: Backend (Build, Test, Lint)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Skip on bot PRs that only touch version metadata (release-please) or
-    # doc screenshots. Neither changes the backend surface, so running the
-    # full build+test+lint+audit stack is pure action-minute waste.
+    # Skip on the release-please bot PR. It only touches version metadata,
+    # so the full build+test+lint+audit stack is pure action-minute waste.
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
-      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -87,7 +78,6 @@ jobs:
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
-      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -123,7 +113,6 @@ jobs:
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
-      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -191,7 +180,6 @@ jobs:
     if: >-
       github.event_name == 'pull_request'
       && github.head_ref != 'release-please--branches--main--components--sencho'
-      && github.head_ref != 'chore/refresh-screenshots'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -212,7 +200,12 @@ jobs:
           skip-backend-build: 'true'
 
       - name: Run E2E tests
-        run: npx playwright test
+        # `--project=chromium` is explicit because playwright.config.ts also
+        # defines a `screenshots` project that captures docs/images/ for
+        # manual review. That project must not run in CI: its output would
+        # be discarded after the run, wasting minutes per PR. Keep this
+        # flag; do not "simplify" back to `npx playwright test`.
+        run: npx playwright test --project=chromium
 
       - name: Upload E2E report and service logs
         if: failure()
@@ -224,69 +217,6 @@ jobs:
             test-results/
             ci-logs/
           retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # Post-release only: Screenshot refresh
-  # Only runs when release-please merges a "chore(main): release" commit,
-  # so screenshots are refreshed once per release - not on every merge.
-  # ---------------------------------------------------------------------------
-  update-screenshots:
-    name: Refresh Doc Screenshots
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: >-
-      github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
-      && startsWith(github.event.head_commit.message, 'chore(main): release')
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      # Mint a short-lived installation token for the `sencho-token-app`
-      # GitHub App. Reused by the checkout, PR creation, and auto-merge
-      # steps below so we make exactly one /app/installations token call.
-      - name: Generate GitHub App installation token
-        id: app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: sencho
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Checkout Code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Start app & install Playwright
-        uses: ./.github/actions/start-app
-
-      - name: Capture screenshots
-        run: npx playwright test e2e/screenshots.spec.ts --project=chromium
-
-      - name: Open / update screenshots PR
-        id: create-pr
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          branch: chore/refresh-screenshots
-          commit-message: "docs: refresh screenshots"
-          title: "docs: refresh screenshots"
-          body: "Automated screenshot refresh - generated by the `update-screenshots` CI job on push to `main`."
-          add-paths: docs/images/
-          delete-branch: true
-
-      - name: Auto-merge screenshots PR
-        if: steps.create-pr.outputs.pull-request-number != ''
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
-            --squash \
-            --repo ${{ github.repository }}
 
   sync-docs:
     name: Sync Docs to sencho-docs

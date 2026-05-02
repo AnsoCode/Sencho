@@ -30,6 +30,19 @@ export default defineConfig({
   },
 
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      // Default project: skips the manual screenshot capture spec so
+      // `npx playwright test` does not regenerate docs images on every run.
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['**/screenshots.spec.ts'],
+    },
+    {
+      // Manual-only project for capturing docs/images/. Run explicitly:
+      //   npx playwright test --project=screenshots
+      name: 'screenshots',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/screenshots.spec.ts'],
+    },
   ],
 });

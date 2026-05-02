@@ -19,8 +19,8 @@ inputs:
       When 'true', skip running `npm run build` in backend/ and assume the
       caller has already materialized backend/dist (e.g. via download-artifact
       from an upstream job that already built and verified it). Leave 'false'
-      for standalone invocations like the update-screenshots job that do not
-      run in a job graph with a prior build step.
+      for standalone invocations that do not run in a job graph with a
+      prior build step.
     required: false
     default: 'false'
 
