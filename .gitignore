@@ -9,6 +9,7 @@ node_modules/
 # Build Outputs
 dist/
 *.tsbuildinfo
+backend/public/
 
 # Sencho User Data & Mocks
 data/
@@ -31,39 +32,31 @@ ehthumbs.db
 *.sublime-project
 *.sublime-workspace
 
-# Testing
+# Testing artifacts
 test-results/
 e2e/report/
 html-report/
 .coverage/
 coverage/
+.playwright-mcp/
 
 # Logs
 *.log
 npm-debug.log*
 
-# Claude Code
-.claude/
-plans/
-CLAUDE.md
-MANUAL_STEPS.md
-docs/superpowers/
-.worktrees/
-.superpowers/
-
-# Design system (local-only; authoritative reference for agents + user)
-frontend/DESIGN.md
-.design-bundle/
-
-# Playwright MCP
-.playwright-mcp/
-
-# Frontend build output (served by backend)
-backend/public/
-
 # Auto-generated files
 backend/cookies.txt
 backend/src/generated/version.ts
+
+# Local-only working files
+.claude/
+.worktrees/
+plans/
+CLAUDE.md
+
+# Design system (local-only authoritative reference)
+frontend/DESIGN.md
+.design-bundle/
 
 # Local-only projects (separate repos)
 demo-video/
