@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useExperimental } from '@/hooks/useExperimental';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
@@ -678,6 +679,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [labelFilters, setLabelFilters] = useState<Set<string>>(new Set());
     const { isPaid, license } = useLicense();
     const isAdmiral = isPaid && license?.variant === 'admiral';
+    const experimental = useExperimental();
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
@@ -1048,7 +1050,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     </TabsTrigger>
                                 </TabsHighlightItem>
                             )}
-                            {isAdmiral && (
+                            {isAdmiral && experimental && (
                                 <TabsHighlightItem value="routing">
                                     <TabsTrigger value="routing">
                                         <ArrowLeftRight className="w-4 h-4 mr-1.5" />Traffic · Routing
@@ -1060,25 +1062,29 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                     <SlidersHorizontal className="w-4 h-4 mr-1.5" />Status
                                 </TabsTrigger>
                             </TabsHighlightItem>
-                            <span aria-hidden className="self-center mx-1 h-4 w-px bg-border" />
-                            <TabsHighlightItem value="deployments">
-                                <TabsTrigger value="deployments">
-                                    <Send className="w-4 h-4 mr-1.5" />Deployments
-                                    {!isPaid && <SoonBadge />}
-                                </TabsTrigger>
-                            </TabsHighlightItem>
-                            <TabsHighlightItem value="federation">
-                                <TabsTrigger value="federation">
-                                    <Network className="w-4 h-4 mr-1.5" />Federation
-                                    <SoonBadge />
-                                </TabsTrigger>
-                            </TabsHighlightItem>
-                            <TabsHighlightItem value="secrets">
-                                <TabsTrigger value="secrets">
-                                    <KeyRound className="w-4 h-4 mr-1.5" />Secrets
-                                    <SoonBadge />
-                                </TabsTrigger>
-                            </TabsHighlightItem>
+                            {experimental && (
+                                <>
+                                    <span aria-hidden className="self-center mx-1 h-4 w-px bg-border" />
+                                    <TabsHighlightItem value="deployments">
+                                        <TabsTrigger value="deployments">
+                                            <Send className="w-4 h-4 mr-1.5" />Deployments
+                                            {!isPaid && <SoonBadge />}
+                                        </TabsTrigger>
+                                    </TabsHighlightItem>
+                                    <TabsHighlightItem value="federation">
+                                        <TabsTrigger value="federation">
+                                            <Network className="w-4 h-4 mr-1.5" />Federation
+                                            <SoonBadge />
+                                        </TabsTrigger>
+                                    </TabsHighlightItem>
+                                    <TabsHighlightItem value="secrets">
+                                        <TabsTrigger value="secrets">
+                                            <KeyRound className="w-4 h-4 mr-1.5" />Secrets
+                                            <SoonBadge />
+                                        </TabsTrigger>
+                                    </TabsHighlightItem>
+                                </>
+                            )}
                         </TabsHighlight>
                     </TabsList>
                     <div className="flex items-center gap-2">
@@ -1375,7 +1381,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         <FleetSnapshots />
                     </TabsContent>
                 )}
-                {isAdmiral && (
+                {isAdmiral && experimental && (
                     <TabsContent value="routing">
                         <AdmiralGate featureName="Sencho Mesh">
                             <RoutingTab />
@@ -1385,39 +1391,43 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 <TabsContent value="configuration">
                     <FleetConfiguration />
                 </TabsContent>
-                <TabsContent value="deployments">
-                    {isPaid ? (
-                        <DeploymentsTab />
-                    ) : (
-                        <PaidGate featureName="Blueprints (fleet-wide compose templates)">
+                {experimental && (
+                    <>
+                        <TabsContent value="deployments">
+                            {isPaid ? (
+                                <DeploymentsTab />
+                            ) : (
+                                <PaidGate featureName="Blueprints (fleet-wide compose templates)">
+                                    <FleetSoonPlaceholder
+                                        icon={<Send className="h-4 w-4" />}
+                                        kicker="Deployments · Blueprints"
+                                        title="Declare once. Distribute everywhere."
+                                        description="Pick nodes by label, drop in a docker-compose, and Sencho keeps the matching nodes in sync. Drift detection always on; auto-fix optional."
+                                        plannedActions={['Author', 'Target', 'Reconcile', 'Snapshot+evict']}
+                                    />
+                                </PaidGate>
+                            )}
+                        </TabsContent>
+                        <TabsContent value="federation">
                             <FleetSoonPlaceholder
-                                icon={<Send className="h-4 w-4" />}
-                                kicker="Deployments · Blueprints"
-                                title="Declare once. Distribute everywhere."
-                                description="Pick nodes by label, drop in a docker-compose, and Sencho keeps the matching nodes in sync. Drift detection always on; auto-fix optional."
-                                plannedActions={['Author', 'Target', 'Reconcile', 'Snapshot+evict']}
+                                icon={<Network className="h-4 w-4" />}
+                                kicker="Federation · Coming soon"
+                                title="The fleet as one logical surface"
+                                description="Pin policies, drain a node for maintenance, weight-aware scheduling. This stack runs on whichever node has capacity."
+                                plannedActions={['Pin policy', 'Drain node', 'Cordon', 'Capacity plan']}
                             />
-                        </PaidGate>
-                    )}
-                </TabsContent>
-                <TabsContent value="federation">
-                    <FleetSoonPlaceholder
-                        icon={<Network className="h-4 w-4" />}
-                        kicker="Federation · Coming soon"
-                        title="The fleet as one logical surface"
-                        description="Pin policies, drain a node for maintenance, weight-aware scheduling. This stack runs on whichever node has capacity."
-                        plannedActions={['Pin policy', 'Drain node', 'Cordon', 'Capacity plan']}
-                    />
-                </TabsContent>
-                <TabsContent value="secrets">
-                    <FleetSoonPlaceholder
-                        icon={<KeyRound className="h-4 w-4" />}
-                        kicker="Secrets · Coming soon"
-                        title="One source of truth for env, creds and certs"
-                        description="Push to selected nodes, rotate centrally, audit who-saw-what. Solves silent drift across copies."
-                        plannedActions={['Sync env', 'Rotate', 'Audit', 'Pin to nodes']}
-                    />
-                </TabsContent>
+                        </TabsContent>
+                        <TabsContent value="secrets">
+                            <FleetSoonPlaceholder
+                                icon={<KeyRound className="h-4 w-4" />}
+                                kicker="Secrets · Coming soon"
+                                title="One source of truth for env, creds and certs"
+                                description="Push to selected nodes, rotate centrally, audit who-saw-what. Solves silent drift across copies."
+                                plannedActions={['Sync env', 'Rotate', 'Audit', 'Pin to nodes']}
+                            />
+                        </TabsContent>
+                    </>
+                )}
             </Tabs>
 
             {/* Reconnecting overlay shown when local node is updating */}

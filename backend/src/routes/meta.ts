@@ -22,6 +22,7 @@ metaRouter.get('/meta', (_req: Request, res: Response): void => {
     version: getSenchoVersion(),
     capabilities: getActiveCapabilities(),
     startedAt: processStartedAt,
+    experimental: process.env.SENCHO_EXPERIMENTAL === 'true',
     ...(updateError ? { updateError } : {}),
   });
 });
