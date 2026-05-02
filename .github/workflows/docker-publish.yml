@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   push_to_registry:
-    name: Push Docker image to Docker Hub
+    name: Push Docker image to Docker Hub and GHCR
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN live in the `production` environment,
@@ -27,6 +27,10 @@ jobs:
       # Required for cosign keyless signing via GitHub OIDC and for uploading
       # SBOM/VEX files to GitHub Releases via softprops/action-gh-release.
       id-token: write
+      # Required to push the multi-arch image to ghcr.io/studio-saelix/sencho
+      # using the auto-provisioned GITHUB_TOKEN. Docker Hub credentials still
+      # come from the production environment above.
+      packages: write
     steps:
       - name: Check out the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -54,6 +58,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
@@ -61,7 +72,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6
         with:
-          images: saelix/sencho
+          # Publish the same manifest under both registries so users on either
+          # platform can pull. Docker Hub remains primary for discoverability;
+          # GHCR mirrors at ghcr.io/studio-saelix/sencho with identical tags.
+          images: |
+            saelix/sencho
+            ghcr.io/studio-saelix/sencho
           # On a v-tag push we publish:
           #   latest           always points at the newest release
           #   X.Y.Z            the immutable semver tag
@@ -212,15 +228,22 @@ jobs:
 
       - name: Attest SBOMs and VEX with cosign (keyless)
         # Attaches CycloneDX SBOM, SPDX SBOM, and OpenVEX document as signed
-        # OCI referrer attestations on the published digest. Verification
-        # commands are documented in docs/operations/verifying-images.mdx.
+        # OCI referrer attestations on the published digest, separately to each
+        # registry path. Attestations live next to the image manifest in the
+        # registry, so a verifier pulling from GHCR cannot resolve attestations
+        # written only to Docker Hub. Verification commands are documented in
+        # docs/operations/verifying-images.mdx.
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          IMAGE_REF="saelix/sencho@${DIGEST}"
-          cosign attest --yes --predicate sbom.cdx.json  --type cyclonedx "${IMAGE_REF}"
-          cosign attest --yes --predicate sbom.spdx.json --type spdxjson  "${IMAGE_REF}"
-          cosign attest --yes --predicate security/vex/sencho.openvex.json --type openvex "${IMAGE_REF}"
+          for IMAGE_REF in \
+            "saelix/sencho@${DIGEST}" \
+            "ghcr.io/studio-saelix/sencho@${DIGEST}"
+          do
+            cosign attest --yes --predicate sbom.cdx.json  --type cyclonedx "${IMAGE_REF}"
+            cosign attest --yes --predicate sbom.spdx.json --type spdxjson  "${IMAGE_REF}"
+            cosign attest --yes --predicate security/vex/sencho.openvex.json --type openvex "${IMAGE_REF}"
+          done
 
       - name: Upload SBOM and VEX to GitHub Release
         # Fallback for consumers who do not use cosign; files are also
@@ -234,13 +257,15 @@ jobs:
             security/vex/sencho.openvex.json
 
   push_mesh_sidecar:
-    name: Push Sencho Mesh sidecar image to Docker Hub
+    name: Push Sencho Mesh sidecar image to Docker Hub and GHCR
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
     permissions:
       contents: read
       id-token: write
+      # Required to push the sidecar image to ghcr.io/studio-saelix/sencho-mesh.
+      packages: write
     steps:
       - name: Check out the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -259,6 +284,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
@@ -268,7 +300,11 @@ jobs:
         with:
           # Sencho Mesh sidecar image. Versioned in lockstep with the main
           # sencho image so each Sencho release has a matched mesh sidecar.
-          images: saelix/sencho-mesh
+          # Same registry pair as the main image; tags are identical across
+          # both so users on either registry pull the same content.
+          images: |
+            saelix/sencho-mesh
+            ghcr.io/studio-saelix/sencho-mesh
           tags: |
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
