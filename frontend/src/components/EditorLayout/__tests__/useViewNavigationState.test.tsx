@@ -30,6 +30,17 @@ function mockAdmiralAdmin() {
   } as unknown as ReturnType<typeof LicenseContext.useLicense>);
 }
 
+function mockSkipperAdmin() {
+  vi.mocked(AuthContext.useAuth).mockReturnValue({
+    isAdmin: true,
+    can: () => false,
+  } as unknown as ReturnType<typeof AuthContext.useAuth>);
+  vi.mocked(LicenseContext.useLicense).mockReturnValue({
+    isPaid: true,
+    license: { variant: 'skipper' } as ReturnType<typeof LicenseContext.useLicense>['license'],
+  } as unknown as ReturnType<typeof LicenseContext.useLicense>);
+}
+
 describe('useViewNavigationState', () => {
   beforeEach(() => {
     mockCommunityUser();
@@ -105,6 +116,14 @@ describe('useViewNavigationState', () => {
     const { result } = renderHook(() => useViewNavigationState());
     act(() => result.current.handleOpenSettings('nodes'));
     expect(result.current.settingsSection).toBe('nodes');
+    expect(result.current.activeView).toBe('settings');
+  });
+
+  it('handleOpenSettings without a section does not change settingsSection', () => {
+    const { result } = renderHook(() => useViewNavigationState());
+    act(() => result.current.handleOpenSettings('labels'));
+    act(() => result.current.handleOpenSettings());
+    expect(result.current.settingsSection).toBe('labels');
     expect(result.current.activeView).toBe('settings');
   });
 
@@ -195,5 +214,17 @@ describe('useViewNavigationState', () => {
     expect(values).toContain('host-console');
     expect(values).toContain('audit-log');
     expect(values).toContain('scheduled-ops');
+  });
+
+  // ── navItems: skipper admin ────────────────────────────────────────────────
+
+  it('navItems for skipper paid admin contains auto-updates but not admiral items', () => {
+    mockSkipperAdmin();
+    const { result } = renderHook(() => useViewNavigationState());
+    const values = result.current.navItems.map(i => i.value);
+    expect(values).toContain('auto-updates');
+    expect(values).not.toContain('host-console');
+    expect(values).not.toContain('audit-log');
+    expect(values).not.toContain('scheduled-ops');
   });
 });
