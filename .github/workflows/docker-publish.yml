@@ -118,22 +118,8 @@ jobs:
           platforms: linux/amd64
           tags: localhost/sencho:release-scan
           cache-from: type=registry,ref=saelix/sencho:buildcache
-          # PRO_PACKAGE_VERSION pins @studio-saelix/sencho-pro to a
-          # specific SemVer so the scan build and the publish build
-          # below resolve identically. Bumping the pro package: bump
-          # this string in the same PR that ships the matching public
-          # Sencho release; release-please does not coordinate the two.
           build-args: |
             APK_CACHE_BUST=${{ steps.apk-bust.outputs.date }}
-            PRO_PACKAGE_VERSION=0.1.0
-          # GITHUB_TOKEN carries packages:read scope by default, which
-          # is enough to install @studio-saelix/sencho-pro from
-          # GitHub Packages during the prod-deps stage. Passing it via
-          # BuildKit secret keeps it out of image layers; the
-          # Dockerfile reads /run/secrets/github_token only inside the
-          # one RUN that authenticates to npm.pkg.github.com.
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
 
       - name: Re-scan release image for vulnerabilities (Trivy)
         # Gates the release on the same HIGH/CRITICAL policy as the PR scan.
@@ -193,18 +179,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=saelix/sencho:buildcache
           cache-to: type=registry,ref=saelix/sencho:buildcache,mode=max
-          # PRO_PACKAGE_VERSION must match the value passed to the
-          # scan build above so Trivy and the smoke test exercise the
-          # same package version that ships.
           build-args: |
             APK_CACHE_BUST=${{ steps.apk-bust.outputs.date }}
-            PRO_PACKAGE_VERSION=0.1.0
-          # Same secret as the pre-publish scan above so the published
-          # image carries @studio-saelix/sencho-pro identical to what
-          # Trivy and the smoke test exercised. BuildKit keeps the
-          # token out of the published layers.
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
           # SBOM + provenance attestations are embedded as OCI referrers on the
           # published image. Inspect with: docker buildx imagetools inspect <img>
           sbom: true

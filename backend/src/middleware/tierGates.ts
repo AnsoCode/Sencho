@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { getEntitlementProvider } from '../entitlements/registry';
-import type { LicenseTier, LicenseVariant } from '../entitlements/types';
+import { LicenseService } from '../services/LicenseService';
+import type { LicenseTier, LicenseVariant } from '../services/license-types';
 
 // Tier-based route guards. Each returns true when the request may proceed and
 // false after sending the appropriate 403 response. Callers MUST check the
@@ -15,11 +15,11 @@ const ADMIRAL_MESSAGE = 'This feature requires a Sencho Admiral license.';
 
 /** Effective license tier for this request (proxy header if trusted, else local). */
 export const effectiveTier = (req: Request): LicenseTier =>
-  req.proxyTier ?? getEntitlementProvider().getTier();
+  req.proxyTier ?? LicenseService.getInstance().getTier();
 
 /** Effective license variant for this request (proxy header if trusted, else local). */
 export const effectiveVariant = (req: Request): LicenseVariant =>
-  req.proxyVariant ?? getEntitlementProvider().getVariant();
+  req.proxyVariant ?? LicenseService.getInstance().getVariant();
 
 const deny = (res: Response, code: string, error: string): false => {
   res.status(403).json({ error, code });

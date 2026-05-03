@@ -2,24 +2,14 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { DatabaseService } from './DatabaseService';
 import type {
-    EntitlementProvider,
     LicenseInfo,
     LicenseStatus,
     LicenseTier,
     LicenseVariant,
     SeatLimits,
-} from '../entitlements/types';
+} from './license-types';
+import { isLicenseVariant, normalizeVariant } from './license-normalize';
 
-// Header constants and tier/variant normalizers previously exported
-// from this file moved to `../entitlements/headers` and
-// `../entitlements/normalize` respectively, where they live in the
-// public core regardless of which entitlement provider is bound.
-// LicenseService imports them back for internal use.
-import { isLicenseVariant, normalizeVariant } from '../entitlements/normalize';
-
-// The seat-limit table for paid variants is specific to the
-// LemonSqueezy implementation and stays in this file. Phase 2 moves it
-// to `@studio-saelix/sencho-pro` along with the rest of the file.
 const SEAT_LIMITS: Record<string, SeatLimits> = {
     skipper: { maxAdmins: 1, maxViewers: 3 },
     admiral: { maxAdmins: null, maxViewers: null },
@@ -143,12 +133,12 @@ export function resolveSenchoVariantFromMeta(
 const PROXY_HEADERS_CACHE_TTL_MS = 30_000;
 
 /**
- * Implements `EntitlementProvider` so the public core can talk to it
- * via `getEntitlementProvider()` without naming this class directly.
- * Phase 2 will move this entire file to `@studio-saelix/sencho-pro`,
- * at which point the public core only sees the interface.
+ * Single in-tree license service. Owns Lemon Squeezy validation and
+ * exposes the tier / variant / seat-limit API consumed across the
+ * backend. See `docs/internal/adrs/2026-05-02-collapse-entitlement-provider.md`
+ * for the conditions that would justify reintroducing an interface seam.
  */
-export class LicenseService implements EntitlementProvider {
+export class LicenseService {
     private static instance: LicenseService;
     private validationTimer: ReturnType<typeof setInterval> | null = null;
     private cachedProxyHeaders: { value: { tier: LicenseTier; variant: LicenseVariant }; expiresAt: number } | null = null;
