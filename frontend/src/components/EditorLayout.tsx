@@ -5,14 +5,9 @@ import { Editor } from '@/lib/monacoLoader';
 import { useImageUpdates } from '@/hooks/useImageUpdates';
 import TerminalComponent from './Terminal';
 import ErrorBoundary from './ErrorBoundary';
-import HomeDashboard from './HomeDashboard';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
-import { Skeleton } from '@/components/ui/skeleton';
-import { AdmiralGate } from './AdmiralGate';
-import { CapabilityGate } from './CapabilityGate';
-import ResourcesView from './ResourcesView';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from './ui/dialog';
@@ -37,58 +32,24 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
 import { cn } from '@/lib/utils';
-import { SettingsPage } from './settings/SettingsPage';
 import type { SectionId } from './settings/types';
+import { ViewRouter } from './EditorLayout/ViewRouter';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
-import { AppStoreView } from './AppStoreView';
 import { LogViewer } from './LogViewer';
 import StructuredLogViewer from './StructuredLogViewer';
 import StackAnatomyPanel from './StackAnatomyPanel';
 import { Sparkline } from './ui/sparkline';
 import type { ScheduleTaskPrefill } from './ScheduledOperationsView';
 
-// Paid-tier views and the security-history overlay are loaded on demand.
-// Their internal PaidGate / AdmiralGate / CapabilityGate wrappers render
-// the upsell or capability-missing card with blurred children rather than
-// short-circuiting, so a tier-locked or capability-missing operator
-// opening one of these tabs still triggers the chunk fetch to render the
-// blurred preview. The gate-short-circuit fix lives in a follow-up
-// branch. What this lazy split closes is the much larger initial-bundle
-// leak: every Community user used to download the full FleetView,
-// AuditLogView, etc. on first page load even if they never clicked those
-// tabs. After this change, the chunks fetch only on tab open.
-//
-// GlobalObservabilityView is a free-tier feature with no internal gate;
-// it is split here purely for the bundle-size win, not for IP protection.
-const HostConsole = lazy(() => import('./HostConsole'));
-const GlobalObservabilityView = lazy(() =>
-    import('./GlobalObservabilityView').then(m => ({ default: m.GlobalObservabilityView })),
-);
-const FleetView = lazy(() =>
-    import('./FleetView').then(m => ({ default: m.FleetView })),
-);
-const AuditLogView = lazy(() =>
-    import('./AuditLogView').then(m => ({ default: m.AuditLogView })),
-);
+// SecurityHistoryView is the only lazy-loaded view that lives outside
+// the ViewRouter switch — it renders as an overlay sheet wired into the
+// settings flow, not as a top-level tab. The other tab-level lazy views
+// (HostConsole, FleetView, AuditLogView, etc.) live inside ViewRouter.
 const SecurityHistoryView = lazy(() =>
     import('./SecurityHistoryView').then(m => ({ default: m.SecurityHistoryView })),
 );
-const ScheduledOperationsView = lazy(() => import('./ScheduledOperationsView'));
-const AutoUpdateReadinessView = lazy(() => import('./AutoUpdateReadinessView'));
-
-// Sized for the main workspace area (flex-1 with p-6 padding). Visible
-// only during the brief window between an unlocked view's chunk request
-// and its first render.
-function ViewSkeleton() {
-    return (
-        <div className="flex flex-col gap-6" aria-busy="true">
-            <Skeleton className="h-10 w-1/3 rounded-md" />
-            <Skeleton className="h-96 w-full rounded-lg" />
-        </div>
-    );
-}
 import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
 import type { SenchoNavigateDetail } from './NodeManager';
 import { NodeSwitcher } from './NodeSwitcher';
@@ -2512,26 +2473,34 @@ export default function EditorLayout() {
 
         {/* Main Workspace */}
         <div key={activeView} className="flex-1 overflow-y-auto p-6 animate-fade-up">
-          {activeView === 'settings' ? (
-            <SettingsPage
-              currentSection={settingsSection}
-              onSectionChange={setSettingsSection}
-            />
-          ) : activeView === 'templates' ? (
-            <AppStoreView onDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }} />
-          ) : activeView === 'resources' ? (
-            <ResourcesView />
-          ) : activeView === 'host-console' ? (
-            <AdmiralGate>
-              <CapabilityGate capability="host-console" featureName="Host Console">
-                <LazyBoundary>
-                  <Suspense fallback={<ViewSkeleton />}>
-                    <HostConsole stackName={selectedFile} onClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')} />
-                  </Suspense>
-                </LazyBoundary>
-              </CapabilityGate>
-            </AdmiralGate>
-          ) : !isLoading && selectedFile && activeView === 'editor' ? (
+          <ViewRouter
+            activeView={activeView}
+            selectedFile={selectedFile}
+            isLoading={isLoading}
+            settingsSection={settingsSection}
+            onSettingsSectionChange={setSettingsSection}
+            onTemplateDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }}
+            onHostConsoleClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')}
+            onFleetNavigateToNode={(nodeId, stackName) => {
+              const node = nodes.find(n => n.id === nodeId);
+              if (node) {
+                if (activeNode?.id === nodeId) {
+                  loadFile(stackName);
+                } else {
+                  pendingStackLoadRef.current = stackName;
+                  setActiveNode(node);
+                }
+              }
+            }}
+            filterNodeId={filterNodeId}
+            onClearScheduledOpsFilter={() => setFilterNodeId(null)}
+            schedulePrefill={schedulePrefill}
+            onPrefillConsumed={handlePrefillConsumed}
+            notifications={notifications}
+            onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
+            onOpenSettingsSection={(section) => handleOpenSettings(section)}
+            onClearNotifications={clearAllNotifications}
+            renderEditor={() => (
             <ErrorBoundary>
               <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 min-h-[600px] h-[calc(100vh-160px)] max-h-[1040px]">
                 {/* Left column: identity + health strip + logs, stacked */}
@@ -3066,67 +3035,8 @@ export default function EditorLayout() {
                 )}
               </div>
             </ErrorBoundary>
-          ) : activeView === 'global-observability' ? (
-            <LazyBoundary>
-              <Suspense fallback={<ViewSkeleton />}>
-                <GlobalObservabilityView />
-              </Suspense>
-            </LazyBoundary>
-          ) : activeView === 'fleet' ? (
-            <CapabilityGate capability="fleet" featureName="Fleet Management">
-              <LazyBoundary>
-                <Suspense fallback={<ViewSkeleton />}>
-                  <FleetView onNavigateToNode={(nodeId, stackName) => {
-                    const node = nodes.find(n => n.id === nodeId);
-                    if (node) {
-                      if (activeNode?.id === nodeId) {
-                        loadFile(stackName);
-                      } else {
-                        pendingStackLoadRef.current = stackName;
-                        setActiveNode(node);
-                      }
-                    }
-                  }} />
-                </Suspense>
-              </LazyBoundary>
-            </CapabilityGate>
-          ) : activeView === 'audit-log' ? (
-            <CapabilityGate capability="audit-log" featureName="Audit Log">
-              <LazyBoundary>
-                <Suspense fallback={<ViewSkeleton />}>
-                  <AuditLogView />
-                </Suspense>
-              </LazyBoundary>
-            </CapabilityGate>
-          ) : activeView === 'auto-updates' ? (
-            <CapabilityGate capability="auto-updates" featureName="Auto-Update Readiness">
-              <LazyBoundary>
-                <Suspense fallback={<ViewSkeleton />}>
-                  <AutoUpdateReadinessView />
-                </Suspense>
-              </LazyBoundary>
-            </CapabilityGate>
-          ) : activeView === 'scheduled-ops' ? (
-            <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
-              <LazyBoundary>
-                <Suspense fallback={<ViewSkeleton />}>
-                  <ScheduledOperationsView
-                    filterNodeId={filterNodeId}
-                    onClearFilter={() => setFilterNodeId(null)}
-                    prefill={schedulePrefill}
-                    onPrefillConsumed={handlePrefillConsumed}
-                  />
-                </Suspense>
-              </LazyBoundary>
-            </CapabilityGate>
-          ) : (
-            <HomeDashboard
-              onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
-              onOpenSettingsSection={(section) => handleOpenSettings(section)}
-              notifications={notifications}
-              onClearNotifications={clearAllNotifications}
-            />
-          )}
+            )}
+          />
         </div>
       </div>
 
