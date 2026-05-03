@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
-import { useImageUpdates } from '@/hooks/useImageUpdates';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
@@ -20,8 +19,9 @@ import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
 import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
 import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
-import { EditorView, type ContainerInfo, type StackAction } from './EditorLayout/EditorView';
+import { EditorView, type StackAction } from './EditorLayout/EditorView';
 import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
+import { useStackListState } from './EditorLayout/hooks/useStackListState';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -43,8 +43,7 @@ import {
     GlobalCommandPaletteProvider,
     GlobalCommandPaletteTrigger,
 } from './GlobalCommandPalette';
-import { useCrossNodeStackSearch } from '@/hooks/useCrossNodeStackSearch';
-import { SENCHO_OPEN_LOGS_EVENT, SENCHO_LABELS_CHANGED } from '@/lib/events';
+import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
 import type { Node } from '@/context/NodeContext';
@@ -54,23 +53,10 @@ import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
-import { usePinnedStacks } from '@/hooks/usePinnedStacks';
-import { useSidebarGroupCollapse } from '@/hooks/useSidebarGroupCollapse';
 import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
-import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-types';
-import { useBulkStackActions, type BulkAction } from '@/hooks/useBulkStackActions';
-import { isInputFocused, isPaletteOpen } from '@/lib/keyboard-guards';
+import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
 import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
-
-interface StackStatus {
-  [key: string]: 'running' | 'exited' | 'unknown';
-}
-
-interface StackStatusInfo {
-  status: 'running' | 'exited' | 'unknown';
-  mainPort?: number;
-}
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -107,6 +93,37 @@ export default function EditorLayout() {
     isEditing, setIsEditing,
     editingCompose, setEditingCompose,
   } = useEditorViewState();
+  const {
+    files,
+    selectedFile, setSelectedFile,
+    isLoading,
+    stackActions,
+    isScanning,
+    searchQuery, setSearchQuery,
+    stackStatuses,
+    stackPorts,
+    labels,
+    stackLabelMap,
+    autoUpdateSettings, setAutoUpdateSettings,
+    filterChip, setFilterChip,
+    bulkMode,
+    selectedFiles,
+    filterCounts,
+    chipFilteredFiles,
+    remoteResults,
+    setStackAction, clearStackAction, isStackBusy,
+    setOptimisticStatus,
+    refreshLabels,
+    refreshStacks,
+    fetchAutoUpdateSettings,
+    handleScanStacks,
+    scheduleStateInvalidateRefresh,
+    toggleBulkMode, toggleSelect, clearSelection, handleBulkAction,
+    stackUpdates, fetchImageUpdates,
+    pinned, pin, unpin, isPinned,
+    isCollapsed, toggleCollapse,
+    remoteSearchLoading,
+  } = useStackListState();
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
   const [policyBypassing, setPolicyBypassing] = useState(false);
@@ -117,8 +134,6 @@ export default function EditorLayout() {
   nodesRef.current = nodes;
   // Tracks cleanup functions for per-remote-node notification WebSocket connections.
   const remoteNotifWsRef = useRef<Map<number, () => void>>(new Map());
-  const [files, setFiles] = useState<string[]>([]);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   // Incoming WebSocket stats are written here first (no re-render), then flushed
   // to React state in one batched update every 1.5 s.
   const pendingStatsRef = useRef<Record<string, {
@@ -144,23 +159,6 @@ export default function EditorLayout() {
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
   const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
   const [pendingUnsavedNode, setPendingUnsavedNode] = useState<Node | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [stackActions, setStackActions] = useState<Record<string, StackAction>>({});
-  const stackActionsRef = useRef<Record<string, StackAction>>({});
-  stackActionsRef.current = stackActions;
-
-  const setStackAction = (stackFile: string, action: StackAction) => {
-    setStackActions(prev => ({ ...prev, [stackFile]: action }));
-  };
-  const clearStackAction = (stackFile: string) => {
-    setStackActions(prev => {
-      const next = { ...prev };
-      delete next[stackFile];
-      return next;
-    });
-  };
-  const isStackBusy = (stackFile: string) => stackFile in stackActions;
-
   const getStackMenuVisibility = (file: string) => {
     const status = stackStatuses[file];
     return {
@@ -182,7 +180,6 @@ export default function EditorLayout() {
 
   const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
 
-  const [isScanning, setIsScanning] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('sencho-theme') as Theme | null;
     if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
@@ -207,12 +204,6 @@ export default function EditorLayout() {
     fileName: string;
   } | null>(null);
   const [diffPreviewConfirming, setDiffPreviewConfirming] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
-  const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
-  const [labels, setLabels] = useState<StackLabel[]>([]);
-  const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
-
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
@@ -222,9 +213,6 @@ export default function EditorLayout() {
   const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
 
 
-  // Image update checker state
-  const { stackUpdates, refresh: fetchImageUpdates } = useImageUpdates(activeNode?.id);
-  const [autoUpdateSettings, setAutoUpdateSettings] = useState<Record<string, boolean>>({});
   const isAdmiral = license?.variant === 'admiral';
 
   const handleOpenSettings = useCallback((section?: SectionId) => {
@@ -326,20 +314,6 @@ export default function EditorLayout() {
     return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
   }, []);
 
-  // Fan out stack search across other online nodes so the sidebar can surface matches from the whole fleet.
-  const { hits: remoteSearchHits, loading: remoteSearchLoading } = useCrossNodeStackSearch({
-    query: searchQuery,
-    enabled: true,
-    excludeNodeId: activeNode?.id,
-  });
-  const remoteStackResults = useMemo(() => {
-    const out: Record<number, Array<{ file: string; status: 'running' | 'exited' | 'unknown' }>> = {};
-    for (const hit of remoteSearchHits) {
-      (out[hit.nodeId] ??= []).push({ file: hit.file, status: hit.status });
-    }
-    return out;
-  }, [remoteSearchHits]);
-
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
   // creates a circular CSS dependency (Monaco drives card height → grid height → Monaco).
@@ -354,102 +328,6 @@ export default function EditorLayout() {
     });
     return () => cancelAnimationFrame(id);
   }, [activeTab]);
-
-  const refreshStacks = async (background = false): Promise<string[]> => {
-    if (!background) setIsLoading(true);
-    try {
-      const res = await apiFetch('/stacks');
-      if (!res.ok) {
-        setFiles([]);
-        return [];
-      }
-      const data = await res.json();
-      const fileList: string[] = Array.isArray(data) ? data : [];
-      setFiles(fileList);
-
-      // Fetch all stack statuses in a single bulk call (falls back to per-stack queries for older remote nodes)
-      const statusRes = await apiFetch('/stacks/statuses');
-      let bulkStatuses: Record<string, 'running' | 'exited' | 'unknown'> | null = null;
-      const bulkPorts: Record<string, number | undefined> = {};
-      if (statusRes.ok) {
-        const raw = await statusRes.json();
-        bulkStatuses = {};
-        // Handle both old format (plain string) and new format ({ status, mainPort })
-        for (const [key, val] of Object.entries(raw)) {
-          if (typeof val === 'string') {
-            bulkStatuses[key] = val as 'running' | 'exited' | 'unknown';
-          } else if (val && typeof val === 'object' && 'status' in val) {
-            const info = val as StackStatusInfo;
-            bulkStatuses[key] = info.status;
-            if (info.mainPort) bulkPorts[key] = info.mainPort;
-          }
-        }
-      } else {
-        // Fallback: query each stack individually (remote node may not have bulk endpoint)
-        const statusResults = await Promise.allSettled(
-          fileList.map(async (file) => {
-            const containersRes = await apiFetch(`/stacks/${file}/containers`);
-            if (!containersRes.ok) return { file, status: 'unknown' as const };
-            const containers = await containersRes.json();
-            const hasRunning = Array.isArray(containers) && containers.some((c: ContainerInfo) => c.State === 'running');
-            return { file, status: hasRunning ? 'running' as const : (Array.isArray(containers) && containers.length > 0 ? 'exited' as const : 'unknown' as const) };
-          })
-        );
-        bulkStatuses = {};
-        for (const result of statusResults) {
-          if (result.status === 'fulfilled') {
-            bulkStatuses[result.value.file] = result.value.status;
-          }
-        }
-      }
-      setStackStatuses(prev => {
-        const next: StackStatus = {};
-        for (const file of fileList) {
-          const status = bulkStatuses?.[file] ?? 'unknown';
-          next[file] = (file in stackActionsRef.current) ? (prev[file] ?? status) : status;
-        }
-        return next;
-      });
-      setStackPorts(prev => {
-        const keys = Object.keys(bulkPorts);
-        if (keys.length === Object.keys(prev).length && keys.every(k => prev[k] === bulkPorts[k])) return prev;
-        return bulkPorts;
-      });
-      refreshLabels();
-      return fileList;
-    } catch (error) {
-      console.error('Failed to refresh stacks:', error);
-      setFiles([]);
-      return [];
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const setOptimisticStatus = (stackFile: string, status: 'running' | 'exited') => {
-    setStackStatuses(prev => ({ ...prev, [stackFile]: status }));
-  };
-
-  // Stable identity required: captured by buildMenuCtx's memoization and passed as a prop; unstable refs cause descendant re-render churn.
-  const refreshLabels = useCallback(async () => {
-    if (!isPaid) return;
-    try {
-      const [labelsRes, assignmentsRes] = await Promise.all([
-        apiFetch('/labels'),
-        apiFetch('/labels/assignments'),
-      ]);
-      if (labelsRes.ok) setLabels(await labelsRes.json());
-      if (assignmentsRes.ok) setStackLabelMap(await assignmentsRes.json());
-    } catch {
-      // Labels are non-critical; fail silently
-    }
-  }, [isPaid]);
-
-  useEffect(() => {
-    const handler = () => refreshLabels();
-    window.addEventListener(SENCHO_LABELS_CHANGED, handler);
-    return () => window.removeEventListener(SENCHO_LABELS_CHANGED, handler);
-  }, [refreshLabels]);
 
   /**
    * Populate the per-stack "pending git source update" map. Runs on mount and
@@ -470,49 +348,6 @@ export default function EditorLayout() {
       // Non-critical; leave prior state.
     }
   };
-
-  const handleScanStacks = async () => {
-    if (isScanning) return;
-    setIsScanning(true);
-    const previousStacks = [...files];
-    try {
-      const currentStacks = await refreshStacks();
-      const added = currentStacks.filter(s => !previousStacks.includes(s));
-      const removed = previousStacks.filter(s => !currentStacks.includes(s));
-
-      if (added.length > 0) {
-        toast.success(`Found ${added.length} new stack${added.length !== 1 ? 's' : ''}: ${added.join(', ')}`);
-      }
-      if (removed.length > 0) {
-        toast.info(`${removed.length} stack${removed.length !== 1 ? 's' : ''} no longer detected: ${removed.join(', ')}`);
-      }
-      if (added.length === 0 && removed.length === 0) {
-        toast.info('No new stacks found.');
-      }
-    } catch (error: unknown) {
-      const err = error as Record<string, unknown>;
-      const data = err?.data as Record<string, unknown> | undefined;
-      toast.error((err?.message as string) || (err?.error as string) || (data?.error as string) || 'Something went wrong.');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  // Coalesce a burst of state-invalidate signals (e.g. compose recreating
-  // 10 services produces ~30 docker events in <500ms) into one stack refetch
-  // and one downstream window event. The 250ms debounce balances "feels
-  // instant" against not thrashing the API. The function is held in a ref
-  // so the long-lived WS effect never closes over a stale refreshStacks.
-  const stateInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshStacksRef = useRef(refreshStacks);
-  useEffect(() => { refreshStacksRef.current = refreshStacks; }, [refreshStacks]);
-  const scheduleStateInvalidateRefresh = useCallback(() => {
-    if (stateInvalidateTimerRef.current) clearTimeout(stateInvalidateTimerRef.current);
-    stateInvalidateTimerRef.current = setTimeout(() => {
-      stateInvalidateTimerRef.current = null;
-      refreshStacksRef.current(true);
-    }, 250);
-  }, []);
 
   // Notification WS push - subscribe to local real-time alerts.
   // Initial history load is handled by the [nodes] effect below.
@@ -715,7 +550,7 @@ export default function EditorLayout() {
       const localNode = currentNodes.find(n => n.type === 'local');
       const remoteNodes = currentNodes.filter(n => n.type === 'remote');
 
-      const [localResult, ...remoteResults] = await Promise.allSettled([
+      const [localResult, ...remoteNodeResults] = await Promise.allSettled([
         apiFetch('/notifications', { localOnly: true }),
         ...remoteNodes.map(n => fetchForNode('/notifications', n.id)),
       ]);
@@ -728,7 +563,7 @@ export default function EditorLayout() {
       }
 
       for (let i = 0; i < remoteNodes.length; i++) {
-        const result = remoteResults[i];
+        const result = remoteNodeResults[i];
         if (result?.status === 'fulfilled' && result.value.ok) {
           const data = await result.value.json() as Omit<NotificationItem, 'nodeId' | 'nodeName'>[];
           const rn = remoteNodes[i];
@@ -753,20 +588,6 @@ export default function EditorLayout() {
     const id = setInterval(() => { fetchNotificationsRef.current(); }, 60_000);
     return () => clearInterval(id);
   }, []);
-
-  const fetchAutoUpdateSettings = async () => {
-    try {
-      const res = await apiFetch('/stacks/auto-update-settings');
-      if (res.ok) {
-        const data = await res.json();
-        setAutoUpdateSettings(data as Record<string, boolean>);
-      } else {
-        console.error('[AutoUpdateSettings] fetch returned', res.status);
-      }
-    } catch (e: unknown) {
-      console.error('[AutoUpdateSettings] fetch failed:', e);
-    }
-  };
 
   const markAllRead = async () => {
     try {
@@ -1621,108 +1442,10 @@ export default function EditorLayout() {
   // Stack name is now the same as selectedFile (no extension to strip)
   const stackName = selectedFile || '';
 
-  const filteredFiles = useMemo(
-    () => files.filter(file => file.toLowerCase().includes(searchQuery.toLowerCase())),
-    [files, searchQuery],
-  );
-
   // Get display name for stack (now just returns the name as-is since no extension)
   const getDisplayName = (stackName: string) => {
     return stackName;
   };
-
-  const { pinned, pin, unpin, isPinned, evictedOldest } = usePinnedStacks(activeNode?.id);
-
-  useEffect(() => {
-    if (evictedOldest) toast.info('Pinned. Unpinned oldest (max 10).');
-  }, [evictedOldest]);
-
-  const [filterChip, setFilterChip] = useState<FilterChip>('all');
-
-  const filterCounts = useMemo(() => ({
-    all: filteredFiles.length,
-    up: filteredFiles.filter(f => stackStatuses[f] === 'running').length,
-    down: filteredFiles.filter(f => stackStatuses[f] === 'exited').length,
-    updates: filteredFiles.filter(f => !!stackUpdates[f]).length,
-  }), [filteredFiles, stackStatuses, stackUpdates]);
-
-  const chipFilteredFiles = useMemo(() => {
-    if (filterChip === 'all') return filteredFiles;
-    if (filterChip === 'up') return filteredFiles.filter(f => stackStatuses[f] === 'running');
-    if (filterChip === 'down') return filteredFiles.filter(f => stackStatuses[f] === 'exited');
-    if (filterChip === 'updates') return filteredFiles.filter(f => !!stackUpdates[f]);
-    return filteredFiles;
-  }, [filteredFiles, filterChip, stackStatuses, stackUpdates]);
-
-  const [bulkMode, setBulkMode] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-
-  const toggleBulkMode = useCallback(() => {
-    setBulkMode(prev => {
-      if (prev) setSelectedFiles(new Set());
-      return !prev;
-    });
-  }, []);
-
-  const toggleSelect = useCallback((file: string) => {
-    setSelectedFiles(prev => {
-      const next = new Set(prev);
-      if (next.has(file)) next.delete(file);
-      else next.add(file);
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedFiles(new Set());
-  }, []);
-
-  const { runBulk } = useBulkStackActions();
-
-  const handleBulkAction = useCallback((action: BulkAction) => {
-    const files = Array.from(selectedFiles);
-    runBulk(action, files, {
-      onAfter: () => { refreshStacks(true); clearSelection(); },
-    });
-  }, [selectedFiles, runBulk, clearSelection]);
-
-  const chipFilteredFilesRef = useRef(chipFilteredFiles);
-  useEffect(() => { chipFilteredFilesRef.current = chipFilteredFiles; }, [chipFilteredFiles]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (isInputFocused()) return;
-      if (isPaletteOpen()) return;
-
-      if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        toggleBulkMode();
-      } else if (e.key === 'Escape' && bulkMode) {
-        e.preventDefault();
-        setBulkMode(false);
-        setSelectedFiles(new Set());
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'a' && bulkMode) {
-        e.preventDefault();
-        setSelectedFiles(new Set(chipFilteredFilesRef.current));
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [bulkMode, toggleBulkMode]);
-
-  const { isCollapsed, toggle: toggleCollapse } = useSidebarGroupCollapse(activeNode?.id);
-
-  const remoteResults = useMemo(() => {
-    return Object.entries(remoteStackResults).flatMap(([nodeIdStr, remoteFiles]) => {
-      const node = nodes.find(n => n.id === Number(nodeIdStr));
-      if (!node || remoteFiles.length === 0) return [];
-      return [{
-        nodeId: node.id,
-        nodeName: node.name,
-        files: remoteFiles.map(({ file, status }) => ({ file, status: status as StackRowStatus })),
-      }];
-    });
-  }, [remoteStackResults, nodes]);
 
   const buildMenuCtx = useCallback((file: string): StackMenuCtx => {
     const stackName = file.replace(/\.(yml|yaml)$/, '');
