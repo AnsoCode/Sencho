@@ -2522,7 +2522,7 @@ export default function EditorLayout() {
           ) : activeView === 'resources' ? (
             <ResourcesView />
           ) : activeView === 'host-console' ? (
-            <AdmiralGate featureName="Host Console">
+            <AdmiralGate>
               <CapabilityGate capability="host-console" featureName="Host Console">
                 <LazyBoundary>
                   <Suspense fallback={<ViewSkeleton />}>

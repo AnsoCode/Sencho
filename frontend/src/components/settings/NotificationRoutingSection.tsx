@@ -308,7 +308,7 @@ export function NotificationRoutingSection() {
     );
 
     return (
-        <AdmiralGate featureName="Notification Routing">
+        <AdmiralGate>
           <CapabilityGate capability="notification-routing" featureName="Notification Routing">
             <div className="space-y-6">
                 <div className="flex justify-end">

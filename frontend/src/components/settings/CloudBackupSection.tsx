@@ -293,7 +293,7 @@ export function CloudBackupSection() {
     const usageColor = usagePercent >= 90 ? 'var(--destructive)' : usagePercent >= 80 ? 'var(--warning)' : 'var(--brand)';
 
     return (
-        <AdmiralGate featureName="Cloud Backup">
+        <AdmiralGate>
             <div className="space-y-6">
                 <div className={PANEL_CLASS}>
                     <Label className="text-sm">Storage Mode</Label>

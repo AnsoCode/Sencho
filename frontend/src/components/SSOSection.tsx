@@ -397,9 +397,9 @@ function ProviderCardWithGate(props: {
     const card = <ProviderCard {...props} />;
     if (props.providerId === 'oidc_custom') return card;
     if (props.providerId === 'ldap') {
-        return <AdmiralGate compact featureName="LDAP / Active Directory">{card}</AdmiralGate>;
+        return <AdmiralGate>{card}</AdmiralGate>;
     }
-    return <PaidGate compact featureName={`${props.label} SSO`}>{card}</PaidGate>;
+    return <PaidGate>{card}</PaidGate>;
 }
 
 export function SSOSection() {

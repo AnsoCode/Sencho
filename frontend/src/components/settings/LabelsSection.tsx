@@ -142,7 +142,7 @@ export function LabelsSection({ onLabelsChanged }: LabelsSectionProps = {}) {
     };
 
     return (
-        <PaidGate featureName="Stack Labels">
+        <PaidGate>
           <CapabilityGate capability="labels" featureName="Stack Labels">
             <div className="space-y-4">
                 <div className="flex justify-end">

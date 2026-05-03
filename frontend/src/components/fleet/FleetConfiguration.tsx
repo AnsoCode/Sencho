@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Bell, Zap, Shield, HardDrive, WifiOff, CheckCircle2,
 } from 'lucide-react';
+import { useLicense } from '@/context/LicenseContext';
 import type { ConfigurationStatusPayload } from '@/components/dashboard';
 
 interface FleetNodeConfiguration {
@@ -16,34 +17,21 @@ interface FleetNodeConfiguration {
   configuration: ConfigurationStatusPayload | null;
 }
 
-function TierChip({ tier }: { tier: string }) {
-  const label = tier === 'admiral' ? 'Admiral' : 'Skipper';
-  return (
-    <span className="inline-flex items-center rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] leading-3 font-mono tracking-[0.18em] uppercase text-warning/80">
-      {label}
-    </span>
-  );
-}
-
-function SummaryRow({ icon: Icon, label, value, locked, requiredTier }: {
+function SummaryRow({ icon: Icon, label, value }: {
   icon: typeof Bell;
   label: string;
   value: string;
-  locked?: boolean;
-  requiredTier?: string;
 }) {
   return (
     <div className="flex items-center gap-2 py-0.5">
       <Icon className="h-3 w-3 shrink-0 text-stat-icon" strokeWidth={1.5} />
-      <span className={`text-xs flex-1 ${locked ? 'text-stat-subtitle/60' : 'text-stat-subtitle'}`}>{label}</span>
-      {locked && requiredTier
-        ? <TierChip tier={requiredTier} />
-        : <span className="text-xs font-mono tabular-nums text-stat-value">{value}</span>}
+      <span className="text-xs flex-1 text-stat-subtitle">{label}</span>
+      <span className="text-xs font-mono tabular-nums text-stat-value">{value}</span>
     </div>
   );
 }
 
-function NodeCard({ node }: { node: FleetNodeConfiguration }) {
+function NodeCard({ node, isPaid }: { node: FleetNodeConfiguration; isPaid: boolean }) {
   const isRemote = node.type === 'remote';
   if (!node.configuration) {
     return (
@@ -90,39 +78,27 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
             value={agentCount === 0 ? 'None' : `${agentCount} active`} />
           <SummaryRow icon={Bell} label="Alert rules"
             value={formatCount(notifications.alertRules, 'rule')} />
-          <SummaryRow icon={Zap} label="Auto-heal"
-            value={automation.autoHeal.total === 0
-              ? 'None'
-              : `${automation.autoHeal.enabled}/${automation.autoHeal.total}`} />
-          <SummaryRow icon={Zap} label="Webhooks"
-            value={
-              automation.webhooks.locked
-                ? ''
-                : formatCount(automation.webhooks.enabled, 'active')
-            }
-            locked={automation.webhooks.locked}
-            requiredTier={automation.webhooks.locked ? automation.webhooks.requiredTier : undefined} />
+          {isPaid && (
+            <SummaryRow icon={Zap} label="Auto-heal"
+              value={automation.autoHeal.total === 0
+                ? 'None'
+                : `${automation.autoHeal.enabled}/${automation.autoHeal.total}`} />
+          )}
+          {!automation.webhooks.locked && (
+            <SummaryRow icon={Zap} label="Webhooks"
+              value={formatCount(automation.webhooks.enabled, 'active')} />
+          )}
           {!isRemote && (
             <SummaryRow icon={Shield} label="MFA"
               value={security.mfaEnabled === null ? 'Not set' : security.mfaEnabled ? 'On' : 'Off'} />
           )}
-          <SummaryRow icon={Shield} label="Scanning"
-            value={
-              security.scanPolicies.locked
-                ? ''
-                : formatCount(security.scanPolicies.enabled, 'policy')
-            }
-            locked={security.scanPolicies.locked}
-            requiredTier={security.scanPolicies.locked ? security.scanPolicies.requiredTier : undefined} />
-          {!isRemote && (
+          {!security.scanPolicies.locked && (
+            <SummaryRow icon={Shield} label="Scanning"
+              value={formatCount(security.scanPolicies.enabled, 'policy')} />
+          )}
+          {!isRemote && !backup.locked && (
             <SummaryRow icon={HardDrive} label="Backup"
-              value={
-                backup.locked
-                  ? ''
-                  : backup.provider === 'disabled' ? 'Disabled' : 'Enabled'
-              }
-              locked={backup.locked}
-              requiredTier={backup.locked ? backup.requiredTier : undefined} />
+              value={backup.provider === 'disabled' ? 'Disabled' : 'Enabled'} />
           )}
           <SummaryRow icon={HardDrive} label="Crash detect"
             value={thresholds.globalCrash ? 'On' : 'Off'} />
@@ -133,6 +109,7 @@ function NodeCard({ node }: { node: FleetNodeConfiguration }) {
 }
 
 export function FleetConfiguration() {
+  const { isPaid } = useLicense();
   const [nodes, setNodes] = useState<FleetNodeConfiguration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,7 +170,7 @@ export function FleetConfiguration() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-1">
-      {nodes.map(node => <NodeCard key={node.id} node={node} />)}
+      {nodes.map(node => <NodeCard key={node.id} node={node} isPaid={isPaid} />)}
     </div>
   );
 }

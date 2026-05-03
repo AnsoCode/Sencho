@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { UploadCloud, Compass } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { useLicense } from '@/context/LicenseContext';
 import { uploadStackFile } from '@/lib/stackFilesApi';
@@ -20,18 +20,7 @@ export function FileUploadDropzone({
   const { isPaid } = useLicense();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  if (!isPaid) {
-    return (
-      <button
-        type="button"
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/80 border border-border text-muted-foreground text-xs cursor-pointer hover:border-brand/50 transition-colors"
-        onClick={() => window.open('https://sencho.io/pricing', '_blank')}
-      >
-        <Compass className="w-3 h-3" />
-        Upgrade to unlock upload, edit, and delete
-      </button>
-    );
-  }
+  if (!isPaid) return null;
 
   const handleFile = async (file: File) => {
     if (file.size > MAX_BYTES) {

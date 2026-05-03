@@ -279,7 +279,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
   if (!isPaid) {
     return (
       <div className="space-y-6">
-        <PaidGate featureName="Scan Policies">
+        <PaidGate>
           <div className="space-y-3">
             <div className="h-16 rounded-lg border bg-card" />
             <div className="h-16 rounded-lg border bg-card" />

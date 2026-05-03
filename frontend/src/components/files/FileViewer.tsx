@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { Editor } from '@/lib/monacoLoader';
-import { AlertCircle, FileIcon, Download, Lock, Loader2, Save } from 'lucide-react';
+import { AlertCircle, FileIcon, Download, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast-store';
@@ -72,7 +72,7 @@ function SpecialFilePanel({
         <p className="font-mono text-sm text-stat-title">{filename}</p>
         <p className="text-xs text-stat-subtitle">{label} &middot; {formatBytes(size)}</p>
       </div>
-      {canDownload ? (
+      {canDownload && (
         <Button
           variant="outline"
           size="sm"
@@ -86,13 +86,6 @@ function SpecialFilePanel({
           )}
           Download
         </Button>
-      ) : (
-        <div title="Upgrade to download files">
-          <Button variant="outline" size="sm" disabled>
-            <Lock className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-            Download
-          </Button>
-        </div>
       )}
     </div>
   );

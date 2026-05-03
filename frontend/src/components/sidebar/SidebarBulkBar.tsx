@@ -1,7 +1,5 @@
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { TierBadge } from '@/components/TierBadge';
 import type { BulkAction } from '@/hooks/useBulkStackActions';
 
 interface SidebarBulkBarProps {
@@ -29,24 +27,8 @@ export function SidebarBulkBar({ selectedCount, isPaid, onAction, onClear }: Sid
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] font-mono" onClick={() => onAction('start')}>Start</Button>
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] font-mono" onClick={() => onAction('stop')}>Stop</Button>
         <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] font-mono" onClick={() => onAction('restart')}>Restart</Button>
-        {isPaid ? (
+        {isPaid && (
           <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] font-mono" onClick={() => onAction('update')}>Update</Button>
-        ) : (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] font-mono gap-1 pointer-events-none opacity-60" disabled>
-                    Update
-                    <TierBadge tier="paid" />
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Bulk update requires a Skipper license</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         )}
       </div>
     </div>

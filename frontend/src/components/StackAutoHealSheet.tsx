@@ -312,7 +312,7 @@ export function StackAutoHealSheet({ stackName, open, onOpenChange }: StackAutoH
     ];
 
     return (
-        <PaidGate featureName="Auto-Heal Policies">
+        <PaidGate>
             <Sheet open={open} onOpenChange={onOpenChange}>
                 <SheetContent className="sm:max-w-[440px] flex flex-col">
                     <SheetHeader>

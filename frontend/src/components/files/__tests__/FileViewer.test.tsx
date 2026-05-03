@@ -160,15 +160,14 @@ describe('FileViewer', () => {
     expect(downloadBtn).not.toBeDisabled();
   });
 
-  it('shows disabled Download button for community tier', async () => {
+  it('hides Download button for community tier', async () => {
     licenseState.isPaid = false;
     mockReadFile.mockResolvedValue(binaryResult());
 
     render(<FileViewer {...defaultProps} selectedPath="data.bin" />);
 
     await screen.findByText(/binary file/i);
-    const downloadBtn = screen.getByRole('button', { name: /download/i });
-    expect(downloadBtn).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
   });
 
   it('re-fetches when selectedPath changes', async () => {

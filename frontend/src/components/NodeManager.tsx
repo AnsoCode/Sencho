@@ -562,7 +562,7 @@ export function NodeManager() {
                   {isPaid ? (
                     <NodeLabelPicker nodeId={node.id} canEdit={canEditLabels} />
                   ) : (
-                    <span className="text-[10px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Upgrade</span>
+                    <span className="text-muted-foreground text-sm">—</span>
                   )}
                 </TableCell>
                 <TableCell>

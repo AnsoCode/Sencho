@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bell, Zap, Shield, HardDrive, ChevronRight } from 'lucide-react';
 import { formatCount } from '@/lib/utils';
+import { useLicense } from '@/context/LicenseContext';
 import { useConfigurationStatus } from './useConfigurationStatus';
 import type { SectionId } from '@/components/settings/types';
 
@@ -8,19 +9,7 @@ interface ConfigurationStatusProps {
   onOpenSection?: (section: SectionId) => void;
 }
 
-function StatusBadge({ value, locked, requiredTier }: {
-  value: string;
-  locked?: boolean;
-  requiredTier?: string;
-}) {
-  if (locked && requiredTier) {
-    const label = requiredTier === 'admiral' ? 'Admiral' : 'Skipper';
-    return (
-      <span className="inline-flex items-center rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] font-mono tracking-wide uppercase text-warning/80">
-        {label}
-      </span>
-    );
-  }
+function StatusBadge({ value }: { value: string }) {
   const lower = value.toLowerCase();
   if (lower === 'on' || lower === 'enabled') {
     return (
@@ -41,14 +30,12 @@ function StatusBadge({ value, locked, requiredTier }: {
   );
 }
 
-function Row({ label, value, locked, requiredTier, onClick }: {
+function Row({ label, value, onClick }: {
   label: string;
   value: string;
-  locked?: boolean;
-  requiredTier?: string;
   onClick?: () => void;
 }) {
-  const labelClass = `text-xs ${locked ? 'text-stat-subtitle/60' : 'text-stat-subtitle'}`;
+  const labelClass = 'text-xs text-stat-subtitle';
 
   if (onClick) {
     return (
@@ -60,7 +47,7 @@ function Row({ label, value, locked, requiredTier, onClick }: {
         <div className="flex items-center justify-between py-1 px-1">
           <span className={`${labelClass} group-hover:text-stat-value transition-colors`}>{label}</span>
           <div className="flex items-center gap-1.5">
-            <StatusBadge value={value} locked={locked} requiredTier={requiredTier} />
+            <StatusBadge value={value} />
             <ChevronRight className="h-3 w-3 text-stat-icon opacity-0 group-hover:opacity-60 transition-opacity shrink-0" strokeWidth={1.5} />
           </div>
         </div>
@@ -71,7 +58,7 @@ function Row({ label, value, locked, requiredTier, onClick }: {
   return (
     <div className="flex items-center justify-between py-1 px-1 rounded-sm">
       <span className={labelClass}>{label}</span>
-      <StatusBadge value={value} locked={locked} requiredTier={requiredTier} />
+      <StatusBadge value={value} />
     </div>
   );
 }
@@ -96,6 +83,7 @@ function SkeletonRow() {
 
 export function ConfigurationStatus({ onOpenSection }: ConfigurationStatusProps = {}) {
   const { status, loading } = useConfigurationStatus();
+  const { isPaid } = useLicense();
 
   const open = (section: SectionId) => () => onOpenSection?.(section);
 
@@ -160,39 +148,43 @@ export function ConfigurationStatus({ onOpenSection }: ConfigurationStatusProps 
             value={formatCount(notifications.alertRules, 'rule')}
             onClick={open('notifications')}
           />
-          <Row
-            label="Notification routing"
-            value={notifications.routingRules.locked ? '' : formatCount(notifications.routingRules.enabledCount, 'route')}
-            locked={notifications.routingRules.locked}
-            requiredTier={notifications.routingRules.locked ? notifications.routingRules.requiredTier : undefined}
-            onClick={open('notification-routing')}
-          />
+          {!notifications.routingRules.locked && (
+            <Row
+              label="Notification routing"
+              value={formatCount(notifications.routingRules.enabledCount, 'route')}
+              onClick={open('notification-routing')}
+            />
+          )}
 
-          <SectionHeader icon={Zap} label="Automation" />
-          <Row
-            label="Auto-heal policies"
-            value={automation.autoHeal.total === 0 ? 'None' : `${automation.autoHeal.enabled} / ${automation.autoHeal.total} active`}
-            onClick={open('system')}
-          />
-          <Row
-            label="Auto-update stacks"
-            value={automation.autoUpdate.total === 0 ? 'None' : `${automation.autoUpdate.enabled} / ${automation.autoUpdate.total}`}
-            onClick={open('system')}
-          />
-          <Row
-            label="Webhooks"
-            value={automation.webhooks.locked ? '' : formatCount(automation.webhooks.enabled, 'active')}
-            locked={automation.webhooks.locked}
-            requiredTier={automation.webhooks.locked ? automation.webhooks.requiredTier : undefined}
-            onClick={open('webhooks')}
-          />
-          <Row
-            label="Scheduled tasks"
-            value={automation.scheduledTasks.locked ? '' : formatCount(automation.scheduledTasks.enabled, 'active')}
-            locked={automation.scheduledTasks.locked}
-            requiredTier={automation.scheduledTasks.locked ? automation.scheduledTasks.requiredTier : undefined}
-            onClick={open('system')}
-          />
+          {isPaid && (
+            <>
+              <SectionHeader icon={Zap} label="Automation" />
+              <Row
+                label="Auto-heal policies"
+                value={automation.autoHeal.total === 0 ? 'None' : `${automation.autoHeal.enabled} / ${automation.autoHeal.total} active`}
+                onClick={open('system')}
+              />
+              <Row
+                label="Auto-update stacks"
+                value={automation.autoUpdate.total === 0 ? 'None' : `${automation.autoUpdate.enabled} / ${automation.autoUpdate.total}`}
+                onClick={open('system')}
+              />
+              {!automation.webhooks.locked && (
+                <Row
+                  label="Webhooks"
+                  value={formatCount(automation.webhooks.enabled, 'active')}
+                  onClick={open('webhooks')}
+                />
+              )}
+              {!automation.scheduledTasks.locked && (
+                <Row
+                  label="Scheduled tasks"
+                  value={formatCount(automation.scheduledTasks.enabled, 'active')}
+                  onClick={open('system')}
+                />
+              )}
+            </>
+          )}
 
           <SectionHeader icon={Shield} label="Security" />
           <Row
@@ -201,22 +193,22 @@ export function ConfigurationStatus({ onOpenSection }: ConfigurationStatusProps 
             onClick={open('account')}
           />
           <Row label="SSO" value={ssoLabel} onClick={open('sso')} />
-          <Row
-            label="Vulnerability scanning"
-            value={security.scanPolicies.locked ? '' : formatCount(security.scanPolicies.enabled, 'policy')}
-            locked={security.scanPolicies.locked}
-            requiredTier={security.scanPolicies.locked ? security.scanPolicies.requiredTier : undefined}
-            onClick={open('security')}
-          />
+          {!security.scanPolicies.locked && (
+            <Row
+              label="Vulnerability scanning"
+              value={formatCount(security.scanPolicies.enabled, 'policy')}
+              onClick={open('security')}
+            />
+          )}
 
           <SectionHeader icon={HardDrive} label="Backups & Thresholds" />
-          <Row
-            label="Cloud Backup"
-            value={backup.locked ? '' : backup.provider === 'disabled' ? 'Disabled' : backup.provider === 'sencho' ? 'Sencho Cloud' : `Custom S3${backup.autoUpload ? ' (auto)' : ''}`}
-            locked={backup.locked}
-            requiredTier={backup.locked ? backup.requiredTier : undefined}
-            onClick={open('cloud-backup')}
-          />
+          {!backup.locked && (
+            <Row
+              label="Cloud Backup"
+              value={backup.provider === 'disabled' ? 'Disabled' : backup.provider === 'sencho' ? 'Sencho Cloud' : `Custom S3${backup.autoUpload ? ' (auto)' : ''}`}
+              onClick={open('cloud-backup')}
+            />
+          )}
           <Row
             label="Alert thresholds"
             value={`CPU ${thresholds.cpuLimit}% · RAM ${thresholds.ramLimit}% · Disk ${thresholds.diskLimit}%`}

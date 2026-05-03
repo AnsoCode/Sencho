@@ -27,7 +27,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightI
 import { springs } from '@/lib/motion';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
-import { PaidGate } from './PaidGate';
 import { AdmiralGate } from './AdmiralGate';
 import FleetSnapshots from './FleetSnapshots';
 import { FleetConfiguration } from './fleet/FleetConfiguration';
@@ -1354,24 +1353,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                                 </p>
                             )}
 
-                            {/* Free tier: paid gate for advanced features */}
-                            {!isPaid && nodes.length > 0 && (
-                                <div className="mt-6">
-                                    <PaidGate featureName="Fleet Management">
-                                        {/* Preview of what paid tier unlocks */}
-                                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
-                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
-                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
-                                            <div className="rounded-xl border border-card-border border-t-card-border-top bg-card shadow-card-bevel p-4 h-24" />
-                                        </div>
-                                        <div className="flex gap-3 mb-4">
-                                            <div className="h-9 rounded-md border border-card-border bg-card flex-1 max-w-sm" />
-                                            <div className="h-9 rounded-md border border-card-border bg-card w-[150px]" />
-                                        </div>
-                                    </PaidGate>
-                                </div>
-                            )}
                         </>
                     )}
                 </TabsContent>
@@ -1383,7 +1364,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 )}
                 {isAdmiral && experimental && (
                     <TabsContent value="routing">
-                        <AdmiralGate featureName="Sencho Mesh">
+                        <AdmiralGate>
                             <RoutingTab />
                         </AdmiralGate>
                     </TabsContent>
@@ -1397,15 +1378,13 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                             {isPaid ? (
                                 <DeploymentsTab />
                             ) : (
-                                <PaidGate featureName="Blueprints (fleet-wide compose templates)">
-                                    <FleetSoonPlaceholder
-                                        icon={<Send className="h-4 w-4" />}
-                                        kicker="Deployments · Blueprints"
-                                        title="Declare once. Distribute everywhere."
-                                        description="Pick nodes by label, drop in a docker-compose, and Sencho keeps the matching nodes in sync. Drift detection always on; auto-fix optional."
-                                        plannedActions={['Author', 'Target', 'Reconcile', 'Snapshot+evict']}
-                                    />
-                                </PaidGate>
+                                <FleetSoonPlaceholder
+                                    icon={<Send className="h-4 w-4" />}
+                                    kicker="Deployments · Blueprints"
+                                    title="Declare once. Distribute everywhere."
+                                    description="Pick nodes by label, drop in a docker-compose, and Sencho keeps the matching nodes in sync. Drift detection always on; auto-fix optional."
+                                    plannedActions={['Author', 'Target', 'Reconcile', 'Snapshot+evict']}
+                                />
                             )}
                         </TabsContent>
                         <TabsContent value="federation">
