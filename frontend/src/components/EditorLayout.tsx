@@ -1,42 +1,30 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
-import { Editor } from '@/lib/monacoLoader';
 import { useImageUpdates } from '@/hooks/useImageUpdates';
-import TerminalComponent from './Terminal';
-import ErrorBoundary from './ErrorBoundary';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
 import { Button } from './ui/button';
-import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
-import { springs } from '@/lib/motion';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Plus, Trash2, Play, Square, Save, Terminal, RotateCw, CloudDownload, Pencil, X, Home, MoreVertical, Rocket, HardDrive, ScrollText, Activity, Radar, Undo2, RefreshCw, Clock, Loader2, Check, ChevronDown, GitBranch, ShieldCheck, ArrowUpRight, Copy, FolderOpen } from 'lucide-react';
+import { Plus, Terminal, CloudDownload, Home, HardDrive, ScrollText, Activity, Radar, RefreshCw, Clock } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
-import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
 import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TopBar } from './TopBar';
-import { cn } from '@/lib/utils';
 import type { SectionId } from './settings/types';
 import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
 import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
 import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
+import { EditorView, type ContainerInfo, type StackAction } from './EditorLayout/EditorView';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
 import { LogViewer } from './LogViewer';
-import StructuredLogViewer from './StructuredLogViewer';
-import StackAnatomyPanel from './StackAnatomyPanel';
-import { Sparkline } from './ui/sparkline';
 import type { ScheduleTaskPrefill } from './ScheduledOperationsView';
 
 // SecurityHistoryView is the only lazy-loaded view that lives outside
@@ -71,21 +59,8 @@ import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
 import type { FilterChip, StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { useBulkStackActions, type BulkAction } from '@/hooks/useBulkStackActions';
 import { isInputFocused, isPaletteOpen } from '@/lib/keyboard-guards';
-import { StackFileExplorer } from '@/components/files/StackFileExplorer';
 import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
 import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
-
-interface ContainerInfo {
-  Id: string;
-  Names: string[];
-  Service?: string;
-  State: string;
-  Status?: string;
-  Ports?: { PrivatePort: number, PublicPort: number }[];
-  healthStatus?: 'healthy' | 'unhealthy' | 'starting' | 'none';
-  Image?: string;
-  ImageID?: string;
-}
 
 interface StackStatus {
   [key: string]: 'running' | 'exited' | 'unknown';
@@ -96,79 +71,12 @@ interface StackStatusInfo {
   mainPort?: number;
 }
 
-type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
-
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
-// Extract the "up X time" portion from a Docker status string like
-// "Up 12 days (healthy)" → "up 12 days". Returns null when the container
-// is not in an uptime-reporting state (exited, created, restarting, etc.).
-const extractUptime = (status: string | undefined): string | null => {
-  if (!status) return null;
-  const match = status.match(/^\s*Up\s+(.+?)(?:\s*\(.*\))?\s*$/i);
-  if (!match) return null;
-  return `up ${match[1].trim()}`;
-};
-
-const healthcheckLabel = (health?: 'healthy' | 'unhealthy' | 'starting' | 'none'): string | null => {
-  if (!health || health === 'none') return null;
-  if (health === 'healthy') return 'healthcheck passing';
-  if (health === 'unhealthy') return 'healthcheck failing';
-  return 'healthcheck starting';
-};
-
-type StackPill = { label: string; dotClass: string; className: string; pulse: boolean };
-
-const getStackStatePill = (containers: ContainerInfo[]): StackPill | null => {
-  if (!containers || containers.length === 0) return null;
-  const running = containers.some(c => c.State === 'running');
-  if (!running) {
-    return {
-      label: 'exited',
-      dotClass: 'bg-destructive',
-      className: 'border-destructive/40 bg-destructive/10 text-destructive',
-      pulse: false,
-    };
-  }
-  const anyUnhealthy = containers.some(c => c.healthStatus === 'unhealthy');
-  const anyStarting = containers.some(c => c.healthStatus === 'starting');
-  const anyHealthy = containers.some(c => c.healthStatus === 'healthy');
-  if (anyUnhealthy) {
-    return {
-      label: 'running · unhealthy',
-      dotClass: 'bg-destructive',
-      className: 'border-destructive/40 bg-destructive/10 text-destructive',
-      pulse: true,
-    };
-  }
-  if (anyStarting) {
-    return {
-      label: 'running · starting',
-      dotClass: 'bg-warning',
-      className: 'border-warning/40 bg-warning/10 text-warning',
-      pulse: true,
-    };
-  }
-  if (anyHealthy) {
-    return {
-      label: 'running · healthy',
-      dotClass: 'bg-success',
-      className: 'border-success/40 bg-success/10 text-success',
-      pulse: true,
-    };
-  }
-  return {
-    label: 'running',
-    dotClass: 'bg-success',
-    className: 'border-success/40 bg-success/10 text-success',
-    pulse: true,
-  };
 };
 
 export default function EditorLayout() {
@@ -1615,6 +1523,11 @@ export default function EditorLayout() {
     }
   };
 
+  const requestDeleteStack = () => {
+    setStackToDelete(selectedFile);
+    setDeleteDialogOpen(true);
+  };
+
   // Context-menu-friendly stack actions (accept file name directly)
   const executeStackActionByFile = async (stackFile: string, action: StackAction, endpoint: string) => {
     if (isStackBusy(stackFile)) return;
@@ -1721,15 +1634,6 @@ export default function EditorLayout() {
     window.addEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
     return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
   }, []);
-
-  // Safe container list with fallback
-  const safeContainers = containers || [];
-  // Safe content strings with fallback
-  const safeContent = content || '';
-  const safeEnvContent = envContent || '';
-
-  // Stack state booleans for dynamic button rendering
-  const isRunning = safeContainers?.some(c => c.State === 'running');
 
   // Stack name is now the same as selectedFile (no extension to strip)
   const stackName = selectedFile || '';
@@ -2081,539 +1985,57 @@ export default function EditorLayout() {
             onOpenSettingsSection={(section) => handleOpenSettings(section)}
             onClearNotifications={clearAllNotifications}
             renderEditor={() => (
-            <ErrorBoundary>
-              <div className="grid gap-6 grid-cols-1 lg:grid-cols-2 min-h-[600px] h-[calc(100vh-160px)] max-h-[1040px]">
-                {/* Left column: identity + health strip + logs, stacked */}
-                <div className="flex flex-col gap-6 min-h-0">
-                  {/* Command Center Card (identity + health strip) */}
-                  <Card className="rounded-xl border-muted bg-card shrink-0">
-                    <CardHeader className="p-4 pb-2">
-                      <div className="flex flex-col gap-3">
-                        {/* Identity block */}
-                        <div className="flex flex-col gap-1.5">
-                          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
-                            {(activeNode?.name || 'local')} <span className="text-muted-foreground/60">›</span> stacks <span className="text-muted-foreground/60">›</span> {stackName}
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <CardTitle className="font-display italic text-3xl leading-none tracking-tight">{stackName}</CardTitle>
-                            {(() => {
-                              const pill = getStackStatePill(safeContainers);
-                              if (!pill) return null;
-                              return (
-                                <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 ${pill.className}`}>
-                                  <span
-                                    aria-hidden="true"
-                                    className={`h-1.5 w-1.5 rounded-full ${pill.dotClass} ${pill.pulse ? 'animate-[pulse_2.4s_ease-in-out_infinite]' : ''}`}
-                                  />
-                                  <span className="font-mono text-[10px] uppercase tracking-[0.18em]">{pill.label}</span>
-                                </span>
-                              );
-                            })()}
-                          </div>
-                          {(() => {
-                            const first = safeContainers[0];
-                            if (!first?.Image) return null;
-                            const digest = first.ImageID ? first.ImageID.replace(/^sha256:/, '').slice(0, 12) : '';
-                            return (
-                              <div className="flex items-center gap-1.5 font-mono text-[11px] text-stat-subtitle">
-                                <span>image <span className="text-muted-foreground/60">·</span> <span className="text-foreground/90">{first.Image}</span></span>
-                                {digest && first.ImageID && (
-                                  <>
-                                    <span className="text-muted-foreground/60">·</span>
-                                    <span>digest <span className="text-foreground/90">{digest}</span></span>
-                                    <button
-                                      type="button"
-                                      aria-label={copiedDigest === first.ImageID ? 'Copied' : 'Copy digest'}
-                                      onClick={() => {
-                                        const id = first.ImageID as string;
-                                        void copyToClipboard(id).then(() => {
-                                          setCopiedDigest(id);
-                                          if (copiedDigestTimerRef.current !== null) {
-                                            window.clearTimeout(copiedDigestTimerRef.current);
-                                          }
-                                          copiedDigestTimerRef.current = window.setTimeout(() => {
-                                            setCopiedDigest(prev => (prev === id ? null : prev));
-                                            copiedDigestTimerRef.current = null;
-                                          }, 1500);
-                                        }).catch(() => { /* clipboard unavailable */ });
-                                      }}
-                                      className="inline-flex h-4 w-4 items-center justify-center rounded text-stat-subtitle hover:text-foreground hover:bg-muted/60 transition-colors"
-                                    >
-                                      {copiedDigest === first.ImageID ? (
-                                        <Check className="h-3 w-3" strokeWidth={2} />
-                                      ) : (
-                                        <Copy className="h-3 w-3" strokeWidth={1.5} />
-                                      )}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        {/* Action Bar */}
-                        {can('stack:deploy', 'stack', stackName) && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {isRunning ? (
-                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={restartStack} disabled={loadingAction !== null}>
-                                <RotateCw className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                {loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
-                              </Button>
-                            ) : (
-                              <Button type="button" size="sm" data-testid="stack-deploy-button" className="rounded-lg bg-brand text-brand-foreground hover:bg-brand/90" onClick={deployStack} disabled={loadingAction !== null}>
-                                <Play className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                {loadingAction === 'deploy' ? 'Starting...' : 'Start'}
-                              </Button>
-                            )}
-                            {isRunning && (
-                              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={stopStack} disabled={loadingAction !== null}>
-                                <Square className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                {loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
-                              </Button>
-                            )}
-                            <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={updateStack} disabled={loadingAction !== null}>
-                              <CloudDownload className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                              {loadingAction === 'update' ? 'Updating...' : 'Update'}
-                            </Button>
-                            {(() => {
-                              const canRollback = isPaid && backupInfo.exists;
-                              const canScan = trivy.available && isAdmin && isPaid;
-                              const hasOverflowExtras = canRollback || canScan;
-                              return (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button type="button" size="sm" variant="ghost" className="rounded-lg h-8 w-8 p-0" disabled={loadingAction !== null} aria-label="More actions">
-                                  <MoreVertical className="w-4 h-4" strokeWidth={1.5} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48">
-                                {canRollback && (
-                                  <DropdownMenuItem onClick={rollbackStack} disabled={loadingAction !== null}>
-                                    <Undo2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                    <div className="flex flex-col gap-0.5">
-                                      <span>{loadingAction === 'rollback' ? 'Rolling back...' : 'Rollback'}</span>
-                                      {backupInfo.timestamp && (
-                                        <span className="text-[10px] text-stat-subtitle font-mono">{new Date(backupInfo.timestamp).toLocaleString()}</span>
-                                      )}
-                                    </div>
-                                  </DropdownMenuItem>
-                                )}
-                                {canScan && (
-                                  <DropdownMenuItem onClick={scanStackConfig} disabled={loadingAction !== null || stackMisconfigScanning}>
-                                    {stackMisconfigScanning ? (
-                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" strokeWidth={1.5} />
-                                    ) : (
-                                      <ShieldCheck className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                    )}
-                                    {stackMisconfigScanning ? 'Scanning...' : 'Scan config'}
-                                  </DropdownMenuItem>
-                                )}
-                                {hasOverflowExtras && <DropdownMenuSeparator />}
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                  disabled={loadingAction !== null}
-                                  onClick={() => {
-                                    setStackToDelete(selectedFile);
-                                    setDeleteDialogOpen(true);
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                  {loadingAction === 'delete' ? 'Deleting...' : 'Delete'}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-2">
-                      {/* Per-container health strip */}
-                      <div className="mt-4">
-                        <h4 className="text-sm font-medium text-muted-foreground mb-3">CONTAINERS</h4>
-                        {safeContainers.length === 0 ? (
-                          <div className="text-muted-foreground text-sm">No containers running for this stack.</div>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {safeContainers.map(container => {
-                              let mainPort: number | undefined;
-                              let mainPortPrivate: number | undefined;
-                              let mainPortProto: string | undefined;
-                              if (container.Ports && container.Ports.length > 0) {
-                                const WEB_UI_PORTS = [32400, 8989, 7878, 9696, 5055, 8080, 80, 443, 3000, 9000];
-                                const IGNORE_PORTS = [1900, 53, 22];
-                                let match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PrivatePort));
-                                if (!match) match = container.Ports.find(p => WEB_UI_PORTS.includes(p.PublicPort));
-                                if (!match) match = container.Ports.find(p => !IGNORE_PORTS.includes(p.PrivatePort) && !IGNORE_PORTS.includes(p.PublicPort));
-                                const chosen = match || container.Ports[0];
-                                mainPort = chosen.PublicPort;
-                                mainPortPrivate = chosen.PrivatePort;
-                                mainPortProto = 'tcp';
-                              }
-
-                              const containerName = container?.Names?.[0]?.replace(/^\//, '') || container?.Id?.slice(0, 12) || 'container';
-                              const isActive = container.State === 'running' || container.State === 'paused';
-                              const health = container.healthStatus;
-                              const uptime = isActive ? extractUptime(container.Status) : null;
-                              const hcLabel = healthcheckLabel(health);
-                              const stats = containerStats[container?.Id];
-                              const history = stats?.history;
-
-                              const badgeClass = health === 'unhealthy' || !isActive
-                                ? 'bg-destructive text-destructive-foreground'
-                                : health === 'starting'
-                                  ? 'bg-warning text-warning-foreground'
-                                  : 'bg-success text-success-foreground';
-                              const badgeGlyph = health === 'unhealthy' || !isActive ? '✗' : health === 'starting' ? '…' : '✓';
-                              const sparkStroke = health === 'unhealthy' ? 'var(--destructive)' : health === 'starting' ? 'var(--warning)' : 'var(--chart-1)';
-
-                              return (
-                                <div key={container?.Id || Math.random()} className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2.5">
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                                      <div className={cn('mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', badgeClass)}>
-                                        {badgeGlyph}
-                                      </div>
-                                      <div className="flex min-w-0 flex-col gap-0.5">
-                                        <div className="truncate font-mono text-sm text-foreground">{containerName}</div>
-                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-stat-subtitle">
-                                          {uptime ? <span>{uptime}</span> : <span>{(container.State || 'unknown').toLowerCase()}</span>}
-                                          {hcLabel ? <><span>·</span><span>{hcLabel}</span></> : null}
-                                          {mainPort && mainPortPrivate ? (
-                                            <>
-                                              <span>·</span>
-                                              <span>{mainPort} → {mainPortPrivate}/{mainPortProto}</span>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  const host = activeNode?.type === 'remote' && activeNode?.api_url
-                                                    ? new URL(activeNode.api_url).hostname
-                                                    : window.location.hostname;
-                                                  window.open(`http://${host}:${mainPort}`, '_blank');
-                                                }}
-                                                className="inline-flex items-center gap-1 text-brand hover:underline"
-                                              >
-                                                open <ArrowUpRight className="h-3 w-3" strokeWidth={1.5} />
-                                              </button>
-                                            </>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-1">
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7 rounded-md"
-                                        onClick={() => openLogViewer(container?.Id, containerName)}
-                                        disabled={!isActive}
-                                        aria-label="View logs"
-                                      >
-                                        <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                      </Button>
-                                      {isAdmin && (
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-7 w-7 rounded-md"
-                                          onClick={() => openBashModal(container?.Id, containerName)}
-                                          disabled={!isActive}
-                                          aria-label="Open bash shell"
-                                        >
-                                          <Terminal className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                        </Button>
-                                      )}
-                                      {container.Service && (
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-7 w-7 rounded-md"
-                                              aria-label="Service actions"
-                                            >
-                                              <MoreVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end">
-                                            {isActive ? (
-                                              <>
-                                                <DropdownMenuItem onSelect={() => serviceAction('restart', container.Service!)}>
-                                                  Restart service
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onSelect={() => serviceAction('stop', container.Service!)}>
-                                                  Stop service
-                                                </DropdownMenuItem>
-                                              </>
-                                            ) : (
-                                              <DropdownMenuItem onSelect={() => serviceAction('start', container.Service!)}>
-                                                Start service
-                                              </DropdownMenuItem>
-                                            )}
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {isActive ? (
-                                    <div className="mt-2 grid grid-cols-3 gap-2">
-                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
-                                        <div className="flex flex-col">
-                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">cpu</span>
-                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.cpu ?? '-'}</span>
-                                        </div>
-                                        <div className="ml-auto h-5 w-16">
-                                          <Sparkline points={history?.cpu ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
-                                        <div className="flex flex-col">
-                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">mem</span>
-                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.ram ?? '-'}</span>
-                                        </div>
-                                        <div className="ml-auto h-5 w-16">
-                                          <Sparkline points={history?.mem ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5">
-                                        <div className="flex flex-col">
-                                          <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] text-stat-subtitle">net i/o</span>
-                                          <span className="font-mono text-xs tabular-nums text-foreground">{stats?.net ?? '-'}</span>
-                                        </div>
-                                        <div className="ml-auto h-5 w-16">
-                                          <Sparkline points={history?.netIn ?? []} stroke={sparkStroke} fill={sparkStroke} showPeak={false} />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Logs Section (fills remaining left-column height) */}
-                  <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-stat-subtitle">Logs</h3>
-                      <div className="inline-flex rounded-md border border-muted bg-muted/30 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setLogsMode('structured')}
-                          className={cn(
-                            'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors',
-                            logsMode === 'structured' ? 'bg-brand/15 text-brand' : 'text-stat-subtitle hover:text-foreground',
-                          )}
-                        >
-                          Structured
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLogsMode('raw')}
-                          className={cn(
-                            'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors',
-                            logsMode === 'raw' ? 'bg-brand/15 text-brand' : 'text-stat-subtitle hover:text-foreground',
-                          )}
-                        >
-                          Raw terminal
-                        </button>
-                      </div>
-                    </div>
-                    {logsMode === 'structured' ? (
-                      <ErrorBoundary>
-                        <StructuredLogViewer stackName={stackName} />
-                      </ErrorBoundary>
-                    ) : (
-                      <div className="flex-1 rounded-xl overflow-hidden border border-muted bg-black p-3 shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.4)]">
-                        <div className="h-full">
-                          <ErrorBoundary>
-                            <TerminalComponent stackName={stackName} />
-                          </ErrorBoundary>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right column: anatomy panel by default, Monaco editor when editing */}
-                {editingCompose ? (
-                <Card className="rounded-xl border-muted overflow-hidden flex flex-col h-full min-h-0 bg-card">
-                  <div className="p-4 border-b border-muted flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-4">
-                      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'compose' | 'env' | 'files')}>
-                        <TabsList>
-                          <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
-                            <TabsHighlightItem value="compose">
-                              <TabsTrigger value="compose">compose.yaml</TabsTrigger>
-                            </TabsHighlightItem>
-                            <TabsHighlightItem value="env">
-                              <TabsTrigger value="env" disabled={!envExists}>.env</TabsTrigger>
-                            </TabsHighlightItem>
-                            <TabsHighlightItem value="files">
-                              <TabsTrigger value="files">
-                                <FolderOpen className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                                Files
-                              </TabsTrigger>
-                            </TabsHighlightItem>
-                          </TabsHighlight>
-                        </TabsList>
-                      </Tabs>
-
-                      {activeTab === 'env' && envFiles.length > 1 && (
-                        <Select value={selectedEnvFile} onValueChange={changeEnvFile} disabled={isEditing || isFileLoading}>
-                          <SelectTrigger className="h-9 text-xs bg-muted border-none min-w-[200px]">
-                            <SelectValue placeholder="Select environment file" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {envFiles.map((file) => (
-                              <SelectItem key={file} value={file} className="text-xs">
-                                {file.split('/').pop()}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {activeTab !== 'files' && can('stack:edit', 'stack', stackName) && (
-                        <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="rounded-lg relative"
-                          onClick={() => setGitSourceOpen(true)}
-                        >
-                          <GitBranch className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                          Git Source
-                          {gitSourcePendingMap[stackName] && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-brand animate-pulse" />
-                          )}
-                        </Button>
-                        {!isEditing ? (
-                          <Button size="sm" variant="default" className="rounded-lg" onClick={enterEditMode}>
-                            <Pencil className="w-4 h-4 mr-2" />
-                            Edit
-                          </Button>
-                        ) : (
-                          <div className="flex items-center">
-                            <Button size="sm" variant="default" className="rounded-l-lg rounded-r-none" onClick={requestSaveAndDeploy} disabled={loadingAction === 'deploy'}>
-                              <Rocket className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                              Save & Deploy
-                            </Button>
-                            <DropdownMenu modal={false}>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="sm" variant="default" className="rounded-r-lg rounded-l-none border-l border-primary-foreground/20 px-1.5" disabled={loadingAction === 'deploy'}>
-                                  <ChevronDown className="w-3.5 h-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={requestSave}>
-                                  <Save className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                  Save Only
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={discardChanges} className="text-destructive/80 focus:text-destructive">
-                                  <X className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                                  Discard Changes
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        )}
-                        </>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="rounded-lg h-8 w-8 p-0"
-                        onClick={() => {
-                          if (isEditing) {
-                            discardChanges();
-                          }
-                          setEditingCompose(false);
-                        }}
-                        aria-label="Close editor"
-                      >
-                        <X className="w-4 h-4" strokeWidth={1.5} />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0 flex flex-col">
-                    {activeTab === 'files' ? (
-                      <StackFileExplorer
-                        stackName={stackName}
-                        canEdit={can('stack:edit', 'stack', stackName)}
-                        isDarkMode={isDarkMode}
-                        onNavigateToCompose={() => setActiveTab('compose')}
-                        onNavigateToEnv={() => setActiveTab('env')}
-                      />
-                    ) : (
-                      <>
-                        {activeTab === 'env' && (
-                          <div className="bg-brand/8 border-b border-brand/20 px-4 py-2 flex items-center gap-2 text-xs text-brand">
-                            <span>
-                              Variables defined here are automatically available for substitution in your compose.yaml (e.g., <code className="bg-background px-1 rounded text-[10px]">${'{}'}VAR</code>). To pass them directly into your container, you must add <code className="bg-background px-1 rounded text-[10px]">env_file: - .env</code> to your service definition.
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex-1 min-h-0 overflow-hidden">
-                          {!isFileLoading && (
-                            <Suspense fallback={<div className="w-full h-full" aria-busy="true" />}>
-                              <Editor
-                                height="100%"
-                                language={activeTab === 'compose' ? 'yaml' : 'plaintext'}
-                                theme={isDarkMode ? 'vs-dark' : 'vs'}
-                                value={activeTab === 'compose' ? safeContent : safeEnvContent}
-                                onMount={(editor) => { monacoEditorRef.current = editor; }}
-                                onChange={(value) => {
-                                  if (!isEditing) return; // Prevent changes in view mode
-                                  if (activeTab === 'compose') {
-                                    setContent(value || '');
-                                  } else {
-                                    setEnvContent(value || '');
-                                  }
-                                }}
-                                options={{
-                                  minimap: { enabled: false },
-                                  fontFamily: "'Geist Mono', monospace",
-                                  fontSize: 14,
-                                  padding: { top: 10 },
-                                  scrollBeyondLastLine: false,
-                                  readOnly: !isEditing || !can('stack:edit', 'stack', stackName),
-                                }}
-                              />
-                            </Suspense>
-                          )}
-                          {isFileLoading && (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                              Loading...
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </Card>
-                ) : (
-                <StackAnatomyPanel
-                  stackName={stackName}
-                  content={content}
-                  envContent={envContent}
-                  selectedEnvFile={selectedEnvFile}
-                  gitSourcePending={Boolean(gitSourcePendingMap[stackName])}
-                  onEditCompose={() => setEditingCompose(true)}
-                  onOpenFiles={() => { setEditingCompose(true); setActiveTab('files'); }}
-                  onOpenGitSource={() => setGitSourceOpen(true)}
-                  onApplyUpdate={() => { void updateStack(); }}
-                  canEdit={can('stack:edit', 'stack', stackName)}
-                  notifications={notifications}
-                />
-                )}
-              </div>
-            </ErrorBoundary>
+              <EditorView
+                stackName={stackName}
+                isDarkMode={isDarkMode}
+                containers={containers}
+                containerStats={containerStats}
+                content={content}
+                envContent={envContent}
+                envExists={envExists}
+                envFiles={envFiles}
+                selectedEnvFile={selectedEnvFile}
+                isFileLoading={isFileLoading}
+                backupInfo={backupInfo}
+                gitSourcePendingMap={gitSourcePendingMap}
+                notifications={notifications}
+                activeTab={activeTab}
+                isEditing={isEditing}
+                editingCompose={editingCompose}
+                logsMode={logsMode}
+                copiedDigest={copiedDigest}
+                loadingAction={loadingAction}
+                stackMisconfigScanning={stackMisconfigScanning}
+                can={can}
+                isAdmin={isAdmin}
+                isPaid={isPaid}
+                trivy={trivy}
+                activeNode={activeNode}
+                monacoEditorRef={monacoEditorRef}
+                copiedDigestTimerRef={copiedDigestTimerRef}
+                deployStack={deployStack}
+                restartStack={restartStack}
+                stopStack={stopStack}
+                updateStack={updateStack}
+                rollbackStack={rollbackStack}
+                scanStackConfig={scanStackConfig}
+                enterEditMode={enterEditMode}
+                requestSave={requestSave}
+                requestSaveAndDeploy={requestSaveAndDeploy}
+                discardChanges={discardChanges}
+                setContent={setContent}
+                setEnvContent={setEnvContent}
+                changeEnvFile={changeEnvFile}
+                openLogViewer={openLogViewer}
+                openBashModal={openBashModal}
+                serviceAction={serviceAction}
+                setActiveTab={setActiveTab}
+                setLogsMode={setLogsMode}
+                setEditingCompose={setEditingCompose}
+                setGitSourceOpen={setGitSourceOpen}
+                setCopiedDigest={setCopiedDigest}
+                requestDeleteStack={requestDeleteStack}
+              />
             )}
           />
         </div>
