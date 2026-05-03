@@ -9,7 +9,6 @@ import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
 import { Button } from './ui/button';
-import { ConfirmModal } from './ui/modal';
 import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from './ui/tabs';
 import { springs } from '@/lib/motion';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -21,7 +20,6 @@ import { NotificationPanel } from './NotificationPanel';
 import { apiFetch, fetchForNode } from '@/lib/api';
 import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
-import { Checkbox } from './ui/checkbox';
 import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,6 +28,8 @@ import { cn } from '@/lib/utils';
 import type { SectionId } from './settings/types';
 import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
+import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
+import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -97,13 +97,6 @@ interface StackStatusInfo {
 }
 
 type StackAction = 'deploy' | 'stop' | 'restart' | 'update' | 'delete' | 'rollback';
-
-interface BulkActionResult {
-  stackName: string;
-  success: boolean;
-  error?: string;
-}
-
 
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
@@ -254,7 +247,6 @@ export default function EditorLayout() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [stackToDelete, setStackToDelete] = useState<string | null>(null);
-  const [pruneVolumesOnDelete, setPruneVolumesOnDelete] = useState(false);
   const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
   const [pendingUnsavedNode, setPendingUnsavedNode] = useState<Node | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -329,12 +321,6 @@ export default function EditorLayout() {
   const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
   const [labels, setLabels] = useState<StackLabel[]>([]);
   const [stackLabelMap, setStackLabelMap] = useState<Record<string, StackLabel[]>>({});
-  // Bulk-action dialog is retained as a safety fallback; the label pill entry
-  // point that drove the setters was removed alongside the sidebar rewrite.
-  const [bulkActionLabel] = useState<StackLabel | null>(null);
-  const [bulkAction] = useState<string>('');
-  const [bulkActionOpen, setBulkActionOpen] = useState(false);
-  const [bulkActionRunning, setBulkActionRunning] = useState(false);
 
   // Bash exec modal state
   const [bashModalOpen, setBashModalOpen] = useState(false);
@@ -1572,14 +1558,14 @@ export default function EditorLayout() {
     }
   };
 
-  const deleteStack = async () => {
+  const deleteStack = async (pruneVolumes: boolean) => {
     if (!stackToDelete) return;
     // Find matching file entry for per-stack tracking
     const deleteKey = files.find(f => f === stackToDelete || f.replace(/\.(yml|yaml)$/, '') === stackToDelete) ?? stackToDelete;
     if (isStackBusy(deleteKey)) return;
     setStackAction(deleteKey, 'delete');
     try {
-      const url = pruneVolumesOnDelete
+      const url = pruneVolumes
         ? `/stacks/${stackToDelete}?pruneVolumes=true`
         : `/stacks/${stackToDelete}`;
       const response = await apiFetch(url, {
@@ -1592,7 +1578,6 @@ export default function EditorLayout() {
       toast.success('Stack deleted successfully!');
       setDeleteDialogOpen(false);
       setStackToDelete(null);
-      setPruneVolumesOnDelete(false);
       if (selectedFile === stackToDelete) {
         setSelectedFile(null);
         setContent('');
@@ -1612,40 +1597,21 @@ export default function EditorLayout() {
     }
   };
 
-  const bulkAffected = useMemo(() => {
-    if (!bulkActionLabel) return [];
-    return Object.entries(stackLabelMap)
-      .filter(([, ls]) => ls.some(l => l.id === bulkActionLabel.id))
-      .map(([name]) => name);
-  }, [stackLabelMap, bulkActionLabel]);
+  const cancelPendingUnsavedLoad = () => {
+    setPendingUnsavedLoad(null);
+    setPendingUnsavedNode(null);
+  };
 
-  const runLabelBulkAction = async () => {
-    if (!bulkActionLabel) return;
-    setBulkActionRunning(true);
-    try {
-      const res = await apiFetch(`/labels/${bulkActionLabel.id}/action`, {
-        method: 'POST',
-        body: JSON.stringify({ action: bulkAction }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || `Bulk ${bulkAction} failed.`);
-      }
-      const data = await res.json();
-      const failed = (data.results ?? []).filter((r: BulkActionResult) => !r.success);
-      if (failed.length > 0) {
-        const failedNames = failed.map((r: BulkActionResult) => r.stackName).join(', ');
-        toast.error(`Failed to ${bulkAction}: ${failedNames}`);
-      } else {
-        const successVerb = bulkAction === 'deploy' ? 'deployed' : bulkAction === 'stop' ? 'stopped' : 'restarted';
-        toast.success(`All stacks ${successVerb} successfully.`);
-      }
-      setBulkActionOpen(false);
-      refreshStacks(true);
-    } catch (err: unknown) {
-      toast.error((err as Error)?.message || 'Something went wrong.');
-    } finally {
-      setBulkActionRunning(false);
+  const discardAndLoadPending = () => {
+    const target = pendingUnsavedLoad;
+    const targetNode = pendingUnsavedNode;
+    setContent(originalContent);
+    setEnvContent(originalEnvContent);
+    setPendingUnsavedLoad(null);
+    setPendingUnsavedNode(null);
+    if (target) {
+      if (targetNode) loadFileOnNode(targetNode, target);
+      else loadFile(target);
     }
   };
 
@@ -1893,7 +1859,7 @@ export default function EditorLayout() {
       stop: () => executeStackActionByFile(file, 'stop', 'stop'),
       restart: () => executeStackActionByFile(file, 'restart', 'restart'),
       update: () => executeStackActionByFile(file, 'update', 'update'),
-      remove: () => { setStackToDelete(stackName); setPruneVolumesOnDelete(false); setDeleteDialogOpen(true); },
+      remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
       pin: () => pin(file),
       unpin: () => unpin(file),
       setAutoUpdateEnabled: async (enabled: boolean) => {
@@ -2248,7 +2214,6 @@ export default function EditorLayout() {
                                   disabled={loadingAction !== null}
                                   onClick={() => {
                                     setStackToDelete(selectedFile);
-                                    setPruneVolumesOnDelete(false);
                                     setDeleteDialogOpen(true);
                                   }}
                                 >
@@ -2654,88 +2619,18 @@ export default function EditorLayout() {
         </div>
       </div>
 
-      <ConfirmModal
+      <DeleteStackDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        variant="destructive"
-        kicker={`${(stackToDelete ?? 'STACK').toUpperCase()} · REMOVE · IRREVERSIBLE`}
-        title={
-          stackToDelete ? (
-            <>
-              Delete <em className="font-display italic text-destructive">{stackToDelete}</em>?
-            </>
-          ) : (
-            'Delete stack?'
-          )
-        }
-        description={`Confirm deletion of ${stackToDelete ?? 'stack'}.`}
-        hint={pruneVolumesOnDelete ? 'VOLUMES PRUNED' : 'VOLUMES KEPT'}
-        confirmLabel="Delete"
+        stackName={stackToDelete}
         onConfirm={deleteStack}
-      >
-        <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="prune-volumes"
-            checked={pruneVolumesOnDelete}
-            onCheckedChange={(v) => setPruneVolumesOnDelete(v === true)}
-          />
-          <label htmlFor="prune-volumes" className="text-sm text-muted-foreground cursor-pointer select-none">
-            Also remove associated volumes
-          </label>
-        </div>
-      </ConfirmModal>
+      />
 
-      <ConfirmModal
+      <UnsavedChangesDialog
         open={!!pendingUnsavedLoad}
-        onOpenChange={(open) => { if (!open) { setPendingUnsavedLoad(null); setPendingUnsavedNode(null); } }}
-        kicker="EDITOR · UNSAVED CHANGES"
-        title="Discard unsaved changes?"
-        description="You have unsaved changes. Switching stacks will discard them."
-        confirmLabel="Discard changes"
-        onConfirm={() => {
-          const target = pendingUnsavedLoad;
-          const targetNode = pendingUnsavedNode;
-          setContent(originalContent);
-          setEnvContent(originalEnvContent);
-          setPendingUnsavedLoad(null);
-          setPendingUnsavedNode(null);
-          if (target) {
-            if (targetNode) loadFileOnNode(targetNode, target);
-            else loadFile(target);
-          }
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          You have unsaved changes. Switching stacks will discard them.
-        </p>
-      </ConfirmModal>
-
-      <ConfirmModal
-        open={bulkActionOpen}
-        onOpenChange={setBulkActionOpen}
-        kicker={`LABEL · ${(bulkAction || 'ACTION').toUpperCase()} ALL`}
-        title={
-          <>
-            {bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} all{' '}
-            <em className="font-display italic">&ldquo;{bulkActionLabel?.name ?? ''}&rdquo;</em> stacks?
-          </>
-        }
-        description={`${bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} all stacks labeled "${bulkActionLabel?.name ?? ''}".`}
-        hint={`${bulkAffected.length} AFFECTED`}
-        confirmLabel={bulkActionRunning ? 'Running...' : `${bulkAction.charAt(0).toUpperCase() + bulkAction.slice(1)} all`}
-        confirming={bulkActionRunning}
-        onConfirm={runLabelBulkAction}
-      >
-        <p className="text-sm text-muted-foreground">
-          This will {bulkAction || 'apply'} all stacks labeled &ldquo;{bulkActionLabel?.name ?? ''}&rdquo;.
-        </p>
-        {bulkAffected.length > 0 && (
-          <p className="font-mono text-xs text-stat-subtitle">
-            Affected: {bulkAffected.join(', ')}
-          </p>
-        )}
-      </ConfirmModal>
+        onCancel={cancelPendingUnsavedLoad}
+        onConfirm={discardAndLoadPending}
+      />
 
       {/* Bash Exec Modal */}
       {selectedContainer && (
