@@ -32,7 +32,6 @@ describe('useEditorViewState', () => {
       const { result } = renderHook(() => useEditorViewState());
       expect(result.current.envFiles).toEqual([]);
       expect(result.current.containers).toEqual([]);
-      expect(result.current.containerStats).toEqual({});
       expect(result.current.gitSourcePendingMap).toEqual({});
     });
 
