@@ -27,3 +27,7 @@ jobs:
           path-to-document: 'https://github.com/studio-saelix/sencho/blob/main/CLA.md'
           branch: 'main'
           allowlist: 'AnsoCode,dependabot[bot],greenkeeper[bot],github-actions[bot],release-please[bot],sencho-quartermaster[bot]'
+          # Default true locks merged PR conversations, which blocks
+          # release-please from commenting "included in vX.Y.Z" on the
+          # release PR. Signatures live in signatures/version1/cla.json.
+          lock-pullrequest-aftermerge: false
