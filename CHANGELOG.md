@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.69.0](https://github.com/Studio-Saelix/sencho/compare/v0.68.0...v0.69.0) (2026-05-03)
+
+
+### Added
+
+* **license:** simplify community license page to activate form + pricing link ([#892](https://github.com/Studio-Saelix/sencho/issues/892)) ([c06f937](https://github.com/Studio-Saelix/sencho/commit/c06f937d8d0452ea93c726cb718ce628aaa3013a))
+* **ui:** add ConfirmModal, migrate EditorLayout inline confirms ([#897](https://github.com/Studio-Saelix/sencho/issues/897)) ([d492594](https://github.com/Studio-Saelix/sencho/commit/d492594189640c67c85c3b2d341bf03edf5c430f))
+* **ui:** add Modal chrome primitives, migrate file dialogs ([#896](https://github.com/Studio-Saelix/sencho/issues/896)) ([898ef1a](https://github.com/Studio-Saelix/sencho/commit/898ef1a0e8e941d2eba722891c0f4720211898bb))
+* **ui:** hide paid features from community-tier dashboard ([#891](https://github.com/Studio-Saelix/sencho/issues/891)) ([1f8ce77](https://github.com/Studio-Saelix/sencho/commit/1f8ce773ff7d42240605d4d4f8dd93c7f3c59760))
+
+
+### Fixed
+
+* **ci:** disable CLA Assistant PR auto-lock so release-please can comment ([#890](https://github.com/Studio-Saelix/sencho/issues/890)) ([b9ada7f](https://github.com/Studio-Saelix/sencho/commit/b9ada7f50bea3f2f74c8dfeb582a86fbe29d9f4c))
+
 ## [0.68.0](https://github.com/Studio-Saelix/sencho/compare/v0.67.1...v0.68.0) (2026-05-02)
 
 
