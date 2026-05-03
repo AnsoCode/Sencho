@@ -7,7 +7,7 @@ import { ComposeService } from '../services/ComposeService';
 import DockerController from '../services/DockerController';
 import { DatabaseService } from '../services/DatabaseService';
 import { CacheService } from '../services/CacheService';
-import { getEntitlementProvider } from '../entitlements/registry';
+import { LicenseService } from '../services/LicenseService';
 import { UpdatePreviewService } from '../services/UpdatePreviewService';
 import { GitSourceService, GitSourceError, repoHost as gitRepoHost } from '../services/GitSourceService';
 import { enforcePolicyPreDeploy } from '../services/PolicyEnforcement';
@@ -587,7 +587,7 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
   try {
     if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
-    const atomic = getEntitlementProvider().getTier() === 'paid';
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Deploy starting', { stackName, atomic, nodeId: req.nodeId });
     const t0 = Date.now();
     await ComposeService.getInstance(req.nodeId).deployStack(stackName, getTerminalWs(), atomic);
@@ -601,7 +601,7 @@ stacksRouter.post('/:stackName/deploy', async (req: Request, res: Response) => {
     );
   } catch (error: unknown) {
     console.error('[Stacks] Deploy failed: %s', sanitizeForLog(stackName), error);
-    const rolledBack = getEntitlementProvider().getTier() === 'paid';
+    const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     if (rolledBack) console.warn('[Stacks] Deploy failed, rolled back: %s', sanitizeForLog(stackName));
     const message = getErrorMessage(error, 'Failed to deploy stack');
     notifyActionFailure('deploy', stackName, error);
@@ -746,7 +746,7 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
   try {
     if (!(await runPolicyGate(req, res, stackName, req.nodeId))) return;
     const debug = isDebugEnabled();
-    const atomic = getEntitlementProvider().getTier() === 'paid';
+    const atomic = LicenseService.getInstance().getTier() === 'paid';
     if (debug) console.debug('[Stacks:debug] Update starting', { stackName, atomic, nodeId: req.nodeId });
     const t0 = Date.now();
     await ComposeService.getInstance(req.nodeId).updateStack(stackName, getTerminalWs(), atomic);
@@ -761,7 +761,7 @@ stacksRouter.post('/:stackName/update', async (req: Request, res: Response) => {
     );
   } catch (error: unknown) {
     console.error('[Stacks] Update failed: %s', sanitizeForLog(stackName), error);
-    const rolledBack = getEntitlementProvider().getTier() === 'paid';
+    const rolledBack = LicenseService.getInstance().getTier() === 'paid';
     if (rolledBack) console.warn(`[Stacks] Update failed, rolled back: ${sanitizeForLog(stackName)}`);
     notifyActionFailure('update', stackName, error);
     res.status(500).json({ error: getErrorMessage(error, 'Failed to update'), rolledBack });

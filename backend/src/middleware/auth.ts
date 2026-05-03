@@ -8,13 +8,13 @@ import {
   type ApiTokenScope,
 } from '../services/DatabaseService';
 import { getErrorMessage } from '../utils/errors';
-import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../entitlements/headers';
+import { PROXY_TIER_HEADER, PROXY_VARIANT_HEADER } from '../services/license-headers';
 import {
   isLicenseTier,
   isLicenseVariant,
   normalizeTier,
   normalizeVariant,
-} from '../entitlements/normalize';
+} from '../services/license-normalize';
 import { isDebugEnabled } from '../utils/debug';
 import {
   COOKIE_NAME,

@@ -1,33 +1,28 @@
-import type { LicenseTier, LicenseVariant } from './types';
+import type { LicenseTier, LicenseVariant } from './license-types';
 
 /**
- * Tier and variant guards / normalizers. These are domain knowledge
- * about Sencho's tier model (which strings are accepted on input, how
- * legacy names map to current names), not LemonSqueezy implementation
- * details. They live in the public core so that:
+ * Tier and variant guards / normalizers. Domain knowledge about
+ * Sencho's tier model (which strings are accepted on input, how legacy
+ * names map to current names). Used by:
  *
- *   - The proxy layer (`auth.ts`, `remoteNodeProxy.ts`) can parse and
- *     validate tier/variant headers from inbound forwarded requests
- *     without depending on the entitlement provider implementation.
- *   - The host-console upgrade handler can decode trusted proxy tier
+ *   - The proxy layer (`auth.ts`, `remoteNodeProxy.ts`) to parse and
+ *     validate tier/variant headers from inbound forwarded requests.
+ *   - The host-console upgrade handler to decode trusted proxy tier
  *     claims attached to bearer tokens.
- *
- * Phase 2 deletes `services/LicenseService.ts` but leaves these utility
- * exports here, untouched.
  */
 
 const VALID_TIERS: readonly string[] = ['community', 'paid'] satisfies readonly LicenseTier[];
 const VALID_VARIANTS: readonly string[] = ['skipper', 'admiral'] satisfies readonly LicenseVariant[];
 
 /**
- * Legacy tier name accepted on input from older versions of Sencho or
- * older proxy headers; normalized to the current name on read.
+ * Legacy tier name accepted on input from older proxy headers;
+ * normalized to the current name on read.
  */
 const LEGACY_TIER_MAP: Record<string, LicenseTier> = { pro: 'paid' };
 
 /**
- * Legacy variant names accepted on input from older versions of Sencho
- * or older proxy headers; normalized to the current names on read.
+ * Legacy variant names accepted on input from older proxy headers;
+ * normalized to the current names on read.
  */
 const LEGACY_VARIANT_MAP: Record<string, Exclude<LicenseVariant, null>> = {
     personal: 'skipper',

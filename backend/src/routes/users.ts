@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcrypt';
 import { DatabaseService, type UserRole, type ResourceType } from '../services/DatabaseService';
-import { getEntitlementProvider } from '../entitlements/registry';
+import { LicenseService } from '../services/LicenseService';
 import { authMiddleware } from '../middleware/auth';
 import { requirePaid, requireAdmin, requireAdmiral } from '../middleware/tierGates';
 import { rejectApiTokenScope } from '../middleware/apiTokenScope';
@@ -84,7 +84,7 @@ usersRouter.post('/', authMiddleware, async (req: Request, res: Response): Promi
     }
 
     // Enforce seat limits based on license variant.
-    const seatLimits = getEntitlementProvider().getSeatLimits();
+    const seatLimits = LicenseService.getInstance().getSeatLimits();
     if (role === 'admin' && seatLimits.maxAdmins !== null && db.getAdminCount() >= seatLimits.maxAdmins) {
       res.status(403).json({ error: `Your license allows a maximum of ${seatLimits.maxAdmins} admin account${seatLimits.maxAdmins === 1 ? '' : 's'}. Upgrade to Admiral for unlimited accounts.` });
       return;
