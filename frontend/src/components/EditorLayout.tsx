@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 
-type Theme = 'light' | 'dark' | 'auto';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
@@ -9,7 +8,7 @@ import { Plus } from 'lucide-react';
 import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
-import { apiFetch, fetchForNode } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
 import { TopBar } from './TopBar';
@@ -21,6 +20,9 @@ import { EditorView, type StackAction } from './EditorLayout/EditorView';
 import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
 import { useStackListState } from './EditorLayout/hooks/useStackListState';
 import { useViewNavigationState } from './EditorLayout/hooks/useViewNavigationState';
+import { useTheme } from './EditorLayout/hooks/useTheme';
+import { useNotifications } from './EditorLayout/hooks/useNotifications';
+import { useContainerStats } from './EditorLayout/hooks/useContainerStats';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -54,14 +56,6 @@ import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
 import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
 
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
   const { isPaid, license } = useLicense();
@@ -79,7 +73,6 @@ export default function EditorLayout() {
     envFiles, setEnvFiles,
     selectedEnvFile, setSelectedEnvFile,
     containers, setContainers,
-    containerStats, setContainerStats,
     activeTab, setActiveTab,
     logsMode, setLogsMode,
     gitSourceOpen, setGitSourceOpen,
@@ -124,29 +117,6 @@ export default function EditorLayout() {
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
   const [policyBypassing, setPolicyBypassing] = useState(false);
   const { nodes, activeNode, setActiveNode } = useNodes();
-  // Stable ref so notification callbacks always read the latest nodes list
-  // without needing nodes in their dependency arrays (which would cause loops).
-  const nodesRef = useRef<Node[]>([]);
-  nodesRef.current = nodes;
-  // Tracks cleanup functions for per-remote-node notification WebSocket connections.
-  const remoteNotifWsRef = useRef<Map<number, () => void>>(new Map());
-  // Incoming WebSocket stats are written here first (no re-render), then flushed
-  // to React state in one batched update every 1.5 s.
-  const pendingStatsRef = useRef<Record<string, {
-    cpu: string;
-    ram: string;
-    net: string;
-    lastRx: number;
-    lastTx: number;
-    cpuNum: number;
-    memNum: number;
-    netInNum: number;
-    netOutNum: number;
-  }>>({});
-  // Raw rx/tx byte totals used for rate calculation. Never cleared on flush so
-  // the delta is always computed against the most recent known value, avoiding
-  // the stale-closure bug that occurs when reading containerStats directly.
-  const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
   const pendingLogsRef = useRef<{ stackName: string; containerName: string } | null>(null);
@@ -176,15 +146,7 @@ export default function EditorLayout() {
 
   const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
 
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('sencho-theme') as Theme | null;
-    if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
-    return 'dark'; // Default to dark mode
-  });
-  const [systemDark, setSystemDark] = useState(() =>
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-  );
-  const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
+  const { theme, setTheme, isDarkMode } = useTheme();
   const [diffPreviewEnabled] = useComposeDiffPreviewEnabled();
   const [diffPreview, setDiffPreview] = useState<{
     mode: 'save' | 'save-and-deploy';
@@ -231,9 +193,20 @@ export default function EditorLayout() {
 
   const isAdmiral = license?.variant === 'admiral';
 
-  // Notifications state
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [tickerConnected, setTickerConnected] = useState(false);
+  const {
+    notifications,
+    tickerConnected,
+    markAllRead,
+    deleteNotification,
+    clearAllNotifications,
+  } = useNotifications({
+    nodes,
+    onStateInvalidate: scheduleStateInvalidateRefresh,
+    onAutoUpdateChange: fetchAutoUpdateSettings,
+  });
+
+  const containerStats = useContainerStats(containers);
+
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
   const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
@@ -242,20 +215,6 @@ export default function EditorLayout() {
     setAlertSheetStack(stackName);
     setAlertSheetOpen(true);
   };
-
-  // Listen for system dark mode changes (for 'auto' theme)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  // Apply dark class and persist theme preference
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-    localStorage.setItem('sencho-theme', theme);
-  }, [isDarkMode, theme]);
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
@@ -292,173 +251,6 @@ export default function EditorLayout() {
     }
   };
 
-  // Notification WS push - subscribe to local real-time alerts.
-  // Initial history load is handled by the [nodes] effect below.
-  useEffect(() => {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsBase = `${wsProtocol}//${window.location.host}`;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let isMounted = true;
-    let retryCount = 0;
-    const MAX_RETRY_DELAY_MS = 30000;
-
-    const connect = () => {
-      if (!isMounted) return;
-      ws = new WebSocket(`${wsBase}/ws/notifications`);
-
-      ws.onopen = () => {
-        if (!isMounted) {
-          // Component unmounted while the handshake was in-flight (React StrictMode double-mount)
-          ws?.close();
-          return;
-        }
-        setTickerConnected(true);
-        retryCount = 0; // Reset backoff on successful connect
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data as string);
-          if (msg.type === 'notification' && msg.payload) {
-            const localNode = nodesRef.current.find(n => n.type === 'local');
-            const tagged: NotificationItem = {
-              ...(msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>),
-              nodeId: localNode?.id ?? -1,
-              nodeName: localNode?.name ?? 'Local',
-            };
-            setNotifications(prev => [tagged, ...prev].sort((a, b) => b.timestamp - a.timestamp));
-          } else if (msg.type === 'state-invalidate') {
-            // Lightweight signal that a container/stack event happened.
-            // Re-broadcast on the window bus so other hooks (dashboard data,
-            // sidebar, etc.) can refetch on the same trigger without prop
-            // drilling. Refresh stack statuses on this layer too.
-            window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: msg }));
-            if (msg.action === 'auto-update-settings-changed') {
-              fetchAutoUpdateSettings();
-            } else {
-              scheduleStateInvalidateRefresh();
-            }
-          }
-        } catch (e) {
-          console.error('[WS notifications] parse error', e);
-        }
-      };
-
-      ws.onclose = (event) => {
-        setTickerConnected(false);
-        if (!isMounted) return;
-        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s max
-        const delay = Math.min(1000 * Math.pow(2, retryCount), MAX_RETRY_DELAY_MS);
-        retryCount++;
-        console.debug(`[WS notifications] closed (code=${event.code}), reconnecting in ${delay}ms (attempt ${retryCount})`);
-        reconnectTimer = setTimeout(connect, delay);
-      };
-
-      ws.onerror = (event) => {
-        // onerror always fires before onclose - log it and let onclose handle reconnect
-        console.warn('[WS notifications] error event', event);
-      };
-    };
-
-    connect();
-
-    return () => {
-      isMounted = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      // Only close an already-open connection. If still CONNECTING, let onopen
-      // detect isMounted=false and close then - avoids the browser warning
-      // "WebSocket is closed before the connection is established".
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fetch all notifications when the nodes list changes (e.g. remote node added/removed).
-  // nodesRef ensures fetchNotifications always reads the latest nodes at call time.
-  useEffect(() => {
-    fetchNotifications();
-  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Open / close per-remote-node notification WebSocket connections as the nodes list changes.
-  // Uses remoteNotifWsRef to avoid tearing down existing connections on unrelated node updates.
-  useEffect(() => {
-    const remoteNodes = nodes.filter(n => n.type === 'remote');
-    const currentIds = new Set(remoteNotifWsRef.current.keys());
-    const newIds = new Set(remoteNodes.map(n => n.id));
-
-    // Close connections for nodes that are no longer registered as remote
-    for (const id of currentIds) {
-      if (!newIds.has(id)) {
-        remoteNotifWsRef.current.get(id)?.();
-        remoteNotifWsRef.current.delete(id);
-      }
-    }
-
-    // Open connections for newly-added remote nodes
-    for (const rn of remoteNodes) {
-      if (remoteNotifWsRef.current.has(rn.id)) continue;
-
-      let ws: WebSocket | null = null;
-      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-      let active = true;
-      let retryCount = 0;
-
-      const connect = () => {
-        if (!active) return;
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/notifications?nodeId=${rn.id}`);
-
-        ws.onopen = () => { if (!active) { ws?.close(); } else { retryCount = 0; } };
-
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data as string);
-            if (msg.type === 'notification' && msg.payload) {
-              // Read node name from ref so it stays fresh even if the node was renamed
-              const current = nodesRef.current.find(n => n.id === rn.id);
-              setNotifications(prev =>
-                [{ ...msg.payload as Omit<NotificationItem, 'nodeId' | 'nodeName'>, nodeId: rn.id, nodeName: current?.name ?? rn.name }, ...prev]
-                  .sort((a, b) => b.timestamp - a.timestamp)
-              );
-            } else if (msg.type === 'state-invalidate') {
-              window.dispatchEvent(new CustomEvent('sencho:state-invalidate', { detail: { ...msg, nodeId: rn.id } }));
-              scheduleStateInvalidateRefresh();
-            }
-          } catch (e) {
-            console.error(`[WS notifications:${rn.name}] parse error`, e);
-          }
-        };
-
-        ws.onclose = () => {
-          if (!active) return;
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
-          retryCount++;
-          reconnectTimer = setTimeout(connect, delay);
-        };
-
-        ws.onerror = (e) => console.warn(`[WS notifications:${rn.name}] error`, e);
-      };
-
-      connect();
-
-      remoteNotifWsRef.current.set(rn.id, () => {
-        active = false;
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
-      });
-    }
-  }, [nodes]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cleanup all remote notification WebSocket connections on unmount
-  useEffect(() => {
-    return () => {
-      for (const cleanup of remoteNotifWsRef.current.values()) cleanup();
-      remoteNotifWsRef.current.clear();
-    };
-  }, []);
-
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).
   // Also clears any stale editor/container state that belonged to the previous node.
   useEffect(() => {
@@ -486,207 +278,6 @@ export default function EditorLayout() {
     fetchAutoUpdateSettings();
     refreshGitSourcePending();
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchNotifications = async () => {
-    try {
-      const currentNodes = nodesRef.current;
-      const localNode = currentNodes.find(n => n.type === 'local');
-      const remoteNodes = currentNodes.filter(n => n.type === 'remote');
-
-      const [localResult, ...remoteNodeResults] = await Promise.allSettled([
-        apiFetch('/notifications', { localOnly: true }),
-        ...remoteNodes.map(n => fetchForNode('/notifications', n.id)),
-      ]);
-
-      const all: NotificationItem[] = [];
-
-      if (localResult.status === 'fulfilled' && localResult.value.ok) {
-        const data = await localResult.value.json() as Omit<NotificationItem, 'nodeId' | 'nodeName'>[];
-        data.forEach(n => all.push({ ...n, nodeId: localNode?.id ?? -1, nodeName: localNode?.name ?? 'Local' }));
-      }
-
-      for (let i = 0; i < remoteNodes.length; i++) {
-        const result = remoteNodeResults[i];
-        if (result?.status === 'fulfilled' && result.value.ok) {
-          const data = await result.value.json() as Omit<NotificationItem, 'nodeId' | 'nodeName'>[];
-          const rn = remoteNodes[i];
-          data.forEach(n => all.push({ ...n, nodeId: rn.id, nodeName: rn.name }));
-        }
-      }
-
-      all.sort((a, b) => b.timestamp - a.timestamp);
-      setNotifications(all);
-    } catch (e) {
-      console.error('[Notifications] fetch error:', e);
-    }
-  };
-
-  // Safety-net poll: reconciles the list every 60s so events missed during a
-  // WebSocket reconnect backoff still appear without a manual refresh. The ref
-  // indirection keeps the interval pinned to the latest closure even though
-  // fetchNotifications is redefined on every render.
-  const fetchNotificationsRef = useRef(fetchNotifications);
-  fetchNotificationsRef.current = fetchNotifications;
-  useEffect(() => {
-    const id = setInterval(() => { fetchNotificationsRef.current(); }, 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const markAllRead = async () => {
-    try {
-      const localNode = nodesRef.current.find(n => n.type === 'local');
-      const unreadNodeIds = [...new Set(notifications.filter(n => !n.is_read && n.nodeId != null).map(n => n.nodeId as number))];
-      await Promise.allSettled(unreadNodeIds.map(nodeId =>
-        nodeId === localNode?.id
-          ? apiFetch('/notifications/read', { method: 'POST', localOnly: true })
-          : fetchForNode('/notifications/read', nodeId, { method: 'POST' })
-      ));
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-    } catch (e: unknown) {
-      const err = e as { message?: string; error?: string };
-      toast.error(err?.message || err?.error || 'Failed to mark notifications as read');
-    }
-  };
-
-  const deleteNotification = async (notif: NotificationItem) => {
-    try {
-      const localNode = nodesRef.current.find(n => n.type === 'local');
-      if (notif.nodeId === localNode?.id) {
-        await apiFetch(`/notifications/${notif.id}`, { method: 'DELETE', localOnly: true });
-      } else if (notif.nodeId != null) {
-        await fetchForNode(`/notifications/${notif.id}`, notif.nodeId, { method: 'DELETE' });
-      }
-      setNotifications(prev => prev.filter(n => !(n.id === notif.id && n.nodeId === notif.nodeId)));
-    } catch (e: unknown) {
-      const err = e as { message?: string; error?: string };
-      toast.error(err?.message || err?.error || 'Failed to delete notification');
-    }
-  };
-
-  const clearAllNotifications = async () => {
-    try {
-      const localNode = nodesRef.current.find(n => n.type === 'local');
-      const uniqueNodeIds = [...new Set(notifications.filter(n => n.nodeId != null).map(n => n.nodeId as number))];
-      await Promise.allSettled(uniqueNodeIds.map(nodeId =>
-        nodeId === localNode?.id
-          ? apiFetch('/notifications', { method: 'DELETE', localOnly: true })
-          : fetchForNode('/notifications', nodeId, { method: 'DELETE' })
-      ));
-      setNotifications([]);
-    } catch (e: unknown) {
-      const err = e as { message?: string; error?: string };
-      toast.error(err?.message || err?.error || 'Failed to clear notifications');
-    }
-  };
-
-  useEffect(() => {
-    const wsMap: Record<string, WebSocket> = {};
-
-    (containers || []).forEach(container => {
-      if (!container?.Id) return;
-      try {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const activeNodeId = localStorage.getItem('sencho-active-node') || '';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws${activeNodeId ? `?nodeId=${activeNodeId}` : ''}`);
-        wsMap[container.Id] = ws;
-        ws.onopen = () => ws.send(JSON.stringify({
-          action: 'streamStats',
-          containerId: container.Id,
-          nodeId: activeNodeId || undefined
-        }));
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            // Skip initial empty chunks where stats fields are missing
-            if (!data.cpu_stats?.cpu_usage || !data.precpu_stats?.cpu_usage || !data.memory_stats?.usage) return;
-
-            const cpuDelta = data.cpu_stats.cpu_usage.total_usage - data.precpu_stats.cpu_usage.total_usage;
-            const systemDelta = (data.cpu_stats.system_cpu_usage || 0) - (data.precpu_stats.system_cpu_usage || 0);
-            const onlineCpus = data.cpu_stats.online_cpus || 1;
-            const cpuPercent = systemDelta > 0 ? ((cpuDelta / systemDelta) * onlineCpus * 100).toFixed(2) : '0.00';
-            const ramUsage = (data.memory_stats.usage / (1024 * 1024)).toFixed(2) + ' MB';
-
-            let currentRx = 0;
-            let currentTx = 0;
-            if (data.networks) {
-              Object.values(data.networks as Record<string, { rx_bytes?: number; tx_bytes?: number }>).forEach((net) => {
-                currentRx += net.rx_bytes || 0;
-                currentTx += net.tx_bytes || 0;
-              });
-            }
-
-            // Rate is derived from rawBytesRef which is never cleared on flush,
-            // so the delta is always accurate - no stale-closure risk.
-            const prevRaw = rawBytesRef.current[container.Id];
-            const rxRate = prevRaw ? Math.max(0, currentRx - prevRaw.lastRx) : 0;
-            const txRate = prevRaw ? Math.max(0, currentTx - prevRaw.lastTx) : 0;
-            rawBytesRef.current[container.Id] = { lastRx: currentRx, lastTx: currentTx };
-
-            const netIO = `${formatBytes(rxRate)}/s ↓ / ${formatBytes(txRate)}/s ↑`;
-
-            // Write into the buffer ref only - zero re-render cost.
-            pendingStatsRef.current[container.Id] = {
-              cpu: cpuPercent + '%',
-              ram: ramUsage,
-              net: netIO,
-              lastRx: currentRx,
-              lastTx: currentTx,
-              cpuNum: parseFloat(cpuPercent) || 0,
-              memNum: data.memory_stats.usage / (1024 * 1024),
-              netInNum: rxRate,
-              netOutNum: txRate,
-            };
-          } catch {
-            // Ignore parse errors
-          }
-        };
-      } catch {
-        // Ignore WebSocket errors
-      }
-    });
-
-    // Flush buffered stats into React state once every 1.5 s.
-    // Snapshot + clear the buffer BEFORE calling setState so the updater
-    // function remains pure (no side-effects inside it).
-    const flushInterval = setInterval(() => {
-      const pending = pendingStatsRef.current;
-      if (Object.keys(pending).length === 0) return;
-      pendingStatsRef.current = {};
-
-      setContainerStats(prev => {
-        const next = { ...prev };
-        const HISTORY_CAP = 60;
-        for (const [id, newStats] of Object.entries(pending)) {
-          const prior = prev[id]?.history ?? { cpu: [], mem: [], netIn: [], netOut: [] };
-          const history = {
-            cpu: [...prior.cpu, newStats.cpuNum].slice(-HISTORY_CAP),
-            mem: [...prior.mem, newStats.memNum].slice(-HISTORY_CAP),
-            netIn: [...prior.netIn, newStats.netInNum].slice(-HISTORY_CAP),
-            netOut: [...prior.netOut, newStats.netOutNum].slice(-HISTORY_CAP),
-          };
-          next[id] = {
-            cpu: newStats.cpu,
-            ram: newStats.ram,
-            net: newStats.net,
-            lastRx: newStats.lastRx,
-            lastTx: newStats.lastTx,
-            history,
-          };
-        }
-        return next;
-      });
-    }, 1500);
-
-    return () => {
-      clearInterval(flushInterval);
-      // Discard buffered stats for the old stack so stale entries don't
-      // briefly appear when a new stack is selected.
-      pendingStatsRef.current = {};
-      Object.values(wsMap).forEach(ws => {
-        try { ws.close(); } catch { /* ignore */ }
-      });
-    };
-  }, [containers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resolve a pending container name (from notification click) to a live
   // container id once the target stack's container list loads, then dispatch
