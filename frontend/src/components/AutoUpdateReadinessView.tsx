@@ -642,7 +642,7 @@ function AutoUpdateReadinessContent() {
 
 export default function AutoUpdateReadinessView() {
   return (
-    <PaidGate featureName="Auto-Update Readiness">
+    <PaidGate>
       <AutoUpdateReadinessContent />
     </PaidGate>
   );

@@ -6,7 +6,6 @@ import { useNodes } from '@/context/NodeContext';
 import { SETTINGS_GROUPS, SETTINGS_ITEMS, isItemVisible, isItemLocked } from './registry';
 import type { VisibilityContext, SettingsItemMeta } from './registry';
 import type { SectionId } from './types';
-import { TierLockChip } from './TierLockChip';
 import { cn } from '@/lib/utils';
 
 interface SettingsSidebarProps {
@@ -31,8 +30,12 @@ export function SettingsSidebar({ currentSection, onSectionChange, dirtyFlags, o
         isRemote,
     };
 
-    function isVisible(item: SettingsItemMeta): boolean {
-        return isItemVisible(item, visibility);
+    // An item appears in the sidebar only if its registry visibility predicate
+    // passes AND the operator has the entitlement for it. Tier-locked items
+    // are hidden entirely from operators who do not qualify so the Community
+    // surface stays uncluttered. Backend tier guards remain authoritative.
+    function isReachable(item: SettingsItemMeta): boolean {
+        return isItemVisible(item, visibility) && !isItemLocked(item, visibility);
     }
 
     return (
@@ -54,14 +57,10 @@ export function SettingsSidebar({ currentSection, onSectionChange, dirtyFlags, o
                 <nav className="pb-4">
                     {SETTINGS_GROUPS.map(group => {
                         const groupItems = SETTINGS_ITEMS.filter(
-                            item => item.group === group.id && isVisible(item),
+                            item => item.group === group.id && isReachable(item),
                         );
 
                         if (groupItems.length === 0) return null;
-
-                        const unlockedCount = groupItems.filter(
-                            item => !isItemLocked(item, visibility),
-                        ).length;
 
                         return (
                             <div key={group.id} className="mb-1 mt-3">
@@ -70,11 +69,10 @@ export function SettingsSidebar({ currentSection, onSectionChange, dirtyFlags, o
                                         {group.label}
                                     </span>
                                     <span className="font-mono text-[10px] leading-3 tabular-nums text-stat-subtitle/50">
-                                        {unlockedCount}/{groupItems.length}
+                                        {groupItems.length}
                                     </span>
                                 </div>
                                 {groupItems.map(item => {
-                                    const locked = isItemLocked(item, visibility);
                                     const isDirty = dirtyFlags?.[item.id] ?? false;
                                     const isActive = item.id === currentSection;
 
@@ -89,7 +87,6 @@ export function SettingsSidebar({ currentSection, onSectionChange, dirtyFlags, o
                                                 isActive
                                                     ? 'text-stat-value'
                                                     : 'text-stat-subtitle hover:bg-accent/40 hover:text-stat-value',
-                                                locked && 'opacity-60',
                                             )}
                                         >
                                             {isActive && (
@@ -109,7 +106,6 @@ export function SettingsSidebar({ currentSection, onSectionChange, dirtyFlags, o
                                             {isDirty && (
                                                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
                                             )}
-                                            {item.tier && locked && <TierLockChip tier={item.tier} showIcon={false} />}
                                         </button>
                                     );
                                 })}

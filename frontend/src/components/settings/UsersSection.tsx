@@ -259,7 +259,7 @@ export function UsersSection() {
     };
 
     return (
-        <PaidGate featureName="User management">
+        <PaidGate>
           <CapabilityGate capability="users" featureName="User Management">
             <div className="space-y-6">
                 {!showForm && (

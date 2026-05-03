@@ -7,8 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { copyToClipboard } from '@/lib/clipboard';
-import { PaidGate } from '@/components/PaidGate';
-import { CapabilityGate } from '@/components/CapabilityGate';
 import {
     RefreshCw, CheckCircle, XCircle, Webhook, Copy, Trash2,
     Plus, ChevronDown, ChevronRight, History,
@@ -154,20 +152,7 @@ export function WebhooksSection({ isPaid }: { isPaid: boolean }) {
         }
     };
 
-    if (!isPaid) {
-        return (
-            <div className="space-y-6">
-                <PaidGate featureName="Webhooks">
-                  <CapabilityGate capability="webhooks" featureName="Webhooks">
-                    <div className="space-y-3">
-                        <div className="h-16 rounded-lg border bg-card" />
-                        <div className="h-16 rounded-lg border bg-card" />
-                    </div>
-                  </CapabilityGate>
-                </PaidGate>
-            </div>
-        );
-    }
+    if (!isPaid) return null;
 
     return (
         <div className="flex flex-col gap-10">

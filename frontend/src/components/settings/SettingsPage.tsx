@@ -37,8 +37,6 @@ import LazyBoundary from '../LazyBoundary';
 import { SectionGate } from './SectionGate';
 import { SettingsSidebar } from './SettingsSidebar';
 import { MastheadStatsProvider, useMastheadStatsValue } from './MastheadStatsContext';
-import { TierLockChip } from './TierLockChip';
-import { cn } from '@/lib/utils';
 
 // Paid-tier sections are loaded on demand. SectionGate short-circuits to a
 // TierLockedCard for Community / wrong-variant operators before reaching the
@@ -116,9 +114,10 @@ function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProp
     // node-scoped item on a remote, or admin-only item for a non-admin), fall back to
     // the first visible item.
     const safeSection: SectionId = useMemo(() => {
+        const reachable = (i: SettingsItemMeta) => isItemVisible(i, visibility) && !isItemLocked(i, visibility);
         const direct = SETTINGS_ITEMS.find(i => i.id === currentSection);
-        if (direct && isItemVisible(direct, visibility)) return direct.id;
-        const fallback = SETTINGS_ITEMS.find(i => isItemVisible(i, visibility));
+        if (direct && reachable(direct)) return direct.id;
+        const fallback = SETTINGS_ITEMS.find(reachable);
         return fallback?.id ?? 'appearance';
     }, [currentSection, visibility]);
     useEffect(() => {
@@ -155,8 +154,13 @@ function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProp
     const activeGroup = activeItem ? getSettingsGroup(activeItem.group) : undefined;
     const nodeName = activeNode?.name ?? 'local';
 
+    // Items reachable in this session: visible AND not tier-locked. Tier-locked
+    // items are hidden entirely from operators who do not qualify so the
+    // command palette and the sidebar never surface unreachable destinations.
     const visibleItems = useMemo(
-        () => SETTINGS_ITEMS.filter(item => isItemVisible(item, visibility)),
+        () => SETTINGS_ITEMS.filter(item =>
+            isItemVisible(item, visibility) && !isItemLocked(item, visibility),
+        ),
         [visibility],
     );
 
@@ -282,7 +286,6 @@ function SettingsPageInner({ currentSection, onSectionChange }: SettingsPageProp
                                     key={item.id}
                                     item={item}
                                     glyph={group.glyph}
-                                    visibility={visibility}
                                     onSelect={() => {
                                         setCommandOpen(false);
                                         onSectionChange(item.id);
@@ -305,24 +308,20 @@ function scopeLabel(item: SettingsItemMeta): string {
 function SettingsCommandItem({
     item,
     glyph,
-    visibility,
     onSelect,
 }: {
     item: SettingsItemMeta;
     glyph: string;
-    visibility: VisibilityContext;
     onSelect: () => void;
 }) {
-    const locked = isItemLocked(item, visibility);
     const searchValue = [item.label, item.description, ...item.keywords].join(' ').toLowerCase();
     return (
         <CommandItem value={searchValue} onSelect={onSelect}>
             <span className="font-mono text-[10px] w-3 text-center text-stat-subtitle/70">{glyph}</span>
-            <div className={cn('flex flex-col gap-0.5 min-w-0 flex-1', locked && 'opacity-60')}>
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                 <span className="text-sm font-medium text-stat-value truncate">{item.label}</span>
                 <span className="text-xs text-stat-subtitle truncate">{item.description}</span>
             </div>
-            {item.tier && locked ? <TierLockChip tier={item.tier} /> : null}
         </CommandItem>
     );
 }

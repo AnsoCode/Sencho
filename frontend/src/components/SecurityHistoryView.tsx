@@ -164,23 +164,21 @@ export function SecurityHistoryView({ open, onClose }: SecurityHistoryViewProps)
           <div className="flex items-center justify-between gap-3">
             <SheetTitle className="font-display italic text-2xl">Scan history</SheetTitle>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-border"
-                onClick={compareSelected}
-                disabled={compareDisabled || !isPaid}
-                title={
-                  !isPaid
-                    ? 'Scan comparison requires Skipper or Admiral'
-                    : compareDisabled
-                      ? 'Select exactly two completed scans to compare'
-                      : 'Compare the two selected scans'
-                }
-              >
-                <GitCompare className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                Compare ({selected.length}/2)
-              </Button>
+              {isPaid && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border"
+                  onClick={compareSelected}
+                  disabled={compareDisabled}
+                  title={compareDisabled
+                    ? 'Select exactly two completed scans to compare'
+                    : 'Compare the two selected scans'}
+                >
+                  <GitCompare className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                  Compare ({selected.length}/2)
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

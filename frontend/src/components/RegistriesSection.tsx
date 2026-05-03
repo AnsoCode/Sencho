@@ -282,7 +282,7 @@ export function RegistriesSection() {
     };
 
     return (
-        <AdmiralGate featureName="Private Registry Management">
+        <AdmiralGate>
           <CapabilityGate capability="registries" featureName="Private Registries">
             <div className="space-y-6">
                 <div className="flex justify-end">

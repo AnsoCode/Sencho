@@ -141,7 +141,7 @@ export function ApiTokensSection() {
     };
 
     return (
-        <AdmiralGate featureName="API Tokens">
+        <AdmiralGate>
           <CapabilityGate capability="api-tokens" featureName="API Tokens">
             <div className="space-y-6">
                 <div className="flex justify-end">
