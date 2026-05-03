@@ -1,13 +1,6 @@
 import { useState } from 'react';
-import { FolderPlus, Loader2 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { Loader2 } from 'lucide-react';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -73,19 +66,16 @@ export function NewFolderDialog({
     if (e.key === 'Enter') void handleCreate();
   };
 
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FolderPlus className="w-4 h-4" strokeWidth={1.5} />
-            New Folder
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            Enter a name for the new folder.
-          </DialogDescription>
-        </DialogHeader>
+  const parentLabel = currentDir || stackName;
 
+  return (
+    <Modal open={open} onOpenChange={handleClose} size="sm">
+      <ModalHeader
+        kicker={`${stackName.toUpperCase()} · NEW FOLDER`}
+        title="New folder"
+        description="Enter a name for the new folder."
+      />
+      <ModalBody>
         <div className="space-y-1.5">
           <Label htmlFor="folder-name">Folder name</Label>
           <Input
@@ -104,8 +94,11 @@ export function NewFolderDialog({
             <p className="text-xs text-destructive">{validationError}</p>
           )}
         </div>
-
-        <DialogFooter>
+      </ModalBody>
+      <ModalFooter
+        hint="PARENT"
+        hintAccent={parentLabel}
+        secondary={
           <Button
             variant="outline"
             size="sm"
@@ -114,6 +107,8 @@ export function NewFolderDialog({
           >
             Cancel
           </Button>
+        }
+        primary={
           <Button
             size="sm"
             onClick={() => void handleCreate()}
@@ -124,8 +119,8 @@ export function NewFolderDialog({
             )}
             Create
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        }
+      />
+    </Modal>
   );
 }

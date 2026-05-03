@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { Modal, ModalDestructiveHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,25 +68,30 @@ export function DeleteFileConfirm({
 
   const deleteLabel = notEmpty ? 'Delete all' : 'Delete';
 
+  const titleNode = entryName ? (
+    <>
+      Delete <em className="font-display italic text-destructive">{entryName}</em>?
+    </>
+  ) : (
+    'Delete item?'
+  );
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-destructive" strokeWidth={1.5} />
-            Delete {entryName ? `"${entryName}"` : 'item'}?
-          </DialogTitle>
-          <DialogDescription>
-            {notEmpty ? (
-              <span className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.5} />
-                This folder is not empty. Delete everything inside?
-              </span>
-            ) : (
-              'This action cannot be undone.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal open={open} onOpenChange={handleClose} size="sm">
+      <ModalDestructiveHeader
+        kicker={`${stackName.toUpperCase()} · DELETE · IRREVERSIBLE`}
+        title={titleNode}
+        description={`Confirm deletion of ${entryName || 'item'} from ${stackName}.`}
+      />
+      <ModalBody>
+        {notEmpty ? (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.5} />
+            <span>This folder is not empty. Delete everything inside?</span>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
+        )}
 
         {isProtected && (
           <div className="space-y-2">
@@ -116,8 +114,10 @@ export function DeleteFileConfirm({
             </div>
           </div>
         )}
-
-        <DialogFooter>
+      </ModalBody>
+      <ModalFooter
+        hint={isProtected ? 'PROTECTED FILE' : notEmpty ? 'NON-EMPTY FOLDER' : undefined}
+        secondary={
           <Button
             variant="outline"
             size="sm"
@@ -126,10 +126,12 @@ export function DeleteFileConfirm({
           >
             Cancel
           </Button>
+        }
+        primary={
           <Button
+            variant="destructive"
             size="sm"
             data-testid="delete-confirm-btn"
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={handleDelete}
             disabled={deleting || !protectedOk}
           >
@@ -138,8 +140,8 @@ export function DeleteFileConfirm({
             )}
             {deleteLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        }
+      />
+    </Modal>
   );
 }
