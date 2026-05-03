@@ -1,0 +1,111 @@
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useNotifications } from './useNotifications';
+import type { Node } from '@/context/NodeContext';
+import type { NotificationItem } from '../../dashboard/types';
+
+vi.mock('@/lib/api', () => ({
+  apiFetch: vi.fn(),
+  fetchForNode: vi.fn(),
+}));
+vi.mock('@/components/ui/toast-store', () => ({ toast: { error: vi.fn() } }));
+
+import { apiFetch } from '@/lib/api';
+
+const localNode: Node = { id: 1, name: 'Local', type: 'local', api_url: '', api_token: '', compose_dir: '', is_default: true, status: 'online', created_at: 0 };
+
+const makeNotif = (overrides: Partial<NotificationItem> = {}): NotificationItem => ({
+  id: 1, level: 'info', message: 'test', timestamp: 1000, is_read: 0, ...overrides,
+});
+
+class MockWS {
+  static instances: MockWS[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  onclose: ((e: { code: number }) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  readyState = 1; // OPEN
+  send = vi.fn();
+  close = vi.fn();
+  constructor(_url: string) { MockWS.instances.push(this); }
+  static reset() { MockWS.instances = []; }
+}
+
+beforeEach(() => {
+  MockWS.reset();
+  vi.stubGlobal('WebSocket', MockWS);
+  (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+describe('useNotifications', () => {
+  it('starts with empty notifications and disconnected state', () => {
+    const { result } = renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    expect(result.current.notifications).toEqual([]);
+    expect(result.current.tickerConnected).toBe(false);
+  });
+
+  it('opens a local notification WebSocket on mount', () => {
+    renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    expect(MockWS.instances.length).toBeGreaterThanOrEqual(1);
+    expect(MockWS.instances[0]).toBeDefined();
+  });
+
+  it('sets tickerConnected true when local WS opens', () => {
+    const { result } = renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    act(() => { MockWS.instances[0]?.onopen?.(); });
+    expect(result.current.tickerConnected).toBe(true);
+  });
+
+  it('adds notification when local WS receives notification message', () => {
+    const { result } = renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    act(() => { MockWS.instances[0]?.onopen?.(); });
+    act(() => {
+      MockWS.instances[0]?.onmessage?.({
+        data: JSON.stringify({ type: 'notification', payload: makeNotif({ id: 42, message: 'hello' }) }),
+      });
+    });
+    expect(result.current.notifications).toHaveLength(1);
+    expect(result.current.notifications[0].message).toBe('hello');
+  });
+
+  it('clearAllNotifications empties the local state', async () => {
+    (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    const { result } = renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    act(() => { MockWS.instances[0]?.onopen?.(); });
+    act(() => {
+      MockWS.instances[0]?.onmessage?.({
+        data: JSON.stringify({ type: 'notification', payload: makeNotif({ id: 1 }) }),
+      });
+    });
+    expect(result.current.notifications).toHaveLength(1);
+    await act(async () => { await result.current.clearAllNotifications(); });
+    expect(result.current.notifications).toHaveLength(0);
+  });
+
+  it('deleteNotification removes the matching item', async () => {
+    (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    const { result } = renderHook(() =>
+      useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
+    );
+    act(() => { MockWS.instances[0]?.onopen?.(); });
+    const notif = makeNotif({ id: 5, nodeId: localNode.id });
+    act(() => {
+      MockWS.instances[0]?.onmessage?.({
+        data: JSON.stringify({ type: 'notification', payload: notif }),
+      });
+    });
+    await act(async () => { await result.current.deleteNotification({ ...notif, nodeId: localNode.id }); });
+    expect(result.current.notifications).toHaveLength(0);
+  });
+});
