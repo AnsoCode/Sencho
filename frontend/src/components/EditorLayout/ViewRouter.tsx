@@ -1,0 +1,205 @@
+import { Suspense, lazy, type ReactNode } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AdmiralGate } from '../AdmiralGate';
+import { CapabilityGate } from '../CapabilityGate';
+import LazyBoundary from '../LazyBoundary';
+import { SettingsPage } from '../settings/SettingsPage';
+import type { SectionId } from '../settings/types';
+import { AppStoreView } from '../AppStoreView';
+import ResourcesView from '../ResourcesView';
+import HomeDashboard from '../HomeDashboard';
+import type { NotificationItem } from '../dashboard/types';
+import type { ScheduleTaskPrefill } from '../ScheduledOperationsView';
+
+// Paid-tier views and the security-history overlay are loaded on demand.
+// Their internal PaidGate / AdmiralGate / CapabilityGate wrappers render
+// the upsell or capability-missing card with blurred children rather than
+// short-circuiting, so a tier-locked or capability-missing operator
+// opening one of these tabs still triggers the chunk fetch to render the
+// blurred preview. What this lazy split closes is the much larger
+// initial-bundle leak: every Community user used to download the full
+// FleetView, AuditLogView, etc. on first page load even if they never
+// clicked those tabs. After this change, the chunks fetch only on tab
+// open.
+//
+// GlobalObservabilityView is a free-tier feature with no internal gate;
+// it is split here purely for the bundle-size win, not for IP protection.
+const HostConsole = lazy(() => import('../HostConsole'));
+const GlobalObservabilityView = lazy(() =>
+    import('../GlobalObservabilityView').then(m => ({ default: m.GlobalObservabilityView })),
+);
+const FleetView = lazy(() =>
+    import('../FleetView').then(m => ({ default: m.FleetView })),
+);
+const AuditLogView = lazy(() =>
+    import('../AuditLogView').then(m => ({ default: m.AuditLogView })),
+);
+const ScheduledOperationsView = lazy(() => import('../ScheduledOperationsView'));
+const AutoUpdateReadinessView = lazy(() => import('../AutoUpdateReadinessView'));
+
+// Sized for the main workspace area (flex-1 with p-6 padding). Visible
+// only during the brief window between an unlocked view's chunk request
+// and its first render.
+function ViewSkeleton() {
+    return (
+        <div className="flex flex-col gap-6" aria-busy="true">
+            <Skeleton className="h-10 w-1/3 rounded-md" />
+            <Skeleton className="h-96 w-full rounded-lg" />
+        </div>
+    );
+}
+
+function LazyView({ children }: { children: ReactNode }) {
+    return (
+        <LazyBoundary>
+            <Suspense fallback={<ViewSkeleton />}>
+                {children}
+            </Suspense>
+        </LazyBoundary>
+    );
+}
+
+export type ActiveView =
+    | 'dashboard'
+    | 'editor'
+    | 'host-console'
+    | 'resources'
+    | 'templates'
+    | 'global-observability'
+    | 'fleet'
+    | 'audit-log'
+    | 'scheduled-ops'
+    | 'auto-updates'
+    | 'settings';
+
+export interface ViewRouterProps {
+    activeView: ActiveView;
+    selectedFile: string | null;
+    isLoading: boolean;
+    settingsSection: SectionId;
+    onSettingsSectionChange: (section: SectionId) => void;
+    onTemplateDeploySuccess: (stackName: string) => void;
+    onHostConsoleClose: () => void;
+    onFleetNavigateToNode: (nodeId: number, stackName: string) => void;
+    filterNodeId: number | null;
+    onClearScheduledOpsFilter: () => void;
+    schedulePrefill: ScheduleTaskPrefill | null;
+    onPrefillConsumed: () => void;
+    notifications: NotificationItem[];
+    onNavigateToStack: (stackFile: string) => void;
+    onOpenSettingsSection: (section: SectionId) => void;
+    onClearNotifications: () => void;
+    // Render slot for the inline editor view. Kept as a callback so the
+    // (large) editor JSX is only allocated when activeView === 'editor',
+    // not on every parent render that lands on a different view.
+    renderEditor: () => ReactNode;
+}
+
+export function ViewRouter({
+    activeView,
+    selectedFile,
+    isLoading,
+    settingsSection,
+    onSettingsSectionChange,
+    onTemplateDeploySuccess,
+    onHostConsoleClose,
+    onFleetNavigateToNode,
+    filterNodeId,
+    onClearScheduledOpsFilter,
+    schedulePrefill,
+    onPrefillConsumed,
+    notifications,
+    onNavigateToStack,
+    onOpenSettingsSection,
+    onClearNotifications,
+    renderEditor,
+}: ViewRouterProps): ReactNode {
+    if (activeView === 'settings') {
+        return (
+            <SettingsPage
+                currentSection={settingsSection}
+                onSectionChange={onSettingsSectionChange}
+            />
+        );
+    }
+    if (activeView === 'templates') {
+        return <AppStoreView onDeploySuccess={onTemplateDeploySuccess} />;
+    }
+    if (activeView === 'resources') {
+        return <ResourcesView />;
+    }
+    if (activeView === 'host-console') {
+        return (
+            <AdmiralGate>
+                <CapabilityGate capability="host-console" featureName="Host Console">
+                    <LazyView>
+                        <HostConsole stackName={selectedFile} onClose={onHostConsoleClose} />
+                    </LazyView>
+                </CapabilityGate>
+            </AdmiralGate>
+        );
+    }
+    // Fall-through: when activeView === 'editor' but selectedFile is
+    // null or the stack is still loading, drop through to the default
+    // HomeDashboard render below. This matches the pre-extraction
+    // behavior of the conditional ternary chain in EditorLayout.tsx.
+    if (!isLoading && selectedFile && activeView === 'editor') {
+        return renderEditor();
+    }
+    if (activeView === 'global-observability') {
+        return (
+            <LazyView>
+                <GlobalObservabilityView />
+            </LazyView>
+        );
+    }
+    if (activeView === 'fleet') {
+        return (
+            <CapabilityGate capability="fleet" featureName="Fleet Management">
+                <LazyView>
+                    <FleetView onNavigateToNode={onFleetNavigateToNode} />
+                </LazyView>
+            </CapabilityGate>
+        );
+    }
+    if (activeView === 'audit-log') {
+        return (
+            <CapabilityGate capability="audit-log" featureName="Audit Log">
+                <LazyView>
+                    <AuditLogView />
+                </LazyView>
+            </CapabilityGate>
+        );
+    }
+    if (activeView === 'auto-updates') {
+        return (
+            <CapabilityGate capability="auto-updates" featureName="Auto-Update Readiness">
+                <LazyView>
+                    <AutoUpdateReadinessView />
+                </LazyView>
+            </CapabilityGate>
+        );
+    }
+    if (activeView === 'scheduled-ops') {
+        return (
+            <CapabilityGate capability="scheduled-ops" featureName="Scheduled Operations">
+                <LazyView>
+                    <ScheduledOperationsView
+                        filterNodeId={filterNodeId}
+                        onClearFilter={onClearScheduledOpsFilter}
+                        prefill={schedulePrefill}
+                        onPrefillConsumed={onPrefillConsumed}
+                    />
+                </LazyView>
+            </CapabilityGate>
+        );
+    }
+    return (
+        <HomeDashboard
+            onNavigateToStack={onNavigateToStack}
+            onOpenSettingsSection={onOpenSettingsSection}
+            notifications={notifications}
+            onClearNotifications={onClearNotifications}
+        />
+    );
+}
