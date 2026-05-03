@@ -5,22 +5,16 @@ import { toast } from '@/components/ui/toast-store';
 import { useLicense } from '@/context/LicenseContext';
 import { TierBadge } from '@/components/TierBadge';
 import {
-    Crown, CheckCircle, Check, XCircle, Clock, ExternalLink,
-    CreditCard, RefreshCw, Zap, Compass, ShipWheel, Loader2,
+    Crown, CheckCircle, XCircle, Clock, ExternalLink,
+    CreditCard, RefreshCw, Loader2,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { SettingsSection } from './SettingsSection';
 import { SettingsField } from './SettingsField';
-import { SettingsCallout } from './SettingsCallout';
 import { SettingsActions, SettingsPrimaryButton } from './SettingsActions';
 import { useMastheadStats } from './MastheadStatsContext';
 
-// Lemon Squeezy hosted checkout URLs. Admiral monthly and annual include a built-in
-// 14-day trial (email + card required on LS checkout); users receive a license key
-// by email and paste it into the activate input below.
-const SKIPPER_CHECKOUT_URL = 'https://saelix.lemonsqueezy.com/checkout/buy/f75bfb65-443a-46a0-abb1-981e0ff4b382';
-const ADMIRAL_MONTHLY_CHECKOUT_URL = 'https://saelix.lemonsqueezy.com/checkout/buy/b049b824-176a-408d-a9d3-9365c979a61f';
-const ADMIRAL_ANNUAL_CHECKOUT_URL = 'https://saelix.lemonsqueezy.com/checkout/buy/3e595568-92d3-4edd-90f1-25650248dfa9';
+const PRICING_URL = 'https://sencho.io/pricing';
 
 function getTierDisplayName(tier?: string, variant?: string | null, status?: string): string {
     if (tier === 'paid' && variant === 'admiral' && status === 'active') return 'Sencho Admiral';
@@ -59,11 +53,11 @@ export function LicenseSection() {
         }
     };
 
-    const isAdmiral = isPaid && license?.variant === 'admiral' && license?.status === 'active';
-    const showSkipperCard = !isPaid || license?.status === 'trial';
-    const showTrialCta = license?.status !== 'active' && license?.status !== 'trial';
-    const showAdmiralUpgradeCard = !isAdmiral && !showTrialCta;
-    const showUpgradeCards = showSkipperCard || showAdmiralUpgradeCard;
+    // Pricing link covers two cases: Community-tier operators evaluating
+    // a paid plan, and expired paid licensees who need a path back. Active
+    // and trial paid licensees already manage their plan through the
+    // billing portal in the Plan section above.
+    const showPricingLink = !isPaid || license?.status === 'expired';
 
     const renewsValue = useMemo(() => {
         if (!license) return null;
@@ -219,113 +213,6 @@ export function LicenseSection() {
                 ) : null}
             </SettingsSection>
 
-            {showTrialCta ? (
-                <SettingsSection title="Try Admiral free">
-                    <div className="pt-3 flex flex-col gap-3">
-                        <SettingsCallout
-                            tone="brand"
-                            icon={<ShipWheel className="h-4 w-4" strokeWidth={1.5} />}
-                            title="14 days, full Admiral"
-                            subtitle="Host Console, Scheduled Operations, LDAP / Active Directory, audit log, API tokens, and unlimited accounts. Lemon Squeezy needs a card; cancel any time before day 14."
-                        />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <SettingsPrimaryButton
-                                size="sm"
-                                onClick={() => window.open(ADMIRAL_MONTHLY_CHECKOUT_URL, '_blank')}
-                            >
-                                Start monthly trial
-                                <ExternalLink className="w-3 h-3 opacity-60" />
-                            </SettingsPrimaryButton>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => window.open(ADMIRAL_ANNUAL_CHECKOUT_URL, '_blank')}
-                            >
-                                Start annual trial
-                                <ExternalLink className="w-3 h-3 opacity-60" />
-                            </Button>
-                        </div>
-                        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle/70">
-                            ⓘ paste the license key from your email into the activate field below
-                        </p>
-                    </div>
-                </SettingsSection>
-            ) : null}
-
-            {showUpgradeCards ? (
-                <SettingsSection title="Upgrade">
-                    <div className={`pt-3 grid gap-3 ${showSkipperCard && showAdmiralUpgradeCard ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-                        {showSkipperCard ? (
-                            <UpgradeCard
-                                tone="warn"
-                                icon={<Compass className="h-4 w-4" />}
-                                title="Skipper"
-                                blurb="Professional tools for solo operators."
-                                features={[
-                                    'Fleet View with drill-down',
-                                    'Viewer accounts (1 admin + 3 viewers)',
-                                    'Webhooks & stack labels',
-                                    'Atomic deployments & backups',
-                                    'Auto-update policies',
-                                    'Google / GitHub / Okta SSO',
-                                ]}
-                                action={
-                                    <SettingsPrimaryButton
-                                        size="sm"
-                                        className="w-full"
-                                        onClick={() => window.open(SKIPPER_CHECKOUT_URL, '_blank')}
-                                    >
-                                        <Zap className="w-4 h-4" />
-                                        Get Skipper
-                                        <ExternalLink className="w-3 h-3 opacity-60" />
-                                    </SettingsPrimaryButton>
-                                }
-                            />
-                        ) : null}
-                        {showAdmiralUpgradeCard ? (
-                            <UpgradeCard
-                                tone="brand"
-                                icon={<ShipWheel className="h-4 w-4" />}
-                                title="Admiral"
-                                blurb="For teams managing shared infrastructure."
-                                features={[
-                                    ...(license?.variant === 'skipper' ? ['Everything in Skipper'] : ['Everything in Community']),
-                                    'Unlimited accounts & scoped RBAC',
-                                    ...(license?.variant !== 'skipper' ? ['Fleet View, webhooks & labels', 'Atomic deployments & backups'] : []),
-                                    'LDAP/AD, audit log & host console',
-                                    'API tokens & private registries',
-                                    'Scheduled operations',
-                                ]}
-                                action={
-                                    showSkipperCard ? (
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="w-full"
-                                            onClick={() => window.open(ADMIRAL_MONTHLY_CHECKOUT_URL, '_blank')}
-                                        >
-                                            <Zap className="w-4 h-4" />
-                                            Get Admiral
-                                            <ExternalLink className="w-3 h-3 opacity-60" />
-                                        </Button>
-                                    ) : (
-                                        <SettingsPrimaryButton
-                                            size="sm"
-                                            className="w-full"
-                                            onClick={() => window.open(ADMIRAL_MONTHLY_CHECKOUT_URL, '_blank')}
-                                        >
-                                            <Zap className="w-4 h-4" />
-                                            Get Admiral
-                                            <ExternalLink className="w-3 h-3 opacity-60" />
-                                        </SettingsPrimaryButton>
-                                    )
-                                }
-                            />
-                        ) : null}
-                    </div>
-                </SettingsSection>
-            ) : null}
-
             {license?.status !== 'active' ? (
                 <SettingsSection title="Activate">
                     <SettingsField
@@ -369,37 +256,21 @@ export function LicenseSection() {
                     </SettingsField>
                 </SettingsSection>
             ) : null}
-        </div>
-    );
-}
 
-interface UpgradeCardProps {
-    tone: 'warn' | 'brand';
-    icon: React.ReactNode;
-    title: string;
-    blurb: string;
-    features: string[];
-    action: React.ReactNode;
-}
-
-function UpgradeCard({ tone, icon, title, blurb, features, action }: UpgradeCardProps) {
-    const iconClass = tone === 'warn' ? 'text-warning' : 'text-brand';
-    return (
-        <div className="border border-card-border rounded-md bg-card p-4 flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-                <span className={iconClass}>{icon}</span>
-                <span className="font-sans text-base text-stat-value">{title}</span>
-            </div>
-            <p className="text-xs text-stat-subtitle">{blurb}</p>
-            <ul className="space-y-1.5 flex-1">
-                {features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-xs text-stat-subtitle">
-                        <Check className="h-3 w-3 shrink-0 text-brand mt-0.5" />
-                        {f}
-                    </li>
-                ))}
-            </ul>
-            <div className="mt-auto">{action}</div>
+            {showPricingLink ? (
+                <SettingsSection title="Pricing">
+                    <div className="pt-[var(--density-row-y,0.75rem)]">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(PRICING_URL, '_blank')}
+                        >
+                            See pricing
+                            <ExternalLink className="w-3 h-3 opacity-60" />
+                        </Button>
+                    </div>
+                </SettingsSection>
+            ) : null}
         </div>
     );
 }
