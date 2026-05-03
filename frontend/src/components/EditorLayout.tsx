@@ -21,6 +21,7 @@ import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
 import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
 import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
 import { EditorView, type ContainerInfo, type StackAction } from './EditorLayout/EditorView';
+import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -84,19 +85,31 @@ export default function EditorLayout() {
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
   const { runWithLog } = useDeployFeedback();
-  const [stackMisconfigScanning, setStackMisconfigScanning] = useState(false);
+  const {
+    stackMisconfigScanning, setStackMisconfigScanning,
+    copiedDigest, setCopiedDigest,
+    copiedDigestTimerRef,
+    content, setContent,
+    originalContent, setOriginalContent,
+    envContent, setEnvContent,
+    originalEnvContent, setOriginalEnvContent,
+    envExists, setEnvExists,
+    envFiles, setEnvFiles,
+    selectedEnvFile, setSelectedEnvFile,
+    containers, setContainers,
+    containerStats, setContainerStats,
+    activeTab, setActiveTab,
+    logsMode, setLogsMode,
+    gitSourceOpen, setGitSourceOpen,
+    gitSourcePendingMap, setGitSourcePendingMap,
+    isFileLoading, setIsFileLoading,
+    backupInfo, setBackupInfo,
+    isEditing, setIsEditing,
+    editingCompose, setEditingCompose,
+  } = useEditorViewState();
   const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
   const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
   const [policyBypassing, setPolicyBypassing] = useState(false);
-  const [copiedDigest, setCopiedDigest] = useState<string | null>(null);
-  const copiedDigestTimerRef = useRef<number | null>(null);
-  useEffect(() => {
-    return () => {
-      if (copiedDigestTimerRef.current !== null) {
-        window.clearTimeout(copiedDigestTimerRef.current);
-      }
-    };
-  }, []);
   const { nodes, activeNode, setActiveNode } = useNodes();
   // Stable ref so notification callbacks always read the latest nodes list
   // without needing nodes in their dependency arrays (which would cause loops).
@@ -106,22 +119,6 @@ export default function EditorLayout() {
   const remoteNotifWsRef = useRef<Map<number, () => void>>(new Map());
   const [files, setFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [content, setContent] = useState<string>('');
-  const [originalContent, setOriginalContent] = useState<string>('');
-  const [envContent, setEnvContent] = useState<string>('');
-  const [originalEnvContent, setOriginalEnvContent] = useState<string>('');
-  const [envExists, setEnvExists] = useState<boolean>(false);
-  const [envFiles, setEnvFiles] = useState<string[]>([]);
-  const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
-  const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [containerStats, setContainerStats] = useState<Record<string, {
-    cpu: string;
-    ram: string;
-    net: string;
-    lastRx?: number;
-    lastTx?: number;
-    history: { cpu: number[]; mem: number[]; netIn: number[]; netOut: number[] };
-  }>>({});
   // Incoming WebSocket stats are written here first (no re-render), then flushed
   // to React state in one batched update every 1.5 s.
   const pendingStatsRef = useRef<Record<string, {
@@ -139,16 +136,6 @@ export default function EditorLayout() {
   // the delta is always computed against the most recent known value, avoiding
   // the stale-closure bug that occurs when reading containerStats directly.
   const rawBytesRef = useRef<Record<string, { lastRx: number; lastTx: number }>>({});
-  const [activeTab, setActiveTab] = useState<'compose' | 'env' | 'files'>('compose');
-  const [logsMode, setLogsMode] = useState<'structured' | 'raw'>(() => {
-    if (typeof window === 'undefined') return 'structured';
-    return (localStorage.getItem('sencho.stackView.logsMode') as 'structured' | 'raw' | null) ?? 'structured';
-  });
-  useEffect(() => {
-    try { localStorage.setItem('sencho.stackView.logsMode', logsMode); } catch { /* ignore */ }
-  }, [logsMode]);
-  const [gitSourceOpen, setGitSourceOpen] = useState(false);
-  const [gitSourcePendingMap, setGitSourcePendingMap] = useState<Record<string, boolean>>({});
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const pendingStackLoadRef = useRef<string | null>(null);
   const pendingLogsRef = useRef<{ stackName: string; containerName: string } | null>(null);
@@ -196,8 +183,6 @@ export default function EditorLayout() {
   const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
 
   const [isScanning, setIsScanning] = useState(false);
-  const [isFileLoading, setIsFileLoading] = useState(false);
-  const [backupInfo, setBackupInfo] = useState<{ exists: boolean; timestamp: number | null }>({ exists: false, timestamp: null });
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('sencho-theme') as Theme | null;
     if (saved === 'light' || saved === 'dark' || saved === 'auto') return saved;
@@ -214,7 +199,6 @@ export default function EditorLayout() {
   const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
   const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
   const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
-  const [isEditing, setIsEditing] = useState(false);
   const [diffPreview, setDiffPreview] = useState<{
     mode: 'save' | 'save-and-deploy';
     language: 'yaml' | 'ini';
@@ -223,7 +207,6 @@ export default function EditorLayout() {
     fileName: string;
   } | null>(null);
   const [diffPreviewConfirming, setDiffPreviewConfirming] = useState(false);
-  const [editingCompose, setEditingCompose] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [stackStatuses, setStackStatuses] = useState<StackStatus>({});
   const [stackPorts, setStackPorts] = useState<Record<string, number | undefined>>({});
