@@ -196,10 +196,8 @@ test.describe('File explorer - community (read-only)', () => {
     await context.unroute('/api/license');
   });
 
-  test('upgrade pill is visible in the left pane', async ({ page }) => {
-    await expect(
-      page.getByRole('button', { name: /upgrade to unlock upload/i })
-    ).toBeVisible({ timeout: 5_000 });
+  test('upload control is absent in community tier', async ({ page }) => {
+    await expect(page.getByLabel('Upload file')).toHaveCount(0, { timeout: 1_000 });
   });
 
   test('can expand config/ and click config/app.conf - Save button is absent', async ({ page }) => {
