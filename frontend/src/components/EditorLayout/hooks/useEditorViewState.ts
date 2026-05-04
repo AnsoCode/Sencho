@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ContainerInfo, ContainerStatsEntry } from '../EditorView';
+import type { ContainerInfo } from '../EditorView';
 
 export const LOGS_MODE_STORAGE_KEY = 'sencho.stackView.logsMode';
 
@@ -37,7 +37,6 @@ export function useEditorViewState() {
   const [envFiles, setEnvFiles] = useState<string[]>([]);
   const [selectedEnvFile, setSelectedEnvFile] = useState<string>('');
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
-  const [containerStats, setContainerStats] = useState<Record<string, ContainerStatsEntry>>({});
 
   const [activeTab, setActiveTab] = useState<EditorTab>('compose');
   const [logsMode, setLogsMode] = useState<LogsMode>(readLogsMode);
@@ -64,7 +63,6 @@ export function useEditorViewState() {
     envFiles, setEnvFiles,
     selectedEnvFile, setSelectedEnvFile,
     containers, setContainers,
-    containerStats, setContainerStats,
     activeTab, setActiveTab,
     logsMode, setLogsMode,
     gitSourceOpen, setGitSourceOpen,
