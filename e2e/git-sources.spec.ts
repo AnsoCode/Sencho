@@ -210,7 +210,7 @@ async function deleteCreateFromGitStack(page: Page) {
 
 async function openCreateStackDialog(page: Page) {
   await page.getByRole('button', { name: 'Create Stack' }).click();
-  await expect(page.getByRole('dialog').getByText('New stack')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('dialog', { name: 'New stack' })).toBeVisible({ timeout: 5_000 });
 }
 
 test.describe('Create stack from Git', () => {
