@@ -670,8 +670,7 @@ export default function EditorLayout() {
           try {
             if (snapshot?.mode === 'save-and-deploy') {
               await stackActions.saveFile();
-              // e.preventDefault/stopPropagation are no-ops here; no browser event is in flight
-              await stackActions.deployStack({ preventDefault() {}, stopPropagation() {} } as unknown as React.MouseEvent);
+              await stackActions.deployStack();
             } else {
               await stackActions.saveFile();
             }

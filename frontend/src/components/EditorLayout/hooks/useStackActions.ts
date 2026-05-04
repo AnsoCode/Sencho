@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import type { useEditorViewState } from './useEditorViewState';
@@ -259,6 +259,7 @@ export function useStackActions(options: UseStackActionsOptions) {
       console.error('Failed to switch env file', e);
       editorState.setEnvContent('');
       editorState.setOriginalEnvContent('');
+      toast.error('Failed to load env file');
     } finally {
       editorState.setIsFileLoading(false);
     }
@@ -401,9 +402,9 @@ export function useStackActions(options: UseStackActionsOptions) {
     }
   };
 
-  const deployStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const deployStack = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!stackListState.selectedFile || stackListState.isStackBusy(stackListState.selectedFile))
       return;
     const stackFile = stackListState.selectedFile;
@@ -508,8 +509,10 @@ export function useStackActions(options: UseStackActionsOptions) {
       );
       overlayState.setStackMisconfigScanId(data.id as number);
     } catch (error) {
-      const err = error as { message?: string; error?: string; data?: { error?: string } };
-      toast.error(err?.message || err?.error || err?.data?.error || 'Config scan failed');
+      const msg = error instanceof Error
+        ? error.message
+        : ((error as { error?: string })?.error ?? 'Config scan failed');
+      toast.error(msg);
     } finally {
       toast.dismiss(loadingId);
       editorState.setStackMisconfigScanning(false);
@@ -793,11 +796,17 @@ export function useStackActions(options: UseStackActionsOptions) {
   const getDisplayName = (stackName: string) => stackName;
 
   // Adapter wrappers: convert (id, name) signature to overlayState object style
-  const openBashModal = (containerId: string, containerName: string) =>
-    overlayState.openBashModal({ id: containerId, name: containerName });
+  const openBashModal = useCallback(
+    (containerId: string, containerName: string) =>
+      overlayState.openBashModal({ id: containerId, name: containerName }),
+    [overlayState.openBashModal],
+  );
   const closeBashModal = overlayState.closeBashModal;
-  const openLogViewer = (containerId: string, containerName: string) =>
-    overlayState.openLogViewer({ id: containerId, name: containerName });
+  const openLogViewer = useCallback(
+    (containerId: string, containerName: string) =>
+      overlayState.openLogViewer({ id: containerId, name: containerName }),
+    [overlayState.openLogViewer],
+  );
   const closeLogViewer = overlayState.closeLogViewer;
 
   return {
