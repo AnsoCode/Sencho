@@ -206,7 +206,6 @@ export default function EditorLayout() {
   });
 
   const containerStats = useContainerStats(containers);
-
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
   const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
