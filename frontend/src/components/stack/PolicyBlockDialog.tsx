@@ -1,14 +1,9 @@
-import { ShieldAlert } from 'lucide-react';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+  Modal,
+  ModalDestructiveHeader,
+  ModalBody,
+  ModalFooter,
+} from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { SeverityChip } from '@/components/VulnerabilityScanSheet';
 import type { VulnSeverity } from '@/types/security';
@@ -58,21 +53,19 @@ export function PolicyBlockDialog({
   const violations = payload?.violations ?? [];
 
   return (
-    <AlertDialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <AlertDialogContent className="sm:max-w-xl">
-        <AlertDialogHeader>
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle flex items-center gap-2">
-            <ShieldAlert className="h-3.5 w-3.5 text-destructive" aria-hidden />
-            Policy block · {stackName}
-          </div>
-          <AlertDialogTitle>Deploy blocked by security policy</AlertDialogTitle>
-          <AlertDialogDescription>
-            Policy <span className="font-medium text-foreground">{policyName}</span> blocks deploys
-            when any image meets or exceeds <span className="font-medium text-foreground">{maxSeverity}</span>.
-            The following {violations.length === 1 ? 'image' : `${violations.length} images`} triggered the block.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
+    <Modal open={open} onOpenChange={(next) => { if (!next) onClose(); }} size="xl">
+      <ModalDestructiveHeader
+        kicker={`${stackName.toUpperCase()} · SCAN POLICY · BLOCKED`}
+        title="Deploy blocked by security policy"
+        description={`Policy ${policyName} blocks deploys when any image meets or exceeds ${maxSeverity}.`}
+      />
+      <ModalBody>
+        <p className="text-sm text-muted-foreground">
+          Policy <span className="font-medium text-foreground">{policyName}</span> blocks deploys
+          when any image meets or exceeds{' '}
+          <span className="font-medium text-foreground">{maxSeverity}</span>.{' '}
+          The following {violations.length === 1 ? 'image' : `${violations.length} images`} triggered the block.
+        </p>
         <div className="border border-glass-border bg-card/60 shadow-card-bevel divide-y divide-glass-border">
           {violations.length === 0 ? (
             <div className="px-4 py-3 text-sm text-muted-foreground">
@@ -92,12 +85,18 @@ export function PolicyBlockDialog({
             ))
           )}
         </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>Close</AlertDialogCancel>
-          {canBypass ? (
+      </ModalBody>
+      <ModalFooter
+        secondary={
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        }
+        primary={
+          canBypass ? (
             <Button
               variant="destructive"
+              size="sm"
               disabled={bypassing}
               onClick={(e) => {
                 e.preventDefault();
@@ -107,10 +106,12 @@ export function PolicyBlockDialog({
               {bypassing ? 'Deploying…' : 'Deploy anyway'}
             </Button>
           ) : (
-            <AlertDialogAction disabled>Admin required to bypass</AlertDialogAction>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            <Button variant="outline" size="sm" disabled>
+              Admin required to bypass
+            </Button>
+          )
+        }
+      />
+    </Modal>
   );
 }

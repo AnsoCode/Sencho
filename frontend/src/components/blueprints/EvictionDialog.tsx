@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, Camera } from 'lucide-react';
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from '@/components/ui/dialog';
+import { Modal, ModalDestructiveHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -27,32 +25,35 @@ export function EvictionDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                    <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-[0.2em]">
-                        <span className="inline-block w-1 h-3 bg-brand" />
-                        Withdraw deployment
-                    </div>
-                    <DialogTitle className="font-serif italic text-xl tracking-[-0.01em]">
-                        Stop {blueprintName} on {nodeName}
-                    </DialogTitle>
-                    <DialogDescription>
-                        {isStateful
-                            ? 'This blueprint is stateful. Choose how to handle its data on this node.'
-                            : 'Sencho will run docker compose down and remove the blueprint directory on this node.'}
-                    </DialogDescription>
-                </DialogHeader>
-
+        <Modal
+            open={open}
+            onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}
+            size="lg"
+        >
+            <ModalDestructiveHeader
+                kicker={`${blueprintName.toUpperCase()} · EVICT`}
+                title={`Stop ${blueprintName} on ${nodeName}`}
+                description={
+                    isStateful
+                        ? 'This blueprint is stateful. Choose how to handle its data on this node.'
+                        : 'Sencho will run docker compose down and remove the blueprint directory on this node.'
+                }
+            />
+            <ModalBody>
+                <p className="text-sm text-muted-foreground">
+                    {isStateful
+                        ? 'This blueprint is stateful. Choose how to handle its data on this node.'
+                        : 'Sencho will run docker compose down and remove the blueprint directory on this node.'}
+                </p>
                 {isStateful && (
                     <div className="space-y-3">
                         <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 flex gap-2">
                             <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" strokeWidth={1.5} />
                             <p className="text-xs text-stat-subtitle leading-relaxed">
-                                Named volumes or bind mounts were detected. Evicting destroys the named volumes managed by this stack on <span className="font-mono">{nodeName}</span>. Bind mounts on the host filesystem are left in place.
+                                Named volumes or bind mounts were detected. Evicting destroys the named volumes managed by this stack on{' '}
+                                <span className="font-mono">{nodeName}</span>. Bind mounts on the host filesystem are left in place.
                             </p>
                         </div>
-
                         <button
                             type="button"
                             onClick={() => onConfirm('snapshot_then_evict')}
@@ -67,7 +68,6 @@ export function EvictionDialog({
                                 Captures the compose definition into the existing fleet-snapshot store, then runs the eviction. Note: volume bytes are not shipped; that ships in a future Volume Migration feature.
                             </p>
                         </button>
-
                         <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                             <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-destructive">
                                 Evict and destroy data
@@ -85,14 +85,18 @@ export function EvictionDialog({
                         </div>
                     </div>
                 )}
-
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            </ModalBody>
+            <ModalFooter
+                secondary={
+                    <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={busy}>
                         Cancel
                     </Button>
-                    {isStateful ? (
+                }
+                primary={
+                    isStateful ? (
                         <Button
                             variant="outline"
+                            size="sm"
                             className="text-destructive border-destructive/40 hover:bg-destructive/10"
                             disabled={destructiveDisabled || busy}
                             onClick={() => onConfirm('evict_and_destroy')}
@@ -100,12 +104,16 @@ export function EvictionDialog({
                             Evict and destroy data
                         </Button>
                     ) : (
-                        <Button onClick={() => onConfirm('standard')} disabled={busy}>
+                        <Button
+                            size="sm"
+                            onClick={() => onConfirm('standard')}
+                            disabled={busy}
+                        >
                             Withdraw deployment
                         </Button>
-                    )}
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    )
+                }
+            />
+        </Modal>
     );
 }
