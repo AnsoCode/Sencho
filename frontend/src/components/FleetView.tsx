@@ -9,7 +9,7 @@ import { FleetMasthead } from './fleet/FleetMasthead';
 import { ReconnectingOverlay } from './FleetView/ReconnectingOverlay';
 import { NodeUpdatesSheet } from './FleetView/NodeUpdatesSheet';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
-import { isCritical, getNodeCpu, getNodeMem, getNodeDisk } from './FleetView/NodeCard';
+import { isCritical, getNodeCpu, getNodeMem, getNodeDisk } from './FleetView/nodeUtils';
 import { OverviewTab } from './FleetView/OverviewTab';
 import type { FleetNode, NodeUpdateStatus, ViewMode, FleetPreferences, FleetPaletteEntry } from './FleetView/types';
 import { Button } from '@/components/ui/button';

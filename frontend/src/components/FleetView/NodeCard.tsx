@@ -15,6 +15,7 @@ import { formatVersion } from '@/lib/version';
 import { UpdateStatusBadge } from './UpdateStatusBadge';
 import type { Label as StackLabel } from '../label-types';
 import type { FleetNode, NodeUpdateStatus } from './types';
+import { getNodeCpu, getNodeMem, getNodeDisk, isCritical } from './nodeUtils';
 
 // --- Types ---
 
@@ -35,24 +36,6 @@ export interface NodeCardProps {
     updatingNodeId?: number | null;
     onRetryUpdate?: (nodeId: number) => void;
     onDismissUpdate?: (nodeId: number) => void;
-}
-
-// --- Utilities ---
-
-export function getNodeCpu(node: FleetNode): number {
-    return node.systemStats ? parseFloat(node.systemStats.cpu.usage) : 0;
-}
-
-export function getNodeMem(node: FleetNode): number {
-    return node.systemStats ? parseFloat(node.systemStats.memory.usagePercent) : 0;
-}
-
-export function getNodeDisk(node: FleetNode): number {
-    return node.systemStats?.disk ? parseFloat(node.systemStats.disk.usagePercent) : 0;
-}
-
-export function isCritical(node: FleetNode): boolean {
-    return getNodeCpu(node) > 90 || getNodeDisk(node) > 90;
 }
 
 function containerName(c: StackContainer): string {
