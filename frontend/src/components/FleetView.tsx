@@ -3,27 +3,23 @@ import { useExperimental } from '@/hooks/useExperimental';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
     Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
-    Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2, Check,
-    CircleCheck, CircleAlert, Globe, Monitor, X, LayoutGrid, Network, SlidersHorizontal,
+    Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2,
+    LayoutGrid, Network, SlidersHorizontal,
     Send, KeyRound, ArrowLeftRight,
 } from 'lucide-react';
 import { FleetMasthead } from './fleet/FleetMasthead';
 import { FleetTopology } from './fleet/FleetTopology';
 import { ReconnectingOverlay } from './FleetView/ReconnectingOverlay';
+import { NodeUpdatesModal } from './FleetView/NodeUpdatesModal';
+import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
+import { UpdateStatusBadge } from './FleetView/UpdateStatusBadge';
+import type { NodeUpdateStatus } from './FleetView/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
 import { apiFetch, fetchForNode } from '@/lib/api';
@@ -37,6 +33,8 @@ import { DeploymentsTab } from './blueprints/DeploymentsTab';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
+import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
+import { formatVersion } from '@/lib/version';
 
 interface FleetPaletteEntry {
     key: string;
@@ -49,9 +47,6 @@ function labelPaletteKey(name: string, color: LabelColor): string {
 }
 
 const FILTER_SECTION_LABEL_CLASS = 'text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle';
-import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
-import { formatVersion } from '@/lib/version';
-import { CursorProvider, Cursor, CursorFollow, CursorContainer } from '@/components/animate-ui/primitives/animate/cursor';
 
 // --- Types ---
 
@@ -85,17 +80,6 @@ interface StackContainer {
     Image?: string;
     State?: string;
     Status?: string;
-}
-
-interface NodeUpdateStatus {
-    nodeId: number;
-    name: string;
-    type: 'local' | 'remote';
-    version: string | null;
-    latestVersion: string | null;
-    updateAvailable: boolean;
-    updateStatus: 'updating' | 'completed' | 'timeout' | 'failed' | null;
-    error?: string | null;
 }
 
 type SortField = 'name' | 'cpu' | 'memory' | 'containers' | 'status';
@@ -293,65 +277,6 @@ function StackSection({ stackName, nodeId, onNavigate, labelMap }: {
             )}
         </div>
     );
-}
-
-function UpdateStatusBadge({ status, error, onRetry, onDismiss }: {
-    status: NodeUpdateStatus['updateStatus'];
-    error?: string | null;
-    onRetry?: () => void;
-    onDismiss?: () => void;
-}) {
-    if (status === 'updating') return (
-        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-brand/15 text-brand border-brand/30 shrink-0">
-            <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" /> Updating
-        </Badge>
-    );
-    if (status === 'completed') return (
-        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-success-muted text-success border-success/30 shrink-0">
-            <Check className="w-2.5 h-2.5 mr-0.5" /> Updated
-        </Badge>
-    );
-    if (status === 'timeout' || status === 'failed') {
-        const label = status === 'timeout' ? 'Timed out' : 'Failed';
-        return (
-            <CursorProvider>
-                <CursorContainer className="flex items-center gap-1">
-                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{label}</Badge>
-                    {onRetry && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onRetry(); }}
-                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                            title="Retry update"
-                        >
-                            <RotateCcw className="w-3 h-3" strokeWidth={1.5} />
-                        </button>
-                    )}
-                    {onDismiss && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-                            className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                            title="Dismiss"
-                        >
-                            <X className="w-3 h-3" strokeWidth={1.5} />
-                        </button>
-                    )}
-                    {error && (
-                        <>
-                            <Cursor>
-                                <div className="h-2 w-2 rounded-full bg-destructive/60" />
-                            </Cursor>
-                            <CursorFollow side="bottom" sideOffset={8} align="end" alignOffset={0}>
-                                <div className="bg-popover/95 backdrop-blur-[10px] backdrop-saturate-[1.15] border border-card-border shadow-md rounded-lg px-3 py-2 max-w-xs">
-                                    <p className="font-mono tabular-nums text-xs text-stat-subtitle">{error}</p>
-                                </div>
-                            </CursorFollow>
-                        </>
-                    )}
-                </CursorContainer>
-            </CursorProvider>
-        );
-    }
-    return null;
 }
 
 interface NodeCardProps {
@@ -612,8 +537,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [localUpdateConfirm, setLocalUpdateConfirm] = useState<number | null>(null);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
     const [checkingUpdates, setCheckingUpdates] = useState(false);
-    const [recheckingUpdates, setRecheckingUpdates] = useState(false);
-    const [modalSearch, setModalSearch] = useState('');
     const updateStatusesRef = useRef(updateStatuses);
     updateStatusesRef.current = updateStatuses;
 
@@ -841,12 +764,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
 
     const totalMemUsed = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.used ?? 0), 0);
     const totalMemTotal = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.total ?? 0), 0);
-
-
-    const updatableRemoteCount = useMemo(
-        () => updateStatuses.filter(s => s.updateAvailable && !s.updateStatus && s.type === 'remote').length,
-        [updateStatuses]
-    );
 
     const updateStatusMap = useMemo(
         () => new Map(updateStatuses.map(s => [s.nodeId, s])),
@@ -1339,218 +1256,25 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             {reconnecting && <ReconnectingOverlay preUpdateStartedAt={preUpdateStartedAt} />}
 
             {/* Node Updates modal */}
-            <Dialog open={showUpdateModal} onOpenChange={(open) => { setShowUpdateModal(open); if (!open) setModalSearch(''); }}>
-                <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle>Node Updates</DialogTitle>
-                        <DialogDescription className="sr-only">Check and apply updates across your fleet nodes.</DialogDescription>
-                    </DialogHeader>
-
-                    {checkingUpdates ? (
-                        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Checking for updates...
-                        </div>
-                    ) : updateStatuses.length === 0 ? (
-                        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-                            No nodes found.
-                        </div>
-                    ) : (() => {
-                        const upToDate = updateStatuses.filter(s => !s.updateAvailable && !s.updateStatus).length;
-                        const available = updateStatuses.filter(s => s.updateAvailable && !s.updateStatus).length;
-                        const updating = updateStatuses.filter(s => s.updateStatus === 'updating').length;
-                        const failed = updateStatuses.filter(s => s.updateStatus === 'failed' || s.updateStatus === 'timeout').length;
-                        const q = modalSearch.toLowerCase();
-                        const filtered = q ? updateStatuses.filter(s => s.name.toLowerCase().includes(q) || s.type.includes(q)) : updateStatuses;
-                        const gatewayLabel = formatVersion(updateStatuses[0]?.latestVersion);
-
-                        return (
-                            <>
-                                {/* Summary stats */}
-                                <div className="grid grid-cols-4 gap-2">
-                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
-                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{upToDate}</div>
-                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
-                                            <CircleCheck className="w-3 h-3 text-success" strokeWidth={1.5} /> Up to date
-                                        </div>
-                                    </div>
-                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
-                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{available}</div>
-                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
-                                            <CircleAlert className="w-3 h-3 text-warning" strokeWidth={1.5} /> Available
-                                        </div>
-                                    </div>
-                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
-                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{updating}</div>
-                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
-                                            <Loader2 className="w-3 h-3 text-brand" strokeWidth={1.5} /> Updating
-                                        </div>
-                                    </div>
-                                    <div className="rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2 text-center">
-                                        <div className="text-lg font-medium tabular-nums tracking-tight text-stat-value">{failed}</div>
-                                        <div className="text-[10px] text-stat-subtitle flex items-center justify-center gap-1">
-                                            <AlertTriangle className="w-3 h-3 text-destructive/70" strokeWidth={1.5} /> Failed
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Search + gateway version */}
-                                <div className="flex items-center gap-2">
-                                    <div className="relative flex-1">
-                                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Filter nodes..."
-                                            value={modalSearch}
-                                            onChange={e => setModalSearch(e.target.value)}
-                                            className="h-8 pl-8 text-xs"
-                                        />
-                                    </div>
-                                    {gatewayLabel && (
-                                        <div className="text-[11px] text-muted-foreground shrink-0">
-                                            Latest: <span className="font-mono tabular-nums text-foreground">{gatewayLabel}</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Table header */}
-                                <div className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 px-3 text-[10px] leading-3 font-mono text-stat-subtitle uppercase tracking-[0.18em]">
-                                    <span>Node</span>
-                                    <span>Type</span>
-                                    <span>Current</span>
-                                    <span>Latest</span>
-                                    <span className="text-right">Status</span>
-                                </div>
-
-                                {/* Node list */}
-                                <ScrollArea className="flex-1 min-h-0 max-h-[40vh] -mx-1 px-1">
-                                  <div className="space-y-1">
-                                    {filtered.map(s => (
-                                        <div key={s.nodeId} className="grid grid-cols-[1fr_80px_100px_100px_120px] gap-2 items-center rounded-lg border border-card-border border-t-card-border-top bg-card shadow-card-bevel px-3 py-2">
-                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                <div className={`flex items-center justify-center w-6 h-6 rounded-md shrink-0 ${s.updateAvailable && !s.updateStatus ? 'bg-warning/10' : 'bg-muted'}`}>
-                                                    {s.type === 'local'
-                                                        ? <Monitor className={`w-3 h-3 ${s.updateAvailable && !s.updateStatus ? 'text-warning' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-                                                        : <Globe className={`w-3 h-3 ${s.updateAvailable && !s.updateStatus ? 'text-warning' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-                                                    }
-                                                </div>
-                                                <span className="text-sm font-medium truncate">{s.name}</span>
-                                            </div>
-
-                                            {/* Type */}
-                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 w-fit">
-                                                {s.type}
-                                            </Badge>
-
-                                            {/* Current version */}
-                                            <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                                                {formatVersion(s.version) ?? <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
-                                            </span>
-
-                                            {/* Latest version */}
-                                            <span className="text-xs font-mono tabular-nums">
-                                                {formatVersion(s.latestVersion) ?? <span className="text-muted-foreground/50 italic text-[10px]">unknown</span>}
-                                            </span>
-
-                                            {/* Status / Action */}
-                                            <div className="flex justify-end">
-                                                {s.updateStatus && (
-                                                    <UpdateStatusBadge
-                                                        status={s.updateStatus}
-                                                        error={s.error}
-                                                        onRetry={() => retryNodeUpdate(s.nodeId)}
-                                                        onDismiss={() => dismissNodeUpdate(s.nodeId)}
-                                                    />
-                                                )}
-                                                {!s.updateStatus && !s.updateAvailable && (
-                                                    <Badge className="text-[10px] px-1.5 py-0 h-5 bg-success-muted text-success border-success/30">
-                                                        <Check className="w-2.5 h-2.5 mr-0.5" /> Up to date
-                                                    </Badge>
-                                                )}
-                                                {s.updateAvailable && !s.updateStatus && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-6 text-[11px] px-2.5"
-                                                        onClick={() => triggerNodeUpdate(s.nodeId)}
-                                                        disabled={updatingNodeId === s.nodeId}
-                                                    >
-                                                        {updatingNodeId === s.nodeId ? (
-                                                            <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Updating</>
-                                                        ) : (
-                                                            <><Download className="w-3 h-3 mr-1" strokeWidth={1.5} />Update</>
-                                                        )}
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {filtered.length === 0 && (
-                                        <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-                                            No nodes match &ldquo;{modalSearch}&rdquo;
-                                        </div>
-                                    )}
-                                  </div>
-                                </ScrollArea>
-
-                                {/* Footer */}
-                                <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 text-xs text-muted-foreground"
-                                        disabled={recheckingUpdates}
-                                        onClick={async () => {
-                                            setRecheckingUpdates(true);
-                                            try {
-                                                await apiFetch('/fleet/update-status?recheck=true', { method: 'DELETE', localOnly: true });
-                                                await fetchUpdateStatus();
-                                            } catch (err) {
-                                                console.warn('[Fleet] Recheck failed:', err);
-                                            } finally {
-                                                setRecheckingUpdates(false);
-                                            }
-                                        }}
-                                    >
-                                        <RefreshCw className={`w-3 h-3 mr-1.5 ${recheckingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-                                        Recheck
-                                    </Button>
-                                    {updatableRemoteCount > 0 && (
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={triggerUpdateAll}
-                                            className="h-7 gap-1.5"
-                                        >
-                                            <Download className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                            Update All ({updatableRemoteCount})
-                                        </Button>
-                                    )}
-                                </div>
-                            </>
-                        );
-                    })()}
-                </DialogContent>
-            </Dialog>
+            <NodeUpdatesModal
+                open={showUpdateModal}
+                onOpenChange={setShowUpdateModal}
+                checkingUpdates={checkingUpdates}
+                updateStatuses={updateStatuses}
+                updatingNodeId={updatingNodeId}
+                fetchUpdateStatus={fetchUpdateStatus}
+                triggerNodeUpdate={triggerNodeUpdate}
+                retryNodeUpdate={retryNodeUpdate}
+                dismissNodeUpdate={dismissNodeUpdate}
+                triggerUpdateAll={triggerUpdateAll}
+            />
 
             {/* Confirm dialog for local node update */}
-            <AlertDialog open={localUpdateConfirm !== null} onOpenChange={(open) => { if (!open) setLocalUpdateConfirm(null); }}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Update local node?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will pull the latest Sencho image and restart the server. The dashboard will be
-                            briefly disconnected and will automatically reconnect when the update completes.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmLocalUpdate}>
-                            <Download className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-                            Update & Restart
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            <LocalUpdateConfirmDialog
+                open={localUpdateConfirm !== null}
+                onOpenChange={(open) => { if (!open) setLocalUpdateConfirm(null); }}
+                onConfirm={confirmLocalUpdate}
+            />
         </div>
     );
 }
