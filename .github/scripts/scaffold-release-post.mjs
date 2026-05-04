@@ -8,7 +8,7 @@
 // workflow commits it directly to website main. No PR is created or required.
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -387,6 +387,7 @@ function main() {
       console.log(newMeta)
     }
   } else {
+    mkdirSync(dirname(postPath), { recursive: true })
     writeFileSync(postPath, post, 'utf8')
     writeFileSync(indexPath, newIndex, 'utf8')
     if (newMeta) writeFileSync(metaPath, newMeta, 'utf8')
