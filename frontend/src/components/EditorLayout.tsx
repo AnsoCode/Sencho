@@ -89,7 +89,6 @@ export default function EditorLayout() {
   } = stackListState;
 
   const { nodes, activeNode, setActiveNode } = useNodes();
-  const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
 
   const overlayState = useOverlayState();
   const {
@@ -172,21 +171,6 @@ export default function EditorLayout() {
 
   const { theme, setTheme, isDarkMode } = useTheme();
 
-  // Force Monaco to re-measure its container after the tab switch DOM settles.
-  // Monaco's internal child is position:static with an explicit pixel height that
-  // creates a circular CSS dependency (Monaco drives card height -> grid height -> Monaco).
-  // Fix: reset Monaco to 0x0 first (breaks the cycle), then trigger a forced synchronous
-  // reflow so the container has its CSS-correct size before Monaco re-measures.
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      const editor = monacoEditorRef.current;
-      if (!editor) return;
-      editor.layout({ width: 0, height: 0 }); // collapse -> breaks CSS circular dependency
-      editor.layout();                          // forced reflow -> measures correct container size
-    });
-    return () => cancelAnimationFrame(id);
-  }, [activeTab]);
-
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).
   // Also clears any stale editor/container state that belonged to the previous node.
   useEffect(() => {
@@ -227,18 +211,6 @@ export default function EditorLayout() {
       }));
     }
   }, [containers, selectedFile]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Listen for topology click-to-logs events (ref avoids stale closure)
-  const openLogViewerRef = useRef(stackActions.openLogViewer);
-  openLogViewerRef.current = stackActions.openLogViewer;
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { containerId, containerName } = (e as CustomEvent<SenchoOpenLogsDetail>).detail;
-      openLogViewerRef.current(containerId, containerName);
-    };
-    window.addEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
-    return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
-  }, []);
 
   const createStackSlot = can('stack:create') ? (
     <>
@@ -410,7 +382,6 @@ export default function EditorLayout() {
                 isPaid={isPaid}
                 trivy={trivy}
                 activeNode={activeNode}
-                monacoEditorRef={monacoEditorRef}
                 copiedDigestTimerRef={copiedDigestTimerRef}
                 deployStack={stackActions.deployStack}
                 restartStack={stackActions.restartStack}

@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
+import type { SenchoOpenLogsDetail } from '@/lib/events';
 import type { PolicyBlockPayload } from '../../stack/PolicyBlockDialog';
 import type { Node } from '@/context/NodeContext';
 
@@ -51,6 +53,18 @@ export function useOverlayState() {
     setLogViewerOpen(false);
     setLogContainer(null);
   }, []);
+
+  // Listen for topology click-to-logs events and open the log viewer.
+  // openLogViewer is stable (useCallback with empty deps), so this effect
+  // mounts/unmounts once and never re-registers.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { containerId, containerName } = (e as CustomEvent<SenchoOpenLogsDetail>).detail;
+      openLogViewer({ id: containerId, name: containerName });
+    };
+    window.addEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
+    return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
+  }, [openLogViewer]); // openLogViewer is stable (useCallback with empty deps)
 
   const [alertSheetOpen, setAlertSheetOpen] = useState(false);
   const [alertSheetStack, setAlertSheetStack] = useState('');
