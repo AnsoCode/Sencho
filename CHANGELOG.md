@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.69.1](https://github.com/Studio-Saelix/sencho/compare/v0.69.0...v0.69.1) (2026-05-04)
+
+
+### Fixed
+
+* **frontend:** remove unused MockWS constructor param ([#904](https://github.com/Studio-Saelix/sencho/issues/904)) ([34fcb25](https://github.com/Studio-Saelix/sencho/commit/34fcb2591f94d8d94f25e143e0e18559d9a9df02))
+
 ## [0.69.0](https://github.com/Studio-Saelix/sencho/compare/v0.68.0...v0.69.0) (2026-05-03)
 
 
