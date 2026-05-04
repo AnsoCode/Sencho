@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, useRef, useEffect } from 'react';
 import { Editor } from '@/lib/monacoLoader';
 import {
     RotateCw,
@@ -192,9 +192,6 @@ export interface EditorViewProps {
     activeNode: Node | null;
 
     // Refs
-    monacoEditorRef: React.MutableRefObject<
-        import('monaco-editor').editor.IStandaloneCodeEditor | null
-    >;
     copiedDigestTimerRef: React.MutableRefObject<number | null>;
 
     // Stack actions
@@ -259,7 +256,6 @@ export function EditorView({
     isPaid,
     trivy,
     activeNode,
-    monacoEditorRef,
     copiedDigestTimerRef,
     deployStack,
     restartStack,
@@ -284,6 +280,23 @@ export function EditorView({
     setCopiedDigest,
     requestDeleteStack,
 }: EditorViewProps) {
+    const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
+
+    // Force Monaco to re-measure its container after the tab switch DOM settles.
+    // Monaco's internal child is position:static with an explicit pixel height that
+    // creates a circular CSS dependency (Monaco drives card height -> grid height -> Monaco).
+    // Fix: reset Monaco to 0x0 first (breaks the cycle), then trigger a forced synchronous
+    // reflow so the container has its CSS-correct size before Monaco re-measures.
+    useEffect(() => {
+        const id = requestAnimationFrame(() => {
+            const editor = monacoEditorRef.current;
+            if (!editor) return;
+            editor.layout({ width: 0, height: 0 }); // collapse -> breaks CSS circular dependency
+            editor.layout();                          // forced reflow -> measures correct container size
+        });
+        return () => cancelAnimationFrame(id);
+    }, [activeTab]);
+
     const safeContainers = containers || [];
     const safeContent = content || '';
     const safeEnvContent = envContent || '';
