@@ -347,18 +347,19 @@ describe('DatabaseService - stress tests', () => {
   it('handles 1000+ metrics and cleanup bounds growth', () => {
     const now = Date.now();
 
-    // Insert 1200 metrics spread across 2 hours
-    for (let i = 0; i < 1200; i++) {
-      db.addContainerMetric({
-        container_id: `stress-container-${i % 10}`,
-        stack_name: 'stress-stack',
-        cpu_percent: Math.random() * 100,
-        memory_mb: Math.random() * 1024,
-        net_rx_mb: Math.random() * 10,
-        net_tx_mb: Math.random() * 10,
-        timestamp: now - (i * 6000), // Every 6 seconds over ~2 hours
-      });
-    }
+    // Insert 1200 metrics spread across 2 hours in a single transaction.
+    // Individual auto-committed inserts trigger a disk fsync each, making
+    // 1200 separate calls impractically slow on spinning disks and Windows.
+    const metrics = Array.from({ length: 1200 }, (_, i) => ({
+      container_id: `stress-container-${i % 10}`,
+      stack_name: 'stress-stack',
+      cpu_percent: Math.random() * 100,
+      memory_mb: Math.random() * 1024,
+      net_rx_mb: Math.random() * 10,
+      net_tx_mb: Math.random() * 10,
+      timestamp: now - (i * 6000), // Every 6 seconds over ~2 hours
+    }));
+    db.bulkAddContainerMetrics(metrics);
 
     // Cleanup with 1 hour retention
     db.cleanupOldMetrics(1);

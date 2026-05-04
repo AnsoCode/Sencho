@@ -1798,6 +1798,18 @@ export class DatabaseService {
         stmt.run(metric.container_id, metric.stack_name, metric.cpu_percent, metric.memory_mb, metric.net_rx_mb, metric.net_tx_mb, metric.timestamp);
     }
 
+    public bulkAddContainerMetrics(metrics: Omit<any, 'id'>[]): void {
+        const stmt = this.db.prepare(
+            'INSERT INTO container_metrics (container_id, stack_name, cpu_percent, memory_mb, net_rx_mb, net_tx_mb, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        const insertAll = this.db.transaction((items: Omit<any, 'id'>[]) => {
+            for (const m of items) {
+                stmt.run(m.container_id, m.stack_name, m.cpu_percent, m.memory_mb, m.net_rx_mb, m.net_tx_mb, m.timestamp);
+            }
+        });
+        insertAll(metrics);
+    }
+
     public getContainerMetrics(hoursLookback = 24): any[] {
         const cutoff = Date.now() - (hoursLookback * 60 * 60 * 1000);
         // Aggregate into 5-minute buckets (300000ms) to keep response size bounded.
