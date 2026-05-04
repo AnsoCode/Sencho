@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.69.2](https://github.com/Studio-Saelix/sencho/compare/v0.69.1...v0.69.2) (2026-05-04)
+
+
+### Fixed
+
+* **backend:** batch-insert stress test metrics to avoid per-insert fsync timeout ([#911](https://github.com/Studio-Saelix/sencho/issues/911)) ([2e8ca76](https://github.com/Studio-Saelix/sencho/commit/2e8ca761038d8787d16b9670a327b668f436fc8b))
+
 ## [0.69.1](https://github.com/Studio-Saelix/sencho/compare/v0.69.0...v0.69.1) (2026-05-04)
 
 
