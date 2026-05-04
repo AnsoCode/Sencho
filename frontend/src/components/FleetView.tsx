@@ -11,11 +11,13 @@ import { NodeUpdatesSheet } from './FleetView/NodeUpdatesSheet';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
 import { isCritical, getNodeCpu, getNodeMem, getNodeDisk } from './FleetView/nodeUtils';
 import { OverviewTab } from './FleetView/OverviewTab';
-import type { FleetNode, NodeUpdateStatus, ViewMode, FleetPreferences, FleetPaletteEntry } from './FleetView/types';
+import type { FleetNode, NodeUpdateStatus, ViewMode } from './FleetView/types';
+import { useFleetPreferences } from './FleetView/hooks/useFleetPreferences';
+import { useFleetLabels, labelPaletteKey } from './FleetView/hooks/useFleetLabels';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
-import { apiFetch, fetchForNode } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { AdmiralGate } from './AdmiralGate';
 import FleetSnapshots from './FleetSnapshots';
@@ -24,25 +26,6 @@ import { FleetSoonPlaceholder, SoonBadge } from './fleet/FleetSoonPlaceholder';
 import { RoutingTab } from './fleet/RoutingTab';
 import { DeploymentsTab } from './blueprints/DeploymentsTab';
 import { toast } from '@/components/ui/toast-store';
-import { type Label as StackLabel, type LabelColor } from './label-types';
-
-function labelPaletteKey(name: string, color: LabelColor): string {
-    return `${name.trim().toLowerCase()}|${color}`;
-}
-
-const PREFS_KEY = 'sencho-fleet-preferences';
-
-function loadPreferences(): FleetPreferences {
-    try {
-        const stored = localStorage.getItem(PREFS_KEY);
-        if (stored) return JSON.parse(stored) as FleetPreferences;
-    } catch { /* use defaults */ }
-    return { sortBy: 'name', sortDir: 'asc', filterStatus: 'all', filterType: 'all', filterCritical: false };
-}
-
-function savePreferences(prefs: FleetPreferences) {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-}
 
 interface FleetViewProps {
     onNavigateToNode: (nodeId: number, stackName: string) => void;
@@ -55,10 +38,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
-    const [prefs, setPrefs] = useState<FleetPreferences>(loadPreferences);
-    const [fleetPalette, setFleetPalette] = useState<FleetPaletteEntry[]>([]);
-    const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<number, Record<string, StackLabel[]>>>({});
-    const [labelFilters, setLabelFilters] = useState<Set<string>>(new Set());
     const { isPaid, license } = useLicense();
     const isAdmiral = isPaid && license?.variant === 'admiral';
     const experimental = useExperimental();
@@ -72,13 +51,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const updateStatusesRef = useRef(updateStatuses);
     updateStatusesRef.current = updateStatuses;
 
-    const updatePrefs = useCallback((update: Partial<FleetPreferences>) => {
-        setPrefs(prev => {
-            const next = { ...prev, ...update };
-            savePreferences(next);
-            return next;
-        });
-    }, []);
+    const { prefs, updatePrefs } = useFleetPreferences();
+    const { fleetPalette, fleetStackLabelMap, labelFilters, setLabelFilters } = useFleetLabels({ isPaid, nodes });
 
     const fetchOverview = useCallback(async (showRefresh = false) => {
         if (showRefresh) setRefreshing(true);
@@ -95,40 +69,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             setRefreshing(false);
         }
     }, []);
-
-    const fetchLabelsForNodes = useCallback(async (fleetNodes: FleetNode[]) => {
-        if (!isPaid || fleetNodes.length === 0) return;
-
-        const paletteMap = new Map<string, FleetPaletteEntry>();
-        const stackLabelMap: Record<number, Record<string, StackLabel[]>> = {};
-
-        await Promise.allSettled(fleetNodes.map(async (node) => {
-            if (node.status !== 'online') return;
-            try {
-                const [labelsRes, assignmentsRes] = await Promise.all([
-                    fetchForNode('/labels', node.id, { signal: AbortSignal.timeout(5000) }),
-                    fetchForNode('/labels/assignments', node.id, { signal: AbortSignal.timeout(5000) }),
-                ]);
-                if (labelsRes.ok) {
-                    const labels = await labelsRes.json() as StackLabel[];
-                    for (const l of labels) {
-                        const key = labelPaletteKey(l.name, l.color);
-                        if (!paletteMap.has(key)) {
-                            paletteMap.set(key, { key, name: l.name, color: l.color });
-                        }
-                    }
-                }
-                if (assignmentsRes.ok) {
-                    stackLabelMap[node.id] = await assignmentsRes.json() as Record<string, StackLabel[]>;
-                }
-            } catch {
-                // Node unreachable or slow: skip, other nodes still contribute.
-            }
-        }));
-
-        setFleetPalette(Array.from(paletteMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
-        setFleetStackLabelMap(stackLabelMap);
-    }, [isPaid]);
 
     const fetchUpdateStatus = useCallback(async () => {
         if (!isPaid) return;
@@ -238,19 +178,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         fetchOverview();
         fetchUpdateStatus();
     }, [fetchOverview, fetchUpdateStatus]);
-
-    // Refetch labels only when the set of online nodes actually changes,
-    // not on every `fetchOverview` tick (which mints a new `nodes` ref).
-    const onlineNodeKey = nodes
-        .filter(n => n.status === 'online')
-        .map(n => n.id)
-        .sort((a, b) => a - b)
-        .join(',');
-    useEffect(() => {
-        if (!isPaid || nodes.length === 0) return;
-        fetchLabelsForNodes(nodes);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isPaid, onlineNodeKey, fetchLabelsForNodes]);
 
     // Paid tier: auto-refresh every 30s
     useEffect(() => {
@@ -385,7 +312,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const clearFilters = useCallback(() => {
         updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
         setLabelFilters(new Set());
-    }, [updatePrefs]);
+    }, [updatePrefs, setLabelFilters]);
     const allNodes = useMemo(
         () => (localNode ? [localNode, ...remoteNodes] : remoteNodes),
         [localNode, remoteNodes]
