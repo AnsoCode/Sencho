@@ -11,14 +11,14 @@ function loadPreferences(): FleetPreferences {
     try {
         const stored = localStorage.getItem(PREFS_KEY);
         if (stored) return { ...DEFAULT_PREFS, ...(JSON.parse(stored) as Partial<FleetPreferences>) };
-    } catch {}
+    } catch { /* corrupted or missing — use defaults */ }
     return { ...DEFAULT_PREFS };
 }
 
 function savePreferences(prefs: FleetPreferences) {
     try {
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-    } catch {}
+    } catch { /* non-fatal: localStorage unavailable or quota exceeded */ }
 }
 
 export function useFleetPreferences() {
