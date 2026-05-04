@@ -1,5 +1,29 @@
 import type { LabelColor } from '../label-types';
 
+export interface FleetNodeStats {
+    active: number;
+    managed: number;
+    unmanaged: number;
+    exited: number;
+    total: number;
+}
+
+export interface FleetNodeSystemStats {
+    cpu: { usage: string; cores: number };
+    memory: { total: number; used: number; free: number; usagePercent: string };
+    disk: { total: number; used: number; free: number; usagePercent: string } | null;
+}
+
+export interface FleetNode {
+    id: number;
+    name: string;
+    type: 'local' | 'remote';
+    status: 'online' | 'offline' | 'unknown';
+    stats: FleetNodeStats | null;
+    systemStats: FleetNodeSystemStats | null;
+    stacks: string[] | null;
+}
+
 export interface NodeUpdateStatus {
     nodeId: number;
     name: string;
