@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-
-import type { NotificationItem } from './dashboard/types';
+import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
 import { Button } from './ui/button';
@@ -10,16 +8,18 @@ import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
-import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
+import { PolicyBlockDialog } from './stack/PolicyBlockDialog';
 import { TopBar } from './TopBar';
 import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
 import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
 import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
-import { EditorView, type StackAction } from './EditorLayout/EditorView';
+import { EditorView } from './EditorLayout/EditorView';
 import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
 import { useStackListState } from './EditorLayout/hooks/useStackListState';
 import { useViewNavigationState } from './EditorLayout/hooks/useViewNavigationState';
+import { useOverlayState } from './EditorLayout/hooks/useOverlayState';
+import { useStackActions } from './EditorLayout/hooks/useStackActions';
 import { useTheme } from './EditorLayout/hooks/useTheme';
 import { useNotifications } from './EditorLayout/hooks/useNotifications';
 import { useContainerStats } from './EditorLayout/hooks/useContainerStats';
@@ -44,7 +44,6 @@ import {
 import { SENCHO_OPEN_LOGS_EVENT } from '@/lib/events';
 import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { useNodes } from '@/context/NodeContext';
-import type { Node } from '@/context/NodeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useDeployFeedback } from '@/context/DeployFeedbackContext';
@@ -61,32 +60,33 @@ export default function EditorLayout() {
   const { isPaid, license } = useLicense();
   const { status: trivy } = useTrivyStatus();
   const { runWithLog } = useDeployFeedback();
+
+  const editorState = useEditorViewState();
   const {
-    stackMisconfigScanning, setStackMisconfigScanning,
+    stackMisconfigScanning,
     copiedDigest, setCopiedDigest,
     copiedDigestTimerRef,
     content, setContent,
-    originalContent, setOriginalContent,
     envContent, setEnvContent,
-    originalEnvContent, setOriginalEnvContent,
-    envExists, setEnvExists,
-    envFiles, setEnvFiles,
-    selectedEnvFile, setSelectedEnvFile,
-    containers, setContainers,
+    envExists,
+    envFiles,
+    selectedEnvFile,
+    containers,
     activeTab, setActiveTab,
     logsMode, setLogsMode,
     gitSourceOpen, setGitSourceOpen,
-    gitSourcePendingMap, setGitSourcePendingMap,
-    isFileLoading, setIsFileLoading,
-    backupInfo, setBackupInfo,
-    isEditing, setIsEditing,
+    gitSourcePendingMap,
+    isFileLoading,
+    backupInfo,
+    isEditing,
     editingCompose, setEditingCompose,
-  } = useEditorViewState();
+  } = editorState;
+
+  const stackListState = useStackListState();
   const {
-    files,
-    selectedFile, setSelectedFile,
+    selectedFile,
     isLoading,
-    stackActions,
+    stackActions: stackActionMap,
     isScanning,
     searchQuery, setSearchQuery,
     stackStatuses,
@@ -100,96 +100,64 @@ export default function EditorLayout() {
     filterCounts,
     chipFilteredFiles,
     remoteResults,
-    setStackAction, clearStackAction, isStackBusy,
-    setOptimisticStatus,
+    isStackBusy,
     refreshLabels,
     refreshStacks,
     fetchAutoUpdateSettings,
     handleScanStacks,
     scheduleStateInvalidateRefresh,
     toggleBulkMode, toggleSelect, clearSelection, handleBulkAction,
-    stackUpdates, fetchImageUpdates,
+    stackUpdates,
     pinned, pin, unpin, isPinned,
     isCollapsed, toggleCollapse,
     remoteSearchLoading,
-  } = useStackListState();
-  const [stackMisconfigScanId, setStackMisconfigScanId] = useState<number | null>(null);
-  const [policyBlock, setPolicyBlock] = useState<{ stackName: string; payload: PolicyBlockPayload } | null>(null);
-  const [policyBypassing, setPolicyBypassing] = useState(false);
+  } = stackListState;
+
   const { nodes, activeNode, setActiveNode } = useNodes();
   const monacoEditorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
-  const pendingStackLoadRef = useRef<string | null>(null);
-  const pendingLogsRef = useRef<{ stackName: string; containerName: string } | null>(null);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [stackToDelete, setStackToDelete] = useState<string | null>(null);
-  const [pendingUnsavedLoad, setPendingUnsavedLoad] = useState<string | null>(null);
-  const [pendingUnsavedNode, setPendingUnsavedNode] = useState<Node | null>(null);
-  const getStackMenuVisibility = (file: string) => {
-    const status = stackStatuses[file];
-    return {
-      showDeploy: status !== 'running',
-      showStop: status === 'running',
-      showRestart: status === 'running',
-      showUpdate: status === 'running',
-    };
-  };
 
-  const openStackApp = (file: string) => {
-    const port = stackPorts[file];
-    if (!port) return;
-    const host = activeNode?.type === 'remote' && activeNode?.api_url
-      ? new URL(activeNode.api_url).hostname
-      : window.location.hostname;
-    window.open(`http://${host}:${port}`, '_blank');
-  };
+  const overlayState = useOverlayState();
+  const {
+    createDialogOpen, setCreateDialogOpen,
+    deleteDialogOpen,
+    stackToDelete,
+    pendingUnsavedLoad,
+    bashModalOpen,
+    selectedContainer,
+    logViewerOpen,
+    logContainer,
+    alertSheetOpen,
+    alertSheetStack,
+    autoHealStackName, setAutoHealStackName,
+    policyBlock,
+    policyBypassing,
+    stackMisconfigScanId,
+    diffPreview, setDiffPreview,
+    diffPreviewConfirming, setDiffPreviewConfirming,
+  } = overlayState;
 
-  const loadingAction = selectedFile ? (stackActions[selectedFile] ?? null) : null;
-
-  const { theme, setTheme, isDarkMode } = useTheme();
   const [diffPreviewEnabled] = useComposeDiffPreviewEnabled();
-  const [diffPreview, setDiffPreview] = useState<{
-    mode: 'save' | 'save-and-deploy';
-    language: 'yaml' | 'ini';
-    original: string;
-    modified: string;
-    fileName: string;
-  } | null>(null);
-  const [diffPreviewConfirming, setDiffPreviewConfirming] = useState(false);
-  // Bash exec modal state
-  const [bashModalOpen, setBashModalOpen] = useState(false);
-  const [selectedContainer, setSelectedContainer] = useState<{ id: string; name: string } | null>(null);
 
-  // LogViewer state
-  const [logViewerOpen, setLogViewerOpen] = useState(false);
-  const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
+  // Use a ref to break the circular dependency:
+  // useViewNavigationState needs onNavigateToDashboard -> resetEditorState
+  // but stackActions isn't created until after navState
+  const resetEditorStateRef = useRef<() => void>(() => {});
 
-
-  const resetEditorState = () => {
-    setSelectedFile(null);
-    setContent('');
-    setOriginalContent('');
-    setEnvContent('');
-    setOriginalEnvContent('');
-    setEnvFiles([]);
-    setSelectedEnvFile('');
-    setEnvExists(false);
-    setContainers([]);
-    setIsEditing(false);
-  };
-
+  const navState = useViewNavigationState({
+    onNavigateToDashboard: () => resetEditorStateRef.current(),
+  });
   const {
     activeView, setActiveView,
     settingsSection, setSettingsSection,
     securityHistoryOpen, setSecurityHistoryOpen,
     filterNodeId, setFilterNodeId,
-    schedulePrefill, setSchedulePrefill,
+    schedulePrefill,
     mobileNavOpen, setMobileNavOpen,
     handleOpenSettings,
     handlePrefillConsumed,
     handleNavigate,
     navItems,
-  } = useViewNavigationState({ onNavigateToDashboard: resetEditorState });
+  } = navState;
 
   const isAdmiral = license?.variant === 'admiral';
 
@@ -206,49 +174,47 @@ export default function EditorLayout() {
   });
 
   const containerStats = useContainerStats(containers);
-  const [alertSheetOpen, setAlertSheetOpen] = useState(false);
-  const [alertSheetStack, setAlertSheetStack] = useState('');
-  const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
 
-  const openAlertSheet = (stackName: string) => {
-    setAlertSheetStack(stackName);
-    setAlertSheetOpen(true);
-  };
+  const stackActions = useStackActions({
+    editorState,
+    stackListState,
+    navState,
+    overlayState,
+    activeNode,
+    setActiveNode,
+    nodes,
+    isPaid,
+    runWithLog,
+    diffPreviewEnabled,
+  });
+
+  // Wire the ref now that stackActions is available
+  resetEditorStateRef.current = stackActions.resetEditorState;
+
+  const {
+    pendingStackLoadRef,
+    pendingLogsRef,
+  } = stackActions;
+
+  const loadingAction = selectedFile ? (stackActionMap[selectedFile] ?? null) : null;
+  const stackName = selectedFile || '';
+
+  const { theme, setTheme, isDarkMode } = useTheme();
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
-  // creates a circular CSS dependency (Monaco drives card height → grid height → Monaco).
-  // Fix: reset Monaco to 0×0 first (breaks the cycle), then trigger a forced synchronous
+  // creates a circular CSS dependency (Monaco drives card height -> grid height -> Monaco).
+  // Fix: reset Monaco to 0x0 first (breaks the cycle), then trigger a forced synchronous
   // reflow so the container has its CSS-correct size before Monaco re-measures.
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       const editor = monacoEditorRef.current;
       if (!editor) return;
-      editor.layout({ width: 0, height: 0 }); // collapse → breaks CSS circular dependency
-      editor.layout();                          // forced reflow → measures correct container size
+      editor.layout({ width: 0, height: 0 }); // collapse -> breaks CSS circular dependency
+      editor.layout();                          // forced reflow -> measures correct container size
     });
     return () => cancelAnimationFrame(id);
   }, [activeTab]);
-
-  /**
-   * Populate the per-stack "pending git source update" map. Runs on mount and
-   * whenever a git-source change is signalled by the panel. Backend failure
-   * leaves the map empty, which is the correct fallback (no badges shown).
-   */
-  const refreshGitSourcePending = async () => {
-    try {
-      const res = await apiFetch('/git-sources');
-      if (!res.ok) return;
-      const sources: Array<{ stack_name: string; pending_commit_sha: string | null }> = await res.json();
-      const map: Record<string, boolean> = {};
-      for (const s of sources) {
-        if (s.pending_commit_sha) map[s.stack_name] = true;
-      }
-      setGitSourcePendingMap(map);
-    } catch {
-      // Non-critical; leave prior state.
-    }
-  };
 
   // Re-fetch stacks whenever the active node changes (or becomes available on mount).
   // Also clears any stale editor/container state that belonged to the previous node.
@@ -257,25 +223,17 @@ export default function EditorLayout() {
     const pendingStack = pendingStackLoadRef.current;
     pendingStackLoadRef.current = null;
 
-    setSelectedFile(null);
-    setContent('');
-    setOriginalContent('');
-    setEnvContent('');
-    setOriginalEnvContent('');
-    setContainers([]);
-    setIsEditing(false);
+    stackActions.resetEditorState();
 
     if (pendingStack) {
-      loadFile(pendingStack);
+      void stackActions.loadFile(pendingStack);
     } else {
       setActiveView('dashboard');
     }
 
     refreshStacks();
-    // Image-update fetching + 5-minute poll are owned by useImageUpdates,
-    // which mirrors this effect's activeNode.id dependency.
     fetchAutoUpdateSettings();
-    refreshGitSourcePending();
+    void stackActions.refreshGitSourcePending();
   }, [activeNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resolve a pending container name (from notification click) to a live
@@ -297,672 +255,11 @@ export default function EditorLayout() {
         detail: { containerId: match.Id, containerName: pending.containerName },
       }));
     }
-  }, [containers, selectedFile]);
-
-  const hasUnsavedChanges = () =>
-    content !== originalContent || envContent !== originalEnvContent;
-
-  // Global-search result click: switch the active node, clear the query so the
-  // sidebar snaps back to the new node's full stack list, then open the stack.
-  // setActiveNode writes to localStorage synchronously, so the next apiFetch
-  // picks up the new node-id header without waiting for a re-render.
-  const loadFileOnNode = async (node: Node, filename: string) => {
-    if (!filename) return;
-    if (selectedFile && filename !== selectedFile && hasUnsavedChanges()) {
-      setPendingUnsavedNode(node);
-      setPendingUnsavedLoad(filename);
-      return;
-    }
-    setActiveNode(node);
-    setSearchQuery('');
-    await loadFile(filename);
-  };
-
-  const loadFile = async (filename: string) => {
-    if (!filename) return;
-    // Guard: if there are unsaved changes and we're switching to a different stack, confirm first
-    if (selectedFile && filename !== selectedFile && hasUnsavedChanges()) {
-      setPendingUnsavedLoad(filename);
-      return;
-    }
-    setIsFileLoading(true);
-    setIsEditing(false); // Reset to view mode when loading a new file
-    setEditingCompose(false); // Default back to anatomy on stack switch
-    setActiveTab('compose');
-    try {
-      const res = await apiFetch(`/stacks/${filename}`);
-      const text = await res.text();
-      setSelectedFile(filename);
-      setActiveView('editor');
-      setContent(text || '');
-      setOriginalContent(text || '');
-
-      // Load env files
-      try {
-        const envsRes = await apiFetch(`/stacks/${filename}/envs`);
-        if (envsRes.ok) {
-          const { envFiles } = await envsRes.json();
-          if (envFiles && envFiles.length > 0) {
-            setEnvFiles(envFiles);
-            const firstFile = envFiles[0];
-            setSelectedEnvFile(firstFile);
-            setEnvExists(true);
-
-            // Load specific env file content
-            const envContentRes = await apiFetch(`/stacks/${filename}/env?file=${encodeURIComponent(firstFile)}`);
-            if (envContentRes.ok) {
-              const envText = await envContentRes.text();
-              setEnvContent(envText || '');
-              setOriginalEnvContent(envText || '');
-            } else {
-              setEnvContent('');
-              setOriginalEnvContent('');
-            }
-          } else {
-            setEnvFiles([]);
-            setSelectedEnvFile('');
-            setEnvContent('');
-            setOriginalEnvContent('');
-            setEnvExists(false);
-          }
-        } else {
-          setEnvFiles([]);
-          setSelectedEnvFile('');
-          setEnvContent('');
-          setOriginalEnvContent('');
-          setEnvExists(false);
-        }
-      } catch {
-        setEnvFiles([]);
-        setSelectedEnvFile('');
-        setEnvContent('');
-        setOriginalEnvContent('');
-        setEnvExists(false);
-      }
-
-      // Load containers
-      try {
-        const containersRes = await apiFetch(`/stacks/${filename}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      } catch (error) {
-        console.error('Failed to load containers:', error);
-        setContainers([]);
-      }
-
-      // Load backup info (Skipper+ only)
-      if (isPaid) {
-        try {
-          const backupRes = await apiFetch(`/stacks/${filename}/backup`);
-          if (backupRes.ok) setBackupInfo(await backupRes.json());
-          else setBackupInfo({ exists: false, timestamp: null });
-        } catch {
-          setBackupInfo({ exists: false, timestamp: null });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load file:', error);
-      setSelectedFile(null);
-      setContent('');
-      setOriginalContent('');
-      setEnvContent('');
-      setOriginalEnvContent('');
-      setContainers([]);
-    } finally {
-      setIsFileLoading(false);
-    }
-  };
-
-  const navigateToNotification = (notif: NotificationItem) => {
-    if (!notif.stack_name) return;
-    pendingLogsRef.current = notif.container_name
-      ? { stackName: notif.stack_name, containerName: notif.container_name }
-      : null;
-    const targetNode = notif.nodeId !== undefined
-      ? nodes.find(n => n.id === notif.nodeId)
-      : activeNode;
-    if (targetNode && targetNode.id !== activeNode?.id) {
-      loadFileOnNode(targetNode, notif.stack_name);
-    } else {
-      loadFile(notif.stack_name);
-    }
-  };
-
-  const changeEnvFile = async (file: string) => {
-    setSelectedEnvFile(file);
-    setIsFileLoading(true);
-    try {
-      const res = await apiFetch(`/stacks/${selectedFile}/env?file=${encodeURIComponent(file)}`);
-      if (!res.ok) {
-        // Don't stuff a JSON error body into the editor on a non-OK response.
-        setEnvContent('');
-        setOriginalEnvContent('');
-        toast.error('Could not load env file');
-        return;
-      }
-      const text = await res.text();
-      setEnvContent(text || '');
-      setOriginalEnvContent(text || '');
-    } catch (e) {
-      console.error('Failed to switch env file', e);
-      setEnvContent('');
-      setOriginalEnvContent('');
-    } finally {
-      setIsFileLoading(false);
-    }
-  };
-
-  const saveFile = async () => {
-    if (activeTab === 'files') return;
-    if (!selectedFile) return;
-    const currentContent = activeTab === 'compose' ? (content || '') : (envContent || '');
-    const endpoint = activeTab === 'compose' ? `/stacks/${selectedFile}` : `/stacks/${selectedFile}/env?file=${encodeURIComponent(selectedEnvFile)}`;
-    try {
-      const response = await apiFetch(endpoint, {
-        method: 'PUT',
-        body: JSON.stringify({ content: currentContent }),
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-      }
-      // Update original content after save
-      if (activeTab === 'compose') {
-        setOriginalContent(content);
-      } else {
-        setOriginalEnvContent(envContent);
-      }
-      setIsEditing(false);
-      toast.success('File saved successfully!');
-    } catch (error) {
-      console.error('Failed to save file:', error);
-      toast.error(`Failed to save file: ${(error as Error).message}`);
-    }
-  };
-
-  const requestSave = () => {
-    const isCompose = activeTab === 'compose';
-    const orig = isCompose ? originalContent : originalEnvContent;
-    const curr = isCompose ? content : envContent;
-    if (diffPreviewEnabled && activeTab !== 'files' && curr !== orig) {
-      setDiffPreview({
-        mode: 'save',
-        language: isCompose ? 'yaml' : 'ini',
-        original: orig,
-        modified: curr,
-        fileName: isCompose ? 'compose.yaml' : (selectedEnvFile || '.env'),
-      });
-    } else {
-      void saveFile();
-    }
-  };
-
-  const requestSaveAndDeploy = (e: React.MouseEvent) => {
-    const isCompose = activeTab === 'compose';
-    const orig = isCompose ? originalContent : originalEnvContent;
-    const curr = isCompose ? content : envContent;
-    if (diffPreviewEnabled && activeTab !== 'files' && curr !== orig) {
-      setDiffPreview({
-        mode: 'save-and-deploy',
-        language: isCompose ? 'yaml' : 'ini',
-        original: orig,
-        modified: curr,
-        fileName: isCompose ? 'compose.yaml' : (selectedEnvFile || '.env'),
-      });
-    } else {
-      void handleSaveAndDeploy(e);
-    }
-  };
-
-  const rollbackStack = async () => {
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    setStackAction(stackFile, 'rollback');
-    setOptimisticStatus(stackFile, 'running');
-    try {
-      const res = await apiFetch(`/stacks/${stackFile}/rollback`, { method: 'POST' });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err?.error || 'Rollback failed');
-      }
-      toast.success('Stack rolled back successfully.');
-      // Reload the editor content
-      const contentRes = await apiFetch(`/stacks/${stackFile}`);
-      const text = await contentRes.text();
-      setContent(text || '');
-      setOriginalContent(text || '');
-      // Refresh backup info
-      const backupRes = await apiFetch(`/stacks/${stackFile}/backup`);
-      if (backupRes.ok) setBackupInfo(await backupRes.json());
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Rollback failed';
-      toast.error(msg);
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const handleSaveAndDeploy = async (e: React.MouseEvent) => {
-    await saveFile();
-    await deployStack(e);
-  };
-
-  const discardChanges = () => {
-    if (activeTab === 'files') return;
-    if (activeTab === 'compose') {
-      setContent(originalContent);
-    } else {
-      setEnvContent(originalEnvContent);
-    }
-    setIsEditing(false);
-  };
-
-  const enterEditMode = () => {
-    setIsEditing(true);
-  };
-
-  const scanStackConfig = async () => {
-    if (!selectedFile || stackMisconfigScanning) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    setStackMisconfigScanning(true);
-    const loadingId = toast.loading(`Scanning ${stackName} configuration...`);
-    try {
-      const res = await apiFetch('/security/scan/stack', {
-        method: 'POST',
-        body: JSON.stringify({ stackName }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to start scan');
-      if (data.status === 'failed') {
-        throw new Error(data.error || 'Scan failed');
-      }
-      toast.success(
-        `Config scan complete: ${data.misconfig_count ?? 0} misconfigurations found`,
-      );
-      setStackMisconfigScanId(data.id as number);
-    } catch (error) {
-      const err = error as { message?: string; error?: string; data?: { error?: string } };
-      toast.error(err?.message || err?.error || err?.data?.error || 'Config scan failed');
-    } finally {
-      toast.dismiss(loadingId);
-      setStackMisconfigScanning(false);
-    }
-  };
-
-  const runDeploy = async (
-    stackName: string,
-    stackFile: string,
-    ignorePolicy: boolean,
-    started?: Promise<void>,
-  ): Promise<{ ok: boolean; errorMessage?: string }> => {
-    const previousStatus = stackStatuses[stackFile];
-    setOptimisticStatus(stackFile, 'running');
-    try {
-      const path = ignorePolicy
-        ? `/stacks/${stackName}/deploy?ignorePolicy=true`
-        : `/stacks/${stackName}/deploy`;
-      if (started) await started;
-      const response = await apiFetch(path, { method: 'POST' });
-      if (!response.ok) {
-        const rawBody = await response.text();
-        if (response.status === 409) {
-          let parsed: PolicyBlockPayload | null = null;
-          try { parsed = JSON.parse(rawBody) as PolicyBlockPayload; } catch { /* not JSON */ }
-          if (parsed && parsed.policy && Array.isArray(parsed.violations)) {
-            setPolicyBlock({ stackName, payload: parsed });
-            if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-            toast.error(`Deploy blocked by policy "${parsed.policy.name}"`);
-            return { ok: false, errorMessage: `Deploy blocked by policy "${parsed.policy.name}"` };
-          }
-        }
-        throw new Error(rawBody || 'Deploy failed');
-      }
-      setPolicyBlock(null);
-      toast.success(ignorePolicy ? 'Stack deployed (policy bypassed).' : 'Stack deployed successfully!');
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
-      if (isPaid) {
-        try {
-          const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
-          if (backupRes.ok) setBackupInfo(await backupRes.json());
-        } catch { /* ignore */ }
-      }
-      return { ok: true };
-    } catch (error) {
-      console.error('Failed to deploy:', error);
-      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      const errorMessage = (error as Error).message || 'Failed to deploy stack';
-      toast.error(isPaid ? `${errorMessage} - automatically rolled back to previous version.` : errorMessage);
-      return { ok: false, errorMessage };
-    }
-  };
-
-  const deployStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, 'deploy');
-    try {
-      await runWithLog({ stackName, action: 'deploy' }, (started) =>
-        runDeploy(stackName, stackFile, false, started)
-      );
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const bypassPolicyAndDeploy = async () => {
-    if (!policyBlock) return;
-    const stackFile = `${policyBlock.stackName}.yml`;
-    const existingFile = selectedFile && selectedFile.startsWith(policyBlock.stackName + '.')
-      ? selectedFile
-      : stackFile;
-    setPolicyBypassing(true);
-    setStackAction(existingFile, 'deploy');
-    try {
-      await runWithLog({ stackName: policyBlock.stackName, action: 'deploy' }, (started) =>
-        runDeploy(policyBlock.stackName, existingFile, true, started)
-      );
-    } finally {
-      setPolicyBypassing(false);
-      clearStackAction(existingFile);
-      refreshStacks(true);
-    }
-  };
-
-  const stopStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, 'stop');
-    const previousStatus = stackStatuses[stackFile];
-    setOptimisticStatus(stackFile, 'exited');
-    try {
-      await runWithLog({ stackName, action: 'stop' }, async (started) => {
-        await started;
-        const response = await apiFetch(`/stacks/${stackName}/stop`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Stop failed');
-        }
-        toast.success('Stack stopped successfully!');
-        if (selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
-      });
-    } catch (error) {
-      console.error('Failed to stop:', error);
-      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to stop stack');
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const restartStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, 'restart');
-    const previousStatus = stackStatuses[stackFile];
-    setOptimisticStatus(stackFile, 'running');
-    try {
-      await runWithLog({ stackName, action: 'restart' }, async (started) => {
-        await started;
-        const response = await apiFetch(`/stacks/${stackName}/restart`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Restart failed');
-        }
-        toast.success('Stack restarted successfully!');
-        if (selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
-      });
-    } catch (error) {
-      console.error('Failed to restart:', error);
-      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to restart stack');
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const serviceAction = async (action: 'start' | 'stop' | 'restart', serviceName: string) => {
-    if (!selectedFile) return;
-    const stackName = selectedFile.replace(/\.(yml|yaml)$/, '');
-    try {
-      const r = await apiFetch(`/stacks/${stackName}/services/${encodeURIComponent(serviceName)}/${action}`, {
-        method: 'POST',
-      });
-      if (!r.ok) throw new Error((await r.text()) || `${action} failed`);
-      const label = action === 'restart' ? 'restarted' : action === 'stop' ? 'stopped' : 'started';
-      toast.success(`Service "${serviceName}" ${label}`);
-      const cr = await apiFetch(`/stacks/${stackName}/containers`);
-      const conts = await cr.json();
-      setContainers(Array.isArray(conts) ? conts : []);
-    } catch (e) {
-      console.error(`Failed to ${action} service "${serviceName}":`, e);
-      toast.error((e as Error).message || `Failed to ${action} service "${serviceName}"`);
-    } finally {
-      refreshStacks(true);
-    }
-  };
-
-  const updateStack = async (e?: React.MouseEvent) => {
-    e?.preventDefault();
-    e?.stopPropagation();
-    if (!selectedFile || isStackBusy(selectedFile)) return;
-    const stackFile = selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, 'update');
-    const previousStatus = stackStatuses[stackFile];
-    setOptimisticStatus(stackFile, 'running');
-    try {
-      await runWithLog({ stackName, action: 'update' }, async (started) => {
-        await started;
-        const response = await apiFetch(`/stacks/${stackName}/update`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Update failed');
-        }
-        toast.success('Stack updated successfully!');
-        fetchImageUpdates();
-        if (selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
-      });
-    } catch (error) {
-      console.error('Failed to update:', error);
-      if (previousStatus !== undefined) setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to update stack');
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const deleteStack = async (pruneVolumes: boolean) => {
-    if (!stackToDelete) return;
-    // Find matching file entry for per-stack tracking
-    const deleteKey = files.find(f => f === stackToDelete || f.replace(/\.(yml|yaml)$/, '') === stackToDelete) ?? stackToDelete;
-    if (isStackBusy(deleteKey)) return;
-    setStackAction(deleteKey, 'delete');
-    try {
-      const url = pruneVolumes
-        ? `/stacks/${stackToDelete}?pruneVolumes=true`
-        : `/stacks/${stackToDelete}`;
-      const response = await apiFetch(url, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Failed to delete stack');
-      }
-      toast.success('Stack deleted successfully!');
-      setDeleteDialogOpen(false);
-      setStackToDelete(null);
-      if (selectedFile === stackToDelete) {
-        setSelectedFile(null);
-        setContent('');
-        setOriginalContent('');
-        setEnvContent('');
-        setOriginalEnvContent('');
-        setEnvExists(false);
-        setContainers([]);
-        setIsEditing(false);
-      }
-      await refreshStacks();
-    } catch (error) {
-      console.error('Failed to delete stack:', error);
-      toast.error((error as Error).message || 'Failed to delete stack');
-    } finally {
-      clearStackAction(deleteKey);
-    }
-  };
-
-  const cancelPendingUnsavedLoad = () => {
-    setPendingUnsavedLoad(null);
-    setPendingUnsavedNode(null);
-  };
-
-  const discardAndLoadPending = () => {
-    const target = pendingUnsavedLoad;
-    const targetNode = pendingUnsavedNode;
-    setContent(originalContent);
-    setEnvContent(originalEnvContent);
-    setPendingUnsavedLoad(null);
-    setPendingUnsavedNode(null);
-    if (target) {
-      if (targetNode) loadFileOnNode(targetNode, target);
-      else loadFile(target);
-    }
-  };
-
-  const requestDeleteStack = () => {
-    setStackToDelete(selectedFile);
-    setDeleteDialogOpen(true);
-  };
-
-  // Context-menu-friendly stack actions (accept file name directly)
-  const executeStackActionByFile = async (stackFile: string, action: StackAction, endpoint: string) => {
-    if (isStackBusy(stackFile)) return;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    setStackAction(stackFile, action);
-
-    // Optimistic status update
-    if (action === 'stop') {
-      setOptimisticStatus(stackFile, 'exited');
-    } else if (action === 'deploy' || action === 'restart' || action === 'update') {
-      setOptimisticStatus(stackFile, 'running');
-    }
-
-    try {
-      const response = await apiFetch(`/stacks/${stackName}/${endpoint}`, { method: 'POST' });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || `${action} failed`);
-      }
-      toast.success(`Stack ${action}ed successfully!`);
-      if (selectedFile === stackFile) {
-        const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-        const conts = await containersRes.json();
-        setContainers(Array.isArray(conts) ? conts : []);
-      }
-      if (action === 'update') fetchImageUpdates();
-      if (action === 'deploy' && isPaid) {
-        try {
-          const backupRes = await apiFetch(`/stacks/${stackName}/backup`);
-          if (backupRes.ok) setBackupInfo(await backupRes.json());
-        } catch { /* ignore */ }
-      }
-    } catch (error) {
-      console.error(`Failed to ${action}:`, error);
-      const msg = (error as Error).message || `Failed to ${action} stack`;
-      toast.error(action === 'deploy' && isPaid ? `${msg} - automatically rolled back to previous version.` : msg);
-    } finally {
-      clearStackAction(stackFile);
-      refreshStacks(true);
-    }
-  };
-
-  const checkUpdatesForStack = async () => {
-    try {
-      const res = await apiFetch('/image-updates/refresh', { method: 'POST' });
-      if (res.ok) {
-        toast.success('Checking for image updates...');
-        // Poll until the background check completes instead of using a fixed timeout
-        let elapsed = 0;
-        const poll = setInterval(async () => {
-          elapsed += 2000;
-          try {
-            const statusRes = await apiFetch('/image-updates/status');
-            if (statusRes.ok) {
-              const { checking } = await statusRes.json();
-              if (!checking || elapsed >= 60000) {
-                clearInterval(poll);
-                await fetchImageUpdates();
-                if (!checking) toast.success('Image update check complete.');
-              }
-            }
-          } catch {
-            clearInterval(poll);
-            await fetchImageUpdates();
-          }
-        }, 2000);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || 'Failed to check for updates');
-      }
-    } catch {
-      toast.error('Failed to check for updates');
-    }
-  };
-
-  const openBashModal = (containerId: string, containerName: string) => {
-    setSelectedContainer({ id: containerId, name: containerName });
-    setBashModalOpen(true);
-  };
-
-  const closeBashModal = () => {
-    setBashModalOpen(false);
-    setSelectedContainer(null);
-  };
-
-  const openLogViewer = (containerId: string, containerName: string) => {
-    setLogContainer({ id: containerId, name: containerName });
-    setLogViewerOpen(true);
-  };
-
-  const closeLogViewer = () => {
-    setLogViewerOpen(false);
-    setLogContainer(null);
-  };
+  }, [containers, selectedFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for topology click-to-logs events (ref avoids stale closure)
-  const openLogViewerRef = useRef(openLogViewer);
-  openLogViewerRef.current = openLogViewer;
+  const openLogViewerRef = useRef(stackActions.openLogViewer);
+  openLogViewerRef.current = stackActions.openLogViewer;
   useEffect(() => {
     const handler = (e: Event) => {
       const { containerId, containerName } = (e as CustomEvent<SenchoOpenLogsDetail>).detail;
@@ -972,43 +269,35 @@ export default function EditorLayout() {
     return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
   }, []);
 
-  // Stack name is now the same as selectedFile (no extension to strip)
-  const stackName = selectedFile || '';
-
-  // Get display name for stack (now just returns the name as-is since no extension)
-  const getDisplayName = (stackName: string) => {
-    return stackName;
-  };
-
   const buildMenuCtx = useCallback((file: string): StackMenuCtx => {
-    const stackName = file.replace(/\.(yml|yaml)$/, '');
+    const sName = file.replace(/\.(yml|yaml)$/, '');
     return {
       stackStatus: (stackStatuses[file] ?? 'unknown') as 'running' | 'exited' | 'unknown',
       hasPort: Boolean(stackPorts[file]),
       isBusy: isStackBusy(file),
       isPaid,
       isAdmiral,
-      canDelete: can('stack:delete', 'stack', stackName),
+      canDelete: can('stack:delete', 'stack', sName),
       isPinned: isPinned(file),
       labels,
       assignedLabelIds: (stackLabelMap[file] ?? []).map(l => l.id),
-      menuVisibility: getStackMenuVisibility(file),
-      autoUpdateEnabled: autoUpdateSettings[stackName] ?? true,
-      openAlertSheet: () => openAlertSheet(file),
+      menuVisibility: stackActions.getStackMenuVisibility(file),
+      autoUpdateEnabled: autoUpdateSettings[sName] ?? true,
+      openAlertSheet: () => overlayState.openAlertSheet(file),
       openAutoHeal: () => setAutoHealStackName(file),
-      checkUpdates: () => checkUpdatesForStack(),
-      openStackApp: () => openStackApp(file),
-      deploy: () => executeStackActionByFile(file, 'deploy', 'deploy'),
-      stop: () => executeStackActionByFile(file, 'stop', 'stop'),
-      restart: () => executeStackActionByFile(file, 'restart', 'restart'),
-      update: () => executeStackActionByFile(file, 'update', 'update'),
-      remove: () => { setStackToDelete(stackName); setDeleteDialogOpen(true); },
+      checkUpdates: () => stackActions.checkUpdatesForStack(),
+      openStackApp: () => stackActions.openStackApp(file),
+      deploy: () => stackActions.executeStackActionByFile(file, 'deploy', 'deploy'),
+      stop: () => stackActions.executeStackActionByFile(file, 'stop', 'stop'),
+      restart: () => stackActions.executeStackActionByFile(file, 'restart', 'restart'),
+      update: () => stackActions.executeStackActionByFile(file, 'update', 'update'),
+      remove: () => overlayState.openDeleteDialog(sName),
       pin: () => pin(file),
       unpin: () => unpin(file),
       setAutoUpdateEnabled: async (enabled: boolean) => {
-        setAutoUpdateSettings(prev => ({ ...prev, [stackName]: enabled }));
+        setAutoUpdateSettings(prev => ({ ...prev, [sName]: enabled }));
         try {
-          const res = await apiFetch(`/stacks/${encodeURIComponent(stackName)}/auto-update`, {
+          const res = await apiFetch(`/stacks/${encodeURIComponent(sName)}/auto-update`, {
             method: 'PUT',
             body: JSON.stringify({ enabled }),
           });
@@ -1017,7 +306,7 @@ export default function EditorLayout() {
             throw new Error((data as { error?: string })?.error || 'Failed to update auto-update setting.');
           }
         } catch (err: unknown) {
-          setAutoUpdateSettings(prev => ({ ...prev, [stackName]: !enabled }));
+          setAutoUpdateSettings(prev => ({ ...prev, [sName]: !enabled }));
           toast.error((err as Error)?.message || 'Failed to update auto-update setting.');
         }
       },
@@ -1031,7 +320,10 @@ export default function EditorLayout() {
             method: 'PUT',
             body: JSON.stringify({ labelIds: newIds }),
           });
-          if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error((data as { error?: string })?.error || 'Failed to update labels.'); }
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || 'Failed to update labels.');
+          }
           refreshLabels();
         } catch (err: unknown) {
           toast.error((err as Error)?.message || 'Failed to update labels.');
@@ -1072,8 +364,8 @@ export default function EditorLayout() {
       },
       openLabelManager: () => handleOpenSettings('labels'),
       openScheduleTask: () => {
-        const stackName = file.replace(/\.(yml|yaml)$/, '');
-        setSchedulePrefill({ stackName, nodeId: activeNode?.id ?? null });
+        const taskStackName = file.replace(/\.(yml|yaml)$/, '');
+        navState.setSchedulePrefill({ stackName: taskStackName, nodeId: activeNode?.id ?? null });
         setActiveView('scheduled-ops');
       },
     };
@@ -1096,9 +388,9 @@ export default function EditorLayout() {
       <CreateStackDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        onStackCreated={async (stackName) => {
+        onStackCreated={async (sName) => {
           await refreshStacks();
-          await loadFile(stackName);
+          await stackActions.loadFile(sName);
         }}
         onStacksChanged={async () => { await refreshStacks(); }}
       />
@@ -1111,7 +403,7 @@ export default function EditorLayout() {
       <GlobalCommandPalette
         navItems={navItems}
         onNavigate={handleNavigate}
-        onSelectStack={loadFileOnNode}
+        onSelectStack={stackActions.loadFileOnNode}
       />
       {/* Left Sidebar (Stacks) */}
       <StackSidebar
@@ -1144,14 +436,14 @@ export default function EditorLayout() {
           isCollapsed,
           toggleCollapse,
           isBusy: isStackBusy,
-          getDisplayName,
-          onSelectFile: loadFile,
+          getDisplayName: stackActions.getDisplayName,
+          onSelectFile: stackActions.loadFile,
           buildMenuCtx,
           remoteResults,
           remoteLoading: remoteSearchLoading,
           onSelectRemoteFile: (nodeId, file) => {
             const node = nodes.find(n => n.id === nodeId);
-            if (node) loadFileOnNode(node, file);
+            if (node) void stackActions.loadFileOnNode(node, file);
           },
         }}
         notifications={notifications}
@@ -1182,7 +474,7 @@ export default function EditorLayout() {
               onMarkAllRead={markAllRead}
               onClearAll={clearAllNotifications}
               onDelete={deleteNotification}
-              onNavigate={navigateToNotification}
+              onNavigate={stackActions.navigateToNotification}
             />
           }
           userMenu={
@@ -1202,15 +494,18 @@ export default function EditorLayout() {
             isLoading={isLoading}
             settingsSection={settingsSection}
             onSettingsSectionChange={setSettingsSection}
-            onTemplateDeploySuccess={(stackName) => { refreshStacks(); loadFile(stackName); }}
+            onTemplateDeploySuccess={(sName) => {
+              refreshStacks();
+              void stackActions.loadFile(sName);
+            }}
             onHostConsoleClose={() => setActiveView(selectedFile ? 'editor' : 'dashboard')}
-            onFleetNavigateToNode={(nodeId, stackName) => {
+            onFleetNavigateToNode={(nodeId, sName) => {
               const node = nodes.find(n => n.id === nodeId);
               if (node) {
                 if (activeNode?.id === nodeId) {
-                  loadFile(stackName);
+                  void stackActions.loadFile(sName);
                 } else {
-                  pendingStackLoadRef.current = stackName;
+                  pendingStackLoadRef.current = sName;
                   setActiveNode(node);
                 }
               }
@@ -1220,7 +515,7 @@ export default function EditorLayout() {
             schedulePrefill={schedulePrefill}
             onPrefillConsumed={handlePrefillConsumed}
             notifications={notifications}
-            onNavigateToStack={(stackFile) => { loadFile(stackFile); }}
+            onNavigateToStack={(stackFile) => { void stackActions.loadFile(stackFile); }}
             onOpenSettingsSection={(section) => handleOpenSettings(section)}
             onClearNotifications={clearAllNotifications}
             renderEditor={() => (
@@ -1252,28 +547,28 @@ export default function EditorLayout() {
                 activeNode={activeNode}
                 monacoEditorRef={monacoEditorRef}
                 copiedDigestTimerRef={copiedDigestTimerRef}
-                deployStack={deployStack}
-                restartStack={restartStack}
-                stopStack={stopStack}
-                updateStack={updateStack}
-                rollbackStack={rollbackStack}
-                scanStackConfig={scanStackConfig}
-                enterEditMode={enterEditMode}
-                requestSave={requestSave}
-                requestSaveAndDeploy={requestSaveAndDeploy}
-                discardChanges={discardChanges}
+                deployStack={stackActions.deployStack}
+                restartStack={stackActions.restartStack}
+                stopStack={stackActions.stopStack}
+                updateStack={stackActions.updateStack}
+                rollbackStack={stackActions.rollbackStack}
+                scanStackConfig={stackActions.scanStackConfig}
+                enterEditMode={stackActions.enterEditMode}
+                requestSave={stackActions.requestSave}
+                requestSaveAndDeploy={stackActions.requestSaveAndDeploy}
+                discardChanges={stackActions.discardChanges}
                 setContent={setContent}
                 setEnvContent={setEnvContent}
-                changeEnvFile={changeEnvFile}
-                openLogViewer={openLogViewer}
-                openBashModal={openBashModal}
-                serviceAction={serviceAction}
+                changeEnvFile={stackActions.changeEnvFile}
+                openLogViewer={stackActions.openLogViewer}
+                openBashModal={stackActions.openBashModal}
+                serviceAction={stackActions.serviceAction}
                 setActiveTab={setActiveTab}
                 setLogsMode={setLogsMode}
                 setEditingCompose={setEditingCompose}
                 setGitSourceOpen={setGitSourceOpen}
                 setCopiedDigest={setCopiedDigest}
-                requestDeleteStack={requestDeleteStack}
+                requestDeleteStack={stackActions.requestDeleteStack}
               />
             )}
           />
@@ -1282,22 +577,22 @@ export default function EditorLayout() {
 
       <DeleteStackDialog
         open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
+        onOpenChange={(open) => { if (!open) overlayState.closeDeleteDialog(); }}
         stackName={stackToDelete}
-        onConfirm={deleteStack}
+        onConfirm={stackActions.deleteStack}
       />
 
       <UnsavedChangesDialog
         open={!!pendingUnsavedLoad}
-        onCancel={cancelPendingUnsavedLoad}
-        onConfirm={discardAndLoadPending}
+        onCancel={stackActions.cancelPendingUnsavedLoad}
+        onConfirm={stackActions.discardAndLoadPending}
       />
 
       {/* Bash Exec Modal */}
       {selectedContainer && (
         <BashExecModal
           isOpen={bashModalOpen}
-          onClose={closeBashModal}
+          onClose={stackActions.closeBashModal}
           containerId={selectedContainer.id}
           containerName={selectedContainer.name}
         />
@@ -1307,7 +602,7 @@ export default function EditorLayout() {
       {logContainer && (
         <LogViewer
           isOpen={logViewerOpen}
-          onClose={closeLogViewer}
+          onClose={stackActions.closeLogViewer}
           containerId={logContainer.id}
           containerName={logContainer.name}
         />
@@ -1317,7 +612,7 @@ export default function EditorLayout() {
       {/* Stack Alert Sheet */}
       <StackAlertSheet
         isOpen={alertSheetOpen}
-        onClose={() => setAlertSheetOpen(false)}
+        onClose={overlayState.closeAlertSheet}
         stackName={alertSheetStack}
       />
 
@@ -1328,8 +623,8 @@ export default function EditorLayout() {
         stackName={policyBlock?.stackName ?? ''}
         canBypass={isAdmin}
         bypassing={policyBypassing}
-        onClose={() => setPolicyBlock(null)}
-        onBypass={bypassPolicyAndDeploy}
+        onClose={() => overlayState.setPolicyBlock(null)}
+        onBypass={stackActions.bypassPolicyAndDeploy}
       />
 
       {/* Stack Auto-Heal Sheet */}
@@ -1347,14 +642,14 @@ export default function EditorLayout() {
           stackName={stackName}
           canEdit={can('stack:edit', 'stack', stackName)}
           isDarkMode={isDarkMode}
-          onSourceChanged={refreshGitSourcePending}
+          onSourceChanged={stackActions.refreshGitSourcePending}
         />
       )}
 
       {/* Stack config misconfig scan results */}
       <VulnerabilityScanSheet
         scanId={stackMisconfigScanId}
-        onClose={() => setStackMisconfigScanId(null)}
+        onClose={() => overlayState.setStackMisconfigScanId(null)}
       />
 
       {/* Compose diff preview */}
@@ -1374,11 +669,11 @@ export default function EditorLayout() {
           setDiffPreviewConfirming(true);
           try {
             if (snapshot?.mode === 'save-and-deploy') {
-              await saveFile();
+              await stackActions.saveFile();
               // e.preventDefault/stopPropagation are no-ops here; no browser event is in flight
-              await deployStack({ preventDefault() {}, stopPropagation() {} } as unknown as React.MouseEvent);
+              await stackActions.deployStack({ preventDefault() {}, stopPropagation() {} } as unknown as React.MouseEvent);
             } else {
-              await saveFile();
+              await stackActions.saveFile();
             }
           } finally {
             setDiffPreviewConfirming(false);
