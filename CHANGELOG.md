@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.69.3](https://github.com/Studio-Saelix/sencho/compare/v0.69.2...v0.69.3) (2026-05-04)
+
+
+### Fixed
+
+* **ci:** create posts dir before writing scaffold output ([#914](https://github.com/Studio-Saelix/sencho/issues/914)) ([73b5ca7](https://github.com/Studio-Saelix/sencho/commit/73b5ca7b34bbb3900792dbf825f2ef6357d388c0))
+
 ## [0.69.2](https://github.com/Studio-Saelix/sencho/compare/v0.69.1...v0.69.2) (2026-05-04)
 
 
