@@ -1,17 +1,13 @@
-import { useEffect, useRef, lazy, Suspense } from 'react';
-import BashExecModal from './BashExecModal';
-import LazyBoundary from './LazyBoundary';
+import { useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Plus } from 'lucide-react';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
-import { PolicyBlockDialog } from './stack/PolicyBlockDialog';
 import { TopBar } from './TopBar';
 import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
-import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
-import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
 import { EditorView } from './EditorLayout/EditorView';
+import { ShellOverlays } from './EditorLayout/ShellOverlays';
 import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
 import { useStackListState } from './EditorLayout/hooks/useStackListState';
 import { useViewNavigationState } from './EditorLayout/hooks/useViewNavigationState';
@@ -21,18 +17,6 @@ import { useTheme } from './EditorLayout/hooks/useTheme';
 import { useNotifications } from './EditorLayout/hooks/useNotifications';
 import { useContainerStats } from './EditorLayout/hooks/useContainerStats';
 import { useSidebarContextMenu } from './EditorLayout/hooks/useSidebarContextMenu';
-import { StackAlertSheet } from './StackAlertSheet';
-import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
-import { GitSourcePanel } from './stack/GitSourcePanel';
-import { LogViewer } from './LogViewer';
-
-// SecurityHistoryView is the only lazy-loaded view that lives outside
-// the ViewRouter switch — it renders as an overlay sheet wired into the
-// settings flow, not as a top-level tab. The other tab-level lazy views
-// (HostConsole, FleetView, AuditLogView, etc.) live inside ViewRouter.
-const SecurityHistoryView = lazy(() =>
-    import('./SecurityHistoryView').then(m => ({ default: m.SecurityHistoryView })),
-);
 import { NodeSwitcher } from './NodeSwitcher';
 import {
     GlobalCommandPalette,
@@ -46,11 +30,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useLicense } from '@/context/LicenseContext';
 import { useDeployFeedback } from '@/context/DeployFeedbackContext';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
-import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
 import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
 import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
-import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
 
 export default function EditorLayout() {
   const { isAdmin, can } = useAuth();
@@ -112,21 +94,6 @@ export default function EditorLayout() {
   const overlayState = useOverlayState();
   const {
     createDialogOpen, setCreateDialogOpen,
-    deleteDialogOpen,
-    stackToDelete,
-    pendingUnsavedLoad,
-    bashModalOpen,
-    selectedContainer,
-    logViewerOpen,
-    logContainer,
-    alertSheetOpen,
-    alertSheetStack,
-    autoHealStackName, setAutoHealStackName,
-    policyBlock,
-    policyBypassing,
-    stackMisconfigScanId,
-    diffPreview, setDiffPreview,
-    diffPreviewConfirming, setDiffPreviewConfirming,
   } = overlayState;
 
   const [diffPreviewEnabled] = useComposeDiffPreviewEnabled();
@@ -473,127 +440,19 @@ export default function EditorLayout() {
         </div>
       </div>
 
-      <DeleteStackDialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => { if (!open) overlayState.closeDeleteDialog(); }}
-        stackName={stackToDelete}
-        onConfirm={stackActions.deleteStack}
-      />
-
-      <UnsavedChangesDialog
-        open={!!pendingUnsavedLoad}
-        onCancel={stackActions.cancelPendingUnsavedLoad}
-        onConfirm={stackActions.discardAndLoadPending}
-      />
-
-      {/* Bash Exec Modal */}
-      {selectedContainer && (
-        <BashExecModal
-          isOpen={bashModalOpen}
-          onClose={stackActions.closeBashModal}
-          containerId={selectedContainer.id}
-          containerName={selectedContainer.name}
-        />
-      )}
-
-      {/* LogViewer Modal */}
-      {logContainer && (
-        <LogViewer
-          isOpen={logViewerOpen}
-          onClose={stackActions.closeLogViewer}
-          containerId={logContainer.id}
-          containerName={logContainer.name}
-        />
-      )}
-
-
-      {/* Stack Alert Sheet */}
-      <StackAlertSheet
-        isOpen={alertSheetOpen}
-        onClose={overlayState.closeAlertSheet}
-        stackName={alertSheetStack}
-      />
-
-      {/* Pre-deploy policy block */}
-      <PolicyBlockDialog
-        open={policyBlock !== null}
-        payload={policyBlock?.payload ?? null}
-        stackName={policyBlock?.stackName ?? ''}
-        canBypass={isAdmin}
-        bypassing={policyBypassing}
-        onClose={() => overlayState.setPolicyBlock(null)}
-        onBypass={stackActions.bypassPolicyAndDeploy}
-      />
-
-      {/* Stack Auto-Heal Sheet */}
-      <StackAutoHealSheet
-        stackName={autoHealStackName ?? ''}
-        open={autoHealStackName !== null}
-        onOpenChange={(open) => { if (!open) setAutoHealStackName(null); }}
-      />
-
-      {/* Git Source Panel */}
-      {stackName && (
-        <GitSourcePanel
-          open={gitSourceOpen}
-          onOpenChange={setGitSourceOpen}
-          stackName={stackName}
-          canEdit={can('stack:edit', 'stack', stackName)}
-          isDarkMode={isDarkMode}
-          onSourceChanged={stackActions.refreshGitSourcePending}
-        />
-      )}
-
-      {/* Stack config misconfig scan results */}
-      <VulnerabilityScanSheet
-        scanId={stackMisconfigScanId}
-        onClose={() => overlayState.setStackMisconfigScanId(null)}
-      />
-
-      {/* Compose diff preview */}
-      <ComposeDiffPreviewDialog
-        open={diffPreview !== null}
-        onOpenChange={(open) => { if (!open && !diffPreviewConfirming) setDiffPreview(null); }}
-        stackName={selectedFile ? selectedFile.replace(/\.(yml|yaml)$/, '') : ''}
-        fileName={diffPreview?.fileName ?? ''}
-        language={diffPreview?.language ?? 'yaml'}
-        original={diffPreview?.original ?? ''}
-        modified={diffPreview?.modified ?? ''}
-        actionLabel={diffPreview?.mode === 'save-and-deploy' ? 'Save & deploy' : 'Save'}
-        confirming={diffPreviewConfirming}
+      <ShellOverlays
+        overlayState={overlayState}
+        stackActions={stackActions}
         isDarkMode={isDarkMode}
-        onConfirm={async () => {
-          const snapshot = diffPreview;
-          setDiffPreviewConfirming(true);
-          try {
-            if (snapshot?.mode === 'save-and-deploy') {
-              await stackActions.saveFile();
-              await stackActions.deployStack();
-            } else {
-              await stackActions.saveFile();
-            }
-          } finally {
-            setDiffPreviewConfirming(false);
-            setDiffPreview(null);
-          }
-        }}
+        isAdmin={isAdmin}
+        can={can}
+        selectedFile={selectedFile}
+        stackName={stackName}
+        gitSourceOpen={gitSourceOpen}
+        setGitSourceOpen={setGitSourceOpen}
+        securityHistoryOpen={securityHistoryOpen}
+        setSecurityHistoryOpen={setSecurityHistoryOpen}
       />
-
-      {/* Scan history overlay. Conditionally mounted so the lazy chunk
-          only fetches when the user opens the overlay; an always-mounted
-          lazy component would fetch on EditorLayout's first render and
-          defeat the split. The overlay has no internal state that needs
-          to persist across opens. */}
-      {securityHistoryOpen ? (
-        <LazyBoundary>
-          <Suspense fallback={null}>
-            <SecurityHistoryView
-              open
-              onClose={() => setSecurityHistoryOpen(false)}
-            />
-          </Suspense>
-        </LazyBoundary>
-      ) : null}
     </div>
     </GlobalCommandPaletteProvider>
   );
