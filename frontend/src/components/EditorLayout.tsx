@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 
 type Theme = 'light' | 'dark' | 'auto';
 import type { NotificationItem } from './dashboard/types';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
 import { Button } from './ui/button';
-import { Plus, Terminal, CloudDownload, Home, HardDrive, ScrollText, Activity, Radar, RefreshCw, Clock } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
@@ -14,7 +13,6 @@ import { apiFetch, fetchForNode } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import { PolicyBlockDialog, type PolicyBlockPayload } from './stack/PolicyBlockDialog';
 import { TopBar } from './TopBar';
-import type { SectionId } from './settings/types';
 import { ViewRouter } from './EditorLayout/ViewRouter';
 import { CreateStackDialog } from './EditorLayout/CreateStackDialog';
 import { DeleteStackDialog } from './EditorLayout/DeleteStackDialog';
@@ -22,11 +20,11 @@ import { UnsavedChangesDialog } from './EditorLayout/UnsavedChangesDialog';
 import { EditorView, type StackAction } from './EditorLayout/EditorView';
 import { useEditorViewState } from './EditorLayout/hooks/useEditorViewState';
 import { useStackListState } from './EditorLayout/hooks/useStackListState';
+import { useViewNavigationState } from './EditorLayout/hooks/useViewNavigationState';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
 import { LogViewer } from './LogViewer';
-import type { ScheduleTaskPrefill } from './ScheduledOperationsView';
 
 // SecurityHistoryView is the only lazy-loaded view that lives outside
 // the ViewRouter switch — it renders as an overlay sheet wired into the
@@ -35,8 +33,6 @@ import type { ScheduleTaskPrefill } from './ScheduledOperationsView';
 const SecurityHistoryView = lazy(() =>
     import('./SecurityHistoryView').then(m => ({ default: m.SecurityHistoryView })),
 );
-import { SENCHO_NAVIGATE_EVENT } from './NodeManager';
-import type { SenchoNavigateDetail } from './NodeManager';
 import { NodeSwitcher } from './NodeSwitcher';
 import {
     GlobalCommandPalette,
@@ -190,12 +186,6 @@ export default function EditorLayout() {
   );
   const isDarkMode = theme === 'dark' || (theme === 'auto' && systemDark);
   const [diffPreviewEnabled] = useComposeDiffPreviewEnabled();
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor' | 'host-console' | 'resources' | 'templates' | 'global-observability' | 'fleet' | 'audit-log' | 'scheduled-ops' | 'auto-updates' | 'settings'>('dashboard');
-  const [settingsSection, setSettingsSection] = useState<SectionId>('appearance');
-  const [securityHistoryOpen, setSecurityHistoryOpen] = useState(false);
-  const [filterNodeId, setFilterNodeId] = useState<number | null>(null);
-  const [schedulePrefill, setSchedulePrefill] = useState<ScheduleTaskPrefill | null>(null);
-  const handlePrefillConsumed = useCallback(() => setSchedulePrefill(null), []);
   const [diffPreview, setDiffPreview] = useState<{
     mode: 'save' | 'save-and-deploy';
     language: 'yaml' | 'ini';
@@ -213,52 +203,6 @@ export default function EditorLayout() {
   const [logContainer, setLogContainer] = useState<{ id: string; name: string } | null>(null);
 
 
-  const isAdmiral = license?.variant === 'admiral';
-
-  const handleOpenSettings = useCallback((section?: SectionId) => {
-    if (section) setSettingsSection(section);
-    setActiveView('settings');
-    setFilterNodeId(null);
-  }, []);
-
-  // Notifications state
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [tickerConnected, setTickerConnected] = useState(false);
-  const [alertSheetOpen, setAlertSheetOpen] = useState(false);
-  const [alertSheetStack, setAlertSheetStack] = useState('');
-  const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
-
-  // Mobile navigation sheet state
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  const openAlertSheet = (stackName: string) => {
-    setAlertSheetStack(stackName);
-    setAlertSheetOpen(true);
-  };
-
-  // Navigation items (permission-aware, data-driven)
-  const navItems = useMemo(() => {
-    const items: Array<{ value: string; label: string; icon: LucideIcon }> = [
-      { value: 'dashboard', label: 'Home', icon: Home },
-      { value: 'fleet', label: 'Fleet', icon: Radar },
-    ];
-    items.push(
-      { value: 'resources', label: 'Resources', icon: HardDrive },
-      { value: 'templates', label: 'App Store', icon: CloudDownload },
-      { value: 'global-observability', label: 'Logs', icon: Activity },
-    );
-    if (isPaid && isAdmin) {
-      items.push({ value: 'auto-updates', label: 'Auto-Update', icon: RefreshCw });
-    }
-    if (isPaid && license?.variant === 'admiral') {
-      if (isAdmin) items.push({ value: 'host-console', label: 'Console', icon: Terminal });
-      if (can('system:audit')) items.push({ value: 'audit-log', label: 'Audit', icon: ScrollText });
-      if (isAdmin) items.push({ value: 'scheduled-ops', label: 'Schedules', icon: Clock });
-    }
-    return items;
-  }, [isAdmin, isPaid, license?.variant, can]);
-
-  // Reset editor state (extracted from Home button onClick)
   const resetEditorState = () => {
     setSelectedFile(null);
     setContent('');
@@ -272,15 +216,31 @@ export default function EditorLayout() {
     setIsEditing(false);
   };
 
-  const handleNavigate = (value: string) => {
-    if (value === activeView) return;
-    if (value === 'dashboard') {
-      resetEditorState();
-      setActiveView('dashboard');
-    } else {
-      setActiveView(value as typeof activeView);
-      setFilterNodeId(null);
-    }
+  const {
+    activeView, setActiveView,
+    settingsSection, setSettingsSection,
+    securityHistoryOpen, setSecurityHistoryOpen,
+    filterNodeId, setFilterNodeId,
+    schedulePrefill, setSchedulePrefill,
+    mobileNavOpen, setMobileNavOpen,
+    handleOpenSettings,
+    handlePrefillConsumed,
+    handleNavigate,
+    navItems,
+  } = useViewNavigationState({ onNavigateToDashboard: resetEditorState });
+
+  const isAdmiral = license?.variant === 'admiral';
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [tickerConnected, setTickerConnected] = useState(false);
+  const [alertSheetOpen, setAlertSheetOpen] = useState(false);
+  const [alertSheetStack, setAlertSheetStack] = useState('');
+  const [autoHealStackName, setAutoHealStackName] = useState<string | null>(null);
+
+  const openAlertSheet = (stackName: string) => {
+    setAlertSheetStack(stackName);
+    setAlertSheetOpen(true);
   };
 
   // Listen for system dark mode changes (for 'auto' theme)
@@ -296,23 +256,6 @@ export default function EditorLayout() {
     document.documentElement.classList.toggle('dark', isDarkMode);
     localStorage.setItem('sencho-theme', theme);
   }, [isDarkMode, theme]);
-
-  // Listen for cross-component navigation (e.g., NodeManager → Schedules)
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<SenchoNavigateDetail>).detail;
-      if (!detail?.view) return;
-      if (detail.view === 'security-history') {
-        setSecurityHistoryOpen(true);
-        setFilterNodeId(detail.nodeId ?? null);
-        return;
-      }
-      setActiveView(detail.view);
-      setFilterNodeId(detail.nodeId ?? null);
-    };
-    window.addEventListener(SENCHO_NAVIGATE_EVENT, handler);
-    return () => window.removeEventListener(SENCHO_NAVIGATE_EVENT, handler);
-  }, []);
 
   // Force Monaco to re-measure its container after the tab switch DOM settles.
   // Monaco's internal child is position:static with an explicit pixel height that
