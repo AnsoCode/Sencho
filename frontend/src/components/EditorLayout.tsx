@@ -1,13 +1,10 @@
-import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useRef, lazy, Suspense } from 'react';
 import BashExecModal from './BashExecModal';
 import LazyBoundary from './LazyBoundary';
 import { Button } from './ui/button';
 import { Plus } from 'lucide-react';
-import { type Label as StackLabel, type LabelColor } from './label-types';
 import { UserProfileDropdown } from './UserProfileDropdown';
 import { NotificationPanel } from './NotificationPanel';
-import { apiFetch } from '@/lib/api';
-import { toast } from '@/components/ui/toast-store';
 import { PolicyBlockDialog } from './stack/PolicyBlockDialog';
 import { TopBar } from './TopBar';
 import { ViewRouter } from './EditorLayout/ViewRouter';
@@ -23,6 +20,7 @@ import { useStackActions } from './EditorLayout/hooks/useStackActions';
 import { useTheme } from './EditorLayout/hooks/useTheme';
 import { useNotifications } from './EditorLayout/hooks/useNotifications';
 import { useContainerStats } from './EditorLayout/hooks/useContainerStats';
+import { useSidebarContextMenu } from './EditorLayout/hooks/useSidebarContextMenu';
 import { StackAlertSheet } from './StackAlertSheet';
 import { StackAutoHealSheet } from '@/components/StackAutoHealSheet';
 import { GitSourcePanel } from './stack/GitSourcePanel';
@@ -51,7 +49,6 @@ import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
 import { StackSidebar } from '@/components/sidebar/StackSidebar';
 import type { StackRowStatus } from '@/components/sidebar/stack-status-utils';
-import type { StackMenuCtx } from '@/components/sidebar/sidebar-types';
 import { useComposeDiffPreviewEnabled } from '@/hooks/use-compose-diff-preview-enabled';
 import { ComposeDiffPreviewDialog } from '@/components/ComposeDiffPreviewDialog';
 
@@ -90,10 +87,7 @@ export default function EditorLayout() {
     isScanning,
     searchQuery, setSearchQuery,
     stackStatuses,
-    stackPorts,
-    labels,
     stackLabelMap,
-    autoUpdateSettings, setAutoUpdateSettings,
     filterChip, setFilterChip,
     bulkMode,
     selectedFiles,
@@ -101,14 +95,13 @@ export default function EditorLayout() {
     chipFilteredFiles,
     remoteResults,
     isStackBusy,
-    refreshLabels,
     refreshStacks,
     fetchAutoUpdateSettings,
     handleScanStacks,
     scheduleStateInvalidateRefresh,
     toggleBulkMode, toggleSelect, clearSelection, handleBulkAction,
     stackUpdates,
-    pinned, pin, unpin, isPinned,
+    pinned,
     isCollapsed, toggleCollapse,
     remoteSearchLoading,
   } = stackListState;
@@ -191,6 +184,17 @@ export default function EditorLayout() {
   // Wire the ref now that stackActions is available
   resetEditorStateRef.current = stackActions.resetEditorState;
 
+  const buildMenuCtx = useSidebarContextMenu({
+    stackListState,
+    navState,
+    overlayState,
+    stackActions,
+    activeNode,
+    isPaid,
+    isAdmiral,
+    can,
+  });
+
   const {
     pendingStackLoadRef,
     pendingLogsRef,
@@ -268,112 +272,6 @@ export default function EditorLayout() {
     window.addEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
     return () => window.removeEventListener(SENCHO_OPEN_LOGS_EVENT, handler);
   }, []);
-
-  const buildMenuCtx = useCallback((file: string): StackMenuCtx => {
-    const sName = file.replace(/\.(yml|yaml)$/, '');
-    return {
-      stackStatus: (stackStatuses[file] ?? 'unknown') as 'running' | 'exited' | 'unknown',
-      hasPort: Boolean(stackPorts[file]),
-      isBusy: isStackBusy(file),
-      isPaid,
-      isAdmiral,
-      canDelete: can('stack:delete', 'stack', sName),
-      isPinned: isPinned(file),
-      labels,
-      assignedLabelIds: (stackLabelMap[file] ?? []).map(l => l.id),
-      menuVisibility: stackActions.getStackMenuVisibility(file),
-      autoUpdateEnabled: autoUpdateSettings[sName] ?? true,
-      openAlertSheet: () => overlayState.openAlertSheet(file),
-      openAutoHeal: () => setAutoHealStackName(file),
-      checkUpdates: () => stackActions.checkUpdatesForStack(),
-      openStackApp: () => stackActions.openStackApp(file),
-      deploy: () => stackActions.executeStackActionByFile(file, 'deploy', 'deploy'),
-      stop: () => stackActions.executeStackActionByFile(file, 'stop', 'stop'),
-      restart: () => stackActions.executeStackActionByFile(file, 'restart', 'restart'),
-      update: () => stackActions.executeStackActionByFile(file, 'update', 'update'),
-      remove: () => overlayState.openDeleteDialog(sName),
-      pin: () => pin(file),
-      unpin: () => unpin(file),
-      setAutoUpdateEnabled: async (enabled: boolean) => {
-        setAutoUpdateSettings(prev => ({ ...prev, [sName]: enabled }));
-        try {
-          const res = await apiFetch(`/stacks/${encodeURIComponent(sName)}/auto-update`, {
-            method: 'PUT',
-            body: JSON.stringify({ enabled }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error((data as { error?: string })?.error || 'Failed to update auto-update setting.');
-          }
-        } catch (err: unknown) {
-          setAutoUpdateSettings(prev => ({ ...prev, [sName]: !enabled }));
-          toast.error((err as Error)?.message || 'Failed to update auto-update setting.');
-        }
-      },
-      toggleLabel: async (labelId: number) => {
-        const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
-        const assigned = currentIds.includes(labelId);
-        const newIds = assigned ? currentIds.filter(id => id !== labelId) : [...currentIds, labelId];
-        const loadingId = toast.loading('Updating labels...');
-        try {
-          const res = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, {
-            method: 'PUT',
-            body: JSON.stringify({ labelIds: newIds }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error((data as { error?: string })?.error || 'Failed to update labels.');
-          }
-          refreshLabels();
-        } catch (err: unknown) {
-          toast.error((err as Error)?.message || 'Failed to update labels.');
-        } finally {
-          toast.dismiss(loadingId);
-        }
-      },
-      createAndAssignLabel: async (name: string, color: LabelColor) => {
-        const loadingId = toast.loading('Creating label...');
-        try {
-          const createRes = await apiFetch('/labels', {
-            method: 'POST',
-            body: JSON.stringify({ name, color }),
-          });
-          if (!createRes.ok) {
-            const data = await createRes.json().catch(() => ({}));
-            throw new Error((data as { error?: string })?.error || 'Failed to create label.');
-          }
-          const created: StackLabel = await createRes.json();
-          const currentIds = (stackLabelMap[file] ?? []).map(l => l.id);
-          const newIds = [...currentIds, created.id];
-          const assignRes = await apiFetch(`/stacks/${encodeURIComponent(file)}/labels`, {
-            method: 'PUT',
-            body: JSON.stringify({ labelIds: newIds }),
-          });
-          if (!assignRes.ok) {
-            const data = await assignRes.json().catch(() => ({}));
-            throw new Error((data as { error?: string })?.error || 'Failed to assign label.');
-          }
-          toast.success(`Label "${created.name}" created.`);
-          refreshLabels();
-        } catch (err: unknown) {
-          toast.error((err as Error)?.message || 'Failed to create label.');
-          throw err;
-        } finally {
-          toast.dismiss(loadingId);
-        }
-      },
-      openLabelManager: () => handleOpenSettings('labels'),
-      openScheduleTask: () => {
-        const taskStackName = file.replace(/\.(yml|yaml)$/, '');
-        navState.setSchedulePrefill({ stackName: taskStackName, nodeId: activeNode?.id ?? null });
-        setActiveView('scheduled-ops');
-      },
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    stackStatuses, stackPorts, isPaid, isAdmiral, isPinned, labels, stackLabelMap,
-    autoUpdateSettings, pin, unpin,
-  ]);
 
   const createStackSlot = can('stack:create') ? (
     <>
