@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import type { useEditorViewState } from './useEditorViewState';
@@ -52,6 +52,15 @@ export function useStackActions(options: UseStackActionsOptions) {
 
   const pendingStackLoadRef = useRef<string | null>(null);
   const pendingLogsRef = useRef<{ stackName: string; containerName: string } | null>(null);
+  const checkUpdatesIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (checkUpdatesIntervalRef.current !== null) {
+        clearInterval(checkUpdatesIntervalRef.current);
+      }
+    };
+  }, []);
 
   const hasUnsavedChanges = () =>
     editorState.content !== editorState.originalContent ||
@@ -135,6 +144,60 @@ export function useStackActions(options: UseStackActionsOptions) {
     editorState.setEnvExists(false);
   };
 
+  const loadEnvState = async (filename: string) => {
+    try {
+      const envsRes = await apiFetch(`/stacks/${filename}/envs`);
+      if (!envsRes.ok) {
+        clearEnvState();
+        return;
+      }
+      const { envFiles } = await envsRes.json();
+      if (envFiles && envFiles.length > 0) {
+        editorState.setEnvFiles(envFiles);
+        const firstFile = envFiles[0];
+        editorState.setSelectedEnvFile(firstFile);
+        editorState.setEnvExists(true);
+        const envContentRes = await apiFetch(
+          `/stacks/${filename}/env?file=${encodeURIComponent(firstFile)}`,
+        );
+        if (envContentRes.ok) {
+          const envText = await envContentRes.text();
+          editorState.setEnvContent(envText || '');
+          editorState.setOriginalEnvContent(envText || '');
+        } else {
+          editorState.setEnvContent('');
+          editorState.setOriginalEnvContent('');
+        }
+      } else {
+        clearEnvState();
+      }
+    } catch {
+      clearEnvState();
+    }
+  };
+
+  const loadContainerState = async (filename: string) => {
+    try {
+      const containersRes = await apiFetch(`/stacks/${filename}/containers`);
+      const conts = await containersRes.json();
+      editorState.setContainers(Array.isArray(conts) ? conts : []);
+    } catch (error) {
+      console.error('Failed to load containers:', error);
+      editorState.setContainers([]);
+    }
+  };
+
+  const loadBackupState = async (filename: string) => {
+    if (!isPaid) return;
+    try {
+      const backupRes = await apiFetch(`/stacks/${filename}/backup`);
+      if (backupRes.ok) editorState.setBackupInfo(await backupRes.json());
+      else editorState.setBackupInfo({ exists: false, timestamp: null });
+    } catch {
+      editorState.setBackupInfo({ exists: false, timestamp: null });
+    }
+  };
+
   const loadFile = async (filename: string) => {
     if (!filename) return;
     if (
@@ -156,59 +219,9 @@ export function useStackActions(options: UseStackActionsOptions) {
       navState.setActiveView('editor');
       editorState.setContent(text || '');
       editorState.setOriginalContent(text || '');
-
-      // Load env files
-      try {
-        const envsRes = await apiFetch(`/stacks/${filename}/envs`);
-        if (envsRes.ok) {
-          const { envFiles } = await envsRes.json();
-          if (envFiles && envFiles.length > 0) {
-            editorState.setEnvFiles(envFiles);
-            const firstFile = envFiles[0];
-            editorState.setSelectedEnvFile(firstFile);
-            editorState.setEnvExists(true);
-
-            const envContentRes = await apiFetch(
-              `/stacks/${filename}/env?file=${encodeURIComponent(firstFile)}`,
-            );
-            if (envContentRes.ok) {
-              const envText = await envContentRes.text();
-              editorState.setEnvContent(envText || '');
-              editorState.setOriginalEnvContent(envText || '');
-            } else {
-              editorState.setEnvContent('');
-              editorState.setOriginalEnvContent('');
-            }
-          } else {
-            clearEnvState();
-          }
-        } else {
-          clearEnvState();
-        }
-      } catch {
-        clearEnvState();
-      }
-
-      // Load containers
-      try {
-        const containersRes = await apiFetch(`/stacks/${filename}/containers`);
-        const conts = await containersRes.json();
-        editorState.setContainers(Array.isArray(conts) ? conts : []);
-      } catch (error) {
-        console.error('Failed to load containers:', error);
-        editorState.setContainers([]);
-      }
-
-      // Load backup info (Skipper+ only)
-      if (isPaid) {
-        try {
-          const backupRes = await apiFetch(`/stacks/${filename}/backup`);
-          if (backupRes.ok) editorState.setBackupInfo(await backupRes.json());
-          else editorState.setBackupInfo({ exists: false, timestamp: null });
-        } catch {
-          editorState.setBackupInfo({ exists: false, timestamp: null });
-        }
-      }
+      await loadEnvState(filename);
+      await loadContainerState(filename);
+      await loadBackupState(filename);
     } catch (error) {
       console.error('Failed to load file:', error);
       stackListState.setSelectedFile(null);
@@ -428,17 +441,16 @@ export function useStackActions(options: UseStackActionsOptions) {
   const bypassPolicyAndDeploy = async () => {
     const policyBlock = overlayState.policyBlock;
     if (!policyBlock) return;
-    const stackFile = `${policyBlock.stackName}.yml`;
+    const { stackName } = policyBlock;
     const existingFile =
-      stackListState.selectedFile &&
-      stackListState.selectedFile.startsWith(policyBlock.stackName + '.')
+      stackListState.selectedFile?.replace(/\.(yml|yaml)$/, '') === stackName
         ? stackListState.selectedFile
-        : stackFile;
+        : (stackListState.files.find(f => f.replace(/\.(yml|yaml)$/, '') === stackName) ?? `${stackName}.yml`);
     overlayState.setPolicyBypassing(true);
     stackListState.setStackAction(existingFile, 'deploy');
     try {
-      await runWithLog({ stackName: policyBlock.stackName, action: 'deploy' }, started =>
-        runDeploy(policyBlock.stackName, existingFile, true, started),
+      await runWithLog({ stackName, action: 'deploy' }, started =>
+        runDeploy(stackName, existingFile, true, started),
       );
     } finally {
       overlayState.setPolicyBypassing(false);
@@ -519,78 +531,62 @@ export function useStackActions(options: UseStackActionsOptions) {
     }
   };
 
-  const stopStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!stackListState.selectedFile || stackListState.isStackBusy(stackListState.selectedFile))
-      return;
-    const stackFile = stackListState.selectedFile;
+  const runStackAction = async (
+    stackFile: string,
+    action: 'stop' | 'restart' | 'update',
+    endpoint: string,
+    optimisticStatus: 'running' | 'exited',
+    successMessage: string,
+  ): Promise<void> => {
+    if (stackListState.isStackBusy(stackFile)) return;
     const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    stackListState.setStackAction(stackFile, 'stop');
     const previousStatus = stackListState.stackStatuses[stackFile];
-    stackListState.setOptimisticStatus(stackFile, 'exited');
+    stackListState.setStackAction(stackFile, action);
+    stackListState.setOptimisticStatus(stackFile, optimisticStatus);
     try {
-      await runWithLog({ stackName, action: 'stop' }, async started => {
+      await runWithLog({ stackName, action }, async (started) => {
         await started;
-        const response = await apiFetch(`/stacks/${stackName}/stop`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Stop failed');
+        try {
+          const response = await apiFetch(`/stacks/${stackName}/${endpoint}`, { method: 'POST' });
+          if (!response.ok) {
+            const errText = await response.text();
+            return { ok: false as const, errorMessage: errText || `${action} failed` };
+          }
+          toast.success(successMessage);
+          if (action === 'update') stackListState.fetchImageUpdates();
+          if (stackListState.selectedFile === stackFile) {
+            const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
+            const conts = await containersRes.json();
+            editorState.setContainers(Array.isArray(conts) ? conts : []);
+          }
+          return { ok: true as const };
+        } catch (err) {
+          return { ok: false as const, errorMessage: (err as Error).message || `${action} failed` };
         }
-        toast.success('Stack stopped successfully!');
-        if (stackListState.selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          editorState.setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
       });
     } catch (error) {
-      console.error('Failed to stop:', error);
+      console.error(`Failed to ${action}:`, error);
       if (previousStatus !== undefined)
         stackListState.setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to stop stack');
+      toast.error((error as Error).message || `Failed to ${action} stack`);
     } finally {
       stackListState.clearStackAction(stackFile);
       stackListState.refreshStacks(true);
     }
   };
 
-  const restartStack = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!stackListState.selectedFile || stackListState.isStackBusy(stackListState.selectedFile))
-      return;
-    const stackFile = stackListState.selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    stackListState.setStackAction(stackFile, 'restart');
-    const previousStatus = stackListState.stackStatuses[stackFile];
-    stackListState.setOptimisticStatus(stackFile, 'running');
-    try {
-      await runWithLog({ stackName, action: 'restart' }, async started => {
-        await started;
-        const response = await apiFetch(`/stacks/${stackName}/restart`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Restart failed');
-        }
-        toast.success('Stack restarted successfully!');
-        if (stackListState.selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          editorState.setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
-      });
-    } catch (error) {
-      console.error('Failed to restart:', error);
-      if (previousStatus !== undefined)
-        stackListState.setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to restart stack');
-    } finally {
-      stackListState.clearStackAction(stackFile);
-      stackListState.refreshStacks(true);
-    }
+  const stopStack = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!stackListState.selectedFile) return;
+    await runStackAction(stackListState.selectedFile, 'stop', 'stop', 'exited', 'Stack stopped successfully!');
+  };
+
+  const restartStack = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!stackListState.selectedFile) return;
+    await runStackAction(stackListState.selectedFile, 'restart', 'restart', 'running', 'Stack restarted successfully!');
   };
 
   const serviceAction = async (
@@ -622,39 +618,8 @@ export function useStackActions(options: UseStackActionsOptions) {
   const updateStack = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     e?.stopPropagation();
-    if (!stackListState.selectedFile || stackListState.isStackBusy(stackListState.selectedFile))
-      return;
-    const stackFile = stackListState.selectedFile;
-    const stackName = stackFile.replace(/\.(yml|yaml)$/, '');
-    stackListState.setStackAction(stackFile, 'update');
-    const previousStatus = stackListState.stackStatuses[stackFile];
-    stackListState.setOptimisticStatus(stackFile, 'running');
-    try {
-      await runWithLog({ stackName, action: 'update' }, async started => {
-        await started;
-        const response = await apiFetch(`/stacks/${stackName}/update`, { method: 'POST' });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(errText || 'Update failed');
-        }
-        toast.success('Stack updated successfully!');
-        stackListState.fetchImageUpdates();
-        if (stackListState.selectedFile === stackFile) {
-          const containersRes = await apiFetch(`/stacks/${stackName}/containers`);
-          const conts = await containersRes.json();
-          editorState.setContainers(Array.isArray(conts) ? conts : []);
-        }
-        return { ok: true };
-      });
-    } catch (error) {
-      console.error('Failed to update:', error);
-      if (previousStatus !== undefined)
-        stackListState.setOptimisticStatus(stackFile, previousStatus as 'running' | 'exited');
-      toast.error((error as Error).message || 'Failed to update stack');
-    } finally {
-      stackListState.clearStackAction(stackFile);
-      stackListState.refreshStacks(true);
-    }
+    if (!stackListState.selectedFile) return;
+    await runStackAction(stackListState.selectedFile, 'update', 'update', 'running', 'Stack updated successfully!');
   };
 
   const deleteStack = async (pruneVolumes: boolean) => {
@@ -775,15 +740,18 @@ export function useStackActions(options: UseStackActionsOptions) {
               const { checking } = await statusRes.json();
               if (!checking || elapsed >= 60000) {
                 clearInterval(poll);
+                checkUpdatesIntervalRef.current = null;
                 await stackListState.fetchImageUpdates();
                 if (!checking) toast.success('Image update check complete.');
               }
             }
           } catch {
             clearInterval(poll);
+            checkUpdatesIntervalRef.current = null;
             await stackListState.fetchImageUpdates();
           }
         }, 2000);
+        checkUpdatesIntervalRef.current = poll;
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Failed to check for updates');
