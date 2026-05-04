@@ -1,7 +1,5 @@
 import { Database, Play } from 'lucide-react';
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from '@/components/ui/dialog';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
 interface StateReviewDialogProps {
@@ -17,21 +15,17 @@ export function StateReviewDialog({
     open, onOpenChange, blueprintName, nodeName, busy, onAccept,
 }: StateReviewDialogProps) {
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                    <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-[0.2em]">
-                        <span className="inline-block w-1 h-3 bg-brand" />
-                        Confirm first deploy
-                    </div>
-                    <DialogTitle className="font-serif italic text-xl tracking-[-0.01em]">
-                        Deploy {blueprintName} to {nodeName}?
-                    </DialogTitle>
-                    <DialogDescription>
-                        This blueprint is stateful and has never run on this node. Sencho will create empty volumes unless you choose to restore from a prior snapshot.
-                    </DialogDescription>
-                </DialogHeader>
-
+        <Modal open={open} onOpenChange={onOpenChange} size="lg">
+            <ModalHeader
+                kicker={`${blueprintName.toUpperCase()} · DEPLOY`}
+                title={`Deploy ${blueprintName} to ${nodeName}?`}
+                description="This blueprint is stateful and has never run on this node. Sencho will create empty volumes unless you choose to restore from a prior snapshot."
+            />
+            <ModalBody>
+                <p className="text-sm text-muted-foreground">
+                    This blueprint is stateful and has never run on this node. Sencho will create
+                    empty volumes unless you choose to restore from a prior snapshot.
+                </p>
                 <div className="space-y-2">
                     <button
                         type="button"
@@ -47,7 +41,6 @@ export function StateReviewDialog({
                             Create empty named volumes on this node. The container starts with whatever default state its image carries.
                         </p>
                     </button>
-
                     <button
                         type="button"
                         disabled
@@ -62,13 +55,14 @@ export function StateReviewDialog({
                         </p>
                     </button>
                 </div>
-
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            </ModalBody>
+            <ModalFooter
+                primary={
+                    <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={busy}>
                         Cancel
                     </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                }
+            />
+        </Modal>
     );
 }
