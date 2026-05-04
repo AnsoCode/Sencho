@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useExperimental } from '@/hooks/useExperimental';
 import {
     Server, Cpu, MemoryStick, HardDrive, RefreshCw, ChevronDown, ChevronRight,
-    Layers, Wifi, WifiOff, Search, ArrowUpDown, AlertTriangle,
-    Play, Square, RotateCcw, ExternalLink, Camera, Download, Loader2,
-    LayoutGrid, Network, SlidersHorizontal,
+    Layers, Wifi, WifiOff, Search, AlertTriangle,
+    RotateCcw, ExternalLink, Camera, Download, Loader2,
+    Network, SlidersHorizontal,
     Send, KeyRound, ArrowLeftRight,
 } from 'lucide-react';
 import { FleetMasthead } from './fleet/FleetMasthead';
@@ -13,13 +13,11 @@ import { ReconnectingOverlay } from './FleetView/ReconnectingOverlay';
 import { NodeUpdatesModal } from './FleetView/NodeUpdatesModal';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
 import { UpdateStatusBadge } from './FleetView/UpdateStatusBadge';
-import type { NodeUpdateStatus } from './FleetView/types';
+import type { NodeUpdateStatus, ViewMode, FleetPreferences, FleetPaletteEntry } from './FleetView/types';
+import { OverviewToolbar } from './FleetView/OverviewToolbar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
-import { Combobox } from '@/components/ui/combobox';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
 import { apiFetch, fetchForNode } from '@/lib/api';
@@ -33,20 +31,11 @@ import { DeploymentsTab } from './blueprints/DeploymentsTab';
 import { toast } from '@/components/ui/toast-store';
 import { LabelDot } from './LabelPill';
 import { type Label as StackLabel, type LabelColor } from './label-types';
-import { MultiSelectCombobox } from '@/components/ui/multi-select-combobox';
 import { formatVersion } from '@/lib/version';
-
-interface FleetPaletteEntry {
-    key: string;
-    name: string;
-    color: LabelColor;
-}
 
 function labelPaletteKey(name: string, color: LabelColor): string {
     return `${name.trim().toLowerCase()}|${color}`;
 }
-
-const FILTER_SECTION_LABEL_CLASS = 'text-[10px] leading-3 font-mono uppercase tracking-[0.18em] text-stat-subtitle';
 
 // --- Types ---
 
@@ -80,19 +69,6 @@ interface StackContainer {
     Image?: string;
     State?: string;
     Status?: string;
-}
-
-type SortField = 'name' | 'cpu' | 'memory' | 'containers' | 'status';
-type SortDir = 'asc' | 'desc';
-type FilterStatus = 'all' | 'online' | 'offline';
-type FilterType = 'all' | 'local' | 'remote';
-
-interface FleetPreferences {
-    sortBy: SortField;
-    sortDir: SortDir;
-    filterStatus: FilterStatus;
-    filterType: FilterType;
-    filterCritical: boolean;
 }
 
 const PREFS_KEY = 'sencho-fleet-preferences';
@@ -522,7 +498,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
-    const [viewMode, setViewMode] = useState<'grid' | 'topology'>('grid');
+    const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [prefs, setPrefs] = useState<FleetPreferences>(loadPreferences);
     const [fleetPalette, setFleetPalette] = useState<FleetPaletteEntry[]>([]);
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<number, Record<string, StackLabel[]>>>({});
@@ -850,12 +826,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         critical: n.status === 'online' && isCritical(n),
     })), [processedNodes]);
 
-    const showPaidControls = isPaid && viewMode === 'grid';
-    const activeFilterCount =
-        (prefs.filterStatus !== 'all' ? 1 : 0) +
-        (prefs.filterType !== 'all' ? 1 : 0) +
-        (prefs.filterCritical ? 1 : 0) +
-        (labelFilters.size > 0 ? 1 : 0);
     const clearFilters = useCallback(() => {
         updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
         setLabelFilters(new Set());
@@ -991,162 +961,19 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                     {/* Fleet Content */}
                     {!loading && nodes.length > 0 && (
                         <>
-                            {/* Overview Toolbar: Search, Sort, Filters, View Mode */}
-                            <div className="flex flex-wrap items-center gap-2 mb-4">
-                                {showPaidControls && (
-                                    <>
-                                        <div className="relative flex-1 min-w-[200px] max-w-sm">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                                            <Input
-                                                placeholder="Search nodes or stacks..."
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                className="pl-9 h-9"
-                                            />
-                                        </div>
-                                        <div className="w-40">
-                                            <Combobox
-                                                options={[
-                                                    { value: 'name', label: 'Name' },
-                                                    { value: 'cpu', label: 'CPU Usage' },
-                                                    { value: 'memory', label: 'Memory Usage' },
-                                                    { value: 'containers', label: 'Containers' },
-                                                    { value: 'status', label: 'Status' },
-                                                ]}
-                                                value={prefs.sortBy}
-                                                onValueChange={(v) => updatePrefs({ sortBy: v as SortField })}
-                                                placeholder="Sort by..."
-                                            />
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-9 w-9 p-0 shrink-0"
-                                            onClick={() => updatePrefs({ sortDir: prefs.sortDir === 'asc' ? 'desc' : 'asc' })}
-                                            title={prefs.sortDir === 'asc' ? 'Ascending' : 'Descending'}
-                                        >
-                                            <ArrowUpDown className={`w-4 h-4 ${prefs.sortDir === 'desc' ? 'rotate-180' : ''} transition-transform`} />
-                                        </Button>
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button
-                                                    variant={activeFilterCount > 0 ? 'default' : 'outline'}
-                                                    size="sm"
-                                                    className="h-9 gap-2 shrink-0"
-                                                >
-                                                    <SlidersHorizontal className="w-4 h-4" />
-                                                    Filters
-                                                    {activeFilterCount > 0 && (
-                                                        <Badge variant="secondary" className="h-5 min-w-[1.25rem] px-1.5 text-[10px] tabular-nums">
-                                                            {activeFilterCount}
-                                                        </Badge>
-                                                    )}
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent align="end" className="w-80 space-y-4">
-                                                <div className="space-y-1.5">
-                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Status</label>
-                                                    <div className="flex items-center gap-1.5">
-                                                        {(['all', 'online', 'offline'] as FilterStatus[]).map(status => (
-                                                            <Button
-                                                                key={status}
-                                                                variant={prefs.filterStatus === status ? 'default' : 'outline'}
-                                                                size="sm"
-                                                                className="h-7 text-xs px-2.5"
-                                                                onClick={() => updatePrefs({ filterStatus: status })}
-                                                            >
-                                                                {status === 'all' ? 'All' : status === 'online' ? (
-                                                                    <><Play className="w-3 h-3 mr-1" />Online</>
-                                                                ) : (
-                                                                    <><Square className="w-3 h-3 mr-1" />Offline</>
-                                                                )}
-                                                            </Button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Type</label>
-                                                    <div className="flex items-center gap-1.5">
-                                                        {(['all', 'local', 'remote'] as FilterType[]).map(type => (
-                                                            <Button
-                                                                key={type}
-                                                                variant={prefs.filterType === type ? 'default' : 'outline'}
-                                                                size="sm"
-                                                                className="h-7 text-xs px-2.5"
-                                                                onClick={() => updatePrefs({ filterType: type })}
-                                                            >
-                                                                {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1)}
-                                                            </Button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <label className={FILTER_SECTION_LABEL_CLASS}>Severity</label>
-                                                    <Button
-                                                        variant={prefs.filterCritical ? 'default' : 'outline'}
-                                                        size="sm"
-                                                        className="h-7 text-xs px-2.5"
-                                                        onClick={() => updatePrefs({ filterCritical: !prefs.filterCritical })}
-                                                    >
-                                                        <AlertTriangle className="w-3 h-3 mr-1" />
-                                                        Critical Only
-                                                    </Button>
-                                                </div>
-                                                {fleetPalette.length > 0 && (
-                                                    <div className="space-y-1.5">
-                                                        <label className={FILTER_SECTION_LABEL_CLASS}>Tags</label>
-                                                        <MultiSelectCombobox
-                                                            options={fleetPalette.map(p => ({ value: p.key, label: p.name, color: p.color }))}
-                                                            selected={labelFilters}
-                                                            onSelectionChange={setLabelFilters}
-                                                            placeholder="Tags"
-                                                            renderOption={(option) => (
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <LabelDot color={option.color as LabelColor ?? 'slate'} />
-                                                                    {option.label}
-                                                                </span>
-                                                            )}
-                                                        />
-                                                    </div>
-                                                )}
-                                                {activeFilterCount > 0 && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="w-full h-8 text-xs"
-                                                        onClick={clearFilters}
-                                                    >
-                                                        Clear all filters
-                                                    </Button>
-                                                )}
-                                            </PopoverContent>
-                                        </Popover>
-                                    </>
-                                )}
-
-                                <div className="ml-auto flex items-center gap-1 rounded-md border border-card-border bg-card p-0.5 shadow-card-bevel shrink-0">
-                                    <Button
-                                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                                        size="sm"
-                                        className="h-8 text-xs px-2.5 gap-1.5"
-                                        onClick={() => setViewMode('grid')}
-                                        aria-pressed={viewMode === 'grid'}
-                                    >
-                                        <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                        Grid
-                                    </Button>
-                                    <Button
-                                        variant={viewMode === 'topology' ? 'default' : 'ghost'}
-                                        size="sm"
-                                        className="h-8 text-xs px-2.5 gap-1.5"
-                                        onClick={() => setViewMode('topology')}
-                                        aria-pressed={viewMode === 'topology'}
-                                    >
-                                        <Network className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                        Topology
-                                    </Button>
-                                </div>
-                            </div>
+                            <OverviewToolbar
+                                isPaid={isPaid}
+                                viewMode={viewMode}
+                                onViewModeChange={setViewMode}
+                                searchQuery={searchQuery}
+                                onSearchQueryChange={setSearchQuery}
+                                prefs={prefs}
+                                onPrefsChange={updatePrefs}
+                                fleetPalette={fleetPalette}
+                                labelFilters={labelFilters}
+                                onLabelFiltersChange={setLabelFilters}
+                                onClearFilters={clearFilters}
+                            />
 
                             {viewMode === 'topology' && processedNodes.length > 0 ? (
                                 <FleetTopology
