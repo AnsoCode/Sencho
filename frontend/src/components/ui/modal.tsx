@@ -18,13 +18,14 @@ import {
 
 const KICKER_CLASS = 'font-mono text-[10px] uppercase tracking-[0.22em]';
 
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'wide';
 
 const SIZE_CLASS: Record<ModalSize, string> = {
   sm: 'max-w-sm',
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-xl w-[95vw]',
+  wide: 'max-w-5xl w-[95vw]',
 };
 
 interface ModalProps {
