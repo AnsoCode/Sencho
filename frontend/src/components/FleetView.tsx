@@ -10,7 +10,7 @@ import {
 import { FleetMasthead } from './fleet/FleetMasthead';
 import { FleetTopology } from './fleet/FleetTopology';
 import { ReconnectingOverlay } from './FleetView/ReconnectingOverlay';
-import { NodeUpdatesModal } from './FleetView/NodeUpdatesModal';
+import { NodeUpdatesSheet } from './FleetView/NodeUpdatesSheet';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
 import { UpdateStatusBadge } from './FleetView/UpdateStatusBadge';
 import type { NodeUpdateStatus } from './FleetView/types';
@@ -1255,8 +1255,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             {/* Reconnecting overlay shown when local node is updating */}
             {reconnecting && <ReconnectingOverlay preUpdateStartedAt={preUpdateStartedAt} />}
 
-            {/* Node Updates modal */}
-            <NodeUpdatesModal
+            {/* Node Updates sheet */}
+            <NodeUpdatesSheet
                 open={showUpdateModal}
                 onOpenChange={setShowUpdateModal}
                 checkingUpdates={checkingUpdates}
