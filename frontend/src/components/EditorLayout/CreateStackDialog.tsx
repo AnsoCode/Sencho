@@ -1,15 +1,6 @@
-import { useState } from 'react';
-import { Plus, GitBranch, FileCode2, Loader2 } from 'lucide-react';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-} from '../ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '../ui/tabs';
-import { springs } from '@/lib/motion';
+import { useRef, useState, type KeyboardEvent } from 'react';
+import { Plus, GitBranch, FileCode2, Loader2, type LucideIcon } from 'lucide-react';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '../ui/modal';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -18,6 +9,7 @@ import { Checkbox } from '../ui/checkbox';
 import { GitSourceFields, type ApplyMode } from '../stack/GitSourceFields';
 import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
+import { cn } from '@/lib/utils';
 
 export interface CreateStackDialogProps {
     open: boolean;
@@ -26,8 +18,19 @@ export interface CreateStackDialogProps {
     onStacksChanged: () => void | Promise<void>;
 }
 
+type CreateMode = 'empty' | 'git' | 'docker-run';
+
+const MODES: ReadonlyArray<{ id: CreateMode; label: string; icon: LucideIcon }> = [
+    { id: 'empty', label: 'Empty', icon: Plus },
+    { id: 'git', label: 'From Git', icon: GitBranch },
+    { id: 'docker-run', label: 'From Docker Run', icon: FileCode2 },
+];
+
+const tabId = (m: CreateMode) => `create-stack-tab-${m}`;
+const panelId = (m: CreateMode) => `create-stack-panel-${m}`;
+
 export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacksChanged }: CreateStackDialogProps) {
-    const [createMode, setCreateMode] = useState<'empty' | 'git' | 'docker-run'>('empty');
+    const [createMode, setCreateMode] = useState<CreateMode>('empty');
     const [newStackName, setNewStackName] = useState('');
     const [dockerRunInput, setDockerRunInput] = useState('');
     const [convertedYaml, setConvertedYaml] = useState<string | null>(null);
@@ -64,7 +67,6 @@ export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacks
 
     const handleCreateStack = async () => {
         if (!newStackName.trim()) return;
-        // Send stackName directly (no .yml extension - backend creates directory)
         const stackName = newStackName.trim();
         try {
             const response = await apiFetch('/stacks', {
@@ -263,8 +265,11 @@ export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacks
         }
     };
 
+    const busy = creatingFromGit || creatingFromDockerRun;
+
     return (
-        <Dialog
+        <Modal
+            size="xl"
             open={open}
             onOpenChange={(o) => {
                 onOpenChange(o);
@@ -275,106 +280,99 @@ export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacks
                 }
             }}
         >
-            <DialogContent className="max-w-xl w-[95vw] p-0 gap-0">
-                <DialogHeader className="px-6 pt-6 pb-3">
-                    <DialogTitle>Create New Stack</DialogTitle>
-                    <DialogDescription className="sr-only">
-                        Create a new stack: empty, cloned from a Git repository, or converted from a docker run command.
-                    </DialogDescription>
-                </DialogHeader>
+            <ModalHeader
+                kicker="STACKS · NEW"
+                title="New stack"
+                description="Create a new stack: empty, cloned from a Git repository, or converted from a docker run command."
+            />
+            <ModeRail mode={createMode} onModeChange={setCreateMode} disabled={busy} />
 
-                <div className="px-6 pb-2">
-                    <Tabs value={createMode} onValueChange={(v) => setCreateMode(v as 'empty' | 'git' | 'docker-run')}>
-                        <TabsList>
-                            <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
-                                <TabsHighlightItem value="empty">
-                                    <TabsTrigger value="empty">
-                                        <Plus className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                                        Empty
-                                    </TabsTrigger>
-                                </TabsHighlightItem>
-                                <TabsHighlightItem value="git">
-                                    <TabsTrigger value="git">
-                                        <GitBranch className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                                        From Git
-                                    </TabsTrigger>
-                                </TabsHighlightItem>
-                                <TabsHighlightItem value="docker-run">
-                                    <TabsTrigger value="docker-run">
-                                        <FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                                        From Docker Run
-                                    </TabsTrigger>
-                                </TabsHighlightItem>
-                            </TabsHighlight>
-                        </TabsList>
-                    </Tabs>
-                </div>
-
-                {createMode === 'empty' && (
-                    <>
-                        <div className="px-6 py-4 space-y-2">
+            {createMode === 'empty' && (
+                <div role="tabpanel" id={panelId('empty')} aria-labelledby={tabId('empty')}>
+                    <ModalBody>
+                        <div className="space-y-2">
                             <Label htmlFor="create-stack-name">Stack Name</Label>
                             <Input
                                 id="create-stack-name"
                                 placeholder="Stack name (e.g., myapp)"
                                 value={newStackName}
                                 onChange={(e) => setNewStackName(e.target.value)}
+                                autoFocus
                             />
                         </div>
-                        <DialogFooter className="px-6 pb-6">
-                            <Button onClick={handleCreateStack}>Create</Button>
-                        </DialogFooter>
-                    </>
-                )}
-                {createMode === 'git' && (
-                    <>
-                        <ScrollArea className="max-h-[70vh]">
-                            <div className="px-6 py-4 space-y-5">
-                                <div className="space-y-2">
-                                    <Label htmlFor="create-git-stack-name">Stack Name</Label>
-                                    <Input
-                                        id="create-git-stack-name"
-                                        placeholder="Stack name (e.g., myapp)"
-                                        value={newStackName}
-                                        onChange={(e) => setNewStackName(e.target.value)}
-                                        disabled={creatingFromGit}
-                                    />
-                                </div>
+                    </ModalBody>
+                    <ModalFooter
+                        hint="ALPHANUMERIC · HYPHENS"
+                        secondary={
+                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                                Cancel
+                            </Button>
+                        }
+                        primary={
+                            <Button onClick={handleCreateStack} disabled={!newStackName.trim()}>
+                                Create
+                            </Button>
+                        }
+                    />
+                </div>
+            )}
 
-                                <GitSourceFields
-                                    variant="create"
+            {createMode === 'git' && (
+                <div role="tabpanel" id={panelId('git')} aria-labelledby={tabId('git')}>
+                    <ScrollArea className="max-h-[60vh]">
+                        <ModalBody>
+                            <div className="space-y-2">
+                                <Label htmlFor="create-git-stack-name">Stack Name</Label>
+                                <Input
+                                    id="create-git-stack-name"
+                                    placeholder="Stack name (e.g., myapp)"
+                                    value={newStackName}
+                                    onChange={(e) => setNewStackName(e.target.value)}
                                     disabled={creatingFromGit}
-                                    repoUrl={gitRepoUrl}
-                                    branch={gitBranch}
-                                    composePath={gitComposePath}
-                                    syncEnv={gitSyncEnv}
-                                    authType={gitAuthType}
-                                    token={gitToken}
-                                    hasStoredToken={false}
-                                    applyMode={gitApplyMode}
-                                    onRepoUrlChange={setGitRepoUrl}
-                                    onBranchChange={setGitBranch}
-                                    onComposePathChange={setGitComposePath}
-                                    onSyncEnvChange={setGitSyncEnv}
-                                    onAuthTypeChange={setGitAuthType}
-                                    onTokenChange={setGitToken}
-                                    onApplyModeChange={setGitApplyMode}
                                 />
-
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="create-git-deploy-now"
-                                        checked={gitDeployNow}
-                                        onCheckedChange={(c) => setGitDeployNow(c === true)}
-                                        disabled={creatingFromGit}
-                                    />
-                                    <Label htmlFor="create-git-deploy-now" className="text-xs cursor-pointer">
-                                        Deploy after create
-                                    </Label>
-                                </div>
                             </div>
-                        </ScrollArea>
-                        <DialogFooter className="px-6 py-4 border-t border-glass-border">
+
+                            <GitSourceFields
+                                variant="create"
+                                disabled={creatingFromGit}
+                                repoUrl={gitRepoUrl}
+                                branch={gitBranch}
+                                composePath={gitComposePath}
+                                syncEnv={gitSyncEnv}
+                                authType={gitAuthType}
+                                token={gitToken}
+                                hasStoredToken={false}
+                                applyMode={gitApplyMode}
+                                onRepoUrlChange={setGitRepoUrl}
+                                onBranchChange={setGitBranch}
+                                onComposePathChange={setGitComposePath}
+                                onSyncEnvChange={setGitSyncEnv}
+                                onAuthTypeChange={setGitAuthType}
+                                onTokenChange={setGitToken}
+                                onApplyModeChange={setGitApplyMode}
+                            />
+
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="create-git-deploy-now"
+                                    checked={gitDeployNow}
+                                    onCheckedChange={(c) => setGitDeployNow(c === true)}
+                                    disabled={creatingFromGit}
+                                />
+                                <Label htmlFor="create-git-deploy-now" className="text-xs cursor-pointer">
+                                    Deploy after create
+                                </Label>
+                            </div>
+                        </ModalBody>
+                    </ScrollArea>
+                    <ModalFooter
+                        hint="HTTPS REPOS ONLY"
+                        secondary={
+                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={creatingFromGit}>
+                                Cancel
+                            </Button>
+                        }
+                        primary={
                             <Button onClick={handleCreateStackFromGit} disabled={creatingFromGit}>
                                 {creatingFromGit ? (
                                     <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" strokeWidth={1.5} />Creating</>
@@ -382,67 +380,75 @@ export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacks
                                     <><GitBranch className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create from Git</>
                                 )}
                             </Button>
-                        </DialogFooter>
-                    </>
-                )}
-                {createMode === 'docker-run' && (
-                    <>
-                        <ScrollArea className="max-h-[70vh]">
-                            <div className="px-6 py-4 space-y-5">
-                                <div className="space-y-2">
-                                    <Label htmlFor="create-dr-stack-name">Stack Name</Label>
-                                    <Input
-                                        id="create-dr-stack-name"
-                                        placeholder="Stack name (e.g., myapp)"
-                                        value={newStackName}
-                                        onChange={(e) => setNewStackName(e.target.value)}
-                                        disabled={creatingFromDockerRun}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="create-dr-command">Paste your docker run command</Label>
-                                    <textarea
-                                        id="create-dr-command"
-                                        spellCheck={false}
-                                        className="flex w-full rounded-md border border-glass-border bg-input px-3 py-2 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
-                                        placeholder="docker run -d --name nginx -p 8080:80 nginx:latest"
-                                        value={dockerRunInput}
-                                        onChange={(e) => {
-                                            setDockerRunInput(e.target.value);
-                                            // The preview only reflects the previous command; clear it when
-                                            // the input changes so the user can't create a stack from stale YAML.
-                                            if (convertedYaml !== null) setConvertedYaml(null);
-                                        }}
-                                        disabled={creatingFromDockerRun}
-                                    />
-                                    <div className="flex justify-end">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={handleConvertDockerRun}
-                                            disabled={isConverting || creatingFromDockerRun || !dockerRunInput.trim()}
-                                        >
-                                            {isConverting ? (
-                                                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />Converting</>
-                                            ) : (
-                                                <><FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />Convert</>
-                                            )}
-                                        </Button>
-                                    </div>
-                                </div>
-                                {convertedYaml !== null && (
-                                    <div className="space-y-2">
-                                        <Label>compose.yaml preview</Label>
-                                        <ScrollArea className="max-h-[240px] rounded-md border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
-                                            <pre className="px-3 py-2 text-xs font-mono whitespace-pre leading-relaxed">
-                                                {convertedYaml}
-                                            </pre>
-                                        </ScrollArea>
-                                    </div>
-                                )}
+                        }
+                    />
+                </div>
+            )}
+
+            {createMode === 'docker-run' && (
+                <div role="tabpanel" id={panelId('docker-run')} aria-labelledby={tabId('docker-run')}>
+                    <ScrollArea className="max-h-[60vh]">
+                        <ModalBody>
+                            <div className="space-y-2">
+                                <Label htmlFor="create-dr-stack-name">Stack Name</Label>
+                                <Input
+                                    id="create-dr-stack-name"
+                                    placeholder="Stack name (e.g., myapp)"
+                                    value={newStackName}
+                                    onChange={(e) => setNewStackName(e.target.value)}
+                                    disabled={creatingFromDockerRun}
+                                />
                             </div>
-                        </ScrollArea>
-                        <DialogFooter className="px-6 py-4 border-t border-glass-border">
+                            <div className="space-y-2">
+                                <Label htmlFor="create-dr-command">Paste your docker run command</Label>
+                                <textarea
+                                    id="create-dr-command"
+                                    spellCheck={false}
+                                    className="flex w-full rounded-md border border-glass-border bg-input px-3 py-2 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
+                                    placeholder="docker run -d --name nginx -p 8080:80 nginx:latest"
+                                    value={dockerRunInput}
+                                    onChange={(e) => {
+                                        setDockerRunInput(e.target.value);
+                                        if (convertedYaml !== null) setConvertedYaml(null);
+                                    }}
+                                    disabled={creatingFromDockerRun}
+                                />
+                                <div className="flex justify-end">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleConvertDockerRun}
+                                        disabled={isConverting || creatingFromDockerRun || !dockerRunInput.trim()}
+                                    >
+                                        {isConverting ? (
+                                            <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />Converting</>
+                                        ) : (
+                                            <><FileCode2 className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />Convert</>
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                            {convertedYaml !== null && (
+                                <div className="space-y-2">
+                                    <Label>compose.yaml preview</Label>
+                                    <ScrollArea className="max-h-[240px] rounded-md border border-card-border border-t-card-border-top bg-card shadow-card-bevel">
+                                        <pre className="px-3 py-2 text-xs font-mono whitespace-pre leading-relaxed">
+                                            {convertedYaml}
+                                        </pre>
+                                    </ScrollArea>
+                                </div>
+                            )}
+                        </ModalBody>
+                    </ScrollArea>
+                    <ModalFooter
+                        hint={convertedYaml ? 'YAML READY' : 'CONVERT FIRST'}
+                        hintAccent={convertedYaml ? `${convertedYaml.split('\n').length} LINES` : undefined}
+                        secondary={
+                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={creatingFromDockerRun}>
+                                Cancel
+                            </Button>
+                        }
+                        primary={
                             <Button
                                 onClick={handleCreateStackFromDockerRun}
                                 disabled={creatingFromDockerRun || !convertedYaml || !newStackName.trim()}
@@ -453,10 +459,90 @@ export function CreateStackDialog({ open, onOpenChange, onStackCreated, onStacks
                                     <><Plus className="w-4 h-4 mr-1.5" strokeWidth={1.5} />Create Stack</>
                                 )}
                             </Button>
-                        </DialogFooter>
-                    </>
-                )}
-            </DialogContent>
-        </Dialog>
+                        }
+                    />
+                </div>
+            )}
+        </Modal>
+    );
+}
+
+function ModeRail({
+    mode,
+    onModeChange,
+    disabled,
+}: {
+    mode: CreateMode;
+    onModeChange: (m: CreateMode) => void;
+    disabled: boolean;
+}) {
+    const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+    const activeIndex = MODES.findIndex((m) => m.id === mode);
+
+    const focusTab = (index: number) => {
+        const target = tabRefs.current[index];
+        if (target) {
+            target.focus();
+            onModeChange(MODES[index].id);
+        }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (disabled) return;
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            focusTab((activeIndex + 1) % MODES.length);
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            focusTab((activeIndex - 1 + MODES.length) % MODES.length);
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            focusTab(0);
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            focusTab(MODES.length - 1);
+        }
+    };
+
+    return (
+        <div
+            role="tablist"
+            aria-label="Stack source"
+            className="grid grid-cols-3 border-b border-card-border/60"
+            onKeyDown={handleKeyDown}
+        >
+            {MODES.map((m, i) => {
+                const isActive = mode === m.id;
+                const Icon = m.icon;
+                return (
+                    <button
+                        key={m.id}
+                        ref={(el) => { tabRefs.current[i] = el; }}
+                        type="button"
+                        role="tab"
+                        id={tabId(m.id)}
+                        aria-selected={isActive}
+                        aria-controls={panelId(m.id)}
+                        tabIndex={isActive ? 0 : -1}
+                        disabled={disabled}
+                        onClick={() => onModeChange(m.id)}
+                        className={cn(
+                            'relative flex items-center justify-center gap-2 px-4 py-2.5',
+                            'font-mono text-[10px] uppercase tracking-[0.18em]',
+                            'transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand focus-visible:ring-inset',
+                            i < MODES.length - 1 && 'border-r border-card-border/60',
+                            isActive ? 'text-brand' : 'text-stat-subtitle hover:text-brand',
+                        )}
+                    >
+                        <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        <span>{m.label}</span>
+                        {isActive && (
+                            <span aria-hidden className="absolute inset-x-3 bottom-0 h-[2px] bg-brand" />
+                        )}
+                    </button>
+                );
+            })}
+        </div>
     );
 }
