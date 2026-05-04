@@ -12,7 +12,7 @@ class MockWS {
   readyState = 1;
   send = vi.fn();
   close = vi.fn();
-  constructor(_url: string) { MockWS.instances.push(this); }
+  constructor() { MockWS.instances.push(this); }
   static reset() { MockWS.instances = []; }
 }
 
