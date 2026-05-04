@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Check, Copy, Download, Loader2 } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
@@ -17,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 import { OtpDigitField } from '@/components/auth/OtpDigitField';
 import { ErrorRail } from '@/components/auth/ErrorRail';
+import { BackupCodeTicket } from './BackupCodeTicket';
 
 interface MfaEnrollDialogProps {
   open: boolean;
@@ -158,134 +152,137 @@ export function MfaEnrollDialog({ open, onOpenChange, onEnrolled }: MfaEnrollDia
     onEnrolled();
   };
 
+  const title =
+    step === 'qr' ? 'Pair your authenticator' :
+    step === 'confirm' ? 'Confirm the pairing' :
+    'Save your recovery codes';
+
   return (
-    <Dialog
+    <Modal
+      size="md"
       open={open}
       onOpenChange={(next) => {
         if (!next && step === 'backup') onEnrolled();
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-md overflow-hidden p-0">
-        <div className="relative">
-          <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-brand/70" />
+      <ModalHeader
+        kicker="SECURITY · MFA"
+        title={title}
+        description="Enrol a time-based one-time password (TOTP) authenticator and save single-use backup codes."
+      />
+      <StepRail step={step} />
 
-          <DialogHeader className="border-b border-card-border/60 px-6 pt-6 pb-4 text-left">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
-              SENCHO · MFA
+      {step === 'qr' && (
+        <>
+          <ModalBody>
+            <p className="text-sm leading-snug text-stat-subtitle">
+              Scan the code with 1Password, Bitwarden, Google Authenticator, or any TOTP app.
+            </p>
+            <div className="flex justify-center rounded-md bg-background p-5 shadow-[inset_0_2px_6px_0_oklch(0_0_0/0.45)]">
+              {otpauthUri ? (
+                <QRCodeSVG value={otpauthUri} size={180} />
+              ) : (
+                <div className="flex h-[180px] w-[180px] items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-stat-subtitle" strokeWidth={1.5} />
+                </div>
+              )}
             </div>
-            <DialogTitle className="mt-1 font-display text-[1.75rem] italic leading-tight text-stat-value">
-              {step === 'qr' && 'Pair your authenticator'}
-              {step === 'confirm' && 'Confirm the pairing'}
-              {step === 'backup' && 'Save your recovery codes'}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Enrol a time-based one-time password (TOTP) authenticator and save
-              single-use backup codes.
-            </DialogDescription>
-          </DialogHeader>
-
-          <StepRail step={step} />
-
-          <div className="px-6 py-5">
-            {step === 'qr' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-sm leading-snug text-stat-subtitle">
-                  Scan the code with 1Password, Bitwarden, Google Authenticator, or any TOTP app.
-                </p>
-                <div className="flex justify-center rounded-md bg-background p-5 shadow-[inset_0_2px_6px_0_oklch(0_0_0/0.45)]">
-                  {otpauthUri ? (
-                    <QRCodeSVG value={otpauthUri} size={180} />
-                  ) : (
-                    <div className="flex h-[180px] w-[180px] items-center justify-center">
-                      <Loader2 className="h-5 w-5 animate-spin text-stat-subtitle" strokeWidth={1.5} />
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-                    Secret · manual entry
-                  </span>
-                  <div className="flex items-stretch gap-2">
-                    <code className="flex-1 truncate rounded-md border border-card-border bg-background/60 px-3 py-2 font-mono text-xs tabular-nums tracking-[0.2em] text-stat-value shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.25)]">
-                      {formatSecret(secret) || '...'}
-                    </code>
-                    <Button type="button" size="icon" variant="outline" onClick={handleCopySecret} disabled={!secret}>
-                      <Copy className="h-4 w-4" strokeWidth={1.5} />
-                    </Button>
-                  </div>
-                </div>
-                <DialogFooter className="mt-2 gap-2 sm:gap-2">
-                  <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => setStep('confirm')}
-                    disabled={!otpauthUri || loading}
-                    className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
-                  >
-                    Continue
-                    <ArrowRight strokeWidth={1.5} />
-                  </Button>
-                </DialogFooter>
+            <div className="flex flex-col gap-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
+                Secret · manual entry
+              </span>
+              <div className="flex items-stretch gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-md border border-card-border bg-background/60 px-3 py-2 font-mono text-xs tabular-nums tracking-[0.2em] text-stat-value shadow-[inset_0_2px_4px_0_oklch(0_0_0/0.25)]">
+                  {formatSecret(secret) || '...'}
+                </code>
+                <Button type="button" size="icon" variant="outline" onClick={handleCopySecret} disabled={!secret}>
+                  <Copy className="h-4 w-4" strokeWidth={1.5} />
+                </Button>
               </div>
-            )}
+            </div>
+          </ModalBody>
+          <ModalFooter
+            secondary={
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+            }
+            primary={
+              <Button
+                type="button"
+                onClick={() => setStep('confirm')}
+                disabled={!otpauthUri || loading}
+                className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
+              >
+                Continue
+                <ArrowRight strokeWidth={1.5} />
+              </Button>
+            }
+          />
+        </>
+      )}
 
-            {step === 'confirm' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-sm leading-snug text-stat-subtitle">
-                  Enter the 6-digit code shown in your authenticator to confirm the pairing.
-                </p>
-                <OtpDigitField
-                  id="mfa-confirm-code"
-                  value={code}
-                  onChange={handleCodeChange}
-                  state={confirmState}
-                  disabled={loading || confirmState === 'success'}
-                  autoFocus
-                />
-                {error && <ErrorRail>{error}</ErrorRail>}
-                <DialogFooter className="mt-2 gap-2 sm:gap-2">
-                  <Button type="button" variant="ghost" onClick={() => setStep('qr')} disabled={loading}>
-                    Back
-                  </Button>
-                </DialogFooter>
-              </div>
-            )}
+      {step === 'confirm' && (
+        <>
+          <ModalBody>
+            <p className="text-sm leading-snug text-stat-subtitle">
+              Enter the 6-digit code shown in your authenticator to confirm the pairing.
+            </p>
+            <OtpDigitField
+              id="mfa-confirm-code"
+              value={code}
+              onChange={handleCodeChange}
+              state={confirmState}
+              disabled={loading || confirmState === 'success'}
+              autoFocus
+            />
+            {error && <ErrorRail>{error}</ErrorRail>}
+          </ModalBody>
+          <ModalFooter
+            secondary={
+              <Button type="button" variant="ghost" onClick={() => setStep('qr')} disabled={loading}>
+                Back
+              </Button>
+            }
+            primary={null}
+          />
+        </>
+      )}
 
-            {step === 'backup' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-sm leading-snug text-stat-subtitle">
-                  Each code unlocks your account once if your authenticator is unavailable. Store them safely. They will not be shown again.
-                </p>
-                <BackupCodeTicket codes={backupCodes} />
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" className="flex-1" onClick={handleCopyBackupCodes}>
-                    <Copy className="h-4 w-4" strokeWidth={1.5} />
-                    Copy all
-                  </Button>
-                  <Button type="button" variant="outline" className="flex-1" onClick={handleDownloadBackupCodes}>
-                    <Download className="h-4 w-4" strokeWidth={1.5} />
-                    Download
-                  </Button>
-                </div>
-                <DialogFooter className="mt-2">
-                  <Button
-                    type="button"
-                    onClick={handleFinish}
-                    className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
-                  >
-                    <Check strokeWidth={1.5} />
-                    Done
-                  </Button>
-                </DialogFooter>
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {step === 'backup' && (
+        <>
+          <ModalBody>
+            <p className="text-sm leading-snug text-stat-subtitle">
+              Each code unlocks your account once if your authenticator is unavailable. Store them safely. They will not be shown again.
+            </p>
+            <BackupCodeTicket codes={backupCodes} />
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={handleCopyBackupCodes}>
+                <Copy className="h-4 w-4" strokeWidth={1.5} />
+                Copy all
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={handleDownloadBackupCodes}>
+                <Download className="h-4 w-4" strokeWidth={1.5} />
+                Download
+              </Button>
+            </div>
+          </ModalBody>
+          <ModalFooter
+            primary={
+              <Button
+                type="button"
+                onClick={handleFinish}
+                className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
+              >
+                <Check strokeWidth={1.5} />
+                Done
+              </Button>
+            }
+          />
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -326,33 +323,3 @@ function StepRail({ step }: { step: Step }) {
     </div>
   );
 }
-
-function BackupCodeTicket({ codes }: { codes: string[] }) {
-  return (
-    <div className="overflow-hidden rounded-md border border-card-border bg-background/60 shadow-[inset_0_2px_6px_0_oklch(0_0_0/0.35)]">
-      <div className="flex items-center justify-between border-b border-card-border/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-        <span>Recovery codes</span>
-        <span className="tabular-nums">{codes.length} issued</span>
-      </div>
-      <ol className="grid grid-cols-1 sm:grid-cols-2">
-        {codes.map((c, i) => (
-          <li
-            key={c}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 font-mono text-sm tabular-nums tracking-[0.15em] text-stat-value',
-              'border-t border-card-border/40',
-              i === 0 && 'sm:border-t-0',
-              i === 1 && 'sm:border-t-0',
-            )}
-          >
-            <span className="text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <span>{c}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-

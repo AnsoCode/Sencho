@@ -1,21 +1,14 @@
 import { useRef, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Check, Copy, Download } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
 import { copyToClipboard } from '@/lib/clipboard';
-import { cn } from '@/lib/utils';
 import { TOTP_LENGTH, normalizeTotpInput } from '@/lib/mfa';
 import { OtpDigitField } from '@/components/auth/OtpDigitField';
 import { ErrorRail } from '@/components/auth/ErrorRail';
+import { BackupCodeTicket } from './BackupCodeTicket';
 
 interface MfaBackupCodesDialogProps {
   open: boolean;
@@ -122,7 +115,8 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
   };
 
   return (
-    <Dialog
+    <Modal
+      size="md"
       open={open}
       onOpenChange={(next) => {
         if (!next) {
@@ -132,108 +126,73 @@ export function MfaBackupCodesDialog({ open, onOpenChange, onRegenerated }: MfaB
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-md overflow-hidden p-0">
-        <div className="relative">
-          <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-brand/70" />
+      <ModalHeader
+        kicker="SECURITY · BACKUP CODES"
+        title={step === 'confirm' ? 'Confirm identity' : 'New recovery codes'}
+        description="Replace your backup codes with a freshly generated set. The previous set stops working immediately."
+      />
 
-          <DialogHeader className="border-b border-card-border/60 px-6 pt-6 pb-4 text-left">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-stat-subtitle">
-              SENCHO · MFA
+      {step === 'confirm' && (
+        <>
+          <ModalBody>
+            <p className="text-sm leading-snug text-stat-subtitle">
+              Enter a code from your authenticator to generate a new set. The previous codes stop working immediately.
+            </p>
+            <OtpDigitField
+              id="mfa-regen-code"
+              value={code}
+              onChange={handleCodeChange}
+              state={confirmState}
+              disabled={loading || confirmState === 'success'}
+              autoFocus
+            />
+            {error && <ErrorRail>{error}</ErrorRail>}
+          </ModalBody>
+          <ModalFooter
+            secondary={
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
+                Cancel
+              </Button>
+            }
+            primary={null}
+          />
+        </>
+      )}
+
+      {step === 'show' && (
+        <>
+          <ModalBody>
+            <WarningRail>Previous codes have been invalidated.</WarningRail>
+            <p className="text-sm leading-snug text-stat-subtitle">
+              Each code can be used once. Store them safely. They will not be shown again.
+            </p>
+            <BackupCodeTicket codes={backupCodes} />
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={handleCopy}>
+                <Copy className="h-4 w-4" strokeWidth={1.5} />
+                Copy all
+              </Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={handleDownload}>
+                <Download className="h-4 w-4" strokeWidth={1.5} />
+                Download
+              </Button>
             </div>
-            <DialogTitle className="mt-1 font-display text-[1.75rem] italic leading-tight text-stat-value">
-              {step === 'confirm' ? 'Confirm identity' : 'New recovery codes'}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Replace your backup codes with a freshly generated set. The previous
-              set stops working immediately.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="px-6 py-5">
-            {step === 'confirm' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-sm leading-snug text-stat-subtitle">
-                  Enter a code from your authenticator to generate a new set. The previous codes stop working immediately.
-                </p>
-                <OtpDigitField
-                  id="mfa-regen-code"
-                  value={code}
-                  onChange={handleCodeChange}
-                  state={confirmState}
-                  disabled={loading || confirmState === 'success'}
-                  autoFocus
-                />
-                {error && <ErrorRail>{error}</ErrorRail>}
-                <DialogFooter className="mt-2 gap-2 sm:gap-2">
-                  <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
-                    Cancel
-                  </Button>
-                </DialogFooter>
-              </div>
-            )}
-
-            {step === 'show' && (
-              <div className="flex flex-col gap-4">
-                <WarningRail>Previous codes have been invalidated.</WarningRail>
-                <p className="text-sm leading-snug text-stat-subtitle">
-                  Each code can be used once. Store them safely. They will not be shown again.
-                </p>
-                <BackupCodeTicket codes={backupCodes} />
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" className="flex-1" onClick={handleCopy}>
-                    <Copy className="h-4 w-4" strokeWidth={1.5} />
-                    Copy all
-                  </Button>
-                  <Button type="button" variant="outline" className="flex-1" onClick={handleDownload}>
-                    <Download className="h-4 w-4" strokeWidth={1.5} />
-                    Download
-                  </Button>
-                </div>
-                <DialogFooter className="mt-2">
-                  <Button
-                    type="button"
-                    onClick={handleFinish}
-                    className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
-                  >
-                    <Check strokeWidth={1.5} />
-                    Done
-                  </Button>
-                </DialogFooter>
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function BackupCodeTicket({ codes }: { codes: string[] }) {
-  return (
-    <div className="overflow-hidden rounded-md border border-card-border bg-background/60 shadow-[inset_0_2px_6px_0_oklch(0_0_0/0.35)]">
-      <div className="flex items-center justify-between border-b border-card-border/60 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-        <span>Recovery codes</span>
-        <span className="tabular-nums">{codes.length} issued</span>
-      </div>
-      <ol className="grid grid-cols-1 sm:grid-cols-2">
-        {codes.map((c, i) => (
-          <li
-            key={c}
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 font-mono text-sm tabular-nums tracking-[0.15em] text-stat-value',
-              'border-t border-card-border/40',
-              i === 0 && 'sm:border-t-0',
-              i === 1 && 'sm:border-t-0',
-            )}
-          >
-            <span className="text-[10px] uppercase tracking-[0.18em] text-stat-subtitle">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <span>{c}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
+          </ModalBody>
+          <ModalFooter
+            primary={
+              <Button
+                type="button"
+                onClick={handleFinish}
+                className="bg-brand text-brand-foreground shadow-btn-glow hover:bg-brand/90"
+              >
+                <Check strokeWidth={1.5} />
+                Done
+              </Button>
+            }
+          />
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -247,4 +206,3 @@ function WarningRail({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

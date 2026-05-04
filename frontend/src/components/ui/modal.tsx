@@ -40,7 +40,7 @@ export function Modal({ open, onOpenChange, children, size = 'md', className }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'p-0 gap-0 overflow-hidden',
+          'p-0 gap-0 overflow-hidden grid-cols-1',
           SIZE_CLASS[size],
           className,
         )}
