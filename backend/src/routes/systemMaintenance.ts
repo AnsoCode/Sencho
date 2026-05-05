@@ -135,6 +135,25 @@ systemMaintenanceRouter.get('/networks', async (req: Request, res: Response) => 
   }
 });
 
+systemMaintenanceRouter.get('/images/:id', async (req: Request, res: Response) => {
+  try {
+    const rawId = req.params.id as string;
+    if (!rawId) return res.status(400).json({ error: 'Invalid image ID format' });
+    const hexId = rawId.startsWith('sha256:') ? rawId.slice('sha256:'.length) : rawId;
+    if (!isValidDockerResourceId(hexId)) {
+      return res.status(400).json({ error: 'Invalid image ID format' });
+    }
+    const result = await DockerController.getInstance(req.nodeId).inspectImage(hexId);
+    res.json(result);
+  } catch (error: unknown) {
+    console.error('Failed to inspect image:', error);
+    const err = error as Record<string, unknown>;
+    const is404 = (typeof err.statusCode === 'number' && err.statusCode === 404)
+      || (error instanceof Error && error.message.includes('404'));
+    res.status(is404 ? 404 : 500).json({ error: is404 ? 'Image not found' : 'Failed to inspect image' });
+  }
+});
+
 systemMaintenanceRouter.post('/images/delete', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {

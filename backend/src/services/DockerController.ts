@@ -435,6 +435,12 @@ class DockerController {
     await image.remove({ force: true });
   }
 
+  public async inspectImage(id: string) {
+    const image = this.docker.getImage(id);
+    const [inspect, history] = await Promise.all([image.inspect(), image.history()]);
+    return { inspect, history };
+  }
+
   public async removeVolume(name: string) {
     const volume = this.docker.getVolume(name);
     await volume.remove({ force: true });

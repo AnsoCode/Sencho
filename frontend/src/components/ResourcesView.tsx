@@ -37,6 +37,7 @@ import type { SenchoOpenLogsDetail } from '@/lib/events';
 import { lazy, Suspense } from 'react';
 import { ReclaimHero } from './resources/ReclaimHero';
 import { FootprintTreemap } from './resources/FootprintTreemap';
+import { ImageDetailsSheet } from './resources/ImageDetailsSheet';
 import { TabLanding, type TabLandingEntry } from './resources/TabLanding';
 
 const NetworkTopologyView = lazy(() => import('./NetworkTopologyView'));
@@ -392,6 +393,7 @@ export default function ResourcesView() {
     const [isCreatingNetwork, setIsCreatingNetwork] = useState(false);
     const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
     const [inspectLoadingId, setInspectLoadingId] = useState<string | null>(null);
+    const [inspectImageId, setInspectImageId] = useState<string | null>(null);
 
     // Unmanaged container state
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
@@ -858,6 +860,16 @@ export default function ResourcesView() {
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                                                        onClick={() => setInspectImageId(img.Id)}
+                                                        title="Inspect image"
+                                                        aria-label={`Inspect ${img.RepoTags?.[0] || 'image'}`}
+                                                    >
+                                                        <Eye className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                    </Button>
                                                     {trivy.available && isAdmin && img.RepoTags?.[0] && img.RepoTags[0] !== '<none>:<none>' && (
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
@@ -1332,6 +1344,9 @@ export default function ResourcesView() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Image Details Sheet */}
+            <ImageDetailsSheet imageId={inspectImageId} onClose={() => setInspectImageId(null)} />
 
             {/* Network Inspect Sheet */}
             <Sheet open={!!inspectNetwork} onOpenChange={open => !open && setInspectNetwork(null)}>
