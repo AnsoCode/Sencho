@@ -331,7 +331,7 @@ export function sanitizeRelPath(relPath: string): string {
   if (relPath.length > 1024) throw new PathTraversalError();
   if (relPath.includes('\0')) throw new PathTraversalError();
   // Normalize away leading slashes; reject absolute and parent-escape.
-  let p = relPath.replace(/^\/+/, '');
+  const p = relPath.replace(/^\/+/, '');
   if (p === '' || p === '.') return '';
   if (p.split('/').some((seg) => seg === '..')) throw new PathTraversalError();
   // posix-resolve and re-check that it stays under the mount root.

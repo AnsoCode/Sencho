@@ -29,7 +29,7 @@ export function VolumeBrowserSheet({ volumeName, onClose }: VolumeBrowserSheetPr
     readGenerationRef.current += 1;
   }, [volumeName]);
 
-  const handleSelectFile = useCallback(async (relPath: string, _entry: FileEntry) => {
+  const handleSelectFile = useCallback(async (relPath: string) => {
     if (!volumeName) return;
     const generation = ++readGenerationRef.current;
     const targetVolume = volumeName;
