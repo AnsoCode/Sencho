@@ -69,14 +69,14 @@ export function VolumeBrowserSheet({ volumeName, onClose }: VolumeBrowserSheetPr
   return (
     <Sheet open={!!volumeName} onOpenChange={handleClose}>
       <SheetContent className="sm:max-w-3xl">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
-            <span className="font-mono text-sm">{volumeName}</span>
+        <SheetHeader className="pr-10">
+          <SheetTitle className="flex items-center gap-2 min-w-0">
+            <HardDrive className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <span className="font-mono text-sm truncate">{volumeName}</span>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 ml-auto"
+              className="h-7 w-7 ml-auto shrink-0"
               onClick={() => setRefreshKey((k) => k + 1)}
               title="Refresh tree"
               aria-label="Refresh tree"
