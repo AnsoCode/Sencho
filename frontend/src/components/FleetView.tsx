@@ -1,4 +1,3 @@
-import { useState, useCallback, useMemo } from 'react';
 import { useExperimental } from '@/hooks/useExperimental';
 import {
     RefreshCw, Search, Camera,
@@ -9,17 +8,14 @@ import { FleetMasthead } from './fleet/FleetMasthead';
 import { ReconnectingOverlay } from './FleetView/ReconnectingOverlay';
 import { NodeUpdatesSheet } from './FleetView/NodeUpdatesSheet';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
-import { isCritical, getNodeCpu, getNodeMem, getNodeDisk } from './FleetView/nodeUtils';
 import { OverviewTab } from './FleetView/OverviewTab';
-import type { FleetNode, ViewMode } from './FleetView/types';
 import { useFleetPreferences } from './FleetView/hooks/useFleetPreferences';
-import { useFleetLabels, labelPaletteKey } from './FleetView/hooks/useFleetLabels';
 import { useFleetUpdateStatus } from './FleetView/hooks/useFleetUpdateStatus';
 import { useFleetPolling } from './FleetView/hooks/useFleetPolling';
+import { useFleetOverview } from './FleetView/hooks/useFleetOverview';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
-import { apiFetch } from '@/lib/api';
 import { useLicense } from '@/context/LicenseContext';
 import { AdmiralGate } from './AdmiralGate';
 import FleetSnapshots from './FleetSnapshots';
@@ -33,170 +29,35 @@ interface FleetViewProps {
 }
 
 export function FleetView({ onNavigateToNode }: FleetViewProps) {
-    const [nodes, setNodes] = useState<FleetNode[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
-    const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const { isPaid, license } = useLicense();
     const isAdmiral = isPaid && license?.variant === 'admiral';
     const experimental = useExperimental();
 
     const { prefs, updatePrefs } = useFleetPreferences();
-    const { fleetPalette, fleetStackLabelMap, labelFilters, setLabelFilters } = useFleetLabels({ isPaid, nodes });
     const updateStatus = useFleetUpdateStatus({ isPaid });
-
-    const fetchOverview = useCallback(async (showRefresh = false) => {
-        if (showRefresh) setRefreshing(true);
-        try {
-            const res = await apiFetch('/fleet/overview', { localOnly: true });
-            if (res.ok) {
-                setNodes(await res.json());
-                setLastSyncAt(Date.now());
-            }
-        } catch (error) {
-            console.error('Failed to fetch fleet overview:', error);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    }, []);
+    const overview = useFleetOverview({ isPaid, prefs, updatePrefs, updateStatuses: updateStatus.updateStatuses });
 
     useFleetPolling({
         isPaid,
-        fetchOverview,
+        fetchOverview: overview.fetchOverview,
         fetchUpdateStatus: updateStatus.fetchUpdateStatus,
         updateStatuses: updateStatus.updateStatuses,
     });
 
-    // --- Computed values ---
-
-    const onlineNodes = useMemo(() => nodes.filter(n => n.status === 'online'), [nodes]);
-    const onlineCount = onlineNodes.length;
-    const totalContainers = nodes.reduce((sum, n) => sum + (n.stats?.active ?? 0), 0);
-    const totalContainersAll = nodes.reduce((sum, n) => sum + (n.stats?.total ?? 0), 0);
-    const criticalCount = onlineNodes.filter(isCritical).length;
-
-    const avgCpuNum = onlineNodes.length > 0
-        ? onlineNodes.reduce((sum, n) => sum + getNodeCpu(n), 0) / onlineNodes.length
-        : 0;
-    const worstCpuNode = onlineNodes.length > 0
-        ? onlineNodes.reduce((worst, n) => getNodeCpu(n) > getNodeCpu(worst) ? n : worst, onlineNodes[0])
-        : null;
-    const worstCpu = worstCpuNode
-        ? { name: worstCpuNode.name, percent: getNodeCpu(worstCpuNode) }
-        : null;
-
-    const totalMemUsed = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.used ?? 0), 0);
-    const totalMemTotal = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.total ?? 0), 0);
-
-    const updateStatusMap = useMemo(
-        () => new Map(updateStatus.updateStatuses.map(s => [s.nodeId, s])),
-        [updateStatus.updateStatuses]
-    );
-
-    // --- Filtering & Sorting (Skipper+) ---
-
-    const processedNodes = useMemo(() => {
-        let filtered = [...nodes];
-
-        // Search (paid only, but harmless if applied - free users won't see the search bar)
-        if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            filtered = filtered.filter(n =>
-                n.name.toLowerCase().includes(q) ||
-                n.stacks?.some(s => s.toLowerCase().includes(q))
-            );
-        }
-
-        if (isPaid) {
-            // Status filter
-            if (prefs.filterStatus === 'online') filtered = filtered.filter(n => n.status === 'online');
-            if (prefs.filterStatus === 'offline') filtered = filtered.filter(n => n.status !== 'online');
-
-            // Type filter
-            if (prefs.filterType === 'local') filtered = filtered.filter(n => n.type === 'local');
-            if (prefs.filterType === 'remote') filtered = filtered.filter(n => n.type === 'remote');
-
-            // Critical filter
-            if (prefs.filterCritical) filtered = filtered.filter(isCritical);
-
-            // Label filter: match by (name, color) palette key so equivalent
-            // labels across nodes behave as one filter.
-            if (labelFilters.size > 0) {
-                filtered = filtered.filter(n => {
-                    const nodeStackLabels = fleetStackLabelMap[n.id] ?? {};
-                    return n.stacks?.some(s => {
-                        const sLabels = nodeStackLabels[s] ?? [];
-                        return sLabels.some(l => labelFilters.has(labelPaletteKey(l.name, l.color)));
-                    });
-                });
-            }
-
-            // Sort
-            filtered.sort((a, b) => {
-                let cmp = 0;
-                switch (prefs.sortBy) {
-                    case 'name':
-                        cmp = a.name.localeCompare(b.name);
-                        break;
-                    case 'cpu':
-                        cmp = getNodeCpu(b) - getNodeCpu(a);
-                        break;
-                    case 'memory':
-                        cmp = getNodeMem(b) - getNodeMem(a);
-                        break;
-                    case 'containers':
-                        cmp = (b.stats?.active ?? 0) - (a.stats?.active ?? 0);
-                        break;
-                    case 'status':
-                        cmp = (a.status === 'online' ? 0 : 1) - (b.status === 'online' ? 0 : 1);
-                        break;
-                }
-                return prefs.sortDir === 'desc' ? -cmp : cmp;
-            });
-        }
-
-        return filtered;
-    }, [nodes, searchQuery, isPaid, prefs, labelFilters, fleetStackLabelMap]);
-
-    const localNode = useMemo(() => processedNodes.find(n => n.type === 'local') ?? null, [processedNodes]);
-    const remoteNodes = useMemo(() => processedNodes.filter(n => n.type !== 'local'), [processedNodes]);
-    const topologyNodes = useMemo(() => processedNodes.map(n => ({
-        id: n.id,
-        name: n.name,
-        type: n.type,
-        status: n.status,
-        cpuPercent: getNodeCpu(n),
-        memPercent: getNodeMem(n),
-        diskPercent: getNodeDisk(n),
-        stackCount: n.stacks?.length ?? 0,
-        runningCount: n.stats?.active ?? 0,
-        critical: n.status === 'online' && isCritical(n),
-    })), [processedNodes]);
-
-    const clearFilters = useCallback(() => {
-        updatePrefs({ filterStatus: 'all', filterType: 'all', filterCritical: false });
-        setLabelFilters(new Set());
-    }, [updatePrefs, setLabelFilters]);
-    const allNodes = useMemo(
-        () => (localNode ? [localNode, ...remoteNodes] : remoteNodes),
-        [localNode, remoteNodes]
-    );
+    const { mastheadStats, lastSyncAt, loading, refreshing } = overview;
 
     return (
         <div className="h-full overflow-auto p-6">
             <FleetMasthead
-                nodeCount={nodes.length}
-                onlineCount={onlineCount}
-                criticalCount={criticalCount}
-                totalCpuPercent={avgCpuNum}
-                worstCpu={worstCpu}
-                totalMemUsed={totalMemUsed}
-                totalMemTotal={totalMemTotal}
-                activeContainers={totalContainers}
-                totalContainers={totalContainersAll}
+                nodeCount={mastheadStats.nodeCount}
+                onlineCount={mastheadStats.onlineCount}
+                criticalCount={mastheadStats.criticalCount}
+                totalCpuPercent={mastheadStats.avgCpuNum}
+                worstCpu={mastheadStats.worstCpu}
+                totalMemUsed={mastheadStats.totalMemUsed}
+                totalMemTotal={mastheadStats.totalMemTotal}
+                activeContainers={mastheadStats.totalContainers}
+                totalContainers={mastheadStats.totalContainersAll}
                 lastSyncAt={lastSyncAt}
                 loading={loading}
             />
@@ -267,7 +128,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => fetchOverview(true)}
+                            onClick={() => overview.fetchOverview(true)}
                             disabled={refreshing}
                             className="gap-2"
                         >
@@ -280,23 +141,23 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 <TabsContent value="overview">
                     <OverviewTab
                         loading={loading}
-                        nodes={nodes}
-                        processedNodes={processedNodes}
-                        allNodes={allNodes}
-                        topologyNodes={topologyNodes}
-                        viewMode={viewMode}
-                        onViewModeChange={setViewMode}
-                        searchQuery={searchQuery}
-                        onSearchQueryChange={setSearchQuery}
+                        nodes={overview.nodes}
+                        processedNodes={overview.processedNodes}
+                        allNodes={overview.allNodes}
+                        topologyNodes={overview.topologyNodes}
+                        viewMode={overview.viewMode}
+                        onViewModeChange={overview.setViewMode}
+                        searchQuery={overview.searchQuery}
+                        onSearchQueryChange={overview.setSearchQuery}
                         prefs={prefs}
                         onPrefsChange={updatePrefs}
-                        fleetPalette={fleetPalette}
-                        labelFilters={labelFilters}
-                        onLabelFiltersChange={setLabelFilters}
-                        onClearFilters={clearFilters}
+                        fleetPalette={overview.fleetPalette}
+                        labelFilters={overview.labelFilters}
+                        onLabelFiltersChange={overview.setLabelFilters}
+                        onClearFilters={overview.clearFilters}
                         isPaid={isPaid}
-                        fleetStackLabelMap={fleetStackLabelMap}
-                        updateStatusMap={updateStatusMap}
+                        fleetStackLabelMap={overview.fleetStackLabelMap}
+                        updateStatusMap={overview.updateStatusMap}
                         onNavigateToNode={onNavigateToNode}
                         onUpdate={isPaid ? updateStatus.triggerNodeUpdate : undefined}
                         updatingNodeId={updateStatus.updatingNodeId}
@@ -357,10 +218,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 )}
             </Tabs>
 
-            {/* Reconnecting overlay shown when local node is updating */}
-            {updateStatus.reconnecting && <ReconnectingOverlay preUpdateStartedAt={updateStatus.preUpdateStartedAt} />}
+            {updateStatus.reconnecting && (
+                <ReconnectingOverlay preUpdateStartedAt={updateStatus.preUpdateStartedAt} />
+            )}
 
-            {/* Node Updates sheet */}
             <NodeUpdatesSheet
                 open={updateStatus.showUpdateModal}
                 onOpenChange={updateStatus.setShowUpdateModal}
@@ -374,7 +235,6 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 triggerUpdateAll={updateStatus.triggerUpdateAll}
             />
 
-            {/* Confirm dialog for local node update */}
             <LocalUpdateConfirmDialog
                 open={updateStatus.localUpdateConfirm !== null}
                 onOpenChange={(open) => { if (!open) updateStatus.setLocalUpdateConfirm(null); }}
