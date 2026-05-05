@@ -109,15 +109,15 @@ export function ImageDetailsSheet({ imageId, onClose }: ImageDetailsSheetProps) 
     <Sheet open={!!imageId} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="sm:max-w-lg">
         <ScrollArea className="h-full">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <ImageIcon className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
-              {inspect?.RepoTags?.[0] || (inspect ? shortDigest(inspect.Id) : 'Image details')}
+          <SheetHeader className="pr-8">
+            <SheetTitle className="flex items-center gap-2 truncate">
+              <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <span className="truncate">{inspect?.RepoTags?.[0] || (inspect ? shortDigest(inspect.Id) : 'Image details')}</span>
             </SheetTitle>
           </SheetHeader>
 
           {loading && (
-            <div className="space-y-3 mt-6">
+            <div className="space-y-3 mt-6 pr-8">
               <Skeleton className="h-5 w-1/2" />
               <Skeleton className="h-5 w-full" />
               <Skeleton className="h-5 w-full" />
@@ -126,7 +126,7 @@ export function ImageDetailsSheet({ imageId, onClose }: ImageDetailsSheetProps) 
           )}
 
           {!loading && inspect && (
-            <div className="space-y-6 mt-6 pb-6">
+            <div className="space-y-6 mt-6 pb-6 pr-8">
               <Section title="Overview">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <Field label="ID">
