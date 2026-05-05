@@ -25,7 +25,7 @@ export function totpNow(secret: string): string {
 }
 
 /** Selector for the dashboard - only present in EditorLayout, not on login/setup pages */
-const DASHBOARD_INDICATOR = 'img[alt="Sencho Logo"]';
+const DASHBOARD_INDICATOR = 'img[src*="sencho-logo"]';
 
 /** Returns true if the current page is the first-run setup screen */
 async function isSetupPage(page: Page): Promise<boolean> {
