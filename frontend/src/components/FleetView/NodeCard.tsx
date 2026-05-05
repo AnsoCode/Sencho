@@ -64,7 +64,7 @@ export function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, u
         const next = !expanded;
         setExpanded(next);
 
-        if (next && !stacks) {
+        if (next && stacks === null) {
             setLoadingStacks(true);
             try {
                 const res = await apiFetch(`/fleet/node/${node.id}/stacks`, { localOnly: true });
