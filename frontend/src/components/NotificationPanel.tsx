@@ -7,6 +7,8 @@ import {
     AlertOctagon,
     X,
     Trash2,
+    SlidersHorizontal,
+    CheckCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,9 @@ const CATEGORY_FILTER_ALL = 'all' as const;
 type NotifFilter = 'all' | 'unread' | 'alerts';
 type NodeFilter = typeof NODE_FILTER_ALL | number;
 type CategoryFilter = typeof CATEGORY_FILTER_ALL | NotificationCategory;
+
+const FILTER_LABEL_CLASS = 'font-mono text-[10px] uppercase tracking-[0.14em]';
+const FILTER_TRIGGER_CLASS = `h-7 w-[140px] border-card-border bg-card px-2 text-stat-subtitle shadow-none focus:ring-0 ${FILTER_LABEL_CLASS}`;
 
 type LevelConfig = {
     icon: LucideIcon;
@@ -136,6 +141,10 @@ export function NotificationPanel({
     const [nodeFilter, setNodeFilter] = useState<NodeFilter>(NODE_FILTER_ALL);
     const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(CATEGORY_FILTER_ALL);
     const [open, setOpen] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
+
+    const hasActiveFilters =
+        nodeFilter !== NODE_FILTER_ALL || categoryFilter !== CATEGORY_FILTER_ALL;
 
     const unreadCount = useMemo(
         () => notifications.filter((n) => !n.is_read).length,
@@ -215,25 +224,59 @@ export function NotificationPanel({
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-brand/[0.05] via-transparent to-transparent" />
                     <div className="absolute inset-y-0 left-0 w-[2px] bg-brand/60" />
                     <div className="relative flex items-center justify-between px-[var(--density-row-x)] py-[var(--density-tile-y)]">
-                        <div className="flex items-baseline gap-2.5">
-                            <span className="font-display text-xl italic leading-none text-stat-value">
-                                Notifications
+                        <span className="font-display text-xl italic leading-none text-stat-value">
+                            Notifications
+                        </span>
+                        {unreadCount > 0 ? (
+                            <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] tabular-nums text-brand">
+                                {unreadCount} unread
                             </span>
-                            {unreadCount > 0 ? (
-                                <span className="font-mono text-[10px] leading-3 uppercase tracking-[0.18em] tabular-nums text-brand">
-                                    {unreadCount} unread
-                                </span>
+                        ) : null}
+                    </div>
+                </div>
+
+                {/* Filter segment */}
+                <div className="space-y-2 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
+                    <div className="flex items-center gap-2">
+                        <SegmentedControl
+                            value={filter}
+                            options={filterOptions}
+                            onChange={setFilter}
+                            ariaLabel="Filter notifications"
+                        />
+                        <div className="ml-auto flex items-center gap-0.5">
+                            {notifications.length > 0 ? (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setShowFilters((v) => !v)}
+                                    className={cn(
+                                        'relative h-7 w-7 hover:text-stat-value',
+                                        hasActiveFilters ? 'text-brand' : 'text-stat-subtitle',
+                                    )}
+                                    title={showFilters ? 'Hide filters' : 'Show filters'}
+                                    aria-pressed={showFilters}
+                                    aria-label="Toggle filters"
+                                >
+                                    <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                    {hasActiveFilters ? (
+                                        <span
+                                            aria-hidden="true"
+                                            className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-brand"
+                                        />
+                                    ) : null}
+                                </Button>
                             ) : null}
-                        </div>
-                        <div className="flex items-center gap-0.5">
                             {unreadCount > 0 ? (
                                 <Button
                                     variant="ghost"
-                                    size="sm"
+                                    size="icon"
                                     onClick={onMarkAllRead}
-                                    className="h-7 px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle hover:text-stat-value"
+                                    className="h-7 w-7 text-stat-subtitle hover:text-stat-value"
+                                    title="Mark all read"
+                                    aria-label="Mark all read"
                                 >
-                                    Mark read
+                                    <CheckCheck className="h-3.5 w-3.5" strokeWidth={1.5} />
                                 </Button>
                             ) : null}
                             {notifications.length > 0 ? (
@@ -243,68 +286,55 @@ export function NotificationPanel({
                                     onClick={onClearAll}
                                     className="h-7 w-7 text-stat-subtitle hover:text-destructive"
                                     title="Clear all"
+                                    aria-label="Clear all notifications"
                                 >
                                     <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                                 </Button>
                             ) : null}
                         </div>
                     </div>
-                </div>
-
-                {/* Filter segment */}
-                <div className="flex flex-wrap items-center gap-2 border-t border-card-border/60 px-[var(--density-row-x)] py-[var(--density-row-y)]">
-                    {showNodeFilter ? (
-                        <Select
-                            value={effectiveNodeFilter === NODE_FILTER_ALL ? NODE_FILTER_ALL : String(effectiveNodeFilter)}
-                            onValueChange={(v) => setNodeFilter(v === NODE_FILTER_ALL ? NODE_FILTER_ALL : Number(v))}
-                        >
-                            <SelectTrigger
-                                aria-label="Filter by node"
-                                className="h-7 w-[120px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
+                    {showFilters ? (
+                        <div className="flex items-center gap-2">
+                            {showNodeFilter ? (
+                                <Select
+                                    value={effectiveNodeFilter === NODE_FILTER_ALL ? NODE_FILTER_ALL : String(effectiveNodeFilter)}
+                                    onValueChange={(v) => setNodeFilter(v === NODE_FILTER_ALL ? NODE_FILTER_ALL : Number(v))}
+                                >
+                                    <SelectTrigger aria-label="Filter by node" className={FILTER_TRIGGER_CLASS}>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={NODE_FILTER_ALL} className={FILTER_LABEL_CLASS}>
+                                            All nodes
+                                        </SelectItem>
+                                        {nodes.map((n) => (
+                                            <SelectItem key={n.id} value={String(n.id)} className={FILTER_LABEL_CLASS}>
+                                                {n.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : null}
+                            <Select
+                                value={categoryFilter}
+                                onValueChange={(v) => setCategoryFilter(v as CategoryFilter)}
                             >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={NODE_FILTER_ALL} className="font-mono text-[10px] uppercase tracking-[0.14em]">
-                                    All nodes
-                                </SelectItem>
-                                {nodes.map((n) => (
-                                    <SelectItem key={n.id} value={String(n.id)} className="font-mono text-[10px] uppercase tracking-[0.14em]">
-                                        {n.name}
+                                <SelectTrigger aria-label="Filter by category" className={FILTER_TRIGGER_CLASS}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={CATEGORY_FILTER_ALL} className={FILTER_LABEL_CLASS}>
+                                        All types
                                     </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                                    {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map((cat) => (
+                                        <SelectItem key={cat} value={cat} className={FILTER_LABEL_CLASS}>
+                                            {CATEGORY_LABELS[cat]}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     ) : null}
-                    <Select
-                        value={categoryFilter}
-                        onValueChange={(v) => setCategoryFilter(v as CategoryFilter)}
-                    >
-                        <SelectTrigger
-                            aria-label="Filter by category"
-                            className="h-7 w-[130px] border-card-border bg-card px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stat-subtitle shadow-none focus:ring-0"
-                        >
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value={CATEGORY_FILTER_ALL} className="font-mono text-[10px] uppercase tracking-[0.14em]">
-                                All types
-                            </SelectItem>
-                            {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map((cat) => (
-                                <SelectItem key={cat} value={cat} className="font-mono text-[10px] uppercase tracking-[0.14em]">
-                                    {CATEGORY_LABELS[cat]}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    <div className="ml-auto">
-                        <SegmentedControl
-                            value={filter}
-                            options={filterOptions}
-                            onChange={setFilter}
-                            ariaLabel="Filter notifications"
-                        />
-                    </div>
                 </div>
 
                 {/* Stream */}
