@@ -79,6 +79,20 @@ When any volumes are present, a two-card landing strip above the table highlight
   Deleting a volume is permanent. Any data stored in it will be lost. Always back up important volume data before pruning.
 </Warning>
 
+#### Browse volume contents
+
+Click the folder icon on any volume row (admin only) to open a read-only browser for that volume. The panel shows a directory tree on the left and a file viewer on the right.
+
+- **Read only.** No edits, no writes, no deletions. The browser launches a short-lived helper container with the volume mounted read-only.
+- **Size cap.** Files are read up to 5 MB. Larger files show a truncation banner.
+- **Binary files** are displayed as a hex view. Plain text is shown directly.
+- **Symlinks** are listed but never followed. Reading a symlink path returns an error.
+- **Audit log.** Every file read is recorded in the audit log, including failed reads, with the volume and path. Use this for compliance and incident review.
+
+<Warning>
+  Volumes commonly contain database files, password hashes, certificates, and other secrets. Treat the volume browser as a high-power admin tool.
+</Warning>
+
 ### Networks
 
 Lists all Docker networks. Columns: ID, name, driver, scope (`local`, `global`, `swarm`), and managed status.

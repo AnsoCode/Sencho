@@ -18,7 +18,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { apiFetch } from '@/lib/api';
 import { copyToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui/toast-store';
-import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2, History } from 'lucide-react';
+import { Trash2, HardDrive, Network, PackageMinus, MonitorX, MoreVertical, AlertTriangle, ShieldCheck, Plus, Eye, Copy, Container, Loader2, History, FolderOpen } from 'lucide-react';
 import { CursorProvider, CursorContainer, Cursor, CursorFollow } from '@/components/animate-ui/primitives/animate/cursor';
 import { useTrivyStatus } from '@/hooks/useTrivyStatus';
 import { VulnerabilityScanSheet } from './VulnerabilityScanSheet';
@@ -38,6 +38,7 @@ import { lazy, Suspense } from 'react';
 import { ReclaimHero } from './resources/ReclaimHero';
 import { FootprintTreemap } from './resources/FootprintTreemap';
 import { ImageDetailsSheet } from './resources/ImageDetailsSheet';
+import { VolumeBrowserSheet } from './resources/VolumeBrowserSheet';
 import { TabLanding, type TabLandingEntry } from './resources/TabLanding';
 
 const NetworkTopologyView = lazy(() => import('./NetworkTopologyView'));
@@ -394,6 +395,7 @@ export default function ResourcesView() {
     const [inspectNetwork, setInspectNetwork] = useState<NetworkInspectData | null>(null);
     const [inspectLoadingId, setInspectLoadingId] = useState<string | null>(null);
     const [inspectImageId, setInspectImageId] = useState<string | null>(null);
+    const [browseVolume, setBrowseVolume] = useState<string | null>(null);
 
     // Unmanaged container state
     const [selectedOrphans, setSelectedOrphans] = useState<string[]>([]);
@@ -961,9 +963,23 @@ export default function ResourcesView() {
                                             <TableCell className="hidden md:table-cell text-xs text-muted-foreground truncate max-w-[300px]">{vol.Mountpoint}</TableCell>
                                             <TableCell><ManagedBadge status={vol.managedStatus} managedBy={vol.managedBy} /></TableCell>
                                             <TableCell className="text-right">
-                                                {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
-                                                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                                                </Button>}
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {isAdmin && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+                                                            onClick={() => setBrowseVolume(vol.Name)}
+                                                            title="Browse volume contents"
+                                                            aria-label={`Browse ${vol.Name}`}
+                                                        >
+                                                            <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                        </Button>
+                                                    )}
+                                                    {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/60 hover:bg-destructive hover:text-destructive-foreground transition-colors" onClick={() => setConfirmDelete({ type: 'volumes', id: vol.Name, name: vol.Name })}>
+                                                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                                                    </Button>}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -1347,6 +1363,10 @@ export default function ResourcesView() {
 
             {/* Image Details Sheet */}
             <ImageDetailsSheet imageId={inspectImageId} onClose={() => setInspectImageId(null)} />
+
+            {/* Volume Browser Sheet */}
+            <VolumeBrowserSheet volumeName={browseVolume} onClose={() => setBrowseVolume(null)} />
+
 
             {/* Network Inspect Sheet */}
             <Sheet open={!!inspectNetwork} onOpenChange={open => !open && setInspectNetwork(null)}>

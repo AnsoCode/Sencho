@@ -10,10 +10,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FileEntry } from '@/lib/stackFilesApi';
 
-vi.mock('@/lib/stackFilesApi', () => ({
-  listStackDirectory: vi.fn(),
-}));
-
 vi.mock('@/components/ui/toast-store', () => ({
   toast: {
     error: vi.fn(),
@@ -34,10 +30,7 @@ vi.mock('@/components/ui/skeleton', () => ({
   Skeleton: () => <div data-testid="skeleton" />,
 }));
 
-import { listStackDirectory } from '@/lib/stackFilesApi';
 import { FileTree } from '../FileTree';
-
-const mockListDir = listStackDirectory as unknown as ReturnType<typeof vi.fn>;
 
 function makeFile(name: string): FileEntry {
   return { name, type: 'file', size: 100, mtime: 0, isProtected: false };
@@ -54,59 +47,65 @@ function fakeOk(entries: FileEntry[]): Promise<FileEntry[]> {
   return Promise.resolve(entries);
 }
 
-const defaultProps = {
-  stackName: 'my-stack',
-  selectedPath: '',
-  onSelectFile: vi.fn(),
-};
+let onSelectFile: ReturnType<typeof vi.fn> & ((relPath: string, entry: FileEntry) => void);
+let mockLoadDir: ReturnType<typeof vi.fn> & ((relPath: string) => Promise<FileEntry[]>);
+
+function defaultProps() {
+  return {
+    sourceKey: 'my-stack',
+    loadDir: mockLoadDir,
+    selectedPath: '',
+    onSelectFile,
+  };
+}
 
 beforeEach(() => {
-  mockListDir.mockReset();
-  defaultProps.onSelectFile = vi.fn();
+  onSelectFile = vi.fn() as typeof onSelectFile;
+  mockLoadDir = vi.fn() as typeof mockLoadDir;
 });
 
 afterEach(() => vi.clearAllMocks());
 
 describe('FileTree', () => {
   it('fetches root entries on mount and renders them', async () => {
-    mockListDir.mockReturnValue(fakeOk(ROOT_ENTRIES));
+    mockLoadDir.mockReturnValue(fakeOk(ROOT_ENTRIES));
 
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
-    await waitFor(() => expect(mockListDir).toHaveBeenCalledWith('my-stack', ''));
+    await waitFor(() => expect(mockLoadDir).toHaveBeenCalledWith(''));
     expect(await screen.findByText('src')).toBeInTheDocument();
     expect(screen.getByText('README.md')).toBeInTheDocument();
   });
 
   it('fetches subdirectory on first expand and shows children', async () => {
-    mockListDir
+    mockLoadDir
       .mockReturnValueOnce(fakeOk(ROOT_ENTRIES))
       .mockReturnValueOnce(fakeOk(SRC_ENTRIES));
 
     const user = userEvent.setup();
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
     await screen.findByText('src');
 
     // One call so far: root fetch.
-    expect(mockListDir).toHaveBeenCalledTimes(1);
+    expect(mockLoadDir).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByText('src'));
 
-    await waitFor(() => expect(mockListDir).toHaveBeenCalledTimes(2));
-    expect(mockListDir).toHaveBeenNthCalledWith(2, 'my-stack', 'src');
+    await waitFor(() => expect(mockLoadDir).toHaveBeenCalledTimes(2));
+    expect(mockLoadDir).toHaveBeenNthCalledWith(2, 'src');
 
     expect(await screen.findByText('index.ts')).toBeInTheDocument();
     expect(screen.getByText('app.ts')).toBeInTheDocument();
   });
 
   it('collapses on second click (no additional fetch)', async () => {
-    mockListDir
+    mockLoadDir
       .mockReturnValueOnce(fakeOk(ROOT_ENTRIES))
       .mockReturnValueOnce(fakeOk(SRC_ENTRIES));
 
     const user = userEvent.setup();
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
     await screen.findByText('src');
 
@@ -114,23 +113,23 @@ describe('FileTree', () => {
     await user.click(screen.getByText('src'));
     await screen.findByText('index.ts');
 
-    const callsAfterExpand = mockListDir.mock.calls.length;
+    const callsAfterExpand = mockLoadDir.mock.calls.length;
 
     // Collapse.
     await user.click(screen.getByText('src'));
     await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
 
     // No extra fetch should have happened.
-    expect(mockListDir).toHaveBeenCalledTimes(callsAfterExpand);
+    expect(mockLoadDir).toHaveBeenCalledTimes(callsAfterExpand);
   });
 
   it('re-expands from cache on third click (no second fetch for that dir)', async () => {
-    mockListDir
+    mockLoadDir
       .mockReturnValueOnce(fakeOk(ROOT_ENTRIES))
       .mockReturnValueOnce(fakeOk(SRC_ENTRIES));
 
     const user = userEvent.setup();
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
     await screen.findByText('src');
 
@@ -142,28 +141,28 @@ describe('FileTree', () => {
     await user.click(screen.getByText('src'));
     await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
 
-    const callsAfterCollapse = mockListDir.mock.calls.length;
+    const callsAfterCollapse = mockLoadDir.mock.calls.length;
 
     // Third click: re-expand from cache.
     await user.click(screen.getByText('src'));
     await screen.findByText('index.ts');
 
     // Fetch count must not have increased.
-    expect(mockListDir).toHaveBeenCalledTimes(callsAfterCollapse);
+    expect(mockLoadDir).toHaveBeenCalledTimes(callsAfterCollapse);
   });
 
   it('shows error message when root fetch fails', async () => {
-    mockListDir.mockRejectedValue(new Error('Network error'));
+    mockLoadDir.mockRejectedValue(new Error('Network error'));
 
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
     expect(await screen.findByText('Network error')).toBeInTheDocument();
   });
 
   it('shows empty state when root returns no entries', async () => {
-    mockListDir.mockReturnValue(fakeOk([]));
+    mockLoadDir.mockReturnValue(fakeOk([]));
 
-    render(<FileTree {...defaultProps} />);
+    render(<FileTree {...defaultProps()} />);
 
     expect(await screen.findByText(/empty folder/i)).toBeInTheDocument();
   });
