@@ -6,10 +6,10 @@ import {
   ResourceGauges,
   StackHealthTable,
   ConfigurationStatus,
-  RecentActivity,
   RecentAlerts,
   useDashboardData,
 } from './dashboard';
+import { DashboardActivityCard } from './dashboard/DashboardActivityCard';
 
 interface HomeDashboardProps {
   onNavigateToStack?: (stackFile: string) => void;
@@ -53,7 +53,7 @@ export default function HomeDashboard({ onNavigateToStack, onOpenSettingsSection
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ConfigurationStatus onOpenSection={onOpenSettingsSection} />
-        <RecentActivity />
+        <DashboardActivityCard />
       </div>
 
       <RecentAlerts
