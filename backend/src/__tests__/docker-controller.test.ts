@@ -562,6 +562,59 @@ describe('DockerController - inspectNetwork edge cases', () => {
   });
 });
 
+// --- inspectImage --------------------------------------------------------------
+
+describe('DockerController - inspectImage', () => {
+  it('returns combined inspect + history payload', async () => {
+    const inspectData = {
+      Id: 'sha256:abc12345',
+      RepoTags: ['nginx:1.27'],
+      Size: 187_000_000,
+      Architecture: 'amd64',
+      Os: 'linux',
+      Config: { Cmd: ['nginx', '-g', 'daemon off;'] },
+    };
+    const historyData = [
+      { Id: 'layer1', Created: 1700000000, CreatedBy: '/bin/sh -c #(nop) ADD file:abc', Size: 72_000_000, Tags: null, Comment: '' },
+      { Id: 'layer2', Created: 1700000010, CreatedBy: 'ENV NGINX_VERSION=1.27', Size: 0, Tags: null, Comment: '' },
+    ];
+    mockDocker.getImage.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue(inspectData),
+      history: vi.fn().mockResolvedValue(historyData),
+    });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.inspectImage('sha256:abc12345');
+
+    expect(result.inspect).toEqual(inspectData);
+    expect(result.history).toEqual(historyData);
+    expect(mockDocker.getImage).toHaveBeenCalledWith('sha256:abc12345');
+  });
+
+  it('propagates 404 from Dockerode when image is missing', async () => {
+    mockDocker.getImage.mockReturnValue({
+      inspect: vi.fn().mockRejectedValue(Object.assign(new Error('No such image: missing'), { statusCode: 404 })),
+      history: vi.fn().mockResolvedValue([]),
+    });
+
+    const dc = DockerController.getInstance(1);
+    await expect(dc.inspectImage('missing')).rejects.toThrow('No such image');
+  });
+
+  it('returns empty history when an image has none', async () => {
+    mockDocker.getImage.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({ Id: 'sha256:empty', Size: 0 }),
+      history: vi.fn().mockResolvedValue([]),
+    });
+
+    const dc = DockerController.getInstance(1);
+    const result = await dc.inspectImage('sha256:empty');
+
+    expect(result.history).toEqual([]);
+    expect(result.inspect.Id).toBe('sha256:empty');
+  });
+});
+
 // --- createNetwork validation --------------------------------------------------
 
 describe('createNetwork', () => {
