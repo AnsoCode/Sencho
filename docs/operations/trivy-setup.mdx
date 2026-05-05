@@ -44,7 +44,7 @@ When a newer Trivy release is available, Settings → Security shows an **Update
 
 To update automatically instead, toggle **Auto-update Trivy** on. Sencho checks for new releases once a day and installs them in the background. You'll get an in-app notification each time a new version is installed, or when an update is available and auto-update is off.
 
-The install, update, and uninstall buttons are Admiral-only. Skipper and Community instances see the scanner status, but install actions require an Admiral license.
+The install, update, and uninstall buttons are available to admins on every tier. The **Auto-update Trivy** toggle is Admiral only.
 
 ### Removing the managed install
 
@@ -212,11 +212,9 @@ This means the host binary is not ABI-compatible with the Sencho image. Use the 
 
 The first scan after a Trivy install downloads the vulnerability database. Expect 10 to 30 seconds of additional latency. Subsequent scans are near-instant once the cache is warm and `TRIVY_CACHE_DIR` is persisted.
 
-### Install button is disabled
+### Install button is hidden
 
-The install, update, and uninstall buttons require an Admiral license. If you hold a Skipper or Community license, the card shows current status only; use Option 2 or 3 to add Trivy manually.
-
-The install button is also hidden when a host-installed Trivy is already detected on `PATH`. Remove the host binary (or drop the bind mount) to switch to the managed install.
+The install button is hidden when a host-installed Trivy is already detected on `PATH`. Remove the host binary (or drop the bind mount) to switch to the managed install. The button also requires the admin role; viewer accounts see the scanner status only.
 
 ### Private registry images fail to scan
 

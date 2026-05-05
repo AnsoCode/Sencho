@@ -476,7 +476,6 @@ fleetRouter.get('/node/:nodeId/stacks/:stackName/containers', authMiddleware, as
 });
 
 fleetRouter.get('/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
@@ -625,7 +624,6 @@ fleetRouter.get('/update-status', authMiddleware, async (req: Request, res: Resp
 });
 
 fleetRouter.post('/nodes/:nodeId/update', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
   try {
     const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
@@ -779,7 +777,6 @@ fleetRouter.post('/update-all', authMiddleware, async (req: Request, res: Respon
 });
 
 fleetRouter.delete('/nodes/:nodeId/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   try {
     const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
@@ -797,7 +794,6 @@ fleetRouter.delete('/nodes/:nodeId/update-status', authMiddleware, async (req: R
 });
 
 fleetRouter.delete('/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   // Pre-fetch fresh latest version so the next GET has up-to-date data.
   if (req.query.recheck === 'true') {
     await getLatestVersion(true);
@@ -810,11 +806,10 @@ fleetRouter.delete('/update-status', authMiddleware, async (req: Request, res: R
   res.status(204).send();
 });
 
-// ─── Fleet Snapshots (Skipper+) ───
+// ─── Fleet Snapshots (manual: Community; scheduled: Skipper+) ───
 
 fleetRouter.post('/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const { description = '' } = req.body;
@@ -909,8 +904,6 @@ fleetRouter.post('/snapshots', authMiddleware, async (req: Request, res: Respons
 });
 
 fleetRouter.get('/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-
   try {
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
     const offset = parseInt(req.query.offset as string, 10) || 0;
@@ -926,8 +919,6 @@ fleetRouter.get('/snapshots', authMiddleware, async (req: Request, res: Response
 });
 
 fleetRouter.get('/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-
   try {
     const id = parseIntParam(req, res, 'id', 'snapshot ID');
     if (id === null) return;
@@ -972,7 +963,6 @@ fleetRouter.get('/snapshots/:id', authMiddleware, async (req: Request, res: Resp
 
 fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const snapshotId = parseIntParam(req, res, 'id', 'snapshot ID');
@@ -1085,7 +1075,6 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
 
 fleetRouter.delete('/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const id = parseIntParam(req, res, 'id', 'snapshot ID');

@@ -2,14 +2,12 @@ import { useEffect, useRef } from 'react';
 import type { NodeUpdateStatus } from '../types';
 
 interface UseFleetPollingOptions {
-    isPaid: boolean;
     fetchOverview: () => Promise<void> | void;
     fetchUpdateStatus: () => Promise<void> | void;
     updateStatuses: NodeUpdateStatus[];
 }
 
 export function useFleetPolling({
-    isPaid,
     fetchOverview,
     fetchUpdateStatus,
     updateStatuses,
@@ -19,13 +17,12 @@ export function useFleetPolling({
         fetchUpdateStatus();
     }, [fetchOverview, fetchUpdateStatus]);
 
-    // Paid tier: auto-refresh every 30s
+    // Auto-refresh every 30s for overview, every 2 min for update status.
     useEffect(() => {
-        if (!isPaid) return;
         const overviewInterval = setInterval(fetchOverview, 30000);
         const updateInterval = setInterval(fetchUpdateStatus, 120000);
         return () => { clearInterval(overviewInterval); clearInterval(updateInterval); };
-    }, [isPaid, fetchOverview, fetchUpdateStatus]);
+    }, [fetchOverview, fetchUpdateStatus]);
 
     // Fast poll (5s) when any node is actively updating. Uses ref to avoid interval thrashing.
     const hasUpdatingRef = useRef(false);

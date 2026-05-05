@@ -56,11 +56,11 @@ describe('GET /api/security/suppressions', () => {
     expect(res.status).toBe(401);
   });
 
-  it('requires paid tier', async () => {
+  it('is accessible on community tier', async () => {
     vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('community');
     const res = await request(app).get('/api/security/suppressions').set('Authorization', adminAuthHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.status).toBe(200);
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 
   it('returns an empty list when no suppressions exist', async () => {
@@ -123,14 +123,14 @@ describe('POST /api/security/suppressions', () => {
     expect(res.body.code).toBe('ADMIN_REQUIRED');
   });
 
-  it('rejects community tier with 403', async () => {
+  it('is accessible on community tier (admin still required)', async () => {
     vi.spyOn(LicenseService.getInstance(), 'getTier').mockReturnValue('community');
     const res = await request(app)
       .post('/api/security/suppressions')
       .set('Authorization', adminAuthHeader)
       .send(validBody);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.status).toBe(201);
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 
   it('rejects writes on replicas with 403', async () => {

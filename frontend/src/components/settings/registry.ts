@@ -180,7 +180,7 @@ export const SETTINGS_ITEMS: readonly SettingsItemMeta[] = [
         label: 'Security',
         description: 'Image scanning, suppressions, and posture defaults.',
         keywords: ['scan', 'cve', 'trivy', 'suppressions', 'hardening'],
-        tier: 'skipper',
+        tier: null,
         scope: 'node',
         adminOnly: true,
     },
