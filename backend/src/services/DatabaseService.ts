@@ -74,6 +74,14 @@ export interface Node {
     last_successful_contact?: number | null;
 }
 
+export interface StackRestartSummary {
+    stackName: string;
+    crash: number;
+    autoheal: number;
+    manual: number;
+    total: number;
+}
+
 export interface PilotEnrollment {
     node_id: number;
     token_hash: string;
@@ -1795,16 +1803,23 @@ export class DatabaseService {
         this.db.prepare('UPDATE notification_history SET dispatch_error = ? WHERE id = ?').run(error, id);
     }
 
-    public getStackRestartSummary(nodeId: number, days: number): Array<{ stack_name: string; category: string }> {
+    public getStackRestartSummary(nodeId: number, days: number): StackRestartSummary[] {
         const since = Date.now() - days * 86400 * 1000;
         return this.db.prepare(`
-            SELECT stack_name, category
+            SELECT
+              stack_name AS stackName,
+              SUM(CASE WHEN category = 'deploy_failure'     THEN 1 ELSE 0 END) AS crash,
+              SUM(CASE WHEN category = 'autoheal_triggered' THEN 1 ELSE 0 END) AS autoheal,
+              SUM(CASE WHEN category = 'stack_restarted'    THEN 1 ELSE 0 END) AS manual,
+              COUNT(*) AS total
             FROM notification_history
             WHERE node_id = ?
               AND timestamp >= ?
               AND category IN ('deploy_failure', 'autoheal_triggered', 'stack_restarted')
               AND stack_name IS NOT NULL
-        `).all(nodeId, since) as Array<{ stack_name: string; category: string }>;
+            GROUP BY stack_name
+            ORDER BY total DESC
+        `).all(nodeId, since) as StackRestartSummary[];
     }
 
     // --- Container Metrics ---
@@ -1872,6 +1887,7 @@ export class DatabaseService {
             api_token: row.api_token ? crypto.decrypt(row.api_token) : '',
             pilot_last_seen: row.pilot_last_seen ?? null,
             pilot_agent_version: row.pilot_agent_version ?? null,
+            last_successful_contact: row.last_successful_contact ?? null,
         };
     }
 

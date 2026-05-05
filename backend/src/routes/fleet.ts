@@ -226,9 +226,9 @@ async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise
       } : null,
     } : null;
 
-    const latency_ms = Date.now() - t0;
+    const completedAt = Date.now();
+    const latency_ms = completedAt - t0;
     const isOnline = !!(stats || systemStats);
-    const contactedAt = isOnline ? Math.floor(Date.now() / 1000) : null;
 
     if (isOnline) {
       db.updateNodeLastContact(node.id);
@@ -243,7 +243,9 @@ async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise
       systemStats,
       stacks,
       latency_ms,
-      last_successful_contact: contactedAt ?? node.last_successful_contact ?? null,
+      last_successful_contact: isOnline
+        ? Math.floor(completedAt / 1000)
+        : node.last_successful_contact ?? null,
     };
   } catch (error) {
     console.error(`[Fleet] Remote node ${node.name} error:`, error);

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { DatabaseService } from '../services/DatabaseService';
+import { DatabaseService, type StackRestartSummary } from '../services/DatabaseService';
 import { CloudBackupService } from '../services/CloudBackupService';
 import { effectiveTier, effectiveVariant } from '../middleware/tierGates';
 import type { LicenseTier, LicenseVariant } from '../services/license-types';
@@ -154,8 +154,7 @@ export function buildLocalConfigurationStatus(
   };
 }
 
-// Sits after authGate and before the remote proxy in index.ts so remote-node
-// requests are transparently forwarded to the target Sencho instance.
+// All routes below are protected by the global authGate mounted at app.use('/api', authGate)
 dashboardRouter.get('/configuration', (req: Request, res: Response): void => {
   try {
     const nodeId = req.nodeId ?? 0;
@@ -170,14 +169,6 @@ dashboardRouter.get('/configuration', (req: Request, res: Response): void => {
   }
 });
 
-interface StackRestartSummary {
-  stackName: string;
-  crash: number;
-  autoheal: number;
-  manual: number;
-  total: number;
-}
-
 dashboardRouter.get('/stack-restarts', (req: Request, res: Response): void => {
   try {
     const db = DatabaseService.getInstance();
@@ -185,25 +176,7 @@ dashboardRouter.get('/stack-restarts', (req: Request, res: Response): void => {
     const rawDays = parseInt(String(req.query['days'] ?? '7'), 10);
     const days = isNaN(rawDays) || rawDays < 1 ? 7 : Math.min(rawDays, 30);
 
-    const rows = db.getStackRestartSummary(nodeId, days);
-
-    const map = new Map<string, { crash: number; autoheal: number; manual: number }>();
-    for (const row of rows) {
-      const entry = map.get(row.stack_name) ?? { crash: 0, autoheal: 0, manual: 0 };
-      if (row.category === 'deploy_failure') entry.crash++;
-      else if (row.category === 'autoheal_triggered') entry.autoheal++;
-      else if (row.category === 'stack_restarted') entry.manual++;
-      map.set(row.stack_name, entry);
-    }
-
-    const result: StackRestartSummary[] = Array.from(map.entries())
-      .map(([stackName, counts]) => ({
-        stackName,
-        ...counts,
-        total: counts.crash + counts.autoheal + counts.manual,
-      }))
-      .sort((a, b) => b.total - a.total);
-
+    const result: StackRestartSummary[] = db.getStackRestartSummary(nodeId, days);
     res.json(result);
   } catch (error) {
     console.error('[Dashboard] Failed to fetch stack restarts:', error);
