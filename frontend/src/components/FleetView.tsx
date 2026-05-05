@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useExperimental } from '@/hooks/useExperimental';
 import {
     RefreshCw, Search, Camera,
@@ -11,9 +11,11 @@ import { NodeUpdatesSheet } from './FleetView/NodeUpdatesSheet';
 import { LocalUpdateConfirmDialog } from './FleetView/LocalUpdateConfirmDialog';
 import { isCritical, getNodeCpu, getNodeMem, getNodeDisk } from './FleetView/nodeUtils';
 import { OverviewTab } from './FleetView/OverviewTab';
-import type { FleetNode, NodeUpdateStatus, ViewMode } from './FleetView/types';
+import type { FleetNode, ViewMode } from './FleetView/types';
 import { useFleetPreferences } from './FleetView/hooks/useFleetPreferences';
 import { useFleetLabels, labelPaletteKey } from './FleetView/hooks/useFleetLabels';
+import { useFleetUpdateStatus } from './FleetView/hooks/useFleetUpdateStatus';
+import { useFleetPolling } from './FleetView/hooks/useFleetPolling';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsHighlight, TabsHighlightItem } from '@/components/ui/tabs';
 import { springs } from '@/lib/motion';
@@ -25,7 +27,6 @@ import { FleetConfiguration } from './fleet/FleetConfiguration';
 import { FleetSoonPlaceholder, SoonBadge } from './fleet/FleetSoonPlaceholder';
 import { RoutingTab } from './fleet/RoutingTab';
 import { DeploymentsTab } from './blueprints/DeploymentsTab';
-import { toast } from '@/components/ui/toast-store';
 
 interface FleetViewProps {
     onNavigateToNode: (nodeId: number, stackName: string) => void;
@@ -41,18 +42,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const { isPaid, license } = useLicense();
     const isAdmiral = isPaid && license?.variant === 'admiral';
     const experimental = useExperimental();
-    const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
-    const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
-    const [reconnecting, setReconnecting] = useState(false);
-    const [preUpdateStartedAt, setPreUpdateStartedAt] = useState<number | null>(null);
-    const [localUpdateConfirm, setLocalUpdateConfirm] = useState<number | null>(null);
-    const [showUpdateModal, setShowUpdateModal] = useState(false);
-    const [checkingUpdates, setCheckingUpdates] = useState(false);
-    const updateStatusesRef = useRef(updateStatuses);
-    updateStatusesRef.current = updateStatuses;
 
     const { prefs, updatePrefs } = useFleetPreferences();
     const { fleetPalette, fleetStackLabelMap, labelFilters, setLabelFilters } = useFleetLabels({ isPaid, nodes });
+    const updateStatus = useFleetUpdateStatus({ isPaid });
 
     const fetchOverview = useCallback(async (showRefresh = false) => {
         if (showRefresh) setRefreshing(true);
@@ -70,138 +63,12 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
         }
     }, []);
 
-    const fetchUpdateStatus = useCallback(async () => {
-        if (!isPaid) return;
-        try {
-            const res = await apiFetch('/fleet/update-status', { localOnly: true });
-            if (res.ok) {
-                const data = await res.json();
-                const next: NodeUpdateStatus[] = data.nodes ?? [];
-                setUpdateStatuses(prev =>
-                    JSON.stringify(prev) === JSON.stringify(next) ? prev : next
-                );
-            }
-        } catch { /* non-critical */ }
-    }, [isPaid]);
-
-    const triggerNodeUpdate = useCallback(async (nodeId: number) => {
-        const status = updateStatusesRef.current.find(s => s.nodeId === nodeId);
-        if (status?.type === 'local') {
-            setLocalUpdateConfirm(nodeId);
-            return;
-        }
-
-        setUpdatingNodeId(nodeId);
-        try {
-            const res = await apiFetch(`/fleet/nodes/${nodeId}/update`, { method: 'POST', localOnly: true });
-            if (res.ok) {
-                toast.success(`Update initiated on ${status?.name ?? 'node'}.`);
-                fetchUpdateStatus();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger update.');
-            }
-        } catch (e: unknown) {
-            toast.error((e as Error)?.message || 'Something went wrong.');
-        } finally {
-            setUpdatingNodeId(null);
-        }
-    }, [fetchUpdateStatus]);
-
-    const confirmLocalUpdate = useCallback(async () => {
-        const nodeId = localUpdateConfirm;
-        setLocalUpdateConfirm(null);
-        if (!nodeId) return;
-
-        setUpdatingNodeId(nodeId);
-        try {
-            // Capture pre-update boot timestamp so the overlay can detect a real restart
-            // vs a false "online" response from the still-running old process mid-pull.
-            let bootBefore: number | null = null;
-            try {
-                const healthRes = await fetch('/api/health');
-                if (healthRes.ok) {
-                    const data = await healthRes.json();
-                    if (typeof data?.startedAt === 'number') bootBefore = data.startedAt;
-                }
-            } catch { /* fall back to offline-then-online detection */ }
-
-            const res = await apiFetch(`/fleet/nodes/${nodeId}/update`, { method: 'POST', localOnly: true });
-            if (res.ok) {
-                setPreUpdateStartedAt(bootBefore);
-                setReconnecting(true);
-            } else {
-                const err = await res.json().catch(() => ({}));
-                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger local update.');
-            }
-        } catch (e: unknown) {
-            toast.error((e as Error)?.message || 'Something went wrong.');
-        } finally {
-            setUpdatingNodeId(null);
-        }
-    }, [localUpdateConfirm]);
-
-    const triggerUpdateAll = useCallback(async () => {
-        try {
-            const res = await apiFetch('/fleet/update-all', { method: 'POST', localOnly: true });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.updating?.length > 0) {
-                    toast.success(`Update initiated on ${data.updating.length} node${data.updating.length > 1 ? 's' : ''}.`);
-                } else {
-                    toast.success('All nodes are up to date.');
-                }
-                fetchUpdateStatus();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                toast.error(err?.message || err?.error || err?.data?.error || 'Failed to trigger fleet update.');
-            }
-        } catch (e: unknown) {
-            toast.error((e as Error)?.message || 'Something went wrong.');
-        }
-    }, [fetchUpdateStatus]);
-
-    const dismissNodeUpdate = useCallback(async (nodeId: number) => {
-        try {
-            await apiFetch(`/fleet/nodes/${nodeId}/update-status`, { method: 'DELETE', localOnly: true });
-            fetchUpdateStatus();
-        } catch (error) {
-            console.error('[Fleet] Failed to dismiss update status:', error);
-        }
-    }, [fetchUpdateStatus]);
-
-    const retryNodeUpdate = useCallback(async (nodeId: number) => {
-        triggerNodeUpdate(nodeId);
-    }, [triggerNodeUpdate]);
-
-    useEffect(() => {
-        fetchOverview();
-        fetchUpdateStatus();
-    }, [fetchOverview, fetchUpdateStatus]);
-
-    // Paid tier: auto-refresh every 30s
-    useEffect(() => {
-        if (!isPaid) return;
-        const overviewInterval = setInterval(fetchOverview, 30000);
-        const updateInterval = setInterval(fetchUpdateStatus, 120000);
-        return () => { clearInterval(overviewInterval); clearInterval(updateInterval); };
-    }, [isPaid, fetchOverview, fetchUpdateStatus]);
-
-    // Fast poll (5s) when any node is actively updating. Uses ref to avoid interval thrashing.
-    const hasUpdatingRef = useRef(false);
-    useEffect(() => {
-        hasUpdatingRef.current = updateStatuses.some(s => s.updateStatus === 'updating');
-    }, [updateStatuses]);
-
-    useEffect(() => {
-        const id = setInterval(() => {
-            if (hasUpdatingRef.current) {
-                fetchUpdateStatus();
-                fetchOverview();
-            }
-        }, 5000);
-        return () => clearInterval(id);
-    }, [fetchUpdateStatus, fetchOverview]);
+    useFleetPolling({
+        isPaid,
+        fetchOverview,
+        fetchUpdateStatus: updateStatus.fetchUpdateStatus,
+        updateStatuses: updateStatus.updateStatuses,
+    });
 
     // --- Computed values ---
 
@@ -225,8 +92,8 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const totalMemTotal = onlineNodes.reduce((sum, n) => sum + (n.systemStats?.memory.total ?? 0), 0);
 
     const updateStatusMap = useMemo(
-        () => new Map(updateStatuses.map(s => [s.nodeId, s])),
-        [updateStatuses]
+        () => new Map(updateStatus.updateStatuses.map(s => [s.nodeId, s])),
+        [updateStatus.updateStatuses]
     );
 
     // --- Filtering & Sorting (Skipper+) ---
@@ -390,12 +257,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={async () => {
-                                    setShowUpdateModal(true);
-                                    setCheckingUpdates(true);
-                                    await fetchUpdateStatus();
-                                    setCheckingUpdates(false);
-                                }}
+                                onClick={updateStatus.checkUpdates}
                                 className="gap-2"
                             >
                                 <Search className="w-4 h-4" />
@@ -436,10 +298,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         fleetStackLabelMap={fleetStackLabelMap}
                         updateStatusMap={updateStatusMap}
                         onNavigateToNode={onNavigateToNode}
-                        onUpdate={isPaid ? triggerNodeUpdate : undefined}
-                        updatingNodeId={updatingNodeId}
-                        onRetryUpdate={isPaid ? retryNodeUpdate : undefined}
-                        onDismissUpdate={isPaid ? dismissNodeUpdate : undefined}
+                        onUpdate={isPaid ? updateStatus.triggerNodeUpdate : undefined}
+                        updatingNodeId={updateStatus.updatingNodeId}
+                        onRetryUpdate={isPaid ? updateStatus.retryNodeUpdate : undefined}
+                        onDismissUpdate={isPaid ? updateStatus.dismissNodeUpdate : undefined}
                     />
                 </TabsContent>
 
@@ -496,27 +358,27 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
             </Tabs>
 
             {/* Reconnecting overlay shown when local node is updating */}
-            {reconnecting && <ReconnectingOverlay preUpdateStartedAt={preUpdateStartedAt} />}
+            {updateStatus.reconnecting && <ReconnectingOverlay preUpdateStartedAt={updateStatus.preUpdateStartedAt} />}
 
             {/* Node Updates sheet */}
             <NodeUpdatesSheet
-                open={showUpdateModal}
-                onOpenChange={setShowUpdateModal}
-                checkingUpdates={checkingUpdates}
-                updateStatuses={updateStatuses}
-                updatingNodeId={updatingNodeId}
-                fetchUpdateStatus={fetchUpdateStatus}
-                triggerNodeUpdate={triggerNodeUpdate}
-                retryNodeUpdate={retryNodeUpdate}
-                dismissNodeUpdate={dismissNodeUpdate}
-                triggerUpdateAll={triggerUpdateAll}
+                open={updateStatus.showUpdateModal}
+                onOpenChange={updateStatus.setShowUpdateModal}
+                checkingUpdates={updateStatus.checkingUpdates}
+                updateStatuses={updateStatus.updateStatuses}
+                updatingNodeId={updateStatus.updatingNodeId}
+                fetchUpdateStatus={updateStatus.fetchUpdateStatus}
+                triggerNodeUpdate={updateStatus.triggerNodeUpdate}
+                retryNodeUpdate={updateStatus.retryNodeUpdate}
+                dismissNodeUpdate={updateStatus.dismissNodeUpdate}
+                triggerUpdateAll={updateStatus.triggerUpdateAll}
             />
 
             {/* Confirm dialog for local node update */}
             <LocalUpdateConfirmDialog
-                open={localUpdateConfirm !== null}
-                onOpenChange={(open) => { if (!open) setLocalUpdateConfirm(null); }}
-                onConfirm={confirmLocalUpdate}
+                open={updateStatus.localUpdateConfirm !== null}
+                onOpenChange={(open) => { if (!open) updateStatus.setLocalUpdateConfirm(null); }}
+                onConfirm={updateStatus.confirmLocalUpdate}
             />
         </div>
     );
