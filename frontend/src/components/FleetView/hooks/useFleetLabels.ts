@@ -15,7 +15,6 @@ interface UseFleetLabelsOptions {
 export function useFleetLabels({ isPaid, nodes }: UseFleetLabelsOptions) {
     const [fleetPalette, setFleetPalette] = useState<FleetPaletteEntry[]>([]);
     const [fleetStackLabelMap, setFleetStackLabelMap] = useState<Record<number, Record<string, StackLabel[]>>>({});
-    const [labelFilters, setLabelFilters] = useState<Set<string>>(new Set());
 
     const fetchLabelsForNodes = useCallback(async (fleetNodes: FleetNode[]) => {
         if (!isPaid || fleetNodes.length === 0) return;
@@ -68,5 +67,5 @@ export function useFleetLabels({ isPaid, nodes }: UseFleetLabelsOptions) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isPaid, onlineNodeKey, fetchLabelsForNodes]);
 
-    return { fleetPalette, fleetStackLabelMap, labelFilters, setLabelFilters };
+    return { fleetPalette, fleetStackLabelMap };
 }
