@@ -71,6 +71,7 @@ export interface Node {
     api_token?: string;
     pilot_last_seen?: number | null;
     pilot_agent_version?: string | null;
+    last_successful_contact?: number | null;
 }
 
 export interface PilotEnrollment {
@@ -577,6 +578,7 @@ export class DatabaseService {
         this.migrateMeshTables();
         this.migrateNodeLabels();
         this.migrateBlueprints();
+        this.migrateAddNodeLastContact();
 
         // Reset the cache once at end of constructor in case any migration
         // populated it via getGlobalSettings() and a subsequent migration
@@ -1397,6 +1399,10 @@ export class DatabaseService {
         }
     }
 
+    private migrateAddNodeLastContact(): void {
+        this.tryAddColumn('nodes', 'last_successful_contact', 'INTEGER');
+    }
+
     // --- Sencho Mesh ---
 
     public listMeshStacks(nodeId?: number): Array<{ id: number; node_id: number; stack_name: string; created_at: number; created_by: string | null }> {
@@ -1789,6 +1795,18 @@ export class DatabaseService {
         this.db.prepare('UPDATE notification_history SET dispatch_error = ? WHERE id = ?').run(error, id);
     }
 
+    public getStackRestartSummary(nodeId: number, days: number): Array<{ stack_name: string; category: string }> {
+        const since = Date.now() - days * 86400 * 1000;
+        return this.db.prepare(`
+            SELECT stack_name, category
+            FROM notification_history
+            WHERE node_id = ?
+              AND timestamp >= ?
+              AND category IN ('deploy_failure', 'autoheal_triggered', 'stack_restarted')
+              AND stack_name IS NOT NULL
+        `).all(nodeId, since) as Array<{ stack_name: string; category: string }>;
+    }
+
     // --- Container Metrics ---
 
     public addContainerMetric(metric: Omit<any, 'id'>): void {
@@ -1858,7 +1876,7 @@ export class DatabaseService {
     }
 
     private static readonly NODE_COLUMNS =
-        'id, name, type, compose_dir, is_default, status, created_at, api_url, api_token, mode, pilot_last_seen, pilot_agent_version';
+        'id, name, type, compose_dir, is_default, status, created_at, api_url, api_token, mode, pilot_last_seen, pilot_agent_version, last_successful_contact';
 
     public getNodes(): Node[] {
         const stmt = this.db.prepare(`SELECT ${DatabaseService.NODE_COLUMNS} FROM nodes ORDER BY is_default DESC, name ASC`);
@@ -1950,6 +1968,11 @@ export class DatabaseService {
 
     public updateNodeStatus(id: number, status: 'online' | 'offline' | 'unknown'): void {
         this.db.prepare('UPDATE nodes SET status = ? WHERE id = ?').run(status, id);
+    }
+
+    public updateNodeLastContact(nodeId: number): void {
+        this.db.prepare('UPDATE nodes SET last_successful_contact = ? WHERE id = ?')
+            .run(Math.floor(Date.now() / 1000), nodeId);
     }
 
     // --- Pilot enrollments ---

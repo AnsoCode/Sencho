@@ -171,17 +171,43 @@ dashboardRouter.get('/configuration', authMiddleware, (req: Request, res: Respon
   }
 });
 
-dashboardRouter.get('/recent-activity', authMiddleware, (req: Request, res: Response): void => {
+interface StackRestartSummary {
+  stackName: string;
+  crash: number;
+  autoheal: number;
+  manual: number;
+  total: number;
+}
+
+dashboardRouter.get('/stack-restarts', authMiddleware, (req: Request, res: Response): void => {
   try {
     const db = DatabaseService.getInstance();
     const nodeId = req.nodeId ?? 0;
-    const rawLimit = parseInt(String(req.query['limit'] ?? '10'), 10);
-    const limit = isNaN(rawLimit) || rawLimit < 1 ? 10 : Math.min(rawLimit, 50);
+    const rawDays = parseInt(String(req.query['days'] ?? '7'), 10);
+    const days = isNaN(rawDays) || rawDays < 1 ? 7 : Math.min(rawDays, 30);
 
-    const items = db.getNotificationHistory(nodeId, limit);
-    res.json(items);
+    const rows = db.getStackRestartSummary(nodeId, days);
+
+    const map = new Map<string, { crash: number; autoheal: number; manual: number }>();
+    for (const row of rows) {
+      const entry = map.get(row.stack_name) ?? { crash: 0, autoheal: 0, manual: 0 };
+      if (row.category === 'deploy_failure') entry.crash++;
+      else if (row.category === 'autoheal_triggered') entry.autoheal++;
+      else if (row.category === 'stack_restarted') entry.manual++;
+      map.set(row.stack_name, entry);
+    }
+
+    const result: StackRestartSummary[] = Array.from(map.entries())
+      .map(([stackName, counts]) => ({
+        stackName,
+        ...counts,
+        total: counts.crash + counts.autoheal + counts.manual,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json(result);
   } catch (error) {
-    console.error('[Dashboard] Failed to fetch recent activity:', error);
-    res.status(500).json({ error: 'Failed to fetch recent activity' });
+    console.error('[Dashboard] Failed to fetch stack restarts:', error);
+    res.status(500).json({ error: 'Failed to fetch stack restarts' });
   }
 });

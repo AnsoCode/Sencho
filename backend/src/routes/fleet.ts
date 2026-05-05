@@ -87,6 +87,8 @@ interface FleetNodeOverview {
     disk: { total: number; used: number; free: number; usagePercent: string } | null;
   } | null;
   stacks: string[] | null;
+  latency_ms?: number;
+  last_successful_contact?: number | null;
 }
 
 /** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
@@ -154,26 +156,44 @@ async function fetchLocalNodeOverview(node: Node): Promise<FleetNodeOverview> {
         } : null,
       },
       stacks,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   } catch (error) {
     console.error(`[Fleet] Local node ${node.name} error:`, error);
     return {
       id: node.id, name: node.name, type: node.type, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 }
 
-async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
+async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise<FleetNodeOverview> {
+  // Pilot-agent nodes: use pilot_last_seen as the contact signal; no HTTP fetch.
+  if (node.mode === 'pilot_agent') {
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      status: node.pilot_last_seen ? 'online' : 'offline',
+      stats: null,
+      systemStats: null,
+      stacks: null,
+      last_successful_contact: node.pilot_last_seen ?? null,
+    };
+  }
+
   if (!node.api_url || !node.api_token) {
     return {
       id: node.id, name: node.name, type: node.type, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 
   const baseUrl = node.api_url.replace(/\/$/, '');
   const headers = { Authorization: `Bearer ${node.api_token}` };
+  const t0 = Date.now();
 
   try {
     const [statsRes, systemStatsRes, stacksRes] = await Promise.allSettled([
@@ -206,20 +226,31 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
       } : null,
     } : null;
 
+    const latency_ms = Date.now() - t0;
+    const isOnline = !!(stats || systemStats);
+    const contactedAt = isOnline ? Math.floor(Date.now() / 1000) : null;
+
+    if (isOnline) {
+      db.updateNodeLastContact(node.id);
+    }
+
     return {
       id: node.id,
       name: node.name,
       type: node.type,
-      status: stats || systemStats ? 'online' : 'offline',
+      status: isOnline ? 'online' : 'offline',
       stats,
       systemStats,
       stacks,
+      latency_ms,
+      last_successful_contact: contactedAt ?? node.last_successful_contact ?? null,
     };
   } catch (error) {
     console.error(`[Fleet] Remote node ${node.name} error:`, error);
     return {
       id: node.id, name: node.name, type: node.type, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 }
@@ -287,7 +318,7 @@ fleetRouter.get('/overview', authMiddleware, async (_req: Request, res: Response
     const results = await Promise.allSettled(
       nodes.map(async (node): Promise<FleetNodeOverview> => {
         if (node.type === 'remote') {
-          return fetchRemoteNodeOverview(node);
+          return fetchRemoteNodeOverview(node, db);
         }
         return fetchLocalNodeOverview(node);
       }),
