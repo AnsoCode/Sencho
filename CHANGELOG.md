@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.70.0](https://github.com/Studio-Saelix/sencho/compare/v0.69.3...v0.70.0) (2026-05-05)
+
+
+### Added
+
+* **resources:** add image details sheet with layer history ([#925](https://github.com/Studio-Saelix/sencho/issues/925)) ([7e5dc2d](https://github.com/Studio-Saelix/sencho/commit/7e5dc2d9ea4f1e1e458516b5bb4fc62a797c8ee3))
+* **volumes:** add read-only volume browser ([#926](https://github.com/Studio-Saelix/sencho/issues/926)) ([49d775c](https://github.com/Studio-Saelix/sencho/commit/49d775c61feece1ca4c5f1ea649df857a4b3d226))
+
+
+### Fixed
+
+* **frontend:** align sidebar brand box with top nav chrome ([#928](https://github.com/Studio-Saelix/sencho/issues/928)) ([6f45a3b](https://github.com/Studio-Saelix/sencho/commit/6f45a3b7880caecbb693ee8c47f282a90435f378))
+* **frontend:** tighten bell notification panel toolbar ([#929](https://github.com/Studio-Saelix/sencho/issues/929)) ([a85af40](https://github.com/Studio-Saelix/sencho/commit/a85af40cb5ed572564308bb2791ff1ba3bef0863))
+
 ## [0.69.3](https://github.com/Studio-Saelix/sencho/compare/v0.69.2...v0.69.3) (2026-05-04)
 
 
