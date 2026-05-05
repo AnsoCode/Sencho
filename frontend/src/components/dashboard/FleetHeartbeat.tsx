@@ -30,6 +30,12 @@ function getLatencyLabel(node: FleetNodeOverview, isPilot: boolean): string | nu
 
 function getLastSeenLabel(node: FleetNodeOverview): string | null {
   if (node.status === 'online') return null;
+  // Pilot-agent nodes use the tunnel heartbeat timestamp
+  if (node.mode === 'pilot_agent') {
+    if (node.pilot_last_seen) return formatRelativeTime(node.pilot_last_seen);
+    return 'never reached';
+  }
+  // Proxy nodes use the contact timestamp updated by the fleet overview handler
   const contact = node.last_successful_contact;
   if (!contact) return 'never reached';
   return formatRelativeTime(contact);

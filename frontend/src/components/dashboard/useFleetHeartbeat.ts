@@ -7,6 +7,7 @@ export interface FleetNodeOverview {
   id: number;
   name: string;
   type: 'local' | 'remote';
+  mode?: string;
   status: 'online' | 'offline' | 'unknown';
   stats: {
     active: number;
@@ -17,6 +18,7 @@ export interface FleetNodeOverview {
   } | null;
   latency_ms?: number;
   last_successful_contact?: number | null;
+  pilot_last_seen?: number | null;
 }
 
 export interface FleetHeartbeatResult {
