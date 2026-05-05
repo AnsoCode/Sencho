@@ -671,32 +671,6 @@ export default function ResourcesView() {
     return (
         <div className="p-6 h-full overflow-auto text-foreground flex flex-col gap-6 animate-in fade-in-0 duration-300">
 
-            {/* Header */}
-            <div className="flex items-center gap-3">
-                <HardDrive className="w-5 h-5 text-muted-foreground" />
-                <h1 className="text-xl font-medium tracking-tight">Resources Hub</h1>
-                {activeNode?.type === 'remote' && (
-                    <span className="text-sm text-muted-foreground">· {activeNode.name}</span>
-                )}
-                {trivy.available && isPaid && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-auto border-border"
-                        onClick={() => {
-                            window.dispatchEvent(new CustomEvent<SenchoNavigateDetail>(SENCHO_NAVIGATE_EVENT, {
-                                detail: { view: 'security-history' },
-                            }));
-                        }}
-                        title="View completed vulnerability scans and compare them"
-                        aria-label="Open scan history"
-                    >
-                        <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                        Scan history
-                    </Button>
-                )}
-            </div>
-
             {/* Reclaim hero */}
             {usage && isAdmin && (
                 <ReclaimHero
@@ -791,7 +765,7 @@ export default function ResourcesView() {
                 defaultValue="images"
                 className="flex-1 flex flex-col w-full rounded-lg border bg-card shadow-card-bevel overflow-hidden min-h-[400px] animate-in fade-in-0 slide-in-from-bottom-2 duration-300 delay-150"
             >
-                <div className="px-4 pt-3 pb-2">
+                <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
                     <TabsList className="grid grid-cols-4 w-full md:w-[680px] h-9 gap-1 p-0">
                         <TabsHighlight className="rounded-md bg-glass-highlight" transition={springs.snappy}>
                             {(['images', 'volumes', 'networks'] as const).map(tab => (
@@ -813,6 +787,23 @@ export default function ResourcesView() {
                             </TabsHighlightItem>
                         </TabsHighlight>
                     </TabsList>
+                    {trivy.available && isPaid && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-border"
+                            onClick={() => {
+                                window.dispatchEvent(new CustomEvent<SenchoNavigateDetail>(SENCHO_NAVIGATE_EVENT, {
+                                    detail: { view: 'security-history' },
+                                }));
+                            }}
+                            title="View completed vulnerability scans and compare them"
+                            aria-label="Open scan history"
+                        >
+                            <History className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                            Scan history
+                        </Button>
+                    )}
                 </div>
 
                 <ScrollArea className="flex-1 bg-background relative text-sm">
