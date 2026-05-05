@@ -57,6 +57,16 @@ Lists all Docker images on the host with their ID, repository tag, size, and sta
 
 Click the trash icon on any row to delete an individual image. Sencho will warn you if the image is in use.
 
+#### Inspect image
+
+Click the eye icon on any image row to open a detail panel showing:
+
+- **Overview** - ID, size, creation date, architecture and OS, author, and all repository tags
+- **Config** - Default `Cmd`, `Entrypoint`, `WorkingDir`, `User`, exposed ports, environment variables, and labels (env and labels are collapsible)
+- **Layers** - Ordered layer history. Each row shows layer index, size, age, and the build command (`CreatedBy`). Empty layers (metadata-only, zero bytes) are dimmed.
+
+The inspect panel is read-only and available to all users.
+
 ### Volumes
 
 Lists all Docker volumes. Columns: name, driver, mount point, size, and managed status.
