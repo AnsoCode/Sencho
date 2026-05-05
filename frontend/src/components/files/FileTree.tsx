@@ -3,12 +3,14 @@ import type { ReactNode } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast-store';
-import { listStackDirectory } from '@/lib/stackFilesApi';
 import type { FileEntry } from '@/lib/stackFilesApi';
 import { FileTreeNode } from './FileTreeNode';
 
 interface FileTreeProps {
-  stackName: string;
+  /** Loads directory contents at `relPath` (use '' for the tree root). */
+  loadDir: (relPath: string) => Promise<FileEntry[]>;
+  /** Stable identity for the source. Changing it remounts the tree. */
+  sourceKey: string;
   refreshKey?: number;
   selectedPath: string;
   onSelectFile: (relPath: string, entry: FileEntry) => void;
@@ -21,7 +23,8 @@ const ENV_NAMES = new Set(['.env']);
 const MAX_ENTRIES = 500;
 
 export function FileTree({
-  stackName,
+  loadDir,
+  sourceKey,
   refreshKey,
   selectedPath,
   onSelectFile,
@@ -34,13 +37,18 @@ export function FileTree({
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [dirContents, setDirContents] = useState<Map<string, FileEntry[]>>(new Map());
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
-  const stackNameRef = useRef(stackName);
+  const sourceKeyRef = useRef(sourceKey);
+  const loadDirRef = useRef(loadDir);
+
+  // Always keep the latest loader in a ref so callers can pass a fresh
+  // function each render without re-triggering the root fetch effect below.
+  loadDirRef.current = loadDir;
 
   useEffect(() => {
-    stackNameRef.current = stackName;
+    sourceKeyRef.current = sourceKey;
     let cancelled = false;
 
-    listStackDirectory(stackName, '')
+    loadDirRef.current('')
       .then((entries) => {
         if (!cancelled) {
           setRootEntries(entries);
@@ -59,7 +67,11 @@ export function FileTree({
     return () => {
       cancelled = true;
     };
-  }, [stackName, refreshKey]);
+    // loadDir is intentionally read through loadDirRef to avoid refetch on
+    // identity-only changes from the parent (StackFileExplorer rebuilds the
+    // arrow on every render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey, refreshKey]);
 
   function handleDirClick(dirRelPath: string) {
     if (expandedDirs.has(dirRelPath)) {
@@ -78,10 +90,10 @@ export function FileTree({
 
     setLoadingDirs((prev) => new Set(prev).add(dirRelPath));
 
-    const capturedStackName = stackName;
-    listStackDirectory(capturedStackName, dirRelPath)
+    const capturedSourceKey = sourceKey;
+    loadDirRef.current(dirRelPath)
       .then((entries) => {
-        if (stackNameRef.current !== capturedStackName) return;
+        if (sourceKeyRef.current !== capturedSourceKey) return;
         setDirContents((prev) => {
           const next = new Map(prev);
           next.set(dirRelPath, entries);

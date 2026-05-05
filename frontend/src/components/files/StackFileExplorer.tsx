@@ -3,7 +3,7 @@ import { Trash2, FolderPlus, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast-store';
 import { useLicense } from '@/context/LicenseContext';
-import { downloadStackFile } from '@/lib/stackFilesApi';
+import { downloadStackFile, listStackDirectory } from '@/lib/stackFilesApi';
 import { FileTree } from './FileTree';
 import { FileViewer } from './FileViewer';
 import { FileUploadDropzone } from './FileUploadDropzone';
@@ -110,7 +110,8 @@ export function StackFileExplorer({
         <div className="flex-1 min-h-0 overflow-hidden">
           <FileTree
             key={`${stackName}:${refreshKey}`}
-            stackName={stackName}
+            sourceKey={stackName}
+            loadDir={(p) => listStackDirectory(stackName, p)}
             refreshKey={refreshKey}
             selectedPath={selectedPath ?? ''}
             onSelectFile={handleSelectFile}
