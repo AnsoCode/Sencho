@@ -24,7 +24,6 @@ interface OverviewTabProps {
     labelFilters: Set<string>;
     onLabelFiltersChange: (filters: Set<string>) => void;
     onClearFilters: () => void;
-    isPaid: boolean;
     fleetStackLabelMap: Record<number, Record<string, StackLabel[]>>;
     updateStatusMap: Map<number, NodeUpdateStatus>;
     onNavigateToNode: (nodeId: number, stackName: string) => void;
@@ -50,7 +49,6 @@ export function OverviewTab({
     labelFilters,
     onLabelFiltersChange,
     onClearFilters,
-    isPaid,
     fleetStackLabelMap,
     updateStatusMap,
     onNavigateToNode,
@@ -90,7 +88,6 @@ export function OverviewTab({
             {!loading && nodes.length > 0 && (
                 <>
                     <OverviewToolbar
-                        isPaid={isPaid}
                         viewMode={viewMode}
                         onViewModeChange={onViewModeChange}
                         searchQuery={searchQuery}
@@ -144,11 +141,9 @@ export function OverviewTab({
                         </div>
                     )}
 
-                    {isPaid && (
-                        <p className="text-xs text-muted-foreground text-center mt-6">
-                            Auto-refreshing every 30 seconds
-                        </p>
-                    )}
+                    <p className="text-xs text-muted-foreground text-center mt-6">
+                        Auto-refreshing every 30 seconds
+                    </p>
                 </>
             )}
         </>

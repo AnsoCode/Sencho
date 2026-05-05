@@ -209,7 +209,7 @@ export class SchedulerService {
             db.deleteOldScans(90 * 24 * 60 * 60 * 1000);
 
             for (const task of dueTasks) {
-                if (!isAdmiral && task.action !== 'update' && task.action !== 'scan') {
+                if (!isAdmiral && task.action !== 'update' && task.action !== 'scan' && task.action !== 'snapshot') {
                     if (isDebugEnabled()) console.log(`[SchedulerService] Task ${task.id} skipped: action "${task.action}" requires Admiral tier`);
                     continue;
                 }

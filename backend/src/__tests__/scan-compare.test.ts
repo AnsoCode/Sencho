@@ -116,7 +116,7 @@ beforeEach(() => {
 });
 
 describe('GET /api/security/compare', () => {
-  it('returns 403 for community tier', async () => {
+  it('is accessible on community tier', async () => {
     tierSpy.mockReturnValue('community');
     const a = seedScan();
     const b = seedScan({ scannedAt: Date.now() + 1000 });
@@ -125,8 +125,7 @@ describe('GET /api/security/compare', () => {
       .get(`/api/security/compare?scanId1=${a}&scanId2=${b}`)
       .set('Authorization', `Bearer ${adminToken()}`);
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 
   it('returns 400 for non-finite scanId params', async () => {

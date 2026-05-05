@@ -67,7 +67,7 @@ securityRouter.get('/trivy-status', authMiddleware, (_req: Request, res: Respons
 });
 
 securityRouter.post('/trivy-install', trivyInstallLimiter, authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   const svc = TrivyService.getInstance();
   if (svc.getSource() === 'host') {
     res.status(409).json({ error: 'Trivy is already installed on the host PATH. Remove the host binary before managing it from Sencho.' });
@@ -89,7 +89,7 @@ securityRouter.post('/trivy-install', trivyInstallLimiter, authMiddleware, async
 });
 
 securityRouter.delete('/trivy-install', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   const svc = TrivyService.getInstance();
   if (svc.getSource() !== 'managed') {
     res.status(409).json({ error: 'No managed Trivy install to remove' });
@@ -107,7 +107,6 @@ securityRouter.delete('/trivy-install', authMiddleware, async (req: Request, res
 });
 
 securityRouter.get('/trivy-update-check', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
   const svc = TrivyService.getInstance();
   if (svc.getSource() !== 'managed') {
     res.status(409).json({ error: 'Update checks only apply to managed installs' });
@@ -124,7 +123,7 @@ securityRouter.get('/trivy-update-check', authMiddleware, async (req: Request, r
 });
 
 securityRouter.post('/trivy-update', trivyInstallLimiter, authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requireAdmiral(req, res)) return;
+  if (!requireAdmin(req, res)) return;
   const svc = TrivyService.getInstance();
   if (svc.getSource() !== 'managed') {
     res.status(409).json({ error: 'Update only applies to managed installs' });
@@ -178,7 +177,6 @@ securityRouter.post('/scan', authMiddleware, (req: Request, res: Response): void
     res.status(400).json({ error: 'scanners must be an array of "vuln" or "secret"' });
     return;
   }
-  if (scanners?.includes('secret') && !requirePaid(req, res)) return;
   const nodeId = req.nodeId;
   if (svc.isScanning(nodeId, imageRef)) {
     res.status(409).json({ error: 'Already scanning this image' });
@@ -194,7 +192,6 @@ securityRouter.post('/scan', authMiddleware, (req: Request, res: Response): void
 
 securityRouter.post('/scan/stack', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
   const svc = TrivyService.getInstance();
   if (!svc.isTrivyAvailable()) {
     res.status(503).json({ error: 'Trivy is not available on this host' }); return;
@@ -288,7 +285,6 @@ securityRouter.get(
   '/scans/:scanId/secrets',
   authMiddleware,
   (req: Request, res: Response): void => {
-    if (!requirePaid(req, res)) return;
     const scanId = Number(req.params.scanId);
     if (!Number.isFinite(scanId)) {
       res.status(400).json({ error: 'Invalid scan id' }); return;
@@ -314,7 +310,6 @@ securityRouter.get(
   '/scans/:scanId/misconfigs',
   authMiddleware,
   (req: Request, res: Response): void => {
-    if (!requirePaid(req, res)) return;
     const scanId = Number(req.params.scanId);
     if (!Number.isFinite(scanId)) {
       res.status(400).json({ error: 'Invalid scan id' }); return;
@@ -495,7 +490,6 @@ securityRouter.delete('/policies/:id', authMiddleware, (req: Request, res: Respo
 });
 
 securityRouter.get('/suppressions', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
   const now = Date.now();
   const rows = DatabaseService.getInstance().getCveSuppressions().map((s) => ({
     ...s,
@@ -506,7 +500,6 @@ securityRouter.get('/suppressions', authMiddleware, (req: Request, res: Response
 
 securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
   if (blockIfReplica(res, 'CVE suppressions')) return;
   const body = req.body ?? {};
   const cveId = typeof body.cve_id === 'string' ? body.cve_id.trim() : '';
@@ -559,7 +552,6 @@ securityRouter.post('/suppressions', authMiddleware, (req: Request, res: Respons
 
 securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
   if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -597,7 +589,6 @@ securityRouter.put('/suppressions/:id', authMiddleware, (req: Request, res: Resp
 
 securityRouter.delete('/suppressions/:id', authMiddleware, (req: Request, res: Response): void => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
   if (blockIfReplica(res, 'CVE suppressions')) return;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) {
@@ -609,7 +600,6 @@ securityRouter.delete('/suppressions/:id', authMiddleware, (req: Request, res: R
 });
 
 securityRouter.get('/compare', authMiddleware, (req: Request, res: Response): void => {
-  if (!requirePaid(req, res)) return;
   const scanId1 = Number(req.query.scanId1);
   const scanId2 = Number(req.query.scanId2);
   if (!Number.isFinite(scanId1) || !Number.isFinite(scanId2)) {

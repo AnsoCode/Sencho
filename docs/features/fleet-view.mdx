@@ -84,10 +84,10 @@ Click the **Refresh** button in the top-right to re-fetch data from all nodes. T
 
 ---
 
-## Paid features
+## Fleet operations
 
 <Note>
-  The features below require a Skipper or Admiral license. Community users see an upgrade prompt in place of these controls.
+  The toolbar (search, sort, filters), stack drill-down, auto-refresh, and per-node update flow are available on every tier. The bulk **Update All** action inside the Node Updates modal is a Skipper or Admiral feature.
 </Note>
 
 ### Auto-refresh
@@ -163,7 +163,7 @@ The modal shows:
 - **Filter** search box to find specific nodes
 - **Node table** with columns: Node name, Type, Current version, Latest version, and Status (either an "Up to date" badge or an "Update" button)
 - **Recheck** button to refresh the latest version from GitHub and re-scan for available updates
-- **Update All** button to trigger updates on all remote nodes that have a pending update
+- **Update All** button to trigger updates on all remote nodes that have a pending update (Skipper or Admiral)
 
 When you click **Update** on a remote node, Sencho sends the update command to the remote instance. The remote pulls the latest Docker image, then spawns a short-lived helper container that performs the compose recreate. The node restarts with the new version, and the status badge transitions from "Updating" to "Updated" once the gateway detects the version change. The "Updated" badge remains visible for 60 seconds before the node returns to "Up to date".
 

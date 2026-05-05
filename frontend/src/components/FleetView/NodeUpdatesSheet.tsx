@@ -24,11 +24,13 @@ interface NodeUpdatesSheetProps {
     retryNodeUpdate: (nodeId: number) => void;
     dismissNodeUpdate: (nodeId: number) => void;
     triggerUpdateAll: () => Promise<void>;
+    canBulkUpdate: boolean;
 }
 
 export function NodeUpdatesSheet({
     open, onOpenChange, checkingUpdates, updateStatuses, updatingNodeId,
     fetchUpdateStatus, triggerNodeUpdate, retryNodeUpdate, dismissNodeUpdate, triggerUpdateAll,
+    canBulkUpdate,
 }: NodeUpdatesSheetProps) {
     const [search, setSearch] = useState('');
     const [recheckingUpdates, setRecheckingUpdates] = useState(false);
@@ -215,7 +217,7 @@ export function NodeUpdatesSheet({
                                 <RefreshCw className={`w-3 h-3 mr-1.5 ${recheckingUpdates ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                                 Recheck
                             </Button>
-                            {updatableRemoteCount > 0 && (
+                            {canBulkUpdate && updatableRemoteCount > 0 && (
                                 <Button
                                     variant="outline"
                                     size="sm"

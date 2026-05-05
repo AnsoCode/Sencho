@@ -26,7 +26,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from '@/components/ui/toast-store';
 import { apiFetch } from '@/lib/api';
-import { PaidGate } from '@/components/PaidGate';
 import { ShieldCheck, Plus, Trash2, Pencil, Download, RefreshCw, Loader2, Info } from 'lucide-react';
 import { SettingsCallout } from './SettingsCallout';
 import { SettingsPrimaryButton } from './SettingsActions';
@@ -267,31 +266,18 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
     loading
       ? null
       : [
-          { label: 'POLICIES', value: `${policies.length}` },
+          ...(isPaid ? [{ label: 'POLICIES', value: `${policies.length}` }] : []),
           {
             label: 'TRIVY',
             value: trivy.source === 'none' ? 'missing' : trivy.source,
-            tone: trivy.source === 'none' ? 'warn' : 'value',
+            tone: trivy.source === 'none' ? 'warn' : 'value' as const,
           },
         ],
   );
 
-  if (!isPaid) {
-    return (
-      <div className="space-y-6">
-        <PaidGate>
-          <div className="space-y-3">
-            <div className="h-16 rounded-lg border bg-card" />
-            <div className="h-16 rounded-lg border bg-card" />
-          </div>
-        </PaidGate>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {!isRemote && !isReplica && (
+      {isPaid && !isRemote && !isReplica && (
         <div className="flex justify-end">
           <SettingsPrimaryButton size="sm" onClick={openCreate}>
             <Plus className="w-4 h-4" />
@@ -330,41 +316,39 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
               </Badge>
             )}
           </div>
-          {isAdmiral && (
-            <div className="flex items-center gap-2 shrink-0">
-              {trivy.source === 'none' && (
-                <SettingsPrimaryButton size="sm" onClick={handleInstallTrivy} disabled={trivyBusy !== null}>
-                  {trivyBusy === 'install' ? (
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
-                  ) : (
-                    <Download className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                  )}
-                  Install Trivy
-                </SettingsPrimaryButton>
-              )}
-              {trivy.source === 'managed' && updateCheck?.updateAvailable && (
-                <Button size="sm" variant="outline" onClick={handleUpdateTrivy} disabled={trivyBusy !== null}>
-                  {trivyBusy === 'update' ? (
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
-                  )}
-                  Update
-                </Button>
-              )}
-              {trivy.source === 'managed' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
-                  onClick={() => setUninstallConfirm(true)}
-                  disabled={trivyBusy !== null}
-                >
-                  Uninstall
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {trivy.source === 'none' && (
+              <SettingsPrimaryButton size="sm" onClick={handleInstallTrivy} disabled={trivyBusy !== null}>
+                {trivyBusy === 'install' ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                ) : (
+                  <Download className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                )}
+                Install Trivy
+              </SettingsPrimaryButton>
+            )}
+            {trivy.source === 'managed' && updateCheck?.updateAvailable && (
+              <Button size="sm" variant="outline" onClick={handleUpdateTrivy} disabled={trivyBusy !== null}>
+                {trivyBusy === 'update' ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.5} />
+                )}
+                Update
+              </Button>
+            )}
+            {trivy.source === 'managed' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive/60 hover:bg-destructive hover:text-destructive-foreground"
+                onClick={() => setUninstallConfirm(true)}
+                disabled={trivyBusy !== null}
+              >
+                Uninstall
+              </Button>
+            )}
+          </div>
         </div>
 
         {trivy.source === 'managed' && trivy.version && (
@@ -414,7 +398,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         </div>
       )}
 
-      {!isRemote && !loading && policies.length === 0 && (
+      {isPaid && !isRemote && !loading && policies.length === 0 && (
         <SettingsCallout
           icon={<ShieldCheck className="h-4 w-4" />}
           title="No scan policies configured"
@@ -422,7 +406,7 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         />
       )}
 
-      {!isRemote && !loading &&
+      {isPaid && !isRemote && !loading &&
         policies.map((policy) => (
           <div key={policy.id} className="border border-glass-border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -476,7 +460,9 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
 
       {!isRemote && <SuppressionsPanel isReplica={isReplica} />}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {isPaid && (
+        <>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Edit Policy' : 'New Policy'}</DialogTitle>
@@ -548,25 +534,27 @@ export function SecuritySection({ isPaid }: { isPaid: boolean }) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteId != null} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete scan policy?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the policy immediately. Existing scans are not affected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <AlertDialog open={deleteId != null} onOpenChange={(open) => !open && setDeleteId(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete scan policy?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the policy immediately. Existing scans are not affected.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDelete}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
 
       <AlertDialog open={uninstallConfirm} onOpenChange={setUninstallConfirm}>
         <AlertDialogContent>
