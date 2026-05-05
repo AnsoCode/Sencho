@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { DatabaseService } from '../services/DatabaseService';
 import { CloudBackupService } from '../services/CloudBackupService';
-import { authMiddleware } from '../middleware/auth';
 import { effectiveTier, effectiveVariant } from '../middleware/tierGates';
 import type { LicenseTier, LicenseVariant } from '../services/license-types';
 
@@ -157,7 +156,7 @@ export function buildLocalConfigurationStatus(
 
 // Sits after authGate and before the remote proxy in index.ts so remote-node
 // requests are transparently forwarded to the target Sencho instance.
-dashboardRouter.get('/configuration', authMiddleware, (req: Request, res: Response): void => {
+dashboardRouter.get('/configuration', (req: Request, res: Response): void => {
   try {
     const nodeId = req.nodeId ?? 0;
     const userId = req.user?.userId ?? 0;
@@ -179,7 +178,7 @@ interface StackRestartSummary {
   total: number;
 }
 
-dashboardRouter.get('/stack-restarts', authMiddleware, (req: Request, res: Response): void => {
+dashboardRouter.get('/stack-restarts', (req: Request, res: Response): void => {
   try {
     const db = DatabaseService.getInstance();
     const nodeId = req.nodeId ?? 0;
