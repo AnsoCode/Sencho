@@ -73,6 +73,7 @@ interface FleetNodeOverview {
   id: number;
   name: string;
   type: 'local' | 'remote';
+  mode?: string;
   status: 'online' | 'offline' | 'unknown';
   stats: {
     active: number;
@@ -89,6 +90,7 @@ interface FleetNodeOverview {
   stacks: string[] | null;
   latency_ms?: number;
   last_successful_contact?: number | null;
+  pilot_last_seen?: number | null;
 }
 
 /** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
@@ -175,11 +177,13 @@ async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise
       id: node.id,
       name: node.name,
       type: node.type,
+      mode: node.mode,
       status: node.pilot_last_seen ? 'online' : 'offline',
       stats: null,
       systemStats: null,
       stacks: null,
-      last_successful_contact: node.pilot_last_seen ?? null,
+      last_successful_contact: node.pilot_last_seen ? Math.floor(node.pilot_last_seen / 1000) : null,
+      pilot_last_seen: node.pilot_last_seen ? Math.floor(node.pilot_last_seen / 1000) : null,
     };
   }
 
@@ -238,6 +242,7 @@ async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise
       id: node.id,
       name: node.name,
       type: node.type,
+      mode: node.mode,
       status: isOnline ? 'online' : 'offline',
       stats,
       systemStats,
@@ -250,7 +255,7 @@ async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise
   } catch (error) {
     console.error(`[Fleet] Remote node ${node.name} error:`, error);
     return {
-      id: node.id, name: node.name, type: node.type, status: 'offline',
+      id: node.id, name: node.name, type: node.type, mode: node.mode, status: 'offline',
       stats: null, systemStats: null, stacks: null,
       last_successful_contact: node.last_successful_contact ?? null,
     };

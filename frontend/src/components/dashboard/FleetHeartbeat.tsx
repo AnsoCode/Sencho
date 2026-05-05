@@ -23,7 +23,7 @@ function StatusDot({ status }: { status: 'online' | 'offline' | 'unknown' }) {
 
 function getLatencyLabel(node: FleetNodeOverview, isPilot: boolean): string | null {
   if (node.type === 'local') return null;
-  if (isPilot) return '—';
+  if (isPilot) return 'n/a';
   if (node.status === 'online' && node.latency_ms !== undefined) return `${node.latency_ms} ms`;
   return null;
 }
