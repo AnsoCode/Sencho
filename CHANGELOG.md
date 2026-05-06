@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.71.0](https://github.com/Studio-Saelix/sencho/compare/v0.70.0...v0.71.0) (2026-05-06)
+
+
+### Added
+
+* **dashboard:** replace duplicate Recent Activity card with Fleet Heartbeat / Stack Restart Map ([#932](https://github.com/Studio-Saelix/sencho/issues/932)) ([775fab7](https://github.com/Studio-Saelix/sencho/commit/775fab7d6451c306e9930bf2c8ec486add8f6a87))
+* implement file explorer context menus and dialogs ([#934](https://github.com/Studio-Saelix/sencho/issues/934)) ([0c3ce4b](https://github.com/Studio-Saelix/sencho/commit/0c3ce4b22431441943ea7feff1fdbb996d77befb))
+* open security basics, manual fleet ops, and basic fleet management to Community ([#930](https://github.com/Studio-Saelix/sencho/issues/930)) ([ecf4dd5](https://github.com/Studio-Saelix/sencho/commit/ecf4dd5d52bb56521e9196d621ddb63c25daf67f))
+* **sidebar:** filter toggle + action button padding fix ([#933](https://github.com/Studio-Saelix/sencho/issues/933)) ([166ba21](https://github.com/Studio-Saelix/sencho/commit/166ba21ff195315e80352a3d199808c6a6071d77))
+
+
+### Fixed
+
+* add CodeQL barrier model for sanitizeForLog against log injection ([#935](https://github.com/Studio-Saelix/sencho/issues/935)) ([0dcf309](https://github.com/Studio-Saelix/sencho/commit/0dcf309c48e527bbe82237ba0e440c86c9b4c8fb))
+
 ## [0.70.0](https://github.com/Studio-Saelix/sencho/compare/v0.69.3...v0.70.0) (2026-05-05)
 
 
