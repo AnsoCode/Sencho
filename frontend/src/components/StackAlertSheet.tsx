@@ -54,8 +54,8 @@ const metricOptions = [
     { value: 'cpu_percent', label: 'CPU Usage (%)' },
     { value: 'memory_percent', label: 'Memory Usage (%)' },
     { value: 'memory_mb', label: 'Memory Usage (MB)' },
-    { value: 'net_rx', label: 'Network In (MB)' },
-    { value: 'net_tx', label: 'Network Out (MB)' },
+    { value: 'net_rx', label: 'Network In (MB/s)' },
+    { value: 'net_tx', label: 'Network Out (MB/s)' },
     { value: 'restart_count', label: 'Restart Count' },
 ];
 
