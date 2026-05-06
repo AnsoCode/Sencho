@@ -531,16 +531,16 @@ describe('ImageUpdateService - check() timeout', () => {
     // Override the module-level DatabaseService mock to return a node
     const dbModule = await import('../services/DatabaseService');
     const origGetInstance = dbModule.DatabaseService.getInstance;
-    dbModule.DatabaseService.getInstance = () => ({
+    dbModule.DatabaseService.getInstance = (() => ({
       getGlobalSettings: () => ({ developer_mode: '0' }),
-      getNodes: () => [{ type: 'local', id: 1, name: 'local' }],
+      getNodes: () => [{ type: 'local', id: 1, name: 'local', mode: 'proxy', compose_dir: '/tmp/compose', is_default: true, status: 'online', created_at: 1 }],
       upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
       getStackUpdateStatus: mockGetStackUpdateStatus,
       clearStackUpdateStatus: mockClearStackUpdateStatus,
       getSystemState: mockGetSystemState,
       setSystemState: mockSetSystemState,
       addNotificationHistory: mockAddNotificationHistory,
-    });
+    })) as unknown as typeof dbModule.DatabaseService.getInstance;
 
     const service = ImageUpdateService.getInstance();
     // Make checkNode hang indefinitely so the timeout fires
