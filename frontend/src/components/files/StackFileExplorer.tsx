@@ -8,7 +8,10 @@ import { FileTree } from './FileTree';
 import { FileViewer } from './FileViewer';
 import { FileUploadDropzone } from './FileUploadDropzone';
 import { NewFolderDialog } from './NewFolderDialog';
+import { NewFileDialog } from './NewFileDialog';
 import { DeleteFileConfirm } from './DeleteFileConfirm';
+import { RenameDialog } from './RenameDialog';
+import { FilePermissionsDialog } from './FilePermissionsDialog';
 import type { FileEntry } from '@/lib/stackFilesApi';
 
 interface StackFileExplorerProps {
@@ -31,9 +34,33 @@ export function StackFileExplorer({
   const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
   const [currentDir, setCurrentDir] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // ── toolbar delete (existing behaviour) ──
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // ── new folder dialog (toolbar button + context menu) ──
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderDir, setNewFolderDir] = useState('');
+
+  // ── context menu: new file ──
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [newFileDir, setNewFileDir] = useState('');
+
+  // ── context menu: rename ──
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameRelPath, setRenameRelPath] = useState('');
+  const [renameCurrentName, setRenameCurrentName] = useState('');
+
+  // ── context menu: delete ──
+  const [ctxDeleteOpen, setCtxDeleteOpen] = useState(false);
+  const [ctxDeletePath, setCtxDeletePath] = useState('');
+  const [ctxDeleteEntry, setCtxDeleteEntry] = useState<FileEntry | null>(null);
+
+  // ── context menu: permissions ──
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [permissionsRelPath, setPermissionsRelPath] = useState('');
+  const [permissionsEntryName, setPermissionsEntryName] = useState('');
 
   useEffect(() => {
     setSelectedPath(null);
@@ -83,6 +110,37 @@ export function StackFileExplorer({
     }
   };
 
+  // ── Context menu callbacks ──
+
+  const handleContextMenuRename = useCallback((relPath: string) => {
+    const name = relPath.split('/').pop() ?? relPath;
+    setRenameRelPath(relPath);
+    setRenameCurrentName(name);
+    setRenameOpen(true);
+  }, []);
+
+  const handleContextMenuNewFile = useCallback((dirRelPath: string) => {
+    setNewFileDir(dirRelPath);
+    setNewFileOpen(true);
+  }, []);
+
+  const handleContextMenuNewFolder = useCallback((dirRelPath: string) => {
+    setNewFolderDir(dirRelPath);
+    setNewFolderOpen(true);
+  }, []);
+
+  const handleContextMenuDelete = useCallback((relPath: string, entry: FileEntry) => {
+    setCtxDeletePath(relPath);
+    setCtxDeleteEntry(entry);
+    setCtxDeleteOpen(true);
+  }, []);
+
+  const handleContextMenuPermissions = useCallback((relPath: string, entry: FileEntry) => {
+    setPermissionsRelPath(relPath);
+    setPermissionsEntryName(entry.name);
+    setPermissionsOpen(true);
+  }, []);
+
   return (
     <div className="flex h-full min-h-0">
       {/* Left pane: tree + upload + new folder */}
@@ -101,7 +159,10 @@ export function StackFileExplorer({
               size="icon"
               className="h-6 w-6 shrink-0"
               title="New folder"
-              onClick={() => setNewFolderOpen(true)}
+              onClick={() => {
+                setNewFolderDir(currentDir);
+                setNewFolderOpen(true);
+              }}
             >
               <FolderPlus className="w-3.5 h-3.5" strokeWidth={1.5} />
             </Button>
@@ -117,6 +178,13 @@ export function StackFileExplorer({
             onSelectFile={handleSelectFile}
             onNavigateToCompose={onNavigateToCompose}
             onNavigateToEnv={onNavigateToEnv}
+            canEdit={canEdit}
+            isPaid={isPaid}
+            onContextMenuRename={handleContextMenuRename}
+            onContextMenuNewFile={handleContextMenuNewFile}
+            onContextMenuNewFolder={handleContextMenuNewFolder}
+            onContextMenuDelete={handleContextMenuDelete}
+            onContextMenuPermissions={handleContextMenuPermissions}
           />
         </div>
       </div>
@@ -162,6 +230,9 @@ export function StackFileExplorer({
         </div>
       </div>
 
+      {/* ── Dialogs ── */}
+
+      {/* Toolbar delete (currently selected file) */}
       <DeleteFileConfirm
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
@@ -171,12 +242,61 @@ export function StackFileExplorer({
         onDeleted={handleDeleted}
       />
 
+      {/* Context menu delete */}
+      <DeleteFileConfirm
+        open={ctxDeleteOpen}
+        onOpenChange={setCtxDeleteOpen}
+        stackName={stackName}
+        relPath={ctxDeletePath}
+        entry={ctxDeleteEntry}
+        onDeleted={() => {
+          if (ctxDeletePath === selectedPath) handleDeleted();
+          else refresh();
+          setCtxDeletePath('');
+          setCtxDeleteEntry(null);
+        }}
+      />
+
+      {/* New folder (toolbar + context menu) */}
       <NewFolderDialog
         open={newFolderOpen}
         onOpenChange={setNewFolderOpen}
         stackName={stackName}
-        currentDir={currentDir}
+        currentDir={newFolderDir}
         onCreated={refresh}
+      />
+
+      {/* New file (context menu) */}
+      <NewFileDialog
+        open={newFileOpen}
+        onOpenChange={setNewFileOpen}
+        stackName={stackName}
+        currentDir={newFileDir}
+        onCreated={refresh}
+      />
+
+      {/* Rename */}
+      <RenameDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        stackName={stackName}
+        relPath={renameRelPath}
+        currentName={renameCurrentName}
+        onRenamed={() => {
+          // If the renamed item was selected, deselect since the path changed.
+          if (renameRelPath === selectedPath) handleDeleted();
+          else refresh();
+        }}
+      />
+
+      {/* Permissions */}
+      <FilePermissionsDialog
+        open={permissionsOpen}
+        onOpenChange={setPermissionsOpen}
+        stackName={stackName}
+        relPath={permissionsRelPath}
+        entryName={permissionsEntryName}
+        isPaid={isPaid}
       />
     </div>
   );

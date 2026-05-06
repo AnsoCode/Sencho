@@ -41,6 +41,6 @@ describe('StackGroup', () => {
         <div>child</div>
       </StackGroup>
     );
-    expect(screen.getByText('PINNED')).toHaveClass('text-brand/90');
+    expect(screen.getByText(/PINNED/)).toHaveClass('text-brand/90');
   });
 });

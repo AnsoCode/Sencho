@@ -16,6 +16,14 @@ interface FileTreeProps {
   onSelectFile: (relPath: string, entry: FileEntry) => void;
   onNavigateToCompose?: () => void;
   onNavigateToEnv?: () => void;
+  // Context menu wiring
+  canEdit?: boolean;
+  isPaid?: boolean;
+  onContextMenuRename?: (relPath: string) => void;
+  onContextMenuNewFile?: (dirRelPath: string) => void;
+  onContextMenuNewFolder?: (dirRelPath: string) => void;
+  onContextMenuDelete?: (relPath: string, entry: FileEntry) => void;
+  onContextMenuPermissions?: (relPath: string, entry: FileEntry) => void;
 }
 
 const COMPOSE_NAMES = new Set(['compose.yaml', 'compose.yml']);
@@ -30,6 +38,13 @@ export function FileTree({
   onSelectFile,
   onNavigateToCompose,
   onNavigateToEnv,
+  canEdit = false,
+  isPaid = false,
+  onContextMenuRename = () => undefined,
+  onContextMenuNewFile = () => undefined,
+  onContextMenuNewFolder = () => undefined,
+  onContextMenuDelete = () => undefined,
+  onContextMenuPermissions = () => undefined,
 }: FileTreeProps) {
   const [rootEntries, setRootEntries] = useState<FileEntry[] | null>(null);
   const [rootLoading, setRootLoading] = useState(true);
@@ -145,6 +160,7 @@ export function FileTree({
             <Fragment key={entryRelPath}>
               <FileTreeNode
                 entry={entry}
+                relPath={entryRelPath}
                 depth={depth}
                 isSelected={selectedPath === entryRelPath}
                 isExpanded={isExpanded}
@@ -156,6 +172,13 @@ export function FileTree({
                     handleFileClick(entryRelPath, entry);
                   }
                 }}
+                canEdit={canEdit}
+                isPaid={isPaid}
+                onContextMenuRename={onContextMenuRename}
+                onContextMenuNewFile={onContextMenuNewFile}
+                onContextMenuNewFolder={onContextMenuNewFolder}
+                onContextMenuDelete={onContextMenuDelete}
+                onContextMenuPermissions={onContextMenuPermissions}
               />
               {isDir && isExpanded && children !== undefined && (
                 children.length === 0

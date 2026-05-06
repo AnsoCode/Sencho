@@ -567,6 +567,43 @@ export class FileSystemService {
     await fsPromises.mkdir(safePath, { recursive: true });
   }
 
+  async renameStackPath(stackName: string, fromRel: string, toRel: string): Promise<void> {
+    const fromPath = await this.resolveSafeStackPath(stackName, fromRel);
+    // toRel must resolve to the same parent directory (rename only, no cross-dir move).
+    const toPath = await this.resolveSafeStackPath(stackName, toRel);
+    if (path.dirname(fromPath) !== path.dirname(toPath)) {
+      throw Object.assign(new Error('Cross-directory rename is not supported'), { code: 'INVALID_PATH' });
+    }
+    const toName = path.basename(toPath);
+    if (!toName || toName === '.' || toName === '..') {
+      throw Object.assign(new Error('Invalid destination name'), { code: 'INVALID_PATH' });
+    }
+    // Prevent overwriting an existing path.
+    try {
+      await fsPromises.access(toPath);
+      throw Object.assign(new Error('A file or folder with that name already exists'), { code: 'EEXIST' });
+    } catch (e: unknown) {
+      const fe = e as NodeJS.ErrnoException;
+      if (fe.code !== 'ENOENT') throw e;
+    }
+    await fsPromises.rename(fromPath, toPath);
+  }
+
+  async getStackEntryMode(stackName: string, relPath: string): Promise<{ mode: number; octal: string }> {
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    const stat = await fsPromises.stat(safePath);
+    const mode = stat.mode & 0o777;
+    return { mode, octal: mode.toString(8).padStart(3, '0') };
+  }
+
+  async chmodStackPath(stackName: string, relPath: string, mode: number): Promise<void> {
+    if (!Number.isInteger(mode) || mode < 0 || mode > 0o777) {
+      throw Object.assign(new Error('Invalid permission bits'), { code: 'INVALID_PATH' });
+    }
+    const safePath = await this.resolveSafeStackPath(stackName, relPath);
+    await fsPromises.chmod(safePath, mode);
+  }
+
   async statStackEntry(stackName: string, relPath: string): Promise<FileEntry> {
     const safePath = await this.resolveSafeStackPath(stackName, relPath);
     // Use lstat so symlinks are reported as 'symlink' rather than resolved to target type.
