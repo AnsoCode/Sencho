@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.71.1](https://github.com/Studio-Saelix/sencho/compare/v0.71.0...v0.71.1) (2026-05-06)
+
+
+### Fixed
+
+* suppress ERROR logging for missing .env files in image update scan ([#936](https://github.com/Studio-Saelix/sencho/issues/936)) ([72b6cdd](https://github.com/Studio-Saelix/sencho/commit/72b6cdd0a3afe72ec332c71a2f45000aee957adc))
+
 ## [0.71.0](https://github.com/Studio-Saelix/sencho/compare/v0.70.0...v0.71.0) (2026-05-06)
 
 
