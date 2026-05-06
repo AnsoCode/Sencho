@@ -185,8 +185,10 @@ export class FileSystemService {
     try {
       return await fsPromises.readFile(envPath, 'utf-8');
     } catch (error) {
-      console.error('Error reading env file:', error);
-      throw new Error(`Failed to read env file for stack: ${stackName}`);
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Error reading env file:', error);
+      }
+      throw error;
     }
   }
 

@@ -11,7 +11,7 @@ const {
   mockGetStackUpdateStatus, mockUpsertStackUpdateStatus, mockClearStackUpdateStatus,
   mockGetSystemState, mockSetSystemState, mockAddNotificationHistory,
   mockDispatchAlert,
-  mockGetStacks, mockGetStackContent, mockGetEnvContent,
+  mockGetStacks, mockGetStackContent, mockGetEnvContent, mockEnvExists,
   mockGetAllContainers,
 } = vi.hoisted(() => ({
   mockGetAuthForRegistry: vi.fn().mockResolvedValue(null),
@@ -25,6 +25,7 @@ const {
   mockGetStacks: vi.fn().mockResolvedValue([]),
   mockGetStackContent: vi.fn().mockResolvedValue(''),
   mockGetEnvContent: vi.fn().mockRejectedValue(new Error('no env')),
+  mockEnvExists: vi.fn().mockResolvedValue(false),
   mockGetAllContainers: vi.fn().mockResolvedValue([]),
 }));
 
@@ -65,6 +66,7 @@ vi.mock('../services/FileSystemService', () => ({
       getStacks: mockGetStacks,
       getStackContent: mockGetStackContent,
       getEnvContent: mockGetEnvContent,
+      envExists: mockEnvExists,
     }),
   },
 }));
@@ -442,5 +444,266 @@ services:
       level: 'error',
       message: expect.stringContaining('webhook timeout'),
     }));
+  });
+});
+
+// ── .env file handling ──────────────────────────────────────────────────
+
+describe('ImageUpdateService - .env file handling in checkNode', () => {
+  const COMPOSE = `
+services:
+  app:
+    image: nginx:latest
+`;
+
+  const fakeDb = () => ({
+    getStackUpdateStatus: mockGetStackUpdateStatus,
+    upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+    clearStackUpdateStatus: mockClearStackUpdateStatus,
+    getSystemState: mockGetSystemState,
+    setSystemState: mockSetSystemState,
+    addNotificationHistory: mockAddNotificationHistory,
+  });
+
+  function stubCheckImage(service: ImageUpdateService, hasUpdate: boolean) {
+    (service as any).checkImage = vi.fn().mockResolvedValue({ hasUpdate });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+    mockGetSystemState.mockReturnValue('1');
+    mockGetStacks.mockResolvedValue(['stackA']);
+    mockGetStackContent.mockResolvedValue(COMPOSE);
+    mockGetAllContainers.mockResolvedValue([]);
+    mockGetEnvContent.mockRejectedValue(new Error('no env'));
+    mockEnvExists.mockResolvedValue(false);
+  });
+
+  it('skips getEnvContent when envExists returns false', async () => {
+    mockEnvExists.mockResolvedValue(false);
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, false);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockEnvExists).toHaveBeenCalledWith('stackA');
+    expect(mockGetEnvContent).not.toHaveBeenCalled();
+  });
+
+  it('reads .env when envExists returns true', async () => {
+    mockEnvExists.mockResolvedValue(true);
+    mockGetEnvContent.mockResolvedValue('IMAGE_TAG=1.0');
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, false);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockEnvExists).toHaveBeenCalledWith('stackA');
+    expect(mockGetEnvContent).toHaveBeenCalledWith('stackA');
+  });
+
+  it('continues gracefully when .env exists but is unreadable', async () => {
+    mockEnvExists.mockResolvedValue(true);
+    mockGetEnvContent.mockRejectedValue(new Error('EACCES: permission denied'));
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, false);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    // Should not throw; should still complete and write status
+    expect(mockUpsertStackUpdateStatus).toHaveBeenCalled();
+  });
+});
+
+// ── check() timeout ─────────────────────────────────────────────────────
+
+describe('ImageUpdateService - check() timeout', () => {
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+  });
+
+  it('releases isRunning lock after CHECK_TIMEOUT_MS', async () => {
+    // Override the module-level DatabaseService mock to return a node
+    const dbModule = await import('../services/DatabaseService');
+    const origGetInstance = dbModule.DatabaseService.getInstance;
+    dbModule.DatabaseService.getInstance = (() => ({
+      getGlobalSettings: () => ({ developer_mode: '0' }),
+      getNodes: () => [{ type: 'local', id: 1, name: 'local', mode: 'proxy', compose_dir: '/tmp/compose', is_default: true, status: 'online', created_at: 1 }],
+      upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+      getStackUpdateStatus: mockGetStackUpdateStatus,
+      clearStackUpdateStatus: mockClearStackUpdateStatus,
+      getSystemState: mockGetSystemState,
+      setSystemState: mockSetSystemState,
+      addNotificationHistory: mockAddNotificationHistory,
+    })) as unknown as typeof dbModule.DatabaseService.getInstance;
+
+    const service = ImageUpdateService.getInstance();
+    // Make checkNode hang indefinitely so the timeout fires
+    (service as any).checkNode = vi.fn().mockImplementation(() =>
+      new Promise(() => { /* never resolves */ })
+    );
+
+    // Override timeout to 100ms for fast test
+    const orig = (ImageUpdateService as any).CHECK_TIMEOUT_MS;
+    (ImageUpdateService as any).CHECK_TIMEOUT_MS = 100;
+
+    // Don't await; this will hang intentionally
+    const checkPromise = (service as any).check();
+
+    // Let microtasks flush so check() enters its body
+    await new Promise(r => setTimeout(r, 10));
+    expect(service.isChecking()).toBe(true);
+
+    // Wait for timeout to fire
+    await new Promise(r => setTimeout(r, 200));
+
+    expect(service.isChecking()).toBe(false);
+
+    // Cleanup
+    (ImageUpdateService as any).CHECK_TIMEOUT_MS = orig;
+    dbModule.DatabaseService.getInstance = origGetInstance;
+    checkPromise.catch(() => {});
+  });
+});
+
+// ── stop() cancels startup timeout ──────────────────────────────────────
+
+describe('ImageUpdateService - stop() cancels startup timeout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+  });
+
+  it('prevents check from firing after stop() is called during startup delay', async () => {
+    const service = ImageUpdateService.getInstance();
+    const checkSpy = vi.spyOn(service as any, 'check');
+
+    service.start();
+    service.stop();
+
+    // Wait past the startup delay to see if check fires
+    await new Promise(r => setTimeout(r, 100));
+
+    expect(checkSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── Stale stack pruning ─────────────────────────────────────────────────
+
+describe('ImageUpdateService - stale stack pruning', () => {
+  const COMPOSE = `
+services:
+  app:
+    image: nginx:latest
+`;
+
+  const fakeDb = () => ({
+    getStackUpdateStatus: mockGetStackUpdateStatus,
+    upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+    clearStackUpdateStatus: mockClearStackUpdateStatus,
+    getSystemState: mockGetSystemState,
+    setSystemState: mockSetSystemState,
+    addNotificationHistory: mockAddNotificationHistory,
+  });
+
+  function stubCheckImage(service: ImageUpdateService, hasUpdate: boolean) {
+    (service as any).checkImage = vi.fn().mockResolvedValue({ hasUpdate });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+    mockGetSystemState.mockReturnValue('1');
+    mockGetStacks.mockResolvedValue(['stackA']);
+    mockGetStackContent.mockResolvedValue(COMPOSE);
+    mockGetAllContainers.mockResolvedValue([]);
+    mockEnvExists.mockResolvedValue(false);
+  });
+
+  it('prunes stale stacks no longer on disk', async () => {
+    // previousState has stackB which no longer exists on disk
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: false, stackB: true });
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, false);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockClearStackUpdateStatus).toHaveBeenCalledWith(1, 'stackB');
+  });
+
+  it('does not prune stacks still on disk', async () => {
+    mockGetStackUpdateStatus.mockReturnValue({ stackA: false });
+    const service = ImageUpdateService.getInstance();
+    stubCheckImage(service, false);
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    expect(mockClearStackUpdateStatus).not.toHaveBeenCalled();
+  });
+});
+
+// ── Container augmentation filtering ────────────────────────────────────
+
+describe('ImageUpdateService - container augmentation filtering', () => {
+  const COMPOSE = `
+services:
+  app:
+    image: nginx:latest
+`;
+
+  const fakeDb = () => ({
+    getStackUpdateStatus: mockGetStackUpdateStatus,
+    upsertStackUpdateStatus: mockUpsertStackUpdateStatus,
+    clearStackUpdateStatus: mockClearStackUpdateStatus,
+    getSystemState: mockGetSystemState,
+    setSystemState: mockSetSystemState,
+    addNotificationHistory: mockAddNotificationHistory,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (ImageUpdateService as any).instance = undefined;
+    mockGetSystemState.mockReturnValue('1');
+    mockGetStacks.mockResolvedValue(['stackA']);
+    mockGetStackContent.mockResolvedValue(COMPOSE);
+    mockEnvExists.mockResolvedValue(false);
+  });
+
+  it('includes containers whose working_dir matches compose dir', async () => {
+    mockGetAllContainers.mockResolvedValue([
+      {
+        Labels: { 'com.docker.compose.project.working_dir': '/tmp/compose/stackA' },
+        Image: 'nginx:1.25',
+      },
+    ]);
+    const service = ImageUpdateService.getInstance();
+    const checkImageSpy = vi.fn().mockResolvedValue({ hasUpdate: false });
+    (service as any).checkImage = checkImageSpy;
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    // Should check both the compose image and the container image
+    const checkedImages = checkImageSpy.mock.calls.map((c: any[]) => c[1]);
+    expect(checkedImages).toContain('nginx:1.25');
+  });
+
+  it('excludes containers outside compose dir', async () => {
+    mockGetAllContainers.mockResolvedValue([
+      {
+        Labels: { 'com.docker.compose.project.working_dir': '/other/place/app' },
+        Image: 'someapp:v2',
+      },
+    ]);
+    const service = ImageUpdateService.getInstance();
+    const checkImageSpy = vi.fn().mockResolvedValue({ hasUpdate: false });
+    (service as any).checkImage = checkImageSpy;
+
+    await (service as any).checkNode(1, 'local', fakeDb());
+
+    const checkedImages = checkImageSpy.mock.calls.map((c: any[]) => c[1]);
+    expect(checkedImages).not.toContain('someapp:v2');
   });
 });
