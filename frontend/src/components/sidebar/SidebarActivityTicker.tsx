@@ -12,16 +12,17 @@ interface SidebarActivityTickerProps {
 }
 
 export function SidebarActivityTicker({ notifications, connected, onNavigate }: SidebarActivityTickerProps) {
-  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
+  const [tick, forceUpdate] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     const id = setInterval(forceUpdate, NOW_TICK_MS);
     return () => clearInterval(id);
   }, []);
   const latest = useMemo(() => {
+    const nowSecs = Math.floor(Date.now() / 1000);
     return notifications
-      .filter(n => n.stack_name)
+      .filter(n => n.stack_name && (nowSecs - n.timestamp) <= 3600)
       .sort((a, b) => b.timestamp - a.timestamp)[0] ?? null;
-  }, [notifications]);
+  }, [notifications, tick]);
 
   const idle = latest === null;
   const dotClass = connected
