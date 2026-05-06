@@ -1,0 +1,2 @@
+data_extensions:
+  - .github/codeql/extensions/safeLog.model.yml
