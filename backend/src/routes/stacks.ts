@@ -977,3 +977,65 @@ stacksRouter.post('/:stackName/files/folder', async (req: Request, res: Response
     return sendFsError(res, err, 'Failed to create folder');
   }
 });
+
+stacksRouter.patch('/:stackName/files/rename', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  const { from, to } = req.body as { from?: unknown; to?: unknown };
+  if (typeof from !== 'string' || !from) {
+    return res.status(400).json({ error: '"from" must be a non-empty string' });
+  }
+  if (typeof to !== 'string' || !to) {
+    return res.status(400).json({ error: '"to" must be a non-empty string' });
+  }
+  if (!isValidRelativeStackPath(from)) {
+    return res.status(400).json({ error: 'Invalid source path', code: 'INVALID_PATH' });
+  }
+  if (!isValidRelativeStackPath(to)) {
+    return res.status(400).json({ error: 'Invalid destination path', code: 'INVALID_PATH' });
+  }
+  try {
+    await FileSystemService.getInstance(req.nodeId).renameStackPath(stackName, from, to);
+    return res.status(204).send();
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to rename');
+  }
+});
+
+stacksRouter.get('/:stackName/files/permissions', async (req: Request, res: Response) => {
+  const stackName = req.params.stackName as string;
+  const relPath = getRelPath(req);
+  if (!relPath) return res.status(400).json({ error: 'path query parameter is required', code: 'INVALID_PATH' });
+  if (!isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  try {
+    const result = await FileSystemService.getInstance(req.nodeId).getStackEntryMode(stackName, relPath);
+    return res.json(result);
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to read permissions');
+  }
+});
+
+stacksRouter.put('/:stackName/files/permissions', async (req: Request, res: Response) => {
+  if (!requirePaid(req, res)) return;
+  const stackName = req.params.stackName as string;
+  if (!requirePermission(req, res, 'stack:edit', 'stack', stackName)) return;
+  const relPath = getRelPath(req);
+  if (!relPath) return res.status(400).json({ error: 'path query parameter is required', code: 'INVALID_PATH' });
+  if (!isValidRelativeStackPath(relPath)) {
+    return res.status(400).json({ error: 'Invalid path', code: 'INVALID_PATH' });
+  }
+  const { mode } = req.body as { mode?: unknown };
+  if (typeof mode !== 'number') {
+    return res.status(400).json({ error: '"mode" must be a number' });
+  }
+  try {
+    await FileSystemService.getInstance(req.nodeId).chmodStackPath(stackName, relPath, mode);
+    return res.status(204).send();
+  } catch (err: unknown) {
+    return sendFsError(res, err, 'Failed to set permissions');
+  }
+});
+
