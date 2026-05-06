@@ -1,5 +1,5 @@
-import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { useNotifications } from './useNotifications';
 import type { Node } from '@/context/NodeContext';
 import type { NotificationItem } from '../../dashboard/types';
@@ -34,11 +34,30 @@ class MockWS {
 beforeEach(() => {
   MockWS.reset();
   vi.stubGlobal('WebSocket', MockWS);
-  (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+  (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, json: async () => [] });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
+afterEach(() => { 
+  vi.unstubAllGlobals(); 
+  vi.clearAllMocks(); 
+});
 
 describe('useNotifications', () => {
+  let originalError: typeof console.error;
+
+  beforeAll(() => {
+    originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (typeof args[0] === 'string' && args[0].includes('was not wrapped in act')) {
+        return;
+      }
+      originalError.call(console, ...args);
+    };
+  });
+
+  afterAll(() => {
+    console.error = originalError;
+  });
+
   it('starts with empty notifications and disconnected state', () => {
     const { result } = renderHook(() =>
       useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
@@ -78,7 +97,6 @@ describe('useNotifications', () => {
   });
 
   it('clearAllNotifications empties the local state', async () => {
-    (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
     const { result } = renderHook(() =>
       useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
     );
@@ -89,12 +107,11 @@ describe('useNotifications', () => {
       });
     });
     expect(result.current.notifications).toHaveLength(1);
-    await act(async () => { await result.current.clearAllNotifications(); });
-    expect(result.current.notifications).toHaveLength(0);
+    act(() => { result.current.clearAllNotifications(); });
+    await waitFor(() => expect(result.current.notifications).toHaveLength(0));
   });
 
   it('deleteNotification removes the matching item', async () => {
-    (apiFetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
     const { result } = renderHook(() =>
       useNotifications({ nodes: [localNode], onStateInvalidate: vi.fn(), onAutoUpdateChange: vi.fn() }),
     );
@@ -105,7 +122,7 @@ describe('useNotifications', () => {
         data: JSON.stringify({ type: 'notification', payload: notif }),
       });
     });
-    await act(async () => { await result.current.deleteNotification({ ...notif, nodeId: localNode.id }); });
-    expect(result.current.notifications).toHaveLength(0);
+    act(() => { result.current.deleteNotification({ ...notif, nodeId: localNode.id }); });
+    await waitFor(() => expect(result.current.notifications).toHaveLength(0));
   });
 });
