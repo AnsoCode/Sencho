@@ -519,12 +519,10 @@ services:
 // ── check() timeout ─────────────────────────────────────────────────────
 
 describe('ImageUpdateService - check() timeout', () => {
-  let mockGetNodes: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     (ImageUpdateService as any).instance = undefined;
-    mockGetNodes = vi.fn().mockReturnValue([]);
   });
 
   it('releases isRunning lock after CHECK_TIMEOUT_MS', async () => {
@@ -664,10 +662,6 @@ services:
     setSystemState: mockSetSystemState,
     addNotificationHistory: mockAddNotificationHistory,
   });
-
-  function stubCheckImage(service: ImageUpdateService, hasUpdate: boolean) {
-    (service as any).checkImage = vi.fn().mockResolvedValue({ hasUpdate });
-  }
 
   beforeEach(() => {
     vi.clearAllMocks();
