@@ -55,7 +55,7 @@ export function StackSidebar(props: StackSidebarProps) {
   const handleToggleFilters = useCallback(() => {
     setFiltersVisible(prev => {
       const next = !prev;
-      try { window.localStorage.setItem('sencho:sidebar:filters-visible', String(next)); } catch {}
+      try { window.localStorage.setItem('sencho:sidebar:filters-visible', String(next)); } catch { /* localStorage unavailable */ }
       return next;
     });
   }, []);

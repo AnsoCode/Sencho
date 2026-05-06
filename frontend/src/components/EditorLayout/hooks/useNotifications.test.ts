@@ -46,7 +46,7 @@ describe('useNotifications', () => {
 
   beforeAll(() => {
     originalError = console.error;
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       if (typeof args[0] === 'string' && args[0].includes('was not wrapped in act')) {
         return;
       }
