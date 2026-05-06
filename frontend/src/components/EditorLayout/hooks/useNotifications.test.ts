@@ -1,5 +1,5 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { useNotifications } from './useNotifications';
 import type { Node } from '@/context/NodeContext';
 import type { NotificationItem } from '../../dashboard/types';
