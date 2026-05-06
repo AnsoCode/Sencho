@@ -5,7 +5,7 @@ description: Automate scan policies, CVE suppressions, and vulnerability scans f
 
 The Security API lets you manage scan policies, CVE suppressions, and trigger vulnerability scans from CI pipelines and automation scripts. Every endpoint in this reference is intended for external automation; internal frontend-only endpoints (finding listings, SARIF downloads) are not documented here.
 
-All endpoints require [Bearer token authentication](/api-reference/overview#authentication) and most are gated to Skipper or Admiral. See the per-endpoint **License** row for details.
+All endpoints require [Bearer token authentication](/api-reference/overview#authentication). Manual scans, secret and misconfiguration results, scan comparison, and CVE suppressions are available on every tier. Scan policies (with `block_on_deploy` enforcement), SBOM, and SARIF stay on Skipper or Admiral. See the per-endpoint **License** row for details.
 
 ## Scan policies
 
@@ -120,7 +120,7 @@ Suppressions let you mark individual CVEs as acknowledged so scan reads, compari
 
 **`GET /api/security/suppressions`**
 
-**License:** Skipper or Admiral
+**License:** Community
 
 Response rows include an `active` boolean computed from the `expires_at` timestamp.
 
@@ -145,7 +145,7 @@ Response rows include an `active` boolean computed from the `expires_at` timesta
 
 **`POST /api/security/suppressions`**
 
-**License:** Skipper or Admiral · **Role:** Admin
+**License:** Community · **Role:** Admin
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
@@ -176,7 +176,7 @@ curl -X POST https://your-sencho-instance:1852/api/security/suppressions \
 
 **`DELETE /api/security/suppressions/{id}`**
 
-**License:** Skipper or Admiral · **Role:** Admin
+**License:** Community · **Role:** Admin
 
 ```bash
 curl -X DELETE https://your-sencho-instance:1852/api/security/suppressions/3 \
@@ -189,7 +189,7 @@ curl -X DELETE https://your-sencho-instance:1852/api/security/suppressions/3 \
 
 **`POST /api/security/scan`**
 
-**License:** Community for vulnerability-only scans. Skipper or Admiral when `scanners` includes `secret`. · **Role:** Admin
+**License:** Community · **Role:** Admin
 
 Accepts an image reference and starts an asynchronous scan. The response returns immediately with a `scanId` that you can poll.
 
@@ -198,7 +198,7 @@ Accepts an image reference and starts an asynchronous scan. The response returns
 | `imageRef` | string | yes | Image reference Trivy will scan (must match Sencho's validator; `/`, `:`, `@`, alphanumerics, `-`, `_`, `.`). |
 | `stackName` | string | no | Associates the scan with a stack for display purposes. |
 | `force` | boolean | no | Default `false`. When `true`, ignores the 24-hour digest cache and runs Trivy again. |
-| `scanners` | `["vuln"]` or `["vuln","secret"]` | no | Omit for vuln-only. `secret` requires Skipper or Admiral. |
+| `scanners` | `["vuln"]` or `["vuln","secret"]` | no | Omit for vuln-only. Pass `["vuln","secret"]` to include secret detection. |
 
 ```bash
 curl -X POST https://your-sencho-instance:1852/api/security/scan \

@@ -3,11 +3,7 @@ import { apiFetch } from '@/lib/api';
 import { toast } from '@/components/ui/toast-store';
 import type { NodeUpdateStatus } from '../types';
 
-interface UseFleetUpdateStatusOptions {
-    isPaid: boolean;
-}
-
-export function useFleetUpdateStatus({ isPaid }: UseFleetUpdateStatusOptions) {
+export function useFleetUpdateStatus() {
     const [updateStatuses, setUpdateStatuses] = useState<NodeUpdateStatus[]>([]);
     const [updatingNodeId, setUpdatingNodeId] = useState<number | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
@@ -22,7 +18,6 @@ export function useFleetUpdateStatus({ isPaid }: UseFleetUpdateStatusOptions) {
     updateStatusesRef.current = updateStatuses;
 
     const fetchUpdateStatus = useCallback(async () => {
-        if (!isPaid) return;
         try {
             const res = await apiFetch('/fleet/update-status', { localOnly: true });
             if (res.ok) {
@@ -33,7 +28,7 @@ export function useFleetUpdateStatus({ isPaid }: UseFleetUpdateStatusOptions) {
                 );
             }
         } catch { /* non-critical */ }
-    }, [isPaid]);
+    }, []);
 
     const triggerNodeUpdate = useCallback(async (nodeId: number) => {
         const status = updateStatusesRef.current.find(s => s.nodeId === nodeId);

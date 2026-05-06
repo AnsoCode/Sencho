@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatBytes } from '@/lib/utils';
 import { apiFetch } from '@/lib/api';
-import { useLicense } from '@/context/LicenseContext';
 import { toast } from '@/components/ui/toast-store';
 import { formatVersion } from '@/lib/version';
 import { UpdateStatusBadge } from './UpdateStatusBadge';
@@ -46,7 +45,6 @@ function UsageBar({ percent, color }: { percent: number; color: string }) {
 // --- Main Export ---
 
 export function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, updatingNodeId, onRetryUpdate, onDismissUpdate }: NodeCardProps) {
-    const { isPaid } = useLicense();
     const [expanded, setExpanded] = useState(false);
     const [stacks, setStacks] = useState<string[] | null>(node.stacks);
     const [loadingStacks, setLoadingStacks] = useState(false);
@@ -60,7 +58,6 @@ export function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, u
     const diskPercent = getNodeDisk(node);
 
     const handleExpand = async () => {
-        if (!isPaid) return;
         const next = !expanded;
         setExpanded(next);
 
@@ -222,8 +219,8 @@ export function NodeCard({ node, onNavigate, labelMap, updateStatus, onUpdate, u
                 )}
             </div>
 
-            {/* Paid: Expandable Stack List with Container Drill-Down */}
-            {isOnline && isPaid && (
+            {/* Expandable Stack List with Container Drill-Down */}
+            {isOnline && (
                 <div className="border-t">
                     <button
                         onClick={handleExpand}

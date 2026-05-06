@@ -73,6 +73,7 @@ interface FleetNodeOverview {
   id: number;
   name: string;
   type: 'local' | 'remote';
+  mode?: string;
   status: 'online' | 'offline' | 'unknown';
   stats: {
     active: number;
@@ -87,6 +88,9 @@ interface FleetNodeOverview {
     disk: { total: number; used: number; free: number; usagePercent: string } | null;
   } | null;
   stacks: string[] | null;
+  latency_ms?: number;
+  last_successful_contact?: number | null;
+  pilot_last_seen?: number | null;
 }
 
 /** Resolve the version to compare nodes against (latest from GitHub, or gateway fallback). */
@@ -154,26 +158,46 @@ async function fetchLocalNodeOverview(node: Node): Promise<FleetNodeOverview> {
         } : null,
       },
       stacks,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   } catch (error) {
     console.error(`[Fleet] Local node ${node.name} error:`, error);
     return {
       id: node.id, name: node.name, type: node.type, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 }
 
-async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
+async function fetchRemoteNodeOverview(node: Node, db: DatabaseService): Promise<FleetNodeOverview> {
+  // Pilot-agent nodes: use pilot_last_seen as the contact signal; no HTTP fetch.
+  if (node.mode === 'pilot_agent') {
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      mode: node.mode,
+      status: node.pilot_last_seen ? 'online' : 'offline',
+      stats: null,
+      systemStats: null,
+      stacks: null,
+      last_successful_contact: node.pilot_last_seen ? Math.floor(node.pilot_last_seen / 1000) : null,
+      pilot_last_seen: node.pilot_last_seen ? Math.floor(node.pilot_last_seen / 1000) : null,
+    };
+  }
+
   if (!node.api_url || !node.api_token) {
     return {
       id: node.id, name: node.name, type: node.type, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 
   const baseUrl = node.api_url.replace(/\/$/, '');
   const headers = { Authorization: `Bearer ${node.api_token}` };
+  const t0 = Date.now();
 
   try {
     const [statsRes, systemStatsRes, stacksRes] = await Promise.allSettled([
@@ -206,20 +230,34 @@ async function fetchRemoteNodeOverview(node: Node): Promise<FleetNodeOverview> {
       } : null,
     } : null;
 
+    const completedAt = Date.now();
+    const latency_ms = completedAt - t0;
+    const isOnline = !!(stats || systemStats);
+
+    if (isOnline) {
+      db.updateNodeLastContact(node.id);
+    }
+
     return {
       id: node.id,
       name: node.name,
       type: node.type,
-      status: stats || systemStats ? 'online' : 'offline',
+      mode: node.mode,
+      status: isOnline ? 'online' : 'offline',
       stats,
       systemStats,
       stacks,
+      latency_ms,
+      last_successful_contact: isOnline
+        ? Math.floor(completedAt / 1000)
+        : node.last_successful_contact ?? null,
     };
   } catch (error) {
     console.error(`[Fleet] Remote node ${node.name} error:`, error);
     return {
-      id: node.id, name: node.name, type: node.type, status: 'offline',
+      id: node.id, name: node.name, type: node.type, mode: node.mode, status: 'offline',
       stats: null, systemStats: null, stacks: null,
+      last_successful_contact: node.last_successful_contact ?? null,
     };
   }
 }
@@ -287,7 +325,7 @@ fleetRouter.get('/overview', authMiddleware, async (_req: Request, res: Response
     const results = await Promise.allSettled(
       nodes.map(async (node): Promise<FleetNodeOverview> => {
         if (node.type === 'remote') {
-          return fetchRemoteNodeOverview(node);
+          return fetchRemoteNodeOverview(node, db);
         }
         return fetchLocalNodeOverview(node);
       }),
@@ -476,7 +514,6 @@ fleetRouter.get('/node/:nodeId/stacks/:stackName/containers', authMiddleware, as
 });
 
 fleetRouter.get('/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   try {
     const db = DatabaseService.getInstance();
     const nodes = db.getNodes();
@@ -625,7 +662,6 @@ fleetRouter.get('/update-status', authMiddleware, async (req: Request, res: Resp
 });
 
 fleetRouter.post('/nodes/:nodeId/update', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   if (!requireAdmin(req, res)) return;
   try {
     const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
@@ -779,7 +815,6 @@ fleetRouter.post('/update-all', authMiddleware, async (req: Request, res: Respon
 });
 
 fleetRouter.delete('/nodes/:nodeId/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   try {
     const nodeId = parseIntParam(req, res, 'nodeId', 'node ID');
     if (nodeId === null) return;
@@ -797,7 +832,6 @@ fleetRouter.delete('/nodes/:nodeId/update-status', authMiddleware, async (req: R
 });
 
 fleetRouter.delete('/update-status', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
   // Pre-fetch fresh latest version so the next GET has up-to-date data.
   if (req.query.recheck === 'true') {
     await getLatestVersion(true);
@@ -810,11 +844,10 @@ fleetRouter.delete('/update-status', authMiddleware, async (req: Request, res: R
   res.status(204).send();
 });
 
-// ─── Fleet Snapshots (Skipper+) ───
+// ─── Fleet Snapshots (manual: Community; scheduled: Skipper+) ───
 
 fleetRouter.post('/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const { description = '' } = req.body;
@@ -909,8 +942,6 @@ fleetRouter.post('/snapshots', authMiddleware, async (req: Request, res: Respons
 });
 
 fleetRouter.get('/snapshots', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-
   try {
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
     const offset = parseInt(req.query.offset as string, 10) || 0;
@@ -926,8 +957,6 @@ fleetRouter.get('/snapshots', authMiddleware, async (req: Request, res: Response
 });
 
 fleetRouter.get('/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  if (!requirePaid(req, res)) return;
-
   try {
     const id = parseIntParam(req, res, 'id', 'snapshot ID');
     if (id === null) return;
@@ -972,7 +1001,6 @@ fleetRouter.get('/snapshots/:id', authMiddleware, async (req: Request, res: Resp
 
 fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const snapshotId = parseIntParam(req, res, 'id', 'snapshot ID');
@@ -1085,7 +1113,6 @@ fleetRouter.post('/snapshots/:id/restore', authMiddleware, async (req: Request, 
 
 fleetRouter.delete('/snapshots/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  if (!requirePaid(req, res)) return;
 
   try {
     const id = parseIntParam(req, res, 'id', 'snapshot ID');

@@ -281,7 +281,7 @@ describe('SchedulerService - license gating', () => {
     expect(mockCreateScheduledTaskRun).toHaveBeenCalled();
   });
 
-  it('skips non-update tasks for non-admiral pro', async () => {
+  it('skips non-update/scan/snapshot tasks for non-admiral pro', async () => {
     mockGetTier.mockReturnValue('paid');
     mockGetVariant.mockReturnValue('individual');
     mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'restart' })]);
@@ -290,6 +290,18 @@ describe('SchedulerService - license gating', () => {
     await (svc as any).tick();
 
     expect(mockCreateScheduledTaskRun).not.toHaveBeenCalled();
+  });
+
+  it('allows snapshot tasks for non-admiral pro (Skipper)', async () => {
+    mockGetTier.mockReturnValue('paid');
+    mockGetVariant.mockReturnValue('individual');
+    mockGetDueScheduledTasks.mockReturnValue([makeTask({ action: 'snapshot', target_type: 'fleet' })]);
+
+    const svc = SchedulerService.getInstance();
+    await (svc as any).tick();
+
+    await new Promise(r => setTimeout(r, 50));
+    expect(mockCreateScheduledTaskRun).toHaveBeenCalled();
   });
 
   it('allows all actions for admiral (pro + team)', async () => {

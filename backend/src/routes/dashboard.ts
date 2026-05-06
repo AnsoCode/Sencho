@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { DatabaseService } from '../services/DatabaseService';
+import { DatabaseService, type StackRestartSummary } from '../services/DatabaseService';
 import { CloudBackupService } from '../services/CloudBackupService';
-import { authMiddleware } from '../middleware/auth';
 import { effectiveTier, effectiveVariant } from '../middleware/tierGates';
 import type { LicenseTier, LicenseVariant } from '../services/license-types';
 
@@ -155,9 +154,8 @@ export function buildLocalConfigurationStatus(
   };
 }
 
-// Sits after authGate and before the remote proxy in index.ts so remote-node
-// requests are transparently forwarded to the target Sencho instance.
-dashboardRouter.get('/configuration', authMiddleware, (req: Request, res: Response): void => {
+// All routes below are protected by the global authGate mounted at app.use('/api', authGate)
+dashboardRouter.get('/configuration', (req: Request, res: Response): void => {
   try {
     const nodeId = req.nodeId ?? 0;
     const userId = req.user?.userId ?? 0;
@@ -171,17 +169,17 @@ dashboardRouter.get('/configuration', authMiddleware, (req: Request, res: Respon
   }
 });
 
-dashboardRouter.get('/recent-activity', authMiddleware, (req: Request, res: Response): void => {
+dashboardRouter.get('/stack-restarts', (req: Request, res: Response): void => {
   try {
     const db = DatabaseService.getInstance();
     const nodeId = req.nodeId ?? 0;
-    const rawLimit = parseInt(String(req.query['limit'] ?? '10'), 10);
-    const limit = isNaN(rawLimit) || rawLimit < 1 ? 10 : Math.min(rawLimit, 50);
+    const rawDays = parseInt(String(req.query['days'] ?? '7'), 10);
+    const days = isNaN(rawDays) || rawDays < 1 ? 7 : Math.min(rawDays, 30);
 
-    const items = db.getNotificationHistory(nodeId, limit);
-    res.json(items);
+    const result: StackRestartSummary[] = db.getStackRestartSummary(nodeId, days);
+    res.json(result);
   } catch (error) {
-    console.error('[Dashboard] Failed to fetch recent activity:', error);
-    res.status(500).json({ error: 'Failed to fetch recent activity' });
+    console.error('[Dashboard] Failed to fetch stack restarts:', error);
+    res.status(500).json({ error: 'Failed to fetch stack restarts' });
   }
 });

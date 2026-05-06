@@ -57,7 +57,7 @@ Monitor your entire infrastructure from a single screen. The fleet dashboard sho
 
 ## Remote updates
 
-Check for outdated nodes and trigger over-the-air updates from the Fleet View. When the gateway is running a newer version than a remote node, a one-click update pulls the latest image and recreates the container automatically. [Learn more →](/features/remote-updates)
+Check for outdated nodes and trigger over-the-air updates from the Fleet View. When the gateway is running a newer version than a remote node, a one-click update pulls the latest image and recreates the container automatically. Per-node updates and the Check Updates view are available on every tier; the bulk **Update All** action is Skipper or Admiral. [Learn more →](/features/remote-updates)
 
 ## Alerts & notifications
 
@@ -81,7 +81,7 @@ Define schedules for Sencho to automatically check your container images for upd
 
 ## Scheduled operations
 
-Automate recurring maintenance tasks like stack restarts, fleet snapshots, and system prunes on a cron schedule. Every execution is logged with full history so you always know what ran and when. Admiral only. [Learn more →](/features/scheduled-operations)
+Automate recurring maintenance tasks like stack restarts, fleet snapshots, and system prunes on a cron schedule. Every execution is logged with full history so you always know what ran and when. Scheduled scans, updates, and snapshots are available on Skipper and Admiral; other scheduled actions remain Admiral only. [Learn more →](/features/scheduled-operations)
 
 ## RBAC & user management
 
@@ -97,7 +97,7 @@ Skipper and Admiral users get automatic backup and rollback on every deployment.
 
 ## Fleet-wide backups
 
-Create point-in-time snapshots of every compose file and environment file across all nodes. Snapshots are stored centrally and can be browsed by node and stack. Restore individual stacks from any snapshot with optional one-click redeploy, even to remote nodes. [Learn more →](/features/fleet-backups)
+Create point-in-time snapshots of every compose file and environment file across all nodes. Snapshots are stored centrally and can be browsed by node and stack. Restore individual stacks from any snapshot with optional one-click redeploy, even to remote nodes. Manual snapshots are available on every tier; scheduled fleet snapshots are Skipper or Admiral. [Learn more →](/features/fleet-backups)
 
 ## Private registries
 
@@ -105,7 +105,7 @@ Store credentials for private Docker registries: Docker Hub organizations, GHCR,
 
 ## Vulnerability scanning
 
-Scan container images for known CVEs with [Trivy](https://trivy.dev). On-demand scanning and severity badges are available on every tier; scheduled scans, scan policies that gate deploys, SBOM generation, and scan history are available on Skipper and Admiral. [Learn more →](/features/vulnerability-scanning)
+Scan container images for known CVEs with [Trivy](https://trivy.dev). Manual scanning, secret and misconfiguration detection, scan comparison, and CVE suppressions are available on every tier; scheduled scans, scan policies that gate deploys, SBOM generation, and SARIF export are available on Skipper and Admiral. Auto-update of the managed Trivy binary is Admiral. [Learn more →](/features/vulnerability-scanning)
 
 ## Audit log
 

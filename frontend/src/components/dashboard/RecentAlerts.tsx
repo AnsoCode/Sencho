@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from '@/components/ui/toast-store';
+import { formatRelativeTime } from '@/lib/utils';
 import type { NotificationItem } from './types';
 import type { Node } from '@/context/NodeContext';
 
@@ -20,16 +21,6 @@ const levelConfig: Record<string, { icon: typeof Info; className: string }> = {
   warning: { icon: AlertTriangle, className: 'text-warning' },
   error: { icon: AlertOctagon, className: 'text-destructive' },
 };
-
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 export function RecentAlerts({ notifications, nodes, onCleared }: RecentAlertsProps) {
   const [clearing, setClearing] = useState(false);
@@ -115,7 +106,7 @@ export function RecentAlerts({ notifications, nodes, onCleared }: RecentAlertsPr
                       {n.message}
                     </span>
                     <span className="text-xs font-mono tabular-nums text-stat-icon shrink-0">
-                      {formatRelativeTime(n.timestamp)}
+                      {formatRelativeTime(Math.floor(n.timestamp / 1000))}
                     </span>
                   </div>
                 );

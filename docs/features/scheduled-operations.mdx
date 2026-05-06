@@ -4,7 +4,7 @@ description: Automate recurring Docker operations like stack restarts, lifecycle
 ---
 
 <Note>
-  Scheduled Operations requires a Sencho **Admiral** license. Skipper users see only the **Auto-update Stack** action; Admiral users see every action.
+  Scheduled Operations is available to admins on Skipper and Admiral. Skipper unlocks **Auto-update Stack**, **Vulnerability Scan**, and **Fleet Snapshot**. All other actions (Restart Stack, System Prune, Backup Stack Files, Stop / Take Down / Start Stack) remain Admiral.
 </Note>
 
 ## Overview
@@ -36,7 +36,7 @@ Toggle to **All tasks** from the header to see every schedule in a table, regard
 |--------|--------|-------------|
 | **Restart Stack** | A specific stack (or specific services within it) on a specific node | Restarts all or selected containers in the stack |
 | **Auto-update Stack** | A specific stack on a specific node | Checks each image for updates and recreates the stack if any image has a newer version. See [Auto-Update Readiness](/features/auto-update-policies) for the companion board. Available on Skipper and Admiral. |
-| **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files |
+| **Fleet Snapshot** | All nodes | Creates a fleet-wide backup of all compose files and `.env` files. Available on Skipper and Admiral. |
 | **System Prune** | The default node | Prunes selected resources, optionally filtered by Docker label |
 | **Vulnerability Scan** | All images on a specific node | Runs Trivy against every image on the target node and records the results. Requires Trivy to be installed, see [Installing Trivy](/operations/trivy-setup). Available on Skipper and Admiral. |
 | **Backup Stack Files** | A specific stack on a specific node | Backs up the stack's compose file and `.env` to `<DATA_DIR>/backups/<stackName>/`. The most recent backup per stack is kept; each run overwrites the previous one. |
@@ -46,7 +46,7 @@ Toggle to **All tasks** from the header to see every schedule in a table, regard
 
 ## Creating a Scheduled Task
 
-1. Navigate to the **Schedules** tab in the top navigation bar (visible to Admiral admins).
+1. Navigate to the **Schedules** tab in the top navigation bar (visible to Skipper and Admiral admins).
 2. Click **New Schedule**.
 3. Fill in the form:
    - **Name**: A descriptive label (e.g. "Nightly staging restart").
@@ -212,7 +212,7 @@ Execution history is retained for 30 days.
 
 The Scheduler Service runs in the background and checks for due tasks every 60 seconds. When a task's next run time has passed:
 
-1. The scheduler verifies your Admiral license is active.
+1. The scheduler verifies your license tier matches the action (Skipper for update, scan, snapshot; Admiral for everything else).
 2. It executes the configured action using the same internal services that power the UI buttons (restart, snapshot, prune).
 3. Results are logged to the execution history.
 4. On failure, an alert is dispatched via your configured notification channels.

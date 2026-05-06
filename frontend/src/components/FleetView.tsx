@@ -34,11 +34,10 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
     const experimental = useExperimental();
 
     const { prefs, updatePrefs } = useFleetPreferences();
-    const updateStatus = useFleetUpdateStatus({ isPaid });
+    const updateStatus = useFleetUpdateStatus();
     const overview = useFleetOverview({ isPaid, prefs, updatePrefs, updateStatuses: updateStatus.updateStatuses });
 
     useFleetPolling({
-        isPaid,
         fetchOverview: overview.fetchOverview,
         fetchUpdateStatus: updateStatus.fetchUpdateStatus,
         updateStatuses: updateStatus.updateStatuses,
@@ -69,13 +68,11 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                             <TabsHighlightItem value="overview">
                                 <TabsTrigger value="overview">Overview</TabsTrigger>
                             </TabsHighlightItem>
-                            {isPaid && (
-                                <TabsHighlightItem value="snapshots">
-                                    <TabsTrigger value="snapshots">
-                                        <Camera className="w-4 h-4 mr-1.5" />Snapshots
-                                    </TabsTrigger>
-                                </TabsHighlightItem>
-                            )}
+                            <TabsHighlightItem value="snapshots">
+                                <TabsTrigger value="snapshots">
+                                    <Camera className="w-4 h-4 mr-1.5" />Snapshots
+                                </TabsTrigger>
+                            </TabsHighlightItem>
                             {isAdmiral && experimental && (
                                 <TabsHighlightItem value="routing">
                                     <TabsTrigger value="routing">
@@ -114,17 +111,15 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         </TabsHighlight>
                     </TabsList>
                     <div className="flex items-center gap-2">
-                        {isPaid && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={updateStatus.checkUpdates}
-                                className="gap-2"
-                            >
-                                <Search className="w-4 h-4" />
-                                Check Updates
-                            </Button>
-                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={updateStatus.checkUpdates}
+                            className="gap-2"
+                        >
+                            <Search className="w-4 h-4" />
+                            Check Updates
+                        </Button>
                         <Button
                             variant="outline"
                             size="sm"
@@ -155,22 +150,19 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                         labelFilters={overview.labelFilters}
                         onLabelFiltersChange={overview.setLabelFilters}
                         onClearFilters={overview.clearFilters}
-                        isPaid={isPaid}
                         fleetStackLabelMap={overview.fleetStackLabelMap}
                         updateStatusMap={overview.updateStatusMap}
                         onNavigateToNode={onNavigateToNode}
-                        onUpdate={isPaid ? updateStatus.triggerNodeUpdate : undefined}
+                        onUpdate={updateStatus.triggerNodeUpdate}
                         updatingNodeId={updateStatus.updatingNodeId}
-                        onRetryUpdate={isPaid ? updateStatus.retryNodeUpdate : undefined}
-                        onDismissUpdate={isPaid ? updateStatus.dismissNodeUpdate : undefined}
+                        onRetryUpdate={updateStatus.retryNodeUpdate}
+                        onDismissUpdate={updateStatus.dismissNodeUpdate}
                     />
                 </TabsContent>
 
-                {isPaid && (
-                    <TabsContent value="snapshots">
-                        <FleetSnapshots />
-                    </TabsContent>
-                )}
+                <TabsContent value="snapshots">
+                    <FleetSnapshots />
+                </TabsContent>
                 {isAdmiral && experimental && (
                     <TabsContent value="routing">
                         <AdmiralGate>
@@ -233,6 +225,7 @@ export function FleetView({ onNavigateToNode }: FleetViewProps) {
                 retryNodeUpdate={updateStatus.retryNodeUpdate}
                 dismissNodeUpdate={updateStatus.dismissNodeUpdate}
                 triggerUpdateAll={updateStatus.triggerUpdateAll}
+                canBulkUpdate={isPaid}
             />
 
             <LocalUpdateConfirmDialog

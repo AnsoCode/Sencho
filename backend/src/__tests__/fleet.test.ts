@@ -157,34 +157,7 @@ describe('GET /api/fleet/overview', () => {
 describe('Fleet tier gating', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('GET /api/fleet/update-status returns 403 on free tier', async () => {
-    mockTier('community');
-    const res = await request(app)
-      .get('/api/fleet/update-status')
-      .set('Authorization', authHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
-  });
-
-  it('GET /api/fleet/snapshots returns 403 on free tier', async () => {
-    mockTier('community');
-    const res = await request(app)
-      .get('/api/fleet/snapshots')
-      .set('Authorization', authHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
-  });
-
-  it('POST /api/fleet/nodes/1/update returns 403 on free tier', async () => {
-    mockTier('community');
-    const res = await request(app)
-      .post('/api/fleet/nodes/1/update')
-      .set('Authorization', authHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
-  });
-
-  it('POST /api/fleet/update-all returns 403 on free tier', async () => {
+  it('POST /api/fleet/update-all returns 403 on community tier (bulk update is Skipper+)', async () => {
     mockTier('community');
     const res = await request(app)
       .post('/api/fleet/update-all')
@@ -193,22 +166,44 @@ describe('Fleet tier gating', () => {
     expect(res.body.code).toBe('PAID_REQUIRED');
   });
 
-  it('DELETE /api/fleet/nodes/1/update-status returns 403 on free tier', async () => {
+  it('GET /api/fleet/update-status is accessible on community tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .get('/api/fleet/update-status')
+      .set('Authorization', authHeader);
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
+  });
+
+  it('GET /api/fleet/snapshots is accessible on community tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .get('/api/fleet/snapshots')
+      .set('Authorization', authHeader);
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
+  });
+
+  it('POST /api/fleet/nodes/1/update is accessible on community tier', async () => {
+    mockTier('community');
+    const res = await request(app)
+      .post('/api/fleet/nodes/1/update')
+      .set('Authorization', authHeader);
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
+  });
+
+  it('DELETE /api/fleet/nodes/1/update-status is accessible on community tier', async () => {
     mockTier('community');
     const res = await request(app)
       .delete('/api/fleet/nodes/1/update-status')
       .set('Authorization', authHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 
-  it('DELETE /api/fleet/update-status returns 403 on free tier', async () => {
+  it('DELETE /api/fleet/update-status is accessible on community tier', async () => {
     mockTier('community');
     const res = await request(app)
       .delete('/api/fleet/update-status')
       .set('Authorization', authHeader);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 });
 
@@ -384,14 +379,13 @@ describe('Fleet snapshot restore', () => {
     expect(res.status).toBe(401);
   });
 
-  it('POST /api/fleet/snapshots/:id/restore returns 403 on free tier', async () => {
+  it('POST /api/fleet/snapshots/:id/restore is accessible on community tier', async () => {
     mockTier('community');
     const res = await request(app)
       .post(`/api/fleet/snapshots/${snapshotId}/restore`)
       .set('Authorization', authHeader)
       .send({ nodeId: 1, stackName: 'test' });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PAID_REQUIRED');
+    expect(res.body.code).not.toBe('PAID_REQUIRED');
   });
 
   it('returns 400 with missing nodeId/stackName', async () => {

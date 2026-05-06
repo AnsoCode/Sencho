@@ -15,7 +15,7 @@ interface SidebarActionsProps {
 export function SidebarActions({ createStackSlot, onScan, isScanning, bulkMode, onToggleBulkMode }: SidebarActionsProps) {
   return (
     <div className="p-4 flex gap-2">
-      <div className="flex-1">{createStackSlot}</div>
+      <div className="min-w-0 flex-1">{createStackSlot}</div>
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

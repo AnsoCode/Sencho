@@ -23,14 +23,19 @@ Lifetime pricing is an early-adopter offer available for a limited time only.
 
 **Community** includes:
 - Unlimited nodes, compose editor, global logs, app store, alerts, and more
+- Fleet View with search, sort, filters, node-card expand, and topology
+- Manual fleet snapshots (create, browse, restore, delete)
+- Per-node Sencho updates and the Check Updates view
+- Vulnerability scanning: install/update/uninstall Trivy, on-demand scans (vulnerabilities, secrets, misconfigurations), scan comparison, and CVE suppressions
 - Two-factor authentication (TOTP)
 - Custom OIDC single sign-on (works with Authelia, Keycloak, Authentik, Zitadel, Pocket ID, or any spec-compliant OIDC identity provider)
 
 **Skipper** includes everything in Community, plus:
-- Fleet View with drill-down
 - Webhooks and stack labels
-- Atomic deployments and fleet-wide backups
-- Auto-update policies
+- Atomic deployments
+- Bulk **Update All** across the fleet, scheduled scans, scheduled updates, and scheduled fleet snapshots
+- Scan policies with `block_on_deploy` enforcement, SBOM (SPDX, CycloneDX), and SARIF export
+- Auto-update policies for stack images
 - One-click Google, GitHub, and Okta SSO presets
 
 **Admiral** includes everything in Skipper, plus:
@@ -40,7 +45,8 @@ Lifetime pricing is an early-adopter offer available for a limited time only.
 - Audit log and host console
 - API tokens and private registries
 - Notification routing
-- Scheduled operations
+- Auto-update of the managed Trivy binary
+- All other scheduled operations (restart, prune, etc.)
 
 <Tip>
   **SSO is available on every tier.** Community users can integrate any OIDC-compliant identity provider through the Custom OIDC option. Paid tiers add turnkey presets (Google, GitHub, Okta) and LDAP / Active Directory.

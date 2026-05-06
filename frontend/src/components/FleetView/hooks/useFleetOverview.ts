@@ -103,48 +103,46 @@ export function useFleetOverview({ isPaid, prefs, updatePrefs, updateStatuses }:
             );
         }
 
-        if (isPaid) {
-            if (prefs.filterStatus === 'online') filtered = filtered.filter(n => n.status === 'online');
-            if (prefs.filterStatus === 'offline') filtered = filtered.filter(n => n.status !== 'online');
-            if (prefs.filterType === 'local') filtered = filtered.filter(n => n.type === 'local');
-            if (prefs.filterType === 'remote') filtered = filtered.filter(n => n.type !== 'local');
-            if (prefs.filterCritical) filtered = filtered.filter(isCritical);
+        if (prefs.filterStatus === 'online') filtered = filtered.filter(n => n.status === 'online');
+        if (prefs.filterStatus === 'offline') filtered = filtered.filter(n => n.status !== 'online');
+        if (prefs.filterType === 'local') filtered = filtered.filter(n => n.type === 'local');
+        if (prefs.filterType === 'remote') filtered = filtered.filter(n => n.type !== 'local');
+        if (prefs.filterCritical) filtered = filtered.filter(isCritical);
 
-            if (labelFilters.size > 0) {
-                filtered = filtered.filter(n => {
-                    const nodeStackLabels = fleetStackLabelMap[n.id] ?? {};
-                    return n.stacks?.some(s => {
-                        const sLabels = nodeStackLabels[s] ?? [];
-                        return sLabels.some(l => labelFilters.has(labelPaletteKey(l.name, l.color)));
-                    });
+        if (labelFilters.size > 0) {
+            filtered = filtered.filter(n => {
+                const nodeStackLabels = fleetStackLabelMap[n.id] ?? {};
+                return n.stacks?.some(s => {
+                    const sLabels = nodeStackLabels[s] ?? [];
+                    return sLabels.some(l => labelFilters.has(labelPaletteKey(l.name, l.color)));
                 });
-            }
-
-            filtered.sort((a, b) => {
-                let cmp = 0;
-                switch (prefs.sortBy) {
-                    case 'name':
-                        cmp = a.name.localeCompare(b.name);
-                        break;
-                    case 'cpu':
-                        cmp = getNodeCpu(b) - getNodeCpu(a);
-                        break;
-                    case 'memory':
-                        cmp = getNodeMem(b) - getNodeMem(a);
-                        break;
-                    case 'containers':
-                        cmp = (b.stats?.active ?? 0) - (a.stats?.active ?? 0);
-                        break;
-                    case 'status':
-                        cmp = (a.status === 'online' ? 0 : 1) - (b.status === 'online' ? 0 : 1);
-                        break;
-                }
-                return prefs.sortDir === 'desc' ? -cmp : cmp;
             });
         }
 
+        filtered.sort((a, b) => {
+            let cmp = 0;
+            switch (prefs.sortBy) {
+                case 'name':
+                    cmp = a.name.localeCompare(b.name);
+                    break;
+                case 'cpu':
+                    cmp = getNodeCpu(b) - getNodeCpu(a);
+                    break;
+                case 'memory':
+                    cmp = getNodeMem(b) - getNodeMem(a);
+                    break;
+                case 'containers':
+                    cmp = (b.stats?.active ?? 0) - (a.stats?.active ?? 0);
+                    break;
+                case 'status':
+                    cmp = (a.status === 'online' ? 0 : 1) - (b.status === 'online' ? 0 : 1);
+                    break;
+            }
+            return prefs.sortDir === 'desc' ? -cmp : cmp;
+        });
+
         return filtered;
-    }, [nodes, searchQuery, isPaid, prefs, labelFilters, fleetStackLabelMap]);
+    }, [nodes, searchQuery, prefs, labelFilters, fleetStackLabelMap]);
 
     const localNode = useMemo(
         () => processedNodes.find(n => n.type === 'local') ?? null,

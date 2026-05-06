@@ -39,7 +39,6 @@ function renderPaletteOption(option: { label: string; color?: string }) {
 }
 
 interface OverviewToolbarProps {
-    isPaid: boolean;
     viewMode: ViewMode;
     onViewModeChange: (mode: ViewMode) => void;
     searchQuery: string;
@@ -53,7 +52,6 @@ interface OverviewToolbarProps {
 }
 
 export function OverviewToolbar({
-    isPaid,
     viewMode,
     onViewModeChange,
     searchQuery,
@@ -65,7 +63,7 @@ export function OverviewToolbar({
     onLabelFiltersChange,
     onClearFilters,
 }: OverviewToolbarProps) {
-    const showPaidControls = isPaid && viewMode === 'grid';
+    const showGridControls = viewMode === 'grid';
     const activeFilterCount =
         (prefs.filterStatus !== 'all' ? 1 : 0) +
         (prefs.filterType !== 'all' ? 1 : 0) +
@@ -79,7 +77,7 @@ export function OverviewToolbar({
 
     return (
         <div className="flex flex-wrap items-center gap-2 mb-4">
-            {showPaidControls && (
+            {showGridControls && (
                 <>
                     <div className="relative flex-1 min-w-[200px] max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />

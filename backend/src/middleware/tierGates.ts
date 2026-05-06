@@ -59,9 +59,9 @@ export const requireNodeProxy = (req: Request, res: Response): boolean => {
   return true;
 };
 
-/** Tier gate for scheduled tasks: `update` and `scan` require Skipper+, everything else requires Admiral. */
+/** Tier gate for scheduled tasks: `update`, `scan`, and `snapshot` require Skipper+, everything else requires Admiral. */
 export const requireScheduledTaskTier = (action: string, req: Request, res: Response): boolean => {
-  if (action === 'update' || action === 'scan') return requirePaid(req, res);
+  if (action === 'update' || action === 'scan' || action === 'snapshot') return requirePaid(req, res);
   return requireAdmiral(req, res);
 };
 
