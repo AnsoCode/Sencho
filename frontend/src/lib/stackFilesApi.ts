@@ -132,3 +132,42 @@ export async function mkdirStackPath(
   );
   if (!res.ok) throw new Error(await parseApiError(res));
 }
+
+export async function renameStackPath(
+  stackName: string,
+  fromRel: string,
+  toRel: string
+): Promise<void> {
+  const res = await apiFetch(
+    stackFilesUrl(stackName, '/rename'),
+    { method: 'PATCH', body: JSON.stringify({ from: fromRel, to: toRel }) }
+  );
+  if (!res.ok) throw new Error(await parseApiError(res));
+}
+
+export interface EntryPermissions {
+  mode: number;
+  octal: string;
+}
+
+export async function getStackEntryPermissions(
+  stackName: string,
+  relPath: string
+): Promise<EntryPermissions> {
+  const res = await apiFetch(stackFilesUrl(stackName, `/permissions?path=${encodeURIComponent(relPath)}`));
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return res.json() as Promise<EntryPermissions>;
+}
+
+export async function setStackEntryPermissions(
+  stackName: string,
+  relPath: string,
+  mode: number
+): Promise<void> {
+  const res = await apiFetch(
+    stackFilesUrl(stackName, `/permissions?path=${encodeURIComponent(relPath)}`),
+    { method: 'PUT', body: JSON.stringify({ mode }) }
+  );
+  if (!res.ok) throw new Error(await parseApiError(res));
+}
+
