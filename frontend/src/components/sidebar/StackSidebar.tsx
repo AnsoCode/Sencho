@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { Command } from '@/components/ui/command';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { NotificationItem } from '@/components/dashboard/types';
@@ -45,6 +45,21 @@ export function StackSidebar(props: StackSidebarProps) {
     bulkMode, selectedFiles, isPaid, onToggleBulkMode, onToggleSelect, onClearSelection, onBulkAction,
   } = props;
 
+  const [filtersVisible, setFiltersVisible] = useState(() => {
+    try {
+      const v = window.localStorage.getItem('sencho:sidebar:filters-visible');
+      return v === null ? true : v !== 'false';
+    } catch { return true; }
+  });
+
+  const handleToggleFilters = useCallback(() => {
+    setFiltersVisible(prev => {
+      const next = !prev;
+      try { window.localStorage.setItem('sencho:sidebar:filters-visible', String(next)); } catch { /* localStorage unavailable */ }
+      return next;
+    });
+  }, []);
+
   return (
     <div className="w-64 border-r border-glass-border bg-sidebar backdrop-blur-md flex flex-col">
       <SidebarBrand isDarkMode={isDarkMode} />
@@ -64,6 +79,8 @@ export function StackSidebar(props: StackSidebarProps) {
           active={filterChip}
           counts={filterCounts}
           onChange={onFilterChipChange}
+          visible={filtersVisible}
+          onToggle={handleToggleFilters}
         />
         {selectedFiles.size > 0 && (
           <SidebarBulkBar

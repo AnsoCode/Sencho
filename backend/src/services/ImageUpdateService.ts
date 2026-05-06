@@ -91,6 +91,7 @@ export function extractImagesFromCompose(
 export class ImageUpdateService {
     private static instance: ImageUpdateService;
     private intervalId: NodeJS.Timeout | null = null;
+    private startupTimeoutId: NodeJS.Timeout | null = null;
     private isRunning = false;
     private lastManualRefreshAt = 0;
 
@@ -98,6 +99,7 @@ export class ImageUpdateService {
     private static readonly STARTUP_DELAY_MS = 2 * 60 * 1000;    // 2 min after boot
     private static readonly MANUAL_COOLDOWN_MS = 2 * 60 * 1000;  // 2 min between manual triggers
     private static readonly INTER_IMAGE_DELAY_MS = 300;           // be polite to registries
+    private static readonly CHECK_TIMEOUT_MS = 5 * 60 * 1000;     // 5 min overall cap per scan
 
     public static get manualCooldownMinutes(): number {
         return ImageUpdateService.MANUAL_COOLDOWN_MS / (60 * 1000);
@@ -114,11 +116,15 @@ export class ImageUpdateService {
 
     public start() {
         if (this.intervalId) return;
-        setTimeout(() => this.check(), ImageUpdateService.STARTUP_DELAY_MS);
+        this.startupTimeoutId = setTimeout(() => this.check(), ImageUpdateService.STARTUP_DELAY_MS);
         this.intervalId = setInterval(() => this.check(), ImageUpdateService.INTERVAL_MS);
     }
 
     public stop() {
+        if (this.startupTimeoutId) {
+            clearTimeout(this.startupTimeoutId);
+            this.startupTimeoutId = null;
+        }
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
@@ -151,6 +157,12 @@ export class ImageUpdateService {
         this.isRunning = true;
         console.log('[ImageUpdateService] Starting image update check...');
 
+        const checkTimeout = setTimeout(() => {
+            console.warn('[ImageUpdateService] Check timed out after ' +
+                `${ImageUpdateService.CHECK_TIMEOUT_MS / 60_000} minutes; releasing lock`);
+            this.isRunning = false;
+        }, ImageUpdateService.CHECK_TIMEOUT_MS);
+
         try {
             const db = DatabaseService.getInstance();
             // Only check local nodes - remote nodes run their own instance
@@ -166,6 +178,7 @@ export class ImageUpdateService {
         } catch (e) {
             console.error('[ImageUpdateService] Check failed:', e);
         } finally {
+            clearTimeout(checkTimeout);
             this.isRunning = false;
         }
     }
@@ -180,6 +193,10 @@ export class ImageUpdateService {
         const stackImages = new Map<string, Set<string>>();
         for (const name of stacks) stackImages.set(name, new Set());
 
+        if (isDebugEnabled()) {
+            console.log(`[ImageUpdateService:debug] Node ${nodeId}: Phase 1 complete - ${stacks.length} stack(s) found`);
+        }
+
         // Phase 2: Parse compose files for image refs
         for (const stackName of stacks) {
             try {
@@ -188,10 +205,13 @@ export class ImageUpdateService {
                 // Load .env for variable resolution (best-effort)
                 let envVars: Record<string, string> = {};
                 try {
-                    const envContent = await fs.getEnvContent(stackName);
-                    envVars = loadDotEnv(envContent);
+                    const hasEnv = await fs.envExists(stackName);
+                    if (hasEnv) {
+                        const envContent = await fs.getEnvContent(stackName);
+                        envVars = loadDotEnv(envContent);
+                    }
                 } catch {
-                    // No .env file or unreadable; continue with process.env only
+                    // .env file exists but unreadable; continue with process.env only
                 }
                 // Docker Compose precedence: host env overrides .env
                 const merged: Record<string, string> = { ...envVars };
@@ -205,6 +225,11 @@ export class ImageUpdateService {
             } catch (e) {
                 console.warn(`[ImageUpdateService] Could not parse compose for "${stackName}":`, e);
             }
+        }
+
+        if (isDebugEnabled()) {
+            const composeImageCount = [...stackImages.values()].reduce((sum, s) => sum + s.size, 0);
+            console.log(`[ImageUpdateService:debug] Node ${nodeId}: Phase 2 complete - ${composeImageCount} image(s) extracted from compose files`);
         }
 
         // Phase 3: Container augmentation (captures actual deployed image tags)
@@ -228,6 +253,11 @@ export class ImageUpdateService {
             }
         } catch (e) {
             console.warn('[ImageUpdateService] Container augmentation failed:', e);
+        }
+
+        if (isDebugEnabled()) {
+            const totalBeforeDedup = [...stackImages.values()].reduce((sum, s) => sum + s.size, 0);
+            console.log(`[ImageUpdateService:debug] Node ${nodeId}: Phase 3 complete - ${totalBeforeDedup} image(s) across all stacks (pre-dedup)`);
         }
 
         // Phase 4: Deduplicate and check all unique images
